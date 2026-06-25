@@ -56,7 +56,7 @@ public class Main extends Application {
     // Dawn client JAR is stored next to game assets: <gameDir>/dawn/dawn.jar
     private static final String DAWN_JAR_NAME = "dawn.jar";
     private static final String DAWN_DOWNLOAD_URL =
-            "https://cdn.dawn.gg/files/standalone/libraries/dawn-standalone.jar";
+            "https://github.com/Dawn-Client/Dawn/releases/latest/download/dawn.jar";
 
     @Override
     public void start(Stage stage) {
