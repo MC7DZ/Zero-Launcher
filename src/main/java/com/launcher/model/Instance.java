@@ -12,11 +12,15 @@ public class Instance {
     public boolean useCustomDirectory = false;
     public String customDirectoryPath;
 
-    public String jvmArgs = "-Xmx2G -Xms512M";
+    // Changed from ramGb to ramMb to match UI logic (MB allocation)
+    public int ramMb = 3072; // Default to 3GB (3072 MB)
+    public String jvmArgs = "-XX:+UseG1GC -XX:-UseAdaptiveSizePolicy";
     public String javaPath;
 
     public boolean installed = false;
+    public boolean hidden = false;
     public long createdAt = System.currentTimeMillis();
+    public long playTimeSeconds = 0;
 
     public Instance() {}
 

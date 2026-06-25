@@ -5,15 +5,14 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>com.launcher</groupId>
-  <artifactId>minecraft-launcher</artifactId>
+  <artifactId>zero-launcher</artifactId>
   <version>1.0.0</version>
   <packaging>jar</packaging>
 
   <properties>
-    <maven.compiler.source>17</maven.compiler.source>
-    <maven.compiler.target>17</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <javafx.version>21.0.2</javafx.version>
+    <maven.compiler.release>17</maven.compiler.release> <!-- تم التعديل هنا -->
   </properties>
 
   <dependencies>
@@ -32,6 +31,7 @@
       <artifactId>javafx-base</artifactId>
       <version>${javafx.version}</version>
     </dependency>
+    <!-- REMOVED: javafx-web dependency -->
     <dependency>
       <groupId>com.google.code.gson</groupId>
       <artifactId>gson</artifactId>

@@ -70,13 +70,34 @@ public class HttpUtil {
         Files.createDirectories(target.getParent());
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                 .header("User-Agent", "minecraft-launcher/1.0")
+                .timeout(Duration.ofSeconds(30))
                 .GET().build();
         Path tmp = target.resolveSibling(target.getFileName().toString() + ".part");
-        HttpResponse<Path> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofFile(tmp));
-        if (resp.statusCode() / 100 != 2) {
-            Files.deleteIfExists(tmp);
-            throw new IOException("Download failed " + url + " -> HTTP " + resp.statusCode());
+
+        int maxRetries = 3;
+        int attempt = 0;
+        while (true) {
+            attempt++;
+            try {
+                HttpResponse<Path> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofFile(tmp));
+                if (resp.statusCode() / 100 != 2) {
+                    Files.deleteIfExists(tmp);
+                    throw new IOException("Download failed " + url + " -> HTTP " + resp.statusCode());
+                }
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+                return;
+            } catch (IOException e) {
+                Files.deleteIfExists(tmp);
+                if (attempt >= maxRetries) {
+                    throw e;
+                }
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ie;
+                }
+            }
         }
-        Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
     }
 }

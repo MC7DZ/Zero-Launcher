@@ -1,20 +1,16 @@
 package com.launcher.ui;
 
-import com.launcher.auth.DeviceCodeInfo;
-import com.launcher.auth.MicrosoftAuthService;
 import com.launcher.auth.OfflineAuthService;
 import com.launcher.model.Account;
-import javafx.application.Platform;
+import com.launcher.Main;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.input.Clipboard;
-import javafx.scene.input.ClipboardContent;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 public class LoginDialog {
@@ -24,94 +20,74 @@ public class LoginDialog {
         stage.initOwner(owner);
         stage.initModality(Modality.WINDOW_MODAL);
         stage.setTitle("Add Account");
+        stage.setResizable(false);
 
-        TabPane tabs = new TabPane();
+        // ── Header ────────────────────────────────────────────────────────────
+        Label heading = new Label("Add Account");
+        heading.setStyle("-fx-font-size:18px; -fx-font-weight:bold; -fx-text-fill:#ffffff;");
+        Label sub = new Label("Offline accounts work for singleplayer and offline-mode servers.");
+        sub.setWrapText(true);
+        sub.setStyle("-fx-font-size:12px; -fx-text-fill:-fx-text-muted;");
+        VBox header = new VBox(4, heading, sub);
+        header.setPadding(new Insets(20, 20, 16, 20));
+        header.setStyle("-fx-background-color:-fx-surface; -fx-border-color:transparent transparent -fx-border-subtle transparent; -fx-border-width:0 0 1px 0;");
 
-        // ---- Offline tab ----
-        VBox offlineBox = new VBox(10);
-        offlineBox.setPadding(new Insets(20));
+        // ── Form ──────────────────────────────────────────────────────────────
+        Label userLabel = new Label("Username");
+        userLabel.setStyle("-fx-font-size:12px; -fx-font-weight:bold; -fx-text-fill:-fx-text-color;");
+
         TextField usernameField = new TextField();
-        usernameField.setPromptText("Username");
-        Button offlineButton = new Button("Add Offline Account");
-        Label offlineNote = new Label("Offline accounts can't join servers that require Microsoft authentication,\nbut work fine for singleplayer and offline-mode servers.");
-        offlineNote.setWrapText(true);
-        offlineButton.setOnAction(e -> {
+        usernameField.setPromptText("Enter a username…");
+        usernameField.setPrefWidth(340);
+
+        Label note = new Label("⚠  Microsoft authentication is not supported. Use the in-game account switcher if you need it.");
+        note.setWrapText(true);
+        note.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted; -fx-padding:4px 0 0 0;");
+
+        // ── Buttons ───────────────────────────────────────────────────────────
+        Button addBtn    = new Button("Add Offline Account");
+        addBtn.setId("playButton");         // reuse the accent play-button style
+        addBtn.setPrefWidth(180);
+
+        Button cancelBtn = new Button("Cancel");
+        cancelBtn.setPrefWidth(90);
+        cancelBtn.setOnAction(e -> stage.close());
+
+        Label errorLabel = new Label();
+        errorLabel.setStyle("-fx-text-fill:#ef4444; -fx-font-size:11px;");
+
+        addBtn.setOnAction(e -> {
+            String u = usernameField.getText().trim();
+            if (u.isBlank()) { errorLabel.setText("Username cannot be empty."); return; }
             try {
-                Account acc = new OfflineAuthService().login(usernameField.getText());
+                Account acc = new OfflineAuthService().login(u);
                 onSuccess.accept(acc);
                 stage.close();
             } catch (Exception ex) {
-                new Alert(Alert.AlertType.ERROR, ex.getMessage()).showAndWait();
+                errorLabel.setText(ex.getMessage());
             }
         });
-        offlineBox.getChildren().addAll(new Label("Play offline with any username:"), usernameField, offlineButton, offlineNote);
-        Tab offlineTab = new Tab("Offline Account", offlineBox);
-        offlineTab.setClosable(false);
 
-        // ---- Microsoft tab ----
-        VBox msBox = new VBox(12);
-        msBox.setPadding(new Insets(20));
-        Label instructions = new Label("Sign in with your Microsoft account (the one that owns Minecraft).");
-        Button startButton = new Button("Sign in with Microsoft");
-        Label codeLabel = new Label();
-        codeLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
-        Label urlLabel = new Label();
-        Button copyButton = new Button("Copy code");
-        copyButton.setVisible(false);
-        ProgressIndicator progress = new ProgressIndicator();
-        progress.setVisible(false);
-        Label statusLabel = new Label();
-        AtomicBoolean cancelled = new AtomicBoolean(false);
+        // Allow Enter key to submit
+        usernameField.setOnAction(e -> addBtn.fire());
 
-        startButton.setOnAction(e -> {
-            startButton.setDisable(true);
-            progress.setVisible(true);
-            statusLabel.setText("Requesting device code...");
-            cancelled.set(false);
+        HBox btnRow = new HBox(8, cancelBtn, addBtn);
+        btnRow.setAlignment(Pos.CENTER_RIGHT);
 
-            new Thread(() -> {
-                MicrosoftAuthService auth = new MicrosoftAuthService();
-                try {
-                    DeviceCodeInfo info = auth.requestDeviceCode();
-                    Platform.runLater(() -> {
-                        codeLabel.setText(info.userCode);
-                        urlLabel.setText("Go to " + info.verificationUri + " and enter the code above.");
-                        copyButton.setVisible(true);
-                        statusLabel.setText("Waiting for you to sign in in your browser...");
-                    });
+        VBox form = new VBox(10, userLabel, usernameField, note, errorLabel, btnRow);
+        form.setPadding(new Insets(20));
 
-                    var msTokens = auth.pollForToken(info, cancelled::get);
-                    Platform.runLater(() -> statusLabel.setText("Verifying with Xbox Live and Minecraft services..."));
-                    Account account = auth.completeLogin(msTokens);
+        // ── Root ─────────────────────────────────────────────────────────────
+        VBox root = new VBox(header, form);
 
-                    Platform.runLater(() -> {
-                        onSuccess.accept(account);
-                        stage.close();
-                    });
-                } catch (Exception ex) {
-                    Platform.runLater(() -> {
-                        progress.setVisible(false);
-                        startButton.setDisable(false);
-                        statusLabel.setText("Failed: " + ex.getMessage());
-                    });
-                }
-            }, "ms-auth").start();
-        });
+        Scene scene = new Scene(root, 420, 280);
+        var css = LoginDialog.class.getResource("/com/launcher/styles.css");
+        if (css != null) scene.getStylesheets().add(css.toExternalForm());
 
-        copyButton.setOnAction(e -> {
-            ClipboardContent content = new ClipboardContent();
-            content.putString(codeLabel.getText());
-            Clipboard.getSystemClipboard().setContent(content);
-        });
+        com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        Main.applyThemeToPane(root, settings);
 
-        msBox.getChildren().addAll(instructions, startButton, codeLabel, urlLabel, copyButton, progress, statusLabel);
-        Tab msTab = new Tab("Microsoft Account", msBox);
-        msTab.setClosable(false);
-
-        tabs.getTabs().addAll(msTab, offlineTab);
-
-        stage.setOnCloseRequest(e -> cancelled.set(true));
-        stage.setScene(new Scene(tabs, 460, 360));
+        stage.setScene(scene);
         stage.showAndWait();
     }
 }

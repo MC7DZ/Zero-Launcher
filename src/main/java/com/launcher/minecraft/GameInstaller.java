@@ -32,18 +32,41 @@ public class GameInstaller {
         }
         String parentId = versionJson.get("inheritsFrom").getAsString();
         log.accept("Resolving parent version " + parentId + " ...");
-        var urls = manifest.fetchVersionUrls();
-        String parentUrl = urls.get(parentId);
-        if (parentUrl == null) {
-            throw new IOException("Could not find parent version '" + parentId + "' in Mojang's version manifest");
+        
+        JsonObject parent = null;
+        Path localJsonPath = LauncherPaths.findLocalVersionJson(parentId, null);
+        if (localJsonPath != null) {
+            log.accept("Found local parent version JSON at " + localJsonPath);
+            try {
+                String jsonContent = Files.readString(localJsonPath);
+                parent = JsonUtil.parse(jsonContent).getAsJsonObject();
+            } catch (Exception e) {
+                log.accept("Failed to read local parent version JSON: " + e.getMessage() + ", falling back to network");
+            }
         }
-        JsonObject parent = manifest.fetchVersionJson(parentUrl);
+
+        if (parent == null) {
+            var urls = manifest.fetchVersionUrls();
+            String parentUrl = urls.get(parentId);
+            if (parentUrl == null) {
+                throw new IOException("Could not find parent version '" + parentId + "' in Mojang's version manifest or local files");
+            }
+            parent = manifest.fetchVersionJson(parentUrl);
+        }
+
         parent = resolveInheritance(parent, log); // parent might itself inherit (rare, but be safe)
         return merge(parent, versionJson);
     }
 
     private JsonObject merge(JsonObject parent, JsonObject child) {
         JsonObject result = parent.deepCopy();
+
+        // Store the original/parent version ID that actually contains the client jar downloads
+        if (parent.has("clientJarId")) {
+            result.add("clientJarId", parent.get("clientJarId"));
+        } else if (parent.has("id")) {
+            result.add("clientJarId", parent.get("id"));
+        }
 
         // Child fully overrides simple scalar fields when present.
         for (String field : new String[]{"mainClass", "id", "assetIndex", "assets", "type", "downloads"}) {
@@ -88,14 +111,23 @@ public class GameInstaller {
         Files.createDirectories(nativesDir);
 
         // --- client jar ---
-        if (versionJson.has("downloads") && versionJson.getAsJsonObject("downloads").has("client")) {
-            JsonObject clientDl = versionJson.getAsJsonObject("downloads").getAsJsonObject("client");
-            String url = clientDl.get("url").getAsString();
-            Path jarPath = LauncherPaths.versionsDir().resolve(resolved.id).resolve(resolved.id + ".jar");
-            if (!Files.exists(jarPath)) {
-                log.accept("Downloading client jar (" + resolved.id + ".jar) ...");
+        String jarId = versionJson.has("clientJarId") ? versionJson.get("clientJarId").getAsString() : resolved.id;
+        Path jarPath = LauncherPaths.versionsDir().resolve(jarId).resolve(jarId + ".jar");
+        if (!Files.exists(jarPath)) {
+            // Check default .minecraft/versions
+            Path localJar = LauncherPaths.getDefaultMinecraftPath().resolve("versions").resolve(jarId).resolve(jarId + ".jar");
+            if (Files.exists(localJar)) {
+                jarPath = localJar;
+            } else if (versionJson.has("downloads") && versionJson.getAsJsonObject("downloads").has("client")) {
+                JsonObject clientDl = versionJson.getAsJsonObject("downloads").getAsJsonObject("client");
+                String url = clientDl.get("url").getAsString();
+                log.accept("Downloading client jar (" + jarId + ".jar) ...");
                 HttpUtil.downloadToFile(url, jarPath);
+            } else {
+                log.accept("WARNING: No client jar found for " + jarId + " and no download URL available.");
             }
+        }
+        if (Files.exists(jarPath)) {
             resolved.classpath.add(jarPath);
         }
 
@@ -144,34 +176,79 @@ public class GameInstaller {
 
     private void processLibrary(JsonObject lib, ResolvedVersion resolved, Path nativesDir, Consumer<String> log)
             throws IOException, InterruptedException {
-        if (!lib.has("downloads")) return;
-        JsonObject downloads = lib.getAsJsonObject("downloads");
+        // 1. Modern Mojang downloads structure
+        if (lib.has("downloads")) {
+            JsonObject downloads = lib.getAsJsonObject("downloads");
 
-        if (downloads.has("artifact")) {
-            JsonObject artifact = downloads.getAsJsonObject("artifact");
-            String path = artifact.get("path").getAsString();
-            String url = artifact.get("url").getAsString();
-            Path dest = LauncherPaths.librariesDir().resolve(path);
-            if (!Files.exists(dest) || Files.size(dest) == 0) {
-                HttpUtil.downloadToFile(url, dest);
-            }
-            resolved.classpath.add(dest);
-        }
-
-        if (downloads.has("classifiers")) {
-            String classifierKey = nativeClassifierKeyForCurrentOs();
-            JsonObject classifiers = downloads.getAsJsonObject("classifiers");
-            if (classifierKey != null && classifiers.has(classifierKey)) {
-                JsonObject nativeArtifact = classifiers.getAsJsonObject(classifierKey);
-                String path = nativeArtifact.get("path").getAsString();
-                String url = nativeArtifact.get("url").getAsString();
+            if (downloads.has("artifact")) {
+                JsonObject artifact = downloads.getAsJsonObject("artifact");
+                String path = artifact.get("path").getAsString();
+                String url = artifact.get("url").getAsString();
                 Path dest = LauncherPaths.librariesDir().resolve(path);
                 if (!Files.exists(dest) || Files.size(dest) == 0) {
                     HttpUtil.downloadToFile(url, dest);
                 }
-                extractNatives(dest, nativesDir);
+                resolved.classpath.add(dest);
+            }
+
+            if (downloads.has("classifiers")) {
+                String classifierKey = nativeClassifierKeyForCurrentOs();
+                JsonObject classifiers = downloads.getAsJsonObject("classifiers");
+                if (classifierKey != null && classifiers.has(classifierKey)) {
+                    JsonObject nativeArtifact = classifiers.getAsJsonObject(classifierKey);
+                    String path = nativeArtifact.get("path").getAsString();
+                    String url = nativeArtifact.get("url").getAsString();
+                    Path dest = LauncherPaths.librariesDir().resolve(path);
+                    if (!Files.exists(dest) || Files.size(dest) == 0) {
+                        HttpUtil.downloadToFile(url, dest);
+                    }
+                    extractNatives(dest, nativesDir);
+                }
+            }
+            return;
+        }
+
+        // 2. Maven coordinate format (common for Fabric/Forge/local custom libraries)
+        if (lib.has("name")) {
+            String name = lib.get("name").getAsString();
+            String path = mavenToPath(name);
+            if (path == null) return;
+
+            // Determine download URL (default to Mojang's libraries maven repository if not specified)
+            String baseUrl = lib.has("url") ? lib.get("url").getAsString() : "https://libraries.minecraft.net/";
+            if (!baseUrl.endsWith("/")) baseUrl += "/";
+            String downloadUrl = baseUrl + path;
+
+            Path dest = LauncherPaths.librariesDir().resolve(path);
+            if (!Files.exists(dest) || Files.size(dest) == 0) {
+                log.accept("Downloading library: " + name);
+                try {
+                    HttpUtil.downloadToFile(downloadUrl, dest);
+                } catch (Exception e) {
+                    log.accept("Failed to download library: " + name + " from " + downloadUrl + ". Error: " + e.getMessage());
+                }
+            }
+
+            // Extract natives if it is a native library classifier
+            String[] parts = name.split(":");
+            if (parts.length > 3 && parts[3].startsWith("natives-")) {
+                if (parts[3].equals(nativeClassifierKeyForCurrentOs())) {
+                    extractNatives(dest, nativesDir);
+                }
+            } else {
+                resolved.classpath.add(dest);
             }
         }
+    }
+
+    private String mavenToPath(String name) {
+        String[] parts = name.split(":");
+        if (parts.length < 3) return null;
+        String group = parts[0].replace('.', '/');
+        String artifact = parts[1];
+        String version = parts[2];
+        String classifier = parts.length > 3 ? "-" + parts[3] : "";
+        return group + "/" + artifact + "/" + version + "/" + artifact + "-" + version + classifier + ".jar";
     }
 
     private void extractNatives(Path nativeJar, Path nativesDir) throws IOException {

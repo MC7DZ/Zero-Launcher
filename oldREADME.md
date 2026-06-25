@@ -1,4 +1,4 @@
-# Zero Launcher
+# MCLauncher
 
 A lightweight, cross-platform (Windows/Linux/macOS) Minecraft launcher written in Java + JavaFX.
 
@@ -60,7 +60,7 @@ per OS) once you're happy with the app.
 - `model/` — plain data: `Account`, `Instance`
 - `auth/` — `MicrosoftAuthService` (MS → Xbox Live → XSTS → Minecraft Services token chain) and `OfflineAuthService`
 - `manager/` — `AccountManager`/`InstanceManager` persist to JSON under your launcher data folder
-  (`%APPDATA%\Zero Launcher` on Windows, `~/Library/Application Support/Zero Launcher` on macOS, `~/.zerolauncher` on Linux)
+  (`%APPDATA%\MCLauncher` on Windows, `~/Library/Application Support/MCLauncher` on macOS, `~/.mclauncher` on Linux)
 - `minecraft/` —
   - `VersionManifestService` reads Mojang's public version manifest
   - `GameInstaller` resolves a version JSON (following Mojang's `inheritsFrom` chain), downloads the client jar,

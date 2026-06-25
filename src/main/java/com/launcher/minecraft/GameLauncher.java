@@ -2,7 +2,6 @@ package com.launcher.minecraft;
 
 import com.launcher.manager.LauncherPaths;
 import com.launcher.model.Account;
-import com.launcher.model.AccountType;
 import com.launcher.model.Instance;
 
 import java.io.IOException;
@@ -16,7 +15,7 @@ import java.util.function.Consumer;
 public class GameLauncher {
 
     public Process launch(Instance instance, Path gameDir, Path nativesDir, ResolvedVersion version,
-                           Account account, Consumer<String> log) throws IOException {
+                          Account account, Consumer<String> log) throws IOException {
 
         String javaBin = (instance.javaPath != null && !instance.javaPath.isBlank())
                 ? instance.javaPath
@@ -29,6 +28,11 @@ public class GameLauncher {
 
         List<String> command = new ArrayList<>();
         command.add(javaBin);
+
+        // Add RAM configuration converting MB to GB
+        int ramGb = instance.ramMb / 1024;
+        command.add("-Xmx" + ramGb + "G");
+        command.add("-Xms512M");
 
         // user-supplied JVM args (memory, etc.)
         for (String arg : instance.jvmArgs.trim().split("\\s+")) {
@@ -56,8 +60,8 @@ public class GameLauncher {
             // Ensure the essentials are present even if a loader's arg list omitted them.
             ensureArg(command, "--username", account.username);
             ensureArg(command, "--uuid", stripDashes(account.uuid));
-            ensureArg(command, "--accessToken", account.type == AccountType.MICROSOFT ? account.mcAccessToken : "0");
-            ensureArg(command, "--userType", account.type == AccountType.MICROSOFT ? "msa" : "legacy");
+            ensureArg(command, "--accessToken", "0");
+            ensureArg(command, "--userType", "legacy");
             ensureArg(command, "--version", version.id);
             ensureArg(command, "--gameDir", gameDir.toAbsolutePath().toString());
             ensureArg(command, "--assetsDir", LauncherPaths.assetsDir().toAbsolutePath().toString());
@@ -80,7 +84,7 @@ public class GameLauncher {
     }
 
     private Map<String, String> buildPlaceholders(Instance instance, Path gameDir, Path nativesDir,
-                                                    ResolvedVersion version, Account account, String classpath) {
+                                                  ResolvedVersion version, Account account, String classpath) {
         Map<String, String> m = new LinkedHashMap<>();
         m.put("auth_player_name", account.username);
         m.put("version_name", version.id);
@@ -88,13 +92,13 @@ public class GameLauncher {
         m.put("assets_root", LauncherPaths.assetsDir().toAbsolutePath().toString());
         m.put("assets_index_name", version.assetIndexId != null ? version.assetIndexId : "legacy");
         m.put("auth_uuid", stripDashes(account.uuid));
-        m.put("auth_access_token", account.type == AccountType.MICROSOFT ? account.mcAccessToken : "0");
-        m.put("user_type", account.type == AccountType.MICROSOFT ? "msa" : "legacy");
+        m.put("auth_access_token", "0");
+        m.put("user_type", "legacy");
         m.put("user_properties", "{}");
-        m.put("auth_session", account.type == AccountType.MICROSOFT ? account.mcAccessToken : "0");
+        m.put("auth_session", "0");
         m.put("version_type", "release");
         m.put("natives_directory", nativesDir.toAbsolutePath().toString());
-        m.put("launcher_name", "MCLauncher");
+        m.put("launcher_name", "Zero Launcher");
         m.put("launcher_version", "1.0.0");
         m.put("classpath", classpath);
         m.put("auth_xuid", "0");
