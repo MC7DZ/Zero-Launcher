@@ -9,11 +9,16 @@ import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import com.launcher.manager.LauncherPaths;
 
+import java.io.File;
+import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
@@ -25,7 +30,7 @@ public class EditInstanceDialog {
         dialog.initOwner(owner);
         dialog.setTitle("Edit Instance — " + inst.name);
         dialog.setHeaderText("Editing: " + inst.name);
-        dialog.getDialogPane().setPrefWidth(520);
+        dialog.getDialogPane().setPrefWidth(560);
 
         var css = EditInstanceDialog.class.getResource("/com/launcher/styles.css");
         if (css != null) dialog.getDialogPane().getStylesheets().add(css.toExternalForm());
@@ -35,9 +40,56 @@ public class EditInstanceDialog {
         ButtonType saveBtn = new ButtonType("Save Changes", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(saveBtn, ButtonType.CANCEL);
 
-        // ─────────────────────────────────────────────────────────────────────
-        //  Fields (pre-populated)
-        // ─────────────────────────────────────────────────────────────────────
+        TabPane tabs = new TabPane();
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        // ═════════════════════════════════════════════════════════════════════
+        //  TAB 1: General
+        // ═════════════════════════════════════════════════════════════════════
+
+        // ── Image picker ──────────────────────────────────────────────────────
+        final String[] chosenImagePath = {inst.imagePath};
+
+        ImageView instanceIconView = new ImageView();
+        instanceIconView.setFitWidth(64);
+        instanceIconView.setFitHeight(64);
+        instanceIconView.setPreserveRatio(true);
+        instanceIconView.setStyle("-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 6, 0, 0, 2);");
+        loadIcon(instanceIconView, inst.imagePath);
+
+        Button changeImageBtn = new Button("Change Image…");
+        changeImageBtn.setStyle("-fx-font-size:11px; -fx-padding:4px 10px;");
+        Button resetImageBtn  = new Button("Reset");
+        resetImageBtn.setStyle("-fx-font-size:11px; -fx-padding:4px 10px;");
+        resetImageBtn.setDisable(inst.imagePath == null);
+
+        changeImageBtn.setOnAction(e -> {
+            FileChooser fc = new FileChooser();
+            fc.setTitle("Choose Instance Image");
+            fc.getExtensionFilters().add(
+                    new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"));
+            File chosen = fc.showOpenDialog(owner);
+            if (chosen != null) {
+                try {
+                    Image img = new Image(chosen.toURI().toString(), 64, 64, true, true);
+                    instanceIconView.setImage(img);
+                    chosenImagePath[0] = chosen.getAbsolutePath();
+                    resetImageBtn.setDisable(false);
+                } catch (Exception ex) {}
+            }
+        });
+        resetImageBtn.setOnAction(e -> {
+            loadIcon(instanceIconView, null);
+            chosenImagePath[0] = null;
+            resetImageBtn.setDisable(true);
+        });
+
+        VBox imgBtnCol = new VBox(6, changeImageBtn, resetImageBtn);
+        imgBtnCol.setAlignment(Pos.CENTER_LEFT);
+        HBox imageRow = new HBox(14, instanceIconView, imgBtnCol);
+        imageRow.setAlignment(Pos.CENTER_LEFT);
+
+        // ── Other general fields ──────────────────────────────────────────────
         TextField nameField = new TextField(inst.name);
 
         ComboBox<String> versionBox = new ComboBox<>();
@@ -49,7 +101,7 @@ public class EditInstanceDialog {
 
         ComboBox<ModLoaderType> loaderBox = new ComboBox<>();
         loaderBox.setMaxWidth(Double.MAX_VALUE);
-        loaderBox.getItems().addAll(ModLoaderType.VANILLA, ModLoaderType.FABRIC, ModLoaderType.FORGE);
+        loaderBox.getItems().addAll(ModLoaderType.VANILLA, ModLoaderType.FABRIC, ModLoaderType.QUILT, ModLoaderType.FORGE, ModLoaderType.NEOFORGE);
         loaderBox.setValue(inst.modLoader);
 
         ComboBox<String> loaderVerBox = new ComboBox<>();
@@ -129,16 +181,53 @@ public class EditInstanceDialog {
                 loaderVerBox.getItems().addAll("Recommended", "Latest");
                 loaderVerBox.setValue(inst.modLoaderVersion != null ? inst.modLoaderVersion : "Recommended"); return;
             }
+            if (loader == ModLoaderType.NEOFORGE) {
+                loaderVerBox.setDisable(true); loaderVerBox.setPromptText("Loading…");
+                new Thread(() -> {
+                    try {
+                        String body = com.launcher.util.HttpUtil.getString(
+                                "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge");
+                        com.google.gson.JsonObject root = com.launcher.util.JsonUtil.parse(body).getAsJsonObject();
+                        com.google.gson.JsonArray arr = root.getAsJsonArray("versions");
+                        java.util.List<String> vers = new java.util.ArrayList<>();
+                        String[] parts = mcVer.split("\\.");
+                        String prefix = parts.length >= 2 ? (Integer.parseInt(parts[1]) + ".") : "";
+                        for (var el : arr) { String v = el.getAsString(); if (v.startsWith(prefix)) vers.add(0, v); }
+                        if (vers.isEmpty()) for (var el : arr) vers.add(0, el.getAsString());
+                        Platform.runLater(() -> {
+                            loaderVerBox.getItems().setAll(vers);
+                            loaderVerBox.setValue(inst.modLoaderVersion != null && vers.contains(inst.modLoaderVersion)
+                                    ? inst.modLoaderVersion : (vers.isEmpty() ? null : vers.get(0)));
+                            loaderVerBox.setDisable(false);
+                        });
+                    } catch (Exception ex) { Platform.runLater(() -> { loaderVerBox.setPromptText("Failed to load"); loaderVerBox.setDisable(false); }); }
+                }, "fetch-neoforge-vers").start();
+                return;
+            }
+            // FABRIC or QUILT
             loaderVerBox.setDisable(true); loaderVerBox.setPromptText("Loading…");
+            final boolean isQuilt = loader == ModLoaderType.QUILT;
             new Thread(() -> {
                 try {
-                    List<String> vers = new FabricInstaller().fetchLoaderVersions(mcVer);
+                    java.util.List<String> vers;
+                    if (isQuilt) {
+                        String body = com.launcher.util.HttpUtil.getString(
+                                "https://meta.quiltmc.org/v3/versions/loader/" + mcVer);
+                        com.google.gson.JsonArray arr = com.launcher.util.JsonUtil.parse(body).getAsJsonArray();
+                        vers = new java.util.ArrayList<>();
+                        for (var el : arr)
+                            vers.add(el.getAsJsonObject().getAsJsonObject("loader").get("version").getAsString());
+                    } else {
+                        vers = new FabricInstaller().fetchLoaderVersions(mcVer);
+                    }
+                    final java.util.List<String> fv = vers;
                     Platform.runLater(() -> {
-                        loaderVerBox.getItems().setAll(vers);
-                        loaderVerBox.setValue(inst.modLoaderVersion);
+                        loaderVerBox.getItems().setAll(fv);
+                        loaderVerBox.setValue(inst.modLoaderVersion != null && fv.contains(inst.modLoaderVersion)
+                                ? inst.modLoaderVersion : (fv.isEmpty() ? null : fv.get(0)));
                         loaderVerBox.setDisable(false);
                     });
-                } catch (Exception ex) { Platform.runLater(() -> loaderVerBox.setPromptText("Failed to load")); }
+                } catch (Exception ex) { Platform.runLater(() -> { loaderVerBox.setPromptText("Failed to load"); loaderVerBox.setDisable(false); }); }
             }, "fetch-loader-vers").start();
         };
         loaderBox.valueProperty().addListener((o, a, b) -> loadLoaderVers.run());
@@ -146,7 +235,7 @@ public class EditInstanceDialog {
         loadLoaderVers.run();
 
         // ─────────────────────────────────────────────────────────────────────
-        //  Layout
+        //  Layout — General tab
         // ─────────────────────────────────────────────────────────────────────
         GridPane grid = new GridPane();
         grid.setHgap(12); grid.setVgap(12);
@@ -157,7 +246,11 @@ public class EditInstanceDialog {
         grid.getColumnConstraints().addAll(lCol, rCol, xCol);
 
         int r = 0;
-        addSectionHeader(grid, "General", r++);
+        addSectionHeader(grid, "Appearance", r++, 3);
+        grid.add(fl("Icon"), 0, r);
+        grid.add(imageRow, 1, r++, 2, 1);
+
+        addSectionHeader(grid, "General", r++, 3);
         grid.addRow(r++, fl("Name"),           nameField,    new Label());
         grid.add(fl("MC Version"), 0, r);
         grid.add(versionBox, 1, r);
@@ -165,11 +258,11 @@ public class EditInstanceDialog {
         grid.addRow(r++, fl("Mod loader"),     loaderBox,    new Label());
         grid.addRow(r++, fl("Loader version"), loaderVerBox, new Label());
 
-        addSectionHeader(grid, "Memory", r++);
+        addSectionHeader(grid, "Memory", r++, 3);
         VBox ramBox = new VBox(4, ramSlider, ramLbl);
         grid.addRow(r++, fl("Allocated RAM"),  ramBox,       new Label());
 
-        addSectionHeader(grid, "Directory", r++);
+        addSectionHeader(grid, "Directory", r++, 3);
         grid.add(fl("Game directory"), 0, r);
         grid.add(defaultDirRadio, 1, r++, 2, 1);
         grid.add(customDirRadio, 1, r++, 2, 1);
@@ -177,13 +270,104 @@ public class EditInstanceDialog {
         HBox.setHgrow(customDirField, Priority.ALWAYS);
         grid.add(dirRow, 1, r++, 2, 1);
 
-        addSectionHeader(grid, "Visibility", r++);
+        addSectionHeader(grid, "Visibility", r++, 3);
         grid.add(hiddenCb, 1, r++, 2, 1);
 
         ScrollPane scroll = new ScrollPane(grid);
         scroll.setFitToWidth(true);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        dialog.getDialogPane().setContent(scroll);
+
+        Tab generalTab = new Tab("⚙  General", scroll);
+
+        // ═════════════════════════════════════════════════════════════════════
+        //  TAB 2: Modpack
+        // ═════════════════════════════════════════════════════════════════════
+        final String[] chosenModpackPath = {inst.modpackFilePath};
+
+        Label modpackFileHint = new Label(inst.modpackFilePath != null
+                ? new File(inst.modpackFilePath).getName() : "No file selected");
+        modpackFileHint.setStyle("-fx-font-size:11px; -fx-text-fill:" +
+                (inst.modpackFilePath != null ? "-fx-text-color" : "-fx-text-muted") + ";");
+        modpackFileHint.setWrapText(true);
+
+        Button modpackBrowseBtn = new Button("Browse…");
+        Button modpackClearBtn  = new Button("Clear");
+        modpackClearBtn.setDisable(inst.modpackFilePath == null);
+
+        modpackBrowseBtn.setOnAction(e -> {
+            FileChooser fc = new FileChooser();
+            fc.setTitle("Select Modpack File");
+            fc.getExtensionFilters().addAll(
+                    new FileChooser.ExtensionFilter("Modpack files", "*.mrpack", "*.zip"),
+                    new FileChooser.ExtensionFilter("All files", "*.*"));
+            File chosen = fc.showOpenDialog(owner);
+            if (chosen != null) {
+                chosenModpackPath[0] = chosen.getAbsolutePath();
+                modpackFileHint.setText(chosen.getName());
+                modpackFileHint.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-color;");
+                modpackClearBtn.setDisable(false);
+            }
+        });
+        modpackClearBtn.setOnAction(e -> {
+            chosenModpackPath[0] = null;
+            modpackFileHint.setText("No file selected");
+            modpackFileHint.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
+            modpackClearBtn.setDisable(true);
+        });
+
+        HBox modpackFileBtns = new HBox(8, modpackBrowseBtn, modpackClearBtn);
+        VBox modpackFileBox  = new VBox(6, modpackFileHint, modpackFileBtns);
+
+        // Install path
+        String defaultInstallPath = resolveDefaultModpackPath();
+        TextField installPathField = new TextField(
+                inst.modpackInstallPath != null ? inst.modpackInstallPath : defaultInstallPath);
+        HBox.setHgrow(installPathField, Priority.ALWAYS);
+
+        Button installPathBrowseBtn = new Button("Browse…");
+        installPathBrowseBtn.setOnAction(e -> {
+            DirectoryChooser dc = new DirectoryChooser();
+            dc.setTitle("Choose Install Location");
+            try { File f = new File(installPathField.getText()); if (f.exists()) dc.setInitialDirectory(f); } catch (Exception ignored) {}
+            File chosen = dc.showDialog(owner);
+            if (chosen != null) installPathField.setText(chosen.getAbsolutePath());
+        });
+        Button resetInstallPathBtn = new Button("Reset");
+        resetInstallPathBtn.setOnAction(e -> installPathField.setText(defaultInstallPath));
+
+        HBox installPathRow = new HBox(8, installPathField, installPathBrowseBtn, resetInstallPathBtn);
+        installPathRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label modpackInfoLabel = new Label("Supported formats: .mrpack (Modrinth) and .zip modpacks.");
+        modpackInfoLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
+        modpackInfoLabel.setWrapText(true);
+
+        GridPane modpackGrid = new GridPane();
+        modpackGrid.setHgap(12); modpackGrid.setVgap(12);
+        modpackGrid.setPadding(new Insets(20));
+        ColumnConstraints lColM = new ColumnConstraints(); lColM.setMinWidth(140); lColM.setHgrow(Priority.NEVER);
+        ColumnConstraints rColM = new ColumnConstraints(); rColM.setHgrow(Priority.ALWAYS);
+        modpackGrid.getColumnConstraints().addAll(lColM, rColM);
+
+        int mr = 0;
+        addSectionHeader(modpackGrid, "Modpack File", mr++, 2);
+        modpackGrid.add(fl("File (.mrpack / .zip)"), 0, mr);
+        modpackGrid.add(modpackFileBox, 1, mr++);
+        addSectionHeader(modpackGrid, "Install Location", mr++, 2);
+        modpackGrid.add(fl("Install path"), 0, mr);
+        modpackGrid.add(installPathRow, 1, mr++);
+        modpackGrid.add(modpackInfoLabel, 0, mr++, 2, 1);
+
+        ScrollPane modpackScroll = new ScrollPane(modpackGrid);
+        modpackScroll.setFitToWidth(true);
+        modpackScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+
+        Tab modpackTab = new Tab("📦  Modpack", modpackScroll);
+        tabs.getTabs().addAll(generalTab, modpackTab);
+        dialog.getDialogPane().setContent(tabs);
+
+        dialog.getDialogPane().getScene().getWindow().setOnShown(ev ->
+                ((javafx.stage.Stage) dialog.getDialogPane().getScene().getWindow()).setResizable(true));
 
         // ─────────────────────────────────────────────────────────────────────
         //  Result converter
@@ -198,15 +382,29 @@ public class EditInstanceDialog {
             inst.ramMb            = (int) ramSlider.getValue();
             inst.hidden           = hiddenCb.isSelected();
 
-            if (defaultDirRadio.isSelected()) {
+            // Image
+            inst.imagePath = chosenImagePath[0];
+
+            // Modpack
+            inst.modpackFilePath = chosenModpackPath[0];
+            if (chosenModpackPath[0] != null) {
+                String installPath = installPathField.getText().isBlank() ? defaultInstallPath : installPathField.getText();
+                inst.modpackInstallPath  = installPath;
+                // Game directory follows modpack install path automatically
                 inst.useCustomDirectory  = true;
-                inst.customDirectoryPath = LauncherPaths.getDefaultMinecraftPath().toAbsolutePath().toString();
-            } else if (customDirRadio.isSelected()) {
-                inst.useCustomDirectory  = true;
-                inst.customDirectoryPath = customDirField.getText();
+                inst.customDirectoryPath = installPath;
             } else {
-                inst.useCustomDirectory  = false;
-                inst.customDirectoryPath = null;
+                inst.modpackInstallPath = null;
+                if (defaultDirRadio.isSelected()) {
+                    inst.useCustomDirectory  = true;
+                    inst.customDirectoryPath = LauncherPaths.getDefaultMinecraftPath().toAbsolutePath().toString();
+                } else if (customDirRadio.isSelected()) {
+                    inst.useCustomDirectory  = true;
+                    inst.customDirectoryPath = customDirField.getText();
+                } else {
+                    inst.useCustomDirectory  = false;
+                    inst.customDirectoryPath = null;
+                }
             }
             return inst;
         });
@@ -214,14 +412,35 @@ public class EditInstanceDialog {
         return dialog.showAndWait();
     }
 
-    private static void addSectionHeader(GridPane grid, String text, int row) {
+    private static String resolveDefaultModpackPath() {
+        try {
+            return Path.of(System.getProperty("user.home", "."))
+                       .resolve(".minecraft").resolve("ModPacks").toAbsolutePath().toString();
+        } catch (Exception e) { return ".minecraft/ModPacks"; }
+    }
+
+    private static void loadIcon(ImageView view, String imagePath) {
+        if (imagePath != null && !imagePath.isBlank()) {
+            try {
+                File f = new File(imagePath);
+                if (f.exists()) { view.setImage(new Image(f.toURI().toString(), 64, 64, true, true)); return; }
+            } catch (Exception ignored) {}
+        }
+        try {
+            InputStream is = EditInstanceDialog.class.getResourceAsStream("/com/launcher/DefaultInstanceIcon.png");
+            if (is != null) { view.setImage(new Image(is, 64, 64, true, true)); return; }
+        } catch (Exception ignored) {}
+        view.setImage(null);
+    }
+
+    private static void addSectionHeader(GridPane grid, String text, int row, int colspan) {
         Label l = new Label(text.toUpperCase());
         l.setStyle("-fx-font-size:10px; -fx-font-weight:bold; -fx-text-fill:-fx-text-muted; -fx-letter-spacing:1.5px; -fx-padding:8px 0 2px 0;");
         Separator sep = new Separator();
         HBox h = new HBox(8, l, sep);
         HBox.setHgrow(sep, Priority.ALWAYS);
         h.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        grid.add(h, 0, row, 3, 1);
+        grid.add(h, 0, row, colspan, 1);
     }
 
     private static Label fl(String text) {

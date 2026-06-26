@@ -33,6 +33,20 @@ public class Main extends Application {
     private final InstanceManager instanceManager = new InstanceManager();
 
     private Stage primaryStage;
+
+    /**
+     * Runs {@code action} while preserving the primary stage's maximized state.
+     * JavaFX restores (un-maximizes) the owner window when a child Dialog or
+     * FileChooser is shown; this wrapper saves and re-applies the flag so the
+     * launcher stays maximized.
+     */
+    private void withMaximizeGuard(Runnable action) {
+        boolean wasMaximized = primaryStage != null && primaryStage.isMaximized();
+        action.run();
+        if (wasMaximized && primaryStage != null && !primaryStage.isMaximized()) {
+            primaryStage.setMaximized(true);
+        }
+    }
     private final java.util.concurrent.ConcurrentLinkedQueue<String> logQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private volatile boolean logFlushScheduled = false;
     private volatile boolean isMinimized = false;
@@ -53,10 +67,10 @@ public class Main extends Application {
     private Button installDawnButton;
     private Button deleteDawnButton;
 
-    // Dawn client JAR is stored next to game assets: <gameDir>/dawn/dawn.jar
-    private static final String DAWN_JAR_NAME = "dawn.jar";
+    // Dawn client JAR is stored in the instance's mods folder
+    private static final String DAWN_JAR_NAME = "dawn-standalone.jar";
     private static final String DAWN_DOWNLOAD_URL =
-            "https://github.com/Dawn-Client/Dawn/releases/latest/download/dawn.jar";
+            "https://cdn.dawn.gg/files/standalone/libraries/dawn-standalone.jar";
 
     @Override
     public void start(Stage stage) {
@@ -230,18 +244,22 @@ public class Main extends Application {
         });
 
         // ── wire toolbar buttons ──────────────────────────────────────────────
-        newBtn.setOnAction(e -> CreateInstanceDialog.show(stage).ifPresent(inst -> {
-            instanceManager.add(inst);
-            refreshInstances();
-        }));
+        newBtn.setOnAction(e -> withMaximizeGuard(() ->
+            CreateInstanceDialog.show(stage).ifPresent(inst -> {
+                instanceManager.add(inst);
+                refreshInstances();
+            })
+        ));
 
         editBtn.setOnAction(e -> {
             Instance sel = instanceList.getSelectionModel().getSelectedItem();
             if (sel == null) { log("Select an instance to edit."); return; }
-            EditInstanceDialog.show(stage, sel).ifPresent(upd -> {
-                instanceManager.update(upd);
-                refreshInstances();
-            });
+            withMaximizeGuard(() ->
+                EditInstanceDialog.show(stage, sel).ifPresent(upd -> {
+                    instanceManager.update(upd);
+                    refreshInstances();
+                })
+            );
         });
 
         delBtn.setOnAction(e -> {
@@ -253,12 +271,23 @@ public class Main extends Application {
             Instance sel = instanceList.getSelectionModel().getSelectedItem();
             if (sel == null) { log("Select an instance first."); return; }
             Path gameDir = instanceManager.resolveGameDir(sel);
-            try {
-                if (!Files.exists(gameDir)) Files.createDirectories(gameDir);
-                java.awt.Desktop.getDesktop().open(gameDir.toFile());
-            } catch (Exception ex) {
-                log("Could not open folder: " + ex.getMessage());
-            }
+            withMaximizeGuard(() -> {
+                try {
+                    if (!Files.exists(gameDir)) Files.createDirectories(gameDir);
+                    String os = System.getProperty("os.name", "").toLowerCase();
+                    ProcessBuilder pb;
+                    if (os.contains("win")) {
+                        pb = new ProcessBuilder("explorer.exe", gameDir.toAbsolutePath().toString());
+                    } else if (os.contains("mac")) {
+                        pb = new ProcessBuilder("open", gameDir.toAbsolutePath().toString());
+                    } else {
+                        pb = new ProcessBuilder("xdg-open", gameDir.toAbsolutePath().toString());
+                    }
+                    pb.start();
+                } catch (Exception ex) {
+                    log("Could not open folder: " + ex.getMessage());
+                }
+            });
         });
 
         playButton.setOnAction(e -> {
@@ -303,7 +332,7 @@ public class Main extends Application {
     // ══════════════════════════════════════════════════════════════════════════
     private Path getDawnJarPath(Instance instance) {
         Path gameDir = instanceManager.resolveGameDir(instance);
-        return gameDir.resolve("dawn").resolve(DAWN_JAR_NAME);
+        return gameDir.resolve("mods").resolve(DAWN_JAR_NAME);
     }
 
     private void updateDawnStatus(Instance instance) {
@@ -351,8 +380,6 @@ public class Main extends Application {
         Path dawnJar = getDawnJarPath(instance);
         try {
             Files.deleteIfExists(dawnJar);
-            // Remove empty dawn dir if applicable
-            try { Files.deleteIfExists(dawnJar.getParent()); } catch (Exception ignored) {}
             log("Dawn Client removed from: " + instance.name);
         } catch (Exception ex) {
             log("Failed to remove Dawn Client: " + ex.getMessage());
@@ -367,6 +394,35 @@ public class Main extends Application {
             super.updateItem(i, empty);
             if (empty || i == null) { setGraphic(null); setText(null); return; }
 
+            // ── Instance icon ─────────────────────────────────────────────────
+            javafx.scene.image.ImageView iconView = new javafx.scene.image.ImageView();
+            iconView.setFitWidth(40);
+            iconView.setFitHeight(40);
+            iconView.setPreserveRatio(true);
+            iconView.setSmooth(true);
+            // clip to rounded rectangle
+            javafx.scene.shape.Rectangle clip = new javafx.scene.shape.Rectangle(40, 40);
+            clip.setArcWidth(8); clip.setArcHeight(8);
+            iconView.setClip(clip);
+
+            boolean iconLoaded = false;
+            if (i.imagePath != null && !i.imagePath.isBlank()) {
+                try {
+                    java.io.File f = new java.io.File(i.imagePath);
+                    if (f.exists()) {
+                        iconView.setImage(new javafx.scene.image.Image(f.toURI().toString(), 40, 40, true, true));
+                        iconLoaded = true;
+                    }
+                } catch (Exception ignored) {}
+            }
+            if (!iconLoaded) {
+                try {
+                    java.io.InputStream is = getClass().getResourceAsStream("/com/launcher/DefaultInstanceIcon.png");
+                    if (is != null) iconView.setImage(new javafx.scene.image.Image(is, 40, 40, true, true));
+                } catch (Exception ignored) {}
+            }
+
+            // ── Status dot ────────────────────────────────────────────────────
             Circle dot = new Circle(5);
             dot.setFill(i.installed ? Color.web("#10b981") : Color.web("#f59e0b"));
             Tooltip.install(dot, new Tooltip(i.installed ? "Installed" : "Not installed"));
@@ -381,7 +437,12 @@ public class Main extends Application {
             tags.setAlignment(Pos.CENTER_LEFT);
 
             if (i.modLoader != ModLoaderType.VANILLA) {
-                String loaderColor = i.modLoader == ModLoaderType.FABRIC ? "#dda0dd" : "#f97316";
+                String loaderColor = switch (i.modLoader) {
+                    case FABRIC   -> "#dda0dd";
+                    case QUILT    -> "#c084fc";
+                    case NEOFORGE -> "#e76e39";
+                    default       -> "#f97316"; // FORGE
+                };
                 Label loaderTag = new Label(i.modLoader.toString()
                         + (i.modLoaderVersion != null ? " " + i.modLoaderVersion : ""));
                 loaderTag.getStyleClass().add("tag-loader");
@@ -393,6 +454,13 @@ public class Main extends Application {
             Label ramTag = new Label(ramGb + " GB RAM");
             ramTag.getStyleClass().add("tag-ram");
             tags.getChildren().add(ramTag);
+
+            // Modpack indicator
+            if (i.modpackFilePath != null && !i.modpackFilePath.isBlank()) {
+                Label mpTag = new Label("Modpack");
+                mpTag.setStyle("-fx-background-color:#0891b2; -fx-text-fill:#ffffff; -fx-font-size:10px; -fx-padding:2px 6px; -fx-background-radius:4px; -fx-font-weight:bold;");
+                tags.getChildren().add(mpTag);
+            }
 
             // Dawn indicator
             if (Files.exists(getDawnJarPath(i))) {
@@ -406,8 +474,12 @@ public class Main extends Application {
             Label pathLbl = new Label(sanitizePrivacy(dirStr));
             pathLbl.getStyleClass().add("instance-path");
 
-            VBox card = new VBox(5, name, tags, pathLbl);
+            VBox textCol = new VBox(5, name, tags, pathLbl);
+
+            HBox card = new HBox(12, iconView, textCol);
             card.setPadding(new Insets(8, 12, 8, 12));
+            card.setAlignment(Pos.CENTER_LEFT);
+            HBox.setHgrow(textCol, Priority.ALWAYS);
 
             setGraphic(card);
             setText(null);
@@ -528,7 +600,7 @@ public class Main extends Application {
         useBgImg.setOnAction(e -> { s.useBackgroundImage = useBgImg.isSelected(); mgr.save(); applyTheme(scene, s); });
 
         Button chooseImg = new Button("Choose Image…");
-        chooseImg.setOnAction(e -> {
+        chooseImg.setOnAction(e -> withMaximizeGuard(() -> {
             javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
             fc.setTitle("Background Image");
             fc.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("Images","*.png","*.jpg","*.jpeg","*.bmp","*.gif"));
@@ -540,7 +612,7 @@ public class Main extends Application {
                 imgNote.setText("Image: " + f.getName());
                 mgr.save(); applyTheme(scene, s);
             }
-        });
+        }));
         Button clearImg = new Button("Remove Image");
         clearImg.setOnAction(e -> {
             s.backgroundImagePath = ""; s.useBackgroundImage = false;
@@ -622,7 +694,16 @@ public class Main extends Application {
             try {
                 Path dir = LauncherPaths.instancesFile().getParent();
                 if (!Files.exists(dir)) Files.createDirectories(dir);
-                java.awt.Desktop.getDesktop().open(dir.toFile());
+                String os = System.getProperty("os.name", "").toLowerCase();
+                ProcessBuilder pb;
+                if (os.contains("win")) {
+                    pb = new ProcessBuilder("explorer.exe", dir.toAbsolutePath().toString());
+                } else if (os.contains("mac")) {
+                    pb = new ProcessBuilder("open", dir.toAbsolutePath().toString());
+                } else {
+                    pb = new ProcessBuilder("xdg-open", dir.toAbsolutePath().toString());
+                }
+                pb.start();
             } catch (Exception ex) { log("Could not open data folder: " + ex.getMessage()); }
         });
         about.getChildren().addAll(aboutTitle, aboutInfo, openDataDir);

@@ -22,6 +22,13 @@ public class Instance {
     public long createdAt = System.currentTimeMillis();
     public long playTimeSeconds = 0;
 
+    // Instance image (absolute path to a user-selected image, or null to use default)
+    public String imagePath;
+
+    // Modpack installation fields
+    public String modpackFilePath;       // absolute path to the .mrpack or .zip file
+    public String modpackInstallPath;    // directory where the modpack is installed
+
     public Instance() {}
 
     public Instance(String name, String mcVersion, ModLoaderType loader, String loaderVersion) {
