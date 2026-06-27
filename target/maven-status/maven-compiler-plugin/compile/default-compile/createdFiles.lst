@@ -9,6 +9,7 @@ com/launcher/manager/LauncherPaths.class
 com/launcher/minecraft/ResolvedVersion.class
 com/launcher/Main.class
 com/launcher/manager/InstanceManager.class
+com/launcher/MainWrapper.class
 com/launcher/Main$2.class
 com/launcher/minecraft/GameLauncher.class
 com/launcher/util/JsonUtil.class
