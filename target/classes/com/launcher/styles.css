@@ -431,3 +431,78 @@
     -fx-font-size: 10px;
     -fx-text-fill: -fx-text-muted;
 }
+
+/* ── MOD CARD (ListView cell in Mods tab) ───────────────────── */
+.mod-card {
+    -fx-background-color: -fx-surface;
+    -fx-background-radius: 10px;
+    -fx-border-color: -fx-border-subtle;
+    -fx-border-radius: 10px;
+    -fx-border-width: 1px;
+    -fx-padding: 10px 14px;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.15), 4, 0, 0, 1);
+}
+.mod-card:hover {
+    -fx-background-color: -fx-surface-hover;
+    -fx-border-color: rgba(255,255,255,0.14);
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 8, 0, 0, 2);
+}
+.mod-card-selected {
+    -fx-background-color: -fx-accent-dim;
+    -fx-border-color: rgba(16,185,129,0.5);
+    -fx-effect: dropshadow(gaussian, rgba(16,185,129,0.2), 8, 0, 0, 2);
+}
+.mod-name {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #ffffff;
+}
+.mod-file {
+    -fx-font-size: 10px;
+    -fx-text-fill: -fx-text-muted;
+}
+.mod-version {
+    -fx-font-size: 10px;
+    -fx-text-fill: rgba(255,255,255,0.55);
+}
+.mod-status-uptodate {
+    -fx-background-color: rgba(16,185,129,0.15);
+    -fx-text-fill: #10b981;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 2px 8px;
+    -fx-background-radius: 4px;
+}
+.mod-status-update {
+    -fx-background-color: rgba(245,158,11,0.15);
+    -fx-text-fill: #f59e0b;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 2px 8px;
+    -fx-background-radius: 4px;
+}
+.mod-status-unknown {
+    -fx-background-color: rgba(255,255,255,0.06);
+    -fx-text-fill: -fx-text-muted;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 2px 8px;
+    -fx-background-radius: 4px;
+}
+.mod-status-checking {
+    -fx-background-color: rgba(99,102,241,0.15);
+    -fx-text-fill: #818cf8;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 2px 8px;
+    -fx-background-radius: 4px;
+}
+.mod-status-error {
+    -fx-background-color: rgba(239,68,68,0.12);
+    -fx-text-fill: #ef4444;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 2px 8px;
+    -fx-background-radius: 4px;
+}

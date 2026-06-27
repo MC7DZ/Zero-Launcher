@@ -10,6 +10,7 @@ import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 import java.util.function.Consumer;
 
@@ -19,8 +20,9 @@ public class LoginDialog {
         Stage stage = new Stage();
         stage.initOwner(owner);
         stage.initModality(Modality.WINDOW_MODAL);
+        stage.initStyle(StageStyle.DECORATED);   // decorated = has title bar → moveable
         stage.setTitle("Add Account");
-        stage.setResizable(false);
+        stage.setResizable(true);
 
         // ── Header ────────────────────────────────────────────────────────────
         Label heading = new Label("Add Account");
@@ -46,7 +48,7 @@ public class LoginDialog {
 
         // ── Buttons ───────────────────────────────────────────────────────────
         Button addBtn    = new Button("Add Offline Account");
-        addBtn.setId("playButton");         // reuse the accent play-button style
+        addBtn.setId("playButton");
         addBtn.setPrefWidth(180);
 
         Button cancelBtn = new Button("Cancel");
@@ -68,7 +70,6 @@ public class LoginDialog {
             }
         });
 
-        // Allow Enter key to submit
         usernameField.setOnAction(e -> addBtn.fire());
 
         HBox btnRow = new HBox(8, cancelBtn, addBtn);
@@ -77,15 +78,19 @@ public class LoginDialog {
         VBox form = new VBox(10, userLabel, usernameField, note, errorLabel, btnRow);
         form.setPadding(new Insets(20));
 
-        // ── Root ─────────────────────────────────────────────────────────────
+        // ── Root — solid panel background, no background image ────────────────
         VBox root = new VBox(header, form);
 
-        Scene scene = new Scene(root, 420, 280);
+        Scene scene = new Scene(root, 440, 310);
         var css = LoginDialog.class.getResource("/com/launcher/styles.css");
         if (css != null) scene.getStylesheets().add(css.toExternalForm());
 
-        com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        com.launcher.model.LauncherSettings settings =
+                com.launcher.manager.SettingsManager.getInstance().getSettings();
+        // Apply theme colors but suppress background image
         Main.applyThemeToPane(root, settings);
+        root.setStyle(root.getStyle() + "; -fx-background-image: none;"
+                + " -fx-background-color: -fx-panel-background;");
 
         stage.setScene(scene);
         stage.showAndWait();

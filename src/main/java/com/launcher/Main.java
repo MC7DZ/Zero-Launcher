@@ -6,6 +6,7 @@ import com.launcher.manager.InstanceManager;
 import com.launcher.minecraft.*;
 import com.launcher.model.Account;
 import com.launcher.model.Instance;
+import com.launcher.model.ModEntry;
 import com.launcher.model.ModLoaderType;
 import com.launcher.ui.CreateInstanceDialog;
 import com.launcher.ui.EditInstanceDialog;
@@ -24,6 +25,7 @@ import javafx.stage.Stage;
 
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.util.List;
 import com.launcher.util.JsonUtil;
 import com.launcher.manager.LauncherPaths;
 
@@ -72,6 +74,29 @@ public class Main extends Application {
     private static final String DAWN_DOWNLOAD_URL =
             "https://cdn.dawn.gg/files/standalone/libraries/dawn-standalone.jar";
 
+    // ─── Mods tab ─────────────────────────────────────────────────────────────
+    private Label modsHeaderLabel;
+    private Label modsCountLabel;
+    private ListView<ModEntry> modsList;
+    private TextField modsSearchField;
+    private Button checkUpdatesBtn;
+    private Button updateAllBtn;
+    private Button updateSelectedBtn;
+    private Button refreshModsBtn;
+    private Button deleteModBtn;
+    private Button dedupeModsBtn;
+    private List<ModEntry> currentModEntries = new java.util.ArrayList<>();
+
+    // Mod icons are loaded asynchronously (Modrinth) and cached by URL so list
+    // cells don't re-request the same image every time they're recycled.
+    private final java.util.Map<String, Image> modIconCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private Image defaultModIcon;
+
+    // ─── Transparent / blur backdrop ──────────────────────────────────────────
+    // Sits behind the real UI inside sceneRoot; paints the background color/image
+    // and, when enabled, a blurred backdrop so panels can be made translucent.
+    private javafx.scene.layout.StackPane backdropLayer;
+
     @Override
     public void start(Stage stage) {
         this.primaryStage = stage;
@@ -88,11 +113,25 @@ public class Main extends Application {
         TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
-        Scene scene = new Scene(root, 960, 660);
+        // Wrap root in a StackPane so a backdrop layer can sit behind it.
+        // The backdrop paints the background color/image and (when the
+        // transparent/blur effect is enabled) a blurred backdrop, while
+        // panels above it become translucent so it shows through.
+        javafx.scene.layout.StackPane sceneRoot = new javafx.scene.layout.StackPane();
+        backdropLayer = new javafx.scene.layout.StackPane();
+        backdropLayer.setMouseTransparent(true);
+        backdropLayer.setPickOnBounds(false);
+        sceneRoot.getChildren().addAll(backdropLayer, root);
+
+        com.launcher.model.LauncherSettings initSettings = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        int initW = (initSettings.launcherWidth  >= 820) ? initSettings.launcherWidth  : 960;
+        int initH = (initSettings.launcherHeight >= 560) ? initSettings.launcherHeight : 660;
+        Scene scene = new Scene(sceneRoot, initW, initH);
 
         Tab instancesTab = new Tab("⚡  Instances", buildInstanceArea(stage));
+        Tab modsTab      = new Tab("📦  Mods",      buildModsArea());
         Tab settingsTab  = new Tab("⚙  Settings",  buildSettingsArea(scene));
-        tabPane.getTabs().addAll(instancesTab, settingsTab);
+        tabPane.getTabs().addAll(instancesTab, modsTab, settingsTab);
 
         root.setCenter(tabPane);
         root.setBottom(buildLogArea());
@@ -178,7 +217,7 @@ public class Main extends Application {
         note.setStyle("-fx-font-size:10px; -fx-text-fill:-fx-text-muted; -fx-padding:0 0 6px 20px;");
 
         VBox container = new VBox(bar, note);
-        container.setStyle("-fx-background-color:-fx-panel-background; -fx-border-color:transparent transparent -fx-border-subtle transparent; -fx-border-width:0 0 1px 0;");
+        container.setStyle("-fx-background-color:-fx-panel-background; -fx-background-image: none; -fx-border-color:transparent transparent -fx-border-subtle transparent; -fx-border-width:0 0 1px 0;");
         return container;
     }
 
@@ -241,6 +280,7 @@ public class Main extends Application {
         // ── selection listener ────────────────────────────────────────────────
         instanceList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             updateDawnStatus(newVal);
+            refreshModsView(newVal);
         });
 
         // ── wire toolbar buttons ──────────────────────────────────────────────
@@ -248,6 +288,10 @@ public class Main extends Application {
             CreateInstanceDialog.show(stage).ifPresent(inst -> {
                 instanceManager.add(inst);
                 refreshInstances();
+                // Extract modpack if one was selected
+                if (inst.modpackFilePath != null && !inst.modpackFilePath.isBlank()) {
+                    extractModpack(inst);
+                }
             })
         ));
 
@@ -264,7 +308,122 @@ public class Main extends Application {
 
         delBtn.setOnAction(e -> {
             Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel != null) { instanceManager.remove(sel); refreshInstances(); }
+            if (sel == null) { log("Select an instance to delete."); return; }
+
+            // Determine whether the instance lives directly inside .minecraft
+            // (scanned vanilla install) vs. a subdirectory (modpack/custom path).
+            Path defaultMcPath = com.launcher.manager.LauncherPaths.getDefaultMinecraftPath();
+            Path gameDir2      = instanceManager.resolveGameDir(sel);
+            boolean isModpack  = sel.modpackInstallPath != null && !sel.modpackInstallPath.isBlank();
+
+            // Effective directory that "owns" this instance on disk
+            Path effectiveDir  = isModpack ? java.nio.file.Path.of(sel.modpackInstallPath) : gameDir2;
+
+            // True when the instance IS the root .minecraft folder (scanned vanilla).
+            // In this case deleting the whole folder would break the user's real Minecraft,
+            // so we only delete the version jar file(s) for that instance.
+            final boolean isRootMinecraft;
+            boolean _rootCheck;
+            try {
+                _rootCheck = Files.exists(effectiveDir)
+                        && effectiveDir.toRealPath().equals(defaultMcPath.toRealPath());
+            } catch (Exception ignored) {
+                _rootCheck = effectiveDir.toAbsolutePath().equals(defaultMcPath.toAbsolutePath());
+            }
+            isRootMinecraft = _rootCheck;
+
+            // Build description for the dialog so the user knows what will happen
+            String deleteLabel;
+            String deleteDescription;
+            if (isRootMinecraft) {
+                deleteLabel = "Delete Instance Jar Only";
+                deleteDescription = "This instance points to your .minecraft folder.\n"
+                        + "Only the version jar file(s) for \"" + sel.name + "\" will be deleted.\n"
+                        + "Your saves, mods, and other versions are NOT affected.";
+            } else {
+                deleteLabel = "Delete Instance Files";
+                deleteDescription = "All files in the instance folder will be permanently deleted:\n"
+                        + effectiveDir.toAbsolutePath();
+            }
+
+            Alert alert = new Alert(Alert.AlertType.NONE);
+            alert.initOwner(stage);
+            alert.setTitle("Delete Instance");
+            alert.setHeaderText("Delete \"" + sel.name + "\"?");
+            alert.setContentText(deleteDescription);
+
+            ButtonType removeLauncherOnly = new ButtonType("Remove from Launcher Only",
+                    ButtonBar.ButtonData.LEFT);
+            ButtonType deleteFiles        = new ButtonType(deleteLabel,
+                    ButtonBar.ButtonData.OTHER);
+            ButtonType cancel             = new ButtonType("Cancel",
+                    ButtonBar.ButtonData.CANCEL_CLOSE);
+            alert.getButtonTypes().setAll(removeLauncherOnly, deleteFiles, cancel);
+
+            // Style the dialog — NO background image so it stays readable
+            var css2 = getClass().getResource("/com/launcher/styles.css");
+            if (css2 != null) alert.getDialogPane().getStylesheets().add(css2.toExternalForm());
+            com.launcher.model.LauncherSettings alertSettings =
+                    com.launcher.manager.SettingsManager.getInstance().getSettings();
+            applyThemeToPane(alert.getDialogPane(), alertSettings);
+            // Force solid background regardless of user background-image setting
+            alert.getDialogPane().setStyle(alert.getDialogPane().getStyle()
+                    + "; -fx-background-image: none;");
+
+            alert.showAndWait().ifPresent(choice -> {
+                if (choice == cancel) return;
+
+                if (choice == deleteFiles) {
+                    try {
+                        if (isRootMinecraft) {
+                            // ── Safe mode: only delete the version jar(s) for this instance ──
+                            // Version jars live under .minecraft/versions/<mcVersion>/<mcVersion>.jar
+                            String mcVer = sel.mcVersion;
+                            if (mcVer != null && !mcVer.isBlank()) {
+                                Path versionFolder = defaultMcPath.resolve("versions").resolve(mcVer);
+                                Path jarFile = versionFolder.resolve(mcVer + ".jar");
+                                if (Files.exists(jarFile)) {
+                                    Files.delete(jarFile);
+                                    log("Deleted version jar: " + jarFile);
+                                } else {
+                                    log("No version jar found at: " + jarFile);
+                                }
+                            } else {
+                                log("Warning: could not determine MC version to delete jar.");
+                            }
+                        } else {
+                            // ── Full delete: remove the entire instance/modpack folder ──
+                            if (Files.exists(effectiveDir)) {
+                                try (var walk = Files.walk(effectiveDir)) {
+                                    walk.sorted(java.util.Comparator.reverseOrder())
+                                        .map(java.nio.file.Path::toFile)
+                                        .forEach(java.io.File::delete);
+                                }
+                                log("Deleted instance files: " + effectiveDir);
+                            }
+                            // Also clean up launcher-internal cache dir if different
+                            Path launcherInstanceDir =
+                                    com.launcher.manager.LauncherPaths.defaultInstanceDir(sel.id);
+                            if (Files.exists(launcherInstanceDir)
+                                    && !launcherInstanceDir.toAbsolutePath()
+                                                           .equals(effectiveDir.toAbsolutePath())) {
+                                try (var walk2 = Files.walk(launcherInstanceDir)) {
+                                    walk2.sorted(java.util.Comparator.reverseOrder())
+                                         .map(java.nio.file.Path::toFile)
+                                         .forEach(java.io.File::delete);
+                                }
+                                log("Deleted launcher instance dir: " + launcherInstanceDir);
+                            }
+                        }
+                    } catch (Exception ex) {
+                        log("Warning: could not fully delete files — " + ex.getMessage());
+                    }
+                }
+
+                // In both cases, remove from the launcher list
+                instanceManager.remove(sel);
+                refreshInstances();
+            });
         });
 
         openFolderBtn.setOnAction(e -> {
@@ -325,6 +484,472 @@ public class Main extends Application {
 
         root.getChildren().addAll(toolbar, instanceList, dawnSection);
         return root;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  MODS TAB
+    // ══════════════════════════════════════════════════════════════════════════
+    @SuppressWarnings("unchecked")
+    private VBox buildModsArea() {
+        VBox root = new VBox(12);
+        root.setPadding(new Insets(16));
+
+        // ── Header ────────────────────────────────────────────────────────────
+        modsHeaderLabel = new Label("Select an instance to view its mods.");
+        modsHeaderLabel.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:-fx-text-color;");
+
+        modsCountLabel = new Label("");
+        modsCountLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
+
+        VBox headerCol = new VBox(2, modsHeaderLabel, modsCountLabel);
+
+        // ── Toolbar ───────────────────────────────────────────────────────────
+        refreshModsBtn = new Button("🔃  Refresh");
+        checkUpdatesBtn = new Button("🔍  Check for Updates");
+        updateAllBtn = new Button("⬆  Update All");
+        updateSelectedBtn = new Button("⬆  Update Selected");
+        deleteModBtn = new Button("🗑  Delete Mod");
+        dedupeModsBtn = new Button("✦  Remove Duplicates");
+        updateAllBtn.setDisable(true);
+        updateSelectedBtn.setDisable(true);
+        checkUpdatesBtn.setDisable(true);
+        refreshModsBtn.setDisable(true);
+        deleteModBtn.setDisable(true);
+        dedupeModsBtn.setDisable(true);
+        deleteModBtn.getStyleClass().add("btn-danger");
+
+        Region modsToolbarSpacer = new Region();
+        HBox.setHgrow(modsToolbarSpacer, Priority.ALWAYS);
+        HBox modsToolbar = new HBox(8, headerCol, modsToolbarSpacer, deleteModBtn, dedupeModsBtn, refreshModsBtn, checkUpdatesBtn, updateSelectedBtn, updateAllBtn);
+        modsToolbar.setAlignment(Pos.CENTER_LEFT);
+
+        // ── Mods list (modern card-style rows, matching the Instances tab) ────
+        modsList = new ListView<>();
+        modsList.setPlaceholder(new Label("No mods found. Select a modded instance."));
+        modsList.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
+        modsList.setCellFactory(lv -> new ModCell());
+        modsList.getStyleClass().add("mods-list");
+        VBox.setVgrow(modsList, Priority.ALWAYS);
+
+        // ── Wire toolbar buttons ──────────────────────────────────────────────
+        refreshModsBtn.setOnAction(e -> {
+            Instance sel = instanceList.getSelectionModel().getSelectedItem();
+            refreshModsView(sel);
+        });
+
+        checkUpdatesBtn.setOnAction(e -> {
+            Instance sel = instanceList.getSelectionModel().getSelectedItem();
+            if (sel == null) return;
+            checkModUpdates(sel);
+        });
+
+        updateSelectedBtn.setOnAction(e -> {
+            Instance sel = instanceList.getSelectionModel().getSelectedItem();
+            if (sel == null) return;
+            var selectedMods = modsList.getSelectionModel().getSelectedItems();
+            if (selectedMods.isEmpty()) { log("Select mod(s) to update."); return; }
+            updateMods(sel, new java.util.ArrayList<>(selectedMods));
+        });
+
+        updateAllBtn.setOnAction(e -> {
+            Instance sel = instanceList.getSelectionModel().getSelectedItem();
+            if (sel == null) return;
+            updateAllMods(sel);
+        });
+
+        // ── Enable/disable "Update Selected" based on whether any selected
+        //    mod actually has an update available ─────────────────────────────
+        modsList.getSelectionModel().getSelectedItems().addListener(
+                (javafx.collections.ListChangeListener<ModEntry>) c -> {
+                    boolean hasUpdate = modsList.getSelectionModel().getSelectedItems().stream()
+                            .anyMatch(m -> "Update available".equals(m.status));
+                    updateSelectedBtn.setDisable(!hasUpdate);
+                    deleteModBtn.setDisable(modsList.getSelectionModel().getSelectedItems().isEmpty());
+                });
+
+        // ── Delete selected mod(s) ─────────────────────────────────────────
+        deleteModBtn.setOnAction(e -> {
+            Instance sel = instanceList.getSelectionModel().getSelectedItem();
+            if (sel == null) return;
+            var selected = new java.util.ArrayList<>(modsList.getSelectionModel().getSelectedItems());
+            if (selected.isEmpty()) { log("Select mod(s) to delete."); return; }
+
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+            confirm.initOwner(primaryStage);
+            confirm.setTitle("Delete Mod" + (selected.size() > 1 ? "s" : ""));
+            confirm.setHeaderText("Delete " + selected.size() + " selected mod" + (selected.size() > 1 ? "s" : "") + "?");
+            confirm.setContentText("The file(s) will be permanently deleted from the mods folder.");
+            var css3 = getClass().getResource("/com/launcher/styles.css");
+            if (css3 != null) confirm.getDialogPane().getStylesheets().add(css3.toExternalForm());
+            applyThemeToPane(confirm.getDialogPane(),
+                    com.launcher.manager.SettingsManager.getInstance().getSettings());
+            confirm.getDialogPane().setStyle(confirm.getDialogPane().getStyle()
+                    + "; -fx-background-image: none;");
+
+            confirm.showAndWait().ifPresent(bt -> {
+                if (bt != ButtonType.OK) return;
+                int deleted = 0;
+                for (ModEntry mod : selected) {
+                    try {
+                        Files.deleteIfExists(java.nio.file.Path.of(mod.filePath));
+                        deleted++;
+                    } catch (Exception ex) {
+                        log("Could not delete " + mod.fileName + ": " + ex.getMessage());
+                    }
+                }
+                log("Deleted " + deleted + " mod file(s).");
+                refreshModsView(sel);
+            });
+        });
+
+        // ── Remove duplicate mods (keep latest version of each mod) ──────────
+        dedupeModsBtn.setOnAction(e -> {
+            Instance sel = instanceList.getSelectionModel().getSelectedItem();
+            if (sel == null) return;
+            if (currentModEntries.isEmpty()) { log("No mods loaded."); return; }
+
+            java.util.Map<String, java.util.List<ModEntry>> groups = new java.util.LinkedHashMap<>();
+            for (ModEntry mod : currentModEntries) {
+                String key = (mod.modrinthId != null && !mod.modrinthId.isBlank())
+                        ? "id:" + mod.modrinthId
+                        : "name:" + normalizeModBaseName(mod.fileName);
+                groups.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(mod);
+            }
+
+            java.util.List<ModEntry> toDelete = new java.util.ArrayList<>();
+            for (var entry : groups.entrySet()) {
+                var group = entry.getValue();
+                if (group.size() <= 1) continue;
+                group.sort((a, b2) -> {
+                    if (a.currentVersion == null && b2.currentVersion == null) return 0;
+                    if (a.currentVersion == null) return 1;
+                    if (b2.currentVersion == null) return -1;
+                    return compareVersionStrings(b2.currentVersion, a.currentVersion);
+                });
+                toDelete.addAll(group.subList(1, group.size()));
+            }
+
+            if (toDelete.isEmpty()) { log("No duplicate mods found."); return; }
+
+            StringBuilder sb = new StringBuilder();
+            for (ModEntry m : toDelete) sb.append("  \u2022 ").append(m.fileName).append("\n");
+
+            Alert confirm2 = new Alert(Alert.AlertType.CONFIRMATION);
+            confirm2.initOwner(primaryStage);
+            confirm2.setTitle("Remove Duplicates");
+            confirm2.setHeaderText("Remove " + toDelete.size() + " duplicate mod file(s)?");
+            confirm2.setContentText("Older duplicates to delete:\n" + sb);
+            var css4 = getClass().getResource("/com/launcher/styles.css");
+            if (css4 != null) confirm2.getDialogPane().getStylesheets().add(css4.toExternalForm());
+            applyThemeToPane(confirm2.getDialogPane(),
+                    com.launcher.manager.SettingsManager.getInstance().getSettings());
+            confirm2.getDialogPane().setStyle(confirm2.getDialogPane().getStyle()
+                    + "; -fx-background-image: none;");
+
+            confirm2.showAndWait().ifPresent(bt -> {
+                if (bt != ButtonType.OK) return;
+                int removed = 0;
+                for (ModEntry mod : toDelete) {
+                    try {
+                        Files.deleteIfExists(java.nio.file.Path.of(mod.filePath));
+                        removed++;
+                    } catch (Exception ex) {
+                        log("Could not delete " + mod.fileName + ": " + ex.getMessage());
+                    }
+                }
+                log("Removed " + removed + " duplicate mod file(s).");
+                refreshModsView(sel);
+            });
+        });
+
+        // ── Search bar ────────────────────────────────────────────────────────
+        modsSearchField = new TextField();
+        modsSearchField.setPromptText("🔎  Search mods by name…");
+        modsSearchField.getStyleClass().add("search-field");
+        HBox.setHgrow(modsSearchField, Priority.ALWAYS);
+
+        Button clearSearchBtn = new Button("✕");
+        clearSearchBtn.setTooltip(new Tooltip("Clear search"));
+        clearSearchBtn.setStyle("-fx-padding:4px 8px; -fx-font-size:11px;");
+        clearSearchBtn.setVisible(false);
+
+        modsSearchField.textProperty().addListener((obs, oldV, newV) -> {
+            clearSearchBtn.setVisible(newV != null && !newV.isBlank());
+            applyModsFilter(newV);
+        });
+        clearSearchBtn.setOnAction(e -> modsSearchField.clear());
+
+        HBox searchRow = new HBox(6, modsSearchField, clearSearchBtn);
+        searchRow.setAlignment(Pos.CENTER_LEFT);
+
+        root.getChildren().addAll(modsToolbar, searchRow, modsList);
+        return root;
+    }
+
+    /** Strips version suffixes from a mod filename to get a comparable base name. */
+    private String normalizeModBaseName(String fileName) {
+        if (fileName == null) return "";
+        String n = fileName.replaceAll("(?i)\\.jar$", "");
+        n = n.replaceAll("(?i)[-_](mc|fabric|forge|quilt|neoforge)[\\d._-]*", "");
+        n = n.replaceAll("[-_]\\d+[\\d._]*.*$", "");
+        return n.toLowerCase();
+    }
+
+    /** Simple best-effort semantic version comparator. */
+    private int compareVersionStrings(String a, String b) {
+        String[] pa = a.split("[.\\-]");
+        String[] pb = b.split("[.\\-]");
+        int len = Math.max(pa.length, pb.length);
+        for (int i = 0; i < len; i++) {
+            String sa = i < pa.length ? pa[i].replaceAll("[^0-9]", "") : "0";
+            String sb2 = i < pb.length ? pb[i].replaceAll("[^0-9]", "") : "0";
+            if (sa.isEmpty()) sa = "0";
+            if (sb2.isEmpty()) sb2 = "0";
+            try {
+                int diff = Integer.compare(Integer.parseInt(sa), Integer.parseInt(sb2));
+                if (diff != 0) return diff;
+            } catch (NumberFormatException ignored) {
+                int diff = sa.compareTo(sb2);
+                if (diff != 0) return diff;
+            }
+        }
+        return 0;
+    }
+
+    /** Card-style cell for the Mods list — icon, name, file/version, and a status badge. */
+    private class ModCell extends ListCell<ModEntry> {
+        private final javafx.scene.image.ImageView iconView = new javafx.scene.image.ImageView();
+        private final Label nameLabel = new Label();
+        private final Label fileLabel = new Label();
+        private final Label versionLabel = new Label();
+        private final Label sizeLabel = new Label();
+        private final Label statusBadge = new Label();
+        private final HBox card;
+
+        ModCell() {
+            iconView.setFitWidth(36);
+            iconView.setFitHeight(36);
+            iconView.setPreserveRatio(true);
+            iconView.setSmooth(true);
+            javafx.scene.shape.Rectangle clip = new javafx.scene.shape.Rectangle(36, 36);
+            clip.setArcWidth(9);
+            clip.setArcHeight(9);
+            iconView.setClip(clip);
+
+            nameLabel.getStyleClass().add("mod-name");
+            fileLabel.getStyleClass().add("mod-file");
+            versionLabel.getStyleClass().add("mod-version");
+            sizeLabel.getStyleClass().add("mod-file");
+
+            HBox metaRow = new HBox(8, fileLabel, versionLabel);
+            metaRow.setAlignment(Pos.CENTER_LEFT);
+
+            VBox textCol = new VBox(4, nameLabel, metaRow);
+            textCol.setAlignment(Pos.CENTER_LEFT);
+            HBox.setHgrow(textCol, Priority.ALWAYS);
+
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+
+            VBox rightCol = new VBox(6, statusBadge, sizeLabel);
+            rightCol.setAlignment(Pos.CENTER_RIGHT);
+
+            card = new HBox(12, iconView, textCol, spacer, rightCol);
+            card.setAlignment(Pos.CENTER_LEFT);
+            card.getStyleClass().add("mod-card");
+
+            setText(null);
+            setStyle("-fx-padding:0; -fx-background-color:transparent;");
+        }
+
+        @Override
+        protected void updateItem(ModEntry mod, boolean empty) {
+            super.updateItem(mod, empty);
+            if (empty || mod == null) {
+                setGraphic(null);
+                return;
+            }
+
+            nameLabel.setText(mod.displayName());
+            fileLabel.setText(mod.fileName);
+            versionLabel.setText(mod.currentVersion != null && !mod.currentVersion.isBlank()
+                    ? "v" + mod.currentVersion : "");
+            sizeLabel.setText(mod.formattedSize());
+
+            String status = mod.status != null ? mod.status : "Unknown";
+            statusBadge.setText(status);
+            statusBadge.getStyleClass().removeAll(
+                    "mod-status-uptodate", "mod-status-update", "mod-status-unknown",
+                    "mod-status-checking", "mod-status-error");
+            statusBadge.getStyleClass().add(switch (status) {
+                case "Up to date" -> "mod-status-uptodate";
+                case "Update available" -> "mod-status-update";
+                case "Unknown" -> "mod-status-unknown";
+                case "Error" -> "mod-status-error";
+                default -> "mod-status-checking";
+            });
+
+            setModIcon(iconView, mod);
+            setGraphic(card);
+        }
+
+        @Override
+        public void updateSelected(boolean selected) {
+            super.updateSelected(selected);
+            card.getStyleClass().remove("mod-card-selected");
+            if (selected) card.getStyleClass().add("mod-card-selected");
+        }
+    }
+
+    /** Resolves and caches a mod's icon (Modrinth icon if identified, otherwise a default). */
+    private void setModIcon(javafx.scene.image.ImageView view, ModEntry mod) {
+        if (mod.iconUrl != null && !mod.iconUrl.isBlank()) {
+            Image img = modIconCache.computeIfAbsent(mod.iconUrl,
+                    url -> new Image(url, 72, 72, true, true, true));
+            view.setImage(img);
+        } else {
+            view.setImage(getDefaultModIcon());
+        }
+    }
+
+    private Image getDefaultModIcon() {
+        if (defaultModIcon == null) {
+            try {
+                java.io.InputStream is = getClass().getResourceAsStream("/com/launcher/DefaultInstanceIcon.png");
+                if (is != null) defaultModIcon = new Image(is, 72, 72, true, true);
+            } catch (Exception ignored) {}
+        }
+        return defaultModIcon;
+    }
+
+    /** Filters the mods list to entries whose name contains the query (case-insensitive). */
+    private void applyModsFilter(String query) {
+        if (currentModEntries == null || currentModEntries.isEmpty()) return;
+        if (query == null || query.isBlank()) {
+            modsList.getItems().setAll(currentModEntries);
+        } else {
+            String q = query.trim().toLowerCase();
+            java.util.List<ModEntry> filtered = currentModEntries.stream()
+                    .filter(m -> {
+                        String dn = m.displayName();
+                        if (dn       != null && dn.toLowerCase().contains(q))          return true;
+                        if (m.fileName != null && m.fileName.toLowerCase().contains(q)) return true;
+                        return false;
+                    })
+                    .collect(java.util.stream.Collectors.toList());
+            modsList.getItems().setAll(filtered);
+        }
+        modsCountLabel.setText(modsList.getItems().size() + " / " + currentModEntries.size() + " mod(s)");
+    }
+
+    private void refreshModsView(Instance instance) {
+        if (instance == null) {
+            modsHeaderLabel.setText("Select an instance to view its mods.");
+            modsCountLabel.setText("");
+            modsList.getItems().clear();
+            currentModEntries.clear();
+            checkUpdatesBtn.setDisable(true);
+            refreshModsBtn.setDisable(true);
+            updateAllBtn.setDisable(true);
+            updateSelectedBtn.setDisable(true);
+            deleteModBtn.setDisable(true);
+            dedupeModsBtn.setDisable(true);
+            return;
+        }
+
+        modsHeaderLabel.setText("Mods for: " + instance.name);
+        refreshModsBtn.setDisable(false);
+
+        Path modsDir = instanceManager.resolveGameDir(instance).resolve("mods");
+        try {
+            ModUpdateService service = new ModUpdateService();
+            currentModEntries = service.scanModsDir(modsDir);
+            applyModsFilter(modsSearchField != null ? modsSearchField.getText() : null);
+            modsCountLabel.setText(currentModEntries.size() + " mod(s) found");
+            checkUpdatesBtn.setDisable(currentModEntries.isEmpty());
+            dedupeModsBtn.setDisable(currentModEntries.isEmpty());
+            updateAllBtn.setDisable(true);
+            updateSelectedBtn.setDisable(true);
+            deleteModBtn.setDisable(true);
+            log("Found " + currentModEntries.size() + " mod(s) in " + modsDir);
+        } catch (Exception ex) {
+            log("Failed to scan mods directory: " + ex.getMessage());
+            modsList.getItems().clear();
+            modsCountLabel.setText("");
+            currentModEntries.clear();
+        }
+    }
+
+    private void checkModUpdates(Instance instance) {
+        checkUpdatesBtn.setDisable(true);
+        setStatus("Checking for mod updates…");
+
+        new Thread(() -> {
+            try {
+                ModUpdateService service = new ModUpdateService();
+
+                // Step 1: Identify mods on Modrinth
+                log("Identifying mods on Modrinth…");
+                service.identifyMods(currentModEntries, this::log);
+                Platform.runLater(() -> modsList.refresh());
+
+                // Step 2: Check for updates
+                String loaderName = instance.modLoader != null && instance.modLoader != ModLoaderType.VANILLA
+                        ? instance.modLoader.name().toLowerCase() : null;
+                log("Checking for compatible updates (MC " + instance.mcVersion + ", loader: " + loaderName + ")…");
+                service.checkUpdates(currentModEntries, instance.mcVersion, loaderName, this::log);
+
+                Platform.runLater(() -> {
+                    modsList.refresh();
+                    long updatable = currentModEntries.stream()
+                            .filter(m -> "Update available".equals(m.status)).count();
+                    updateAllBtn.setDisable(updatable == 0);
+                    checkUpdatesBtn.setDisable(false);
+                    setStatus(updatable > 0
+                            ? updatable + " mod update(s) available."
+                            : "All mods are up to date.");
+                });
+
+            } catch (Exception ex) {
+                log("Error checking mod updates: " + ex.getMessage());
+                Platform.runLater(() -> {
+                    checkUpdatesBtn.setDisable(false);
+                    setStatus("Update check failed — see console.");
+                });
+            }
+        }, "mod-update-check").start();
+    }
+
+    private void updateMods(Instance instance, List<ModEntry> modsToUpdate) {
+        List<ModEntry> updatable = modsToUpdate.stream()
+                .filter(m -> "Update available".equals(m.status) && m.updateUrl != null)
+                .toList();
+        if (updatable.isEmpty()) { log("No updatable mods selected."); return; }
+
+        updateSelectedBtn.setDisable(true);
+        updateAllBtn.setDisable(true);
+        setStatus("Updating " + updatable.size() + " mod(s)…");
+
+        Path modsDir = instanceManager.resolveGameDir(instance).resolve("mods");
+        new Thread(() -> {
+            ModUpdateService service = new ModUpdateService();
+            int success = 0;
+            for (ModEntry mod : updatable) {
+                if (service.downloadUpdate(mod, modsDir, this::log)) success++;
+            }
+            int finalSuccess = success;
+            Platform.runLater(() -> {
+                modsList.refresh();
+                long remaining = currentModEntries.stream()
+                        .filter(m -> "Update available".equals(m.status)).count();
+                updateAllBtn.setDisable(remaining == 0);
+                setStatus("Updated " + finalSuccess + "/" + updatable.size() + " mod(s).");
+            });
+        }, "mod-update-download").start();
+    }
+
+    private void updateAllMods(Instance instance) {
+        updateMods(instance, new java.util.ArrayList<>(currentModEntries));
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -621,7 +1246,41 @@ public class Main extends Application {
         });
         HBox imgBtns = new HBox(8, chooseImg, clearImg);
 
-        appearance.getChildren().addAll(appTitle, grid, new Separator(), useBgImg, imgBtns, imgNote);
+        // Transparent / blur effect
+        CheckBox enableBlurCb = styledCheckbox("Enable transparent/blur effect", s.enableBlurEffect);
+
+        Slider blurSlider = new Slider(1, 40, s.blurStrength > 0 ? s.blurStrength : 10);
+        blurSlider.setPrefWidth(220);
+        blurSlider.setDisable(!s.enableBlurEffect);
+
+        Label blurValueLabel = new Label(String.valueOf((int) blurSlider.getValue()));
+        blurValueLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted; -fx-min-width:24px;");
+
+        HBox blurSliderRow = new HBox(10, blurSlider, blurValueLabel);
+        blurSliderRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label blurNote = new Label("Makes panels translucent for a frosted-glass look. Looks best with a background image.");
+        blurNote.setStyle("-fx-font-size:10px; -fx-text-fill:-fx-text-muted; -fx-wrap-text:true;");
+
+        enableBlurCb.setOnAction(e -> {
+            s.enableBlurEffect = enableBlurCb.isSelected();
+            blurSlider.setDisable(!s.enableBlurEffect);
+            mgr.save();
+            applyTheme(scene, s);
+        });
+
+        blurSlider.valueProperty().addListener((obs, oldV, newV) -> {
+            s.blurStrength = newV.intValue();
+            blurValueLabel.setText(String.valueOf(newV.intValue()));
+            mgr.save();
+            applyTheme(scene, s);
+        });
+
+        GridPane blurGrid = settingsGrid();
+        blurGrid.addRow(0, settingLabel("Blur strength"), blurSliderRow);
+
+        appearance.getChildren().addAll(appTitle, grid, new Separator(), useBgImg, imgBtns, imgNote,
+                new Separator(), enableBlurCb, blurGrid, blurNote);
 
         // ── Behavior ──────────────────────────────────────────────────────────
         VBox behavior = card();
@@ -643,6 +1302,44 @@ public class Main extends Application {
         showConsoleOnLaunchCb.setOnAction(e -> { s.showConsoleOnLaunch = showConsoleOnLaunchCb.isSelected(); mgr.save(); });
 
         behavior.getChildren().addAll(behTitle, minimizeCb, scanCb, showHiddenCb, closeAfterLaunchCb, showConsoleOnLaunchCb);
+
+        // ── Window Size ───────────────────────────────────────────────────────
+        VBox windowSizeCard = card();
+        Label winSizeTitle = sectionTitle("Window Size");
+
+        Label winSizeNote = new Label("Set the launcher width and height when it opens. Minimum: 820 × 560. Changes take effect on next launch.");
+        winSizeNote.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted; -fx-wrap-text:true;");
+
+        int savedW = (s.launcherWidth  >= 820) ? s.launcherWidth  : 960;
+        int savedH = (s.launcherHeight >= 560) ? s.launcherHeight : 660;
+
+        Spinner<Integer> widthSpinner  = new Spinner<>(820, 3840, savedW, 10);
+        Spinner<Integer> heightSpinner = new Spinner<>(560, 2160, savedH, 10);
+        widthSpinner.setEditable(true);
+        heightSpinner.setEditable(true);
+        widthSpinner.setPrefWidth(110);
+        heightSpinner.setPrefWidth(110);
+
+        widthSpinner.valueProperty().addListener((obs, oldV, newV) -> {
+            s.launcherWidth = newV; mgr.save();
+        });
+        heightSpinner.valueProperty().addListener((obs, oldV, newV) -> {
+            s.launcherHeight = newV; mgr.save();
+        });
+
+        Button applyWinSize = new Button("Apply Now");
+        applyWinSize.setOnAction(e -> {
+            if (primaryStage != null && !primaryStage.isMaximized()) {
+                primaryStage.setWidth(s.launcherWidth  >= 820 ? s.launcherWidth  : 960);
+                primaryStage.setHeight(s.launcherHeight >= 560 ? s.launcherHeight : 660);
+            }
+        });
+
+        GridPane winGrid = settingsGrid();
+        winGrid.addRow(0, settingLabel("Width (px)"),  widthSpinner);
+        winGrid.addRow(1, settingLabel("Height (px)"), heightSpinner);
+
+        windowSizeCard.getChildren().addAll(winSizeTitle, winGrid, applyWinSize, winSizeNote);
 
         // ── Performance ───────────────────────────────────────────────────────
         VBox performance = card();
@@ -708,7 +1405,7 @@ public class Main extends Application {
         });
         about.getChildren().addAll(aboutTitle, aboutInfo, openDataDir);
 
-        root.getChildren().addAll(appearance, behavior, performance, privacy, about);
+        root.getChildren().addAll(appearance, behavior, windowSizeCard, performance, privacy, about);
 
         ScrollPane sp = new ScrollPane(root);
         sp.setFitToWidth(true);
@@ -785,6 +1482,38 @@ public class Main extends Application {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  MODPACK EXTRACTION
+    // ══════════════════════════════════════════════════════════════════════════
+    private void extractModpack(Instance instance) {
+        playButton.setDisable(true);
+        setStatus("Extracting modpack for " + instance.name + "…");
+        log("Starting modpack extraction: " + instance.modpackFilePath);
+
+        new Thread(() -> {
+            try {
+                Path modpackFile = Path.of(instance.modpackFilePath);
+                String installPath = (instance.modpackInstallPath != null && !instance.modpackInstallPath.isBlank())
+                        ? instance.modpackInstallPath
+                        : instanceManager.resolveGameDir(instance).toAbsolutePath().toString();
+                Path installDir = Path.of(installPath);
+
+                ModpackExtractor extractor = new ModpackExtractor();
+                extractor.extract(modpackFile, installDir, this::log);
+
+                log("Modpack extracted successfully to: " + installDir);
+                setStatus("Modpack extracted — " + instance.name);
+                Platform.runLater(() -> instanceList.refresh());
+
+            } catch (Exception ex) {
+                log("ERROR extracting modpack: " + ex.getMessage());
+                setStatus("Modpack extraction failed — see console.");
+            } finally {
+                Platform.runLater(() -> playButton.setDisable(false));
+            }
+        }, "modpack-extract").start();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  LAUNCH LOGIC
     // ══════════════════════════════════════════════════════════════════════════
     private void launchInstance(Instance instance, Account account) {
@@ -820,7 +1549,20 @@ public class Main extends Application {
                     setStatus("Fetching Fabric profile…");
                     versionJson = new FabricInstaller().fetchProfileJson(instance.mcVersion, instance.modLoaderVersion);
 
+                } else if (instance.modLoader == ModLoaderType.QUILT) {
+                    log("Fetching Quilt profile " + instance.modLoaderVersion + "…");
+                    setStatus("Fetching Quilt profile…");
+                    versionJson = new QuiltInstaller().fetchProfileJson(instance.mcVersion, instance.modLoaderVersion);
+
+                } else if (instance.modLoader == ModLoaderType.NEOFORGE) {
+                    log("Installing NeoForge " + instance.modLoaderVersion + "…");
+                    setStatus("Installing NeoForge…");
+                    NeoForgeInstaller nfi = new NeoForgeInstaller();
+                    String vid = nfi.installClient(instance.mcVersion, instance.modLoaderVersion, gameDir, this::log);
+                    versionJson = nfi.loadGeneratedVersionJson(gameDir, vid);
+
                 } else {
+                    // FORGE
                     ForgeInstaller fi = new ForgeInstaller();
                     String fv = instance.modLoaderVersion;
                     if ("Recommended".equals(fv) || "Latest".equals(fv))
@@ -889,9 +1631,10 @@ public class Main extends Application {
     // ══════════════════════════════════════════════════════════════════════════
     private void applyTheme(Scene scene, com.launcher.model.LauncherSettings settings) {
         if (scene == null || settings == null) return;
-        scene.getRoot().setStyle(buildThemeStyle(settings));
+        scene.getRoot().setStyle(buildMainSceneStyle(settings));
         if (logArea != null)
             logArea.setStyle("-fx-control-inner-background:" + safeColor(settings.logBgColor, "#060608") + ";");
+        refreshBackdrop(settings);
     }
 
     public static void applyThemeToPane(javafx.scene.layout.Pane pane, com.launcher.model.LauncherSettings settings) {
@@ -934,6 +1677,102 @@ public class Main extends Application {
             sb.append("-fx-background-color:").append(bg).append(";");
         }
         return sb.toString();
+    }
+
+    /**
+     * Builds the style applied to the main window's root only (never to dialogs).
+     * When the transparent/blur effect is enabled, panels become translucent and
+     * the root's own background is cleared so the {@link #backdropLayer} — which
+     * paints the real background and, optionally, a blurred backdrop — shows through.
+     */
+    private static String buildMainSceneStyle(com.launcher.model.LauncherSettings settings) {
+        String base = buildThemeStyle(settings);
+        if (!settings.enableBlurEffect) return base;
+
+        String panel = safeColor(settings.panelBgColor, "#13131a");
+        double alpha = blurAlpha(settings);
+        String translucentPanel = hexToRgba(panel, alpha);
+
+        StringBuilder sb = new StringBuilder(base);
+        sb.append("-fx-panel-background:").append(translucentPanel).append(";");
+        sb.append("-fx-surface:").append(translucentPanel).append(";");
+        sb.append("-fx-app-background:transparent;");
+        sb.append("-fx-background-color:transparent;");
+        sb.append("-fx-background-image:none;");
+        return sb.toString();
+    }
+
+    /** Clamps blurStrength to a sane 1–40 range. */
+    private static int clampBlurStrength(com.launcher.model.LauncherSettings settings) {
+        int s = settings.blurStrength <= 0 ? 10 : settings.blurStrength;
+        return Math.max(1, Math.min(40, s));
+    }
+
+    /** Maps blur strength to a panel opacity: higher strength = more transparent. */
+    private static double blurAlpha(com.launcher.model.LauncherSettings settings) {
+        int strength = clampBlurStrength(settings);
+        return Math.max(0.30, 1.0 - (strength / 40.0) * 0.6);
+    }
+
+    /**
+     * (Re)builds the backdrop layer that sits behind the whole UI: a flat fill
+     * (or the user's chosen background image), plus — when the transparent/blur
+     * effect is on — either a blurred version of that image, or a few soft,
+     * blurred accent-colored shapes so the glass effect still has something
+     * to blur even without a custom background.
+     */
+    private void refreshBackdrop(com.launcher.model.LauncherSettings settings) {
+        if (backdropLayer == null) return;
+        backdropLayer.getChildren().clear();
+
+        String bg = safeColor(settings.bgColor, "#0a0a0f");
+        boolean blur = settings.enableBlurEffect;
+        int strength = clampBlurStrength(settings);
+
+        Region base = new Region();
+        base.setStyle("-fx-background-color:" + bg + ";");
+        backdropLayer.getChildren().add(base);
+
+        java.io.File imgFile = (settings.backgroundImagePath != null && !settings.backgroundImagePath.isBlank())
+                ? new java.io.File(settings.backgroundImagePath) : null;
+
+        if (settings.useBackgroundImage && imgFile != null && imgFile.isFile()) {
+            Region imgRegion = new Region();
+            imgRegion.setStyle(
+                    "-fx-background-image:url('" + imgFile.toURI() + "');" +
+                    "-fx-background-size:cover;" +
+                    "-fx-background-position:center center;" +
+                    "-fx-background-repeat:no-repeat;");
+            if (blur) imgRegion.setEffect(new javafx.scene.effect.GaussianBlur(strength));
+            backdropLayer.getChildren().add(imgRegion);
+        } else if (blur) {
+            backdropLayer.getChildren().add(buildBlurBlobs(settings, strength));
+        }
+    }
+
+    /** Soft blurred accent-colored shapes used as a backdrop when no background image is set. */
+    private Pane buildBlurBlobs(com.launcher.model.LauncherSettings settings, int strength) {
+        Pane blobs = new Pane();
+        blobs.setMouseTransparent(true);
+        String accent = safeColor(settings.accentColor, "#10b981");
+
+        Circle c1 = new Circle(220);
+        Circle c2 = new Circle(260);
+        Circle c3 = new Circle(160);
+        try { c1.setFill(Color.web(accent, 0.35)); } catch (Exception ignored) { c1.setFill(Color.web("#10b981", 0.35)); }
+        try { c2.setFill(Color.web(accent, 0.18)); } catch (Exception ignored) { c2.setFill(Color.web("#10b981", 0.18)); }
+        c3.setFill(Color.web("#ffffff", 0.05));
+
+        c1.centerXProperty().bind(blobs.widthProperty().multiply(0.15));
+        c1.centerYProperty().bind(blobs.heightProperty().multiply(0.18));
+        c2.centerXProperty().bind(blobs.widthProperty().multiply(0.85));
+        c2.centerYProperty().bind(blobs.heightProperty().multiply(0.82));
+        c3.centerXProperty().bind(blobs.widthProperty().multiply(0.55));
+        c3.centerYProperty().bind(blobs.heightProperty().multiply(0.35));
+
+        blobs.getChildren().addAll(c1, c2, c3);
+        blobs.setEffect(new javafx.scene.effect.GaussianBlur(Math.min(63, strength * 2.0)));
+        return blobs;
     }
 
     // ══════════════════════════════════════════════════════════════════════════

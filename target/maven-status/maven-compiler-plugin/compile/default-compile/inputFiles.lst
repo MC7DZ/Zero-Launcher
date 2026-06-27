@@ -9,12 +9,17 @@
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/ForgeInstaller.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/GameInstaller.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/GameLauncher.java
+/home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/ModUpdateService.java
+/home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/ModpackExtractor.java
+/home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/NeoForgeInstaller.java
+/home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/QuiltInstaller.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/ResolvedVersion.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/VersionManifestService.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/model/Account.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/model/AccountType.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/model/Instance.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/model/LauncherSettings.java
+/home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/model/ModEntry.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/model/ModLoaderType.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/ui/CreateInstanceDialog.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/ui/EditInstanceDialog.java

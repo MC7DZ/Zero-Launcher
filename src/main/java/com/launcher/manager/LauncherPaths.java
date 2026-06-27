@@ -40,11 +40,11 @@ public class LauncherPaths {
     }
 
     public static Path librariesDir() {
-        return sharedCache().resolve("libraries");
+        return getDefaultMinecraftPath().resolve("libraries");
     }
 
     public static Path assetsDir() {
-        return sharedCache().resolve("assets");
+        return getDefaultMinecraftPath().resolve("assets");
     }
 
     public static Path versionsDir() {

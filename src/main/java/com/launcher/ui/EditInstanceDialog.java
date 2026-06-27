@@ -30,12 +30,16 @@ public class EditInstanceDialog {
         dialog.initOwner(owner);
         dialog.setTitle("Edit Instance — " + inst.name);
         dialog.setHeaderText("Editing: " + inst.name);
-        dialog.getDialogPane().setPrefWidth(560);
+        dialog.getDialogPane().setPrefWidth(760);
+        dialog.getDialogPane().setMinWidth(720);
 
         var css = EditInstanceDialog.class.getResource("/com/launcher/styles.css");
         if (css != null) dialog.getDialogPane().getStylesheets().add(css.toExternalForm());
         com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
         Main.applyThemeToPane(dialog.getDialogPane(), settings);
+        // Override background image so the dialog always has a solid background
+        dialog.getDialogPane().setStyle(dialog.getDialogPane().getStyle()
+                + "; -fx-background-image: none;");
 
         ButtonType saveBtn = new ButtonType("Save Changes", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(saveBtn, ButtonType.CANCEL);
@@ -364,10 +368,14 @@ public class EditInstanceDialog {
 
         Tab modpackTab = new Tab("📦  Modpack", modpackScroll);
         tabs.getTabs().addAll(generalTab, modpackTab);
+
         dialog.getDialogPane().setContent(tabs);
 
-        dialog.getDialogPane().getScene().getWindow().setOnShown(ev ->
-                ((javafx.stage.Stage) dialog.getDialogPane().getScene().getWindow()).setResizable(true));
+        // Make the dialog window resizable and moveable (DECORATED style is the default for Dialog)
+        dialog.getDialogPane().getScene().getWindow().setOnShown(ev -> {
+            javafx.stage.Stage dlgStage = (javafx.stage.Stage) dialog.getDialogPane().getScene().getWindow();
+            dlgStage.setResizable(true);
+        });
 
         // ─────────────────────────────────────────────────────────────────────
         //  Result converter

@@ -10,6 +10,8 @@ public class LauncherSettings {
     public String fontFamily       = "Inter";
     public boolean useBackgroundImage   = false;
     public String backgroundImagePath   = "";
+    public boolean enableBlurEffect     = false;
+    public int blurStrength             = 10;     // GaussianBlur radius (1–40)
 
     // Behavior
     /** Minimize the launcher while Minecraft is running — game opens in its own OS window. */
@@ -26,6 +28,10 @@ public class LauncherSettings {
     public int defaultRamGb             = 3;
     /** Extra JVM arguments appended to every launch command. */
     public String extraJvmArgs          = "";
+
+    // Window size (0 = use defaults 960×660)
+    public int launcherWidth            = 0;
+    public int launcherHeight           = 0;
 
     // Privacy & Security
     public boolean hideUsername         = false;

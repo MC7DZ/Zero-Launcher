@@ -1,10 +1,15 @@
 package com.launcher.ui;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.launcher.minecraft.FabricInstaller;
+import com.launcher.minecraft.QuiltInstaller;
+import com.launcher.minecraft.NeoForgeInstaller;
 import com.launcher.minecraft.VersionManifestService;
 import com.launcher.model.Instance;
 import com.launcher.model.ModLoaderType;
 import com.launcher.Main;
+import com.launcher.util.JsonUtil;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -20,8 +25,11 @@ import com.launcher.manager.LauncherPaths;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Optional;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 public class CreateInstanceDialog {
 
@@ -33,12 +41,16 @@ public class CreateInstanceDialog {
         dialog.initOwner(owner);
         dialog.setTitle("New Instance");
         dialog.setHeaderText("Create a new Minecraft instance");
-        dialog.getDialogPane().setPrefWidth(560);
+        dialog.getDialogPane().setPrefWidth(760);
+        dialog.getDialogPane().setMinWidth(720);
 
         var css = CreateInstanceDialog.class.getResource("/com/launcher/styles.css");
         if (css != null) dialog.getDialogPane().getStylesheets().add(css.toExternalForm());
         com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
         Main.applyThemeToPane(dialog.getDialogPane(), settings);
+        // Override background image so the dialog always has a solid background
+        dialog.getDialogPane().setStyle(dialog.getDialogPane().getStyle()
+                + "; -fx-background-image: none;");
 
         ButtonType createBtn = new ButtonType("Create Instance", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(createBtn, ButtonType.CANCEL);
@@ -188,17 +200,15 @@ public class CreateInstanceDialog {
                 loaderVerBox.setDisable(true); loaderVerBox.setPromptText("Loading…");
                 new Thread(() -> {
                     try {
-                        String body = com.launcher.util.HttpUtil.getString(
-                                "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge");
-                        com.google.gson.JsonObject root = com.launcher.util.JsonUtil.parse(body).getAsJsonObject();
-                        com.google.gson.JsonArray arr = root.getAsJsonArray("versions");
-                        java.util.List<String> vers = new java.util.ArrayList<>();
-                        String[] parts = mcVer.split("\\.");
-                        String prefix = parts.length >= 2 ? (Integer.parseInt(parts[1]) + ".") : "";
-                        for (var el : arr) { String v = el.getAsString(); if (v.startsWith(prefix)) vers.add(0, v); }
-                        if (vers.isEmpty()) for (var el : arr) vers.add(0, el.getAsString());
-                        Platform.runLater(() -> { loaderVerBox.getItems().setAll(vers); if (!vers.isEmpty()) loaderVerBox.setValue(vers.get(0)); loaderVerBox.setDisable(false); });
-                    } catch (Exception ex) { Platform.runLater(() -> { loaderVerBox.setPromptText("Failed to load"); loaderVerBox.setDisable(false); }); }
+                        java.util.List<String> vers = new NeoForgeInstaller().fetchVersions(mcVer);
+                        Platform.runLater(() -> {
+                            loaderVerBox.getItems().setAll(vers);
+                            if (!vers.isEmpty()) loaderVerBox.setValue(vers.get(0));
+                            loaderVerBox.setDisable(false);
+                        });
+                    } catch (Exception ex) {
+                        Platform.runLater(() -> { loaderVerBox.setPromptText("Failed to load"); loaderVerBox.setDisable(false); });
+                    }
                 }, "fetch-neoforge-vers").start();
                 return;
             }
@@ -209,12 +219,7 @@ public class CreateInstanceDialog {
                 try {
                     java.util.List<String> vers;
                     if (isQuilt) {
-                        String body = com.launcher.util.HttpUtil.getString(
-                                "https://meta.quiltmc.org/v3/versions/loader/" + mcVer);
-                        com.google.gson.JsonArray arr = com.launcher.util.JsonUtil.parse(body).getAsJsonArray();
-                        vers = new java.util.ArrayList<>();
-                        for (var el : arr)
-                            vers.add(el.getAsJsonObject().getAsJsonObject("loader").get("version").getAsString());
+                        vers = new QuiltInstaller().fetchLoaderVersions(mcVer);
                     } else {
                         vers = new FabricInstaller().fetchLoaderVersions(mcVer);
                     }
@@ -289,6 +294,13 @@ public class CreateInstanceDialog {
         installPathField.setPromptText(DEFAULT_MODPACK_BASE);
         HBox.setHgrow(installPathField, Priority.ALWAYS);
 
+        // ── Detected modpack info label (shown below file selector) ─────────
+        Label detectedInfoLabel = new Label("");
+        detectedInfoLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-accent-color; -fx-wrap-text:true;");
+        detectedInfoLabel.setWrapText(true);
+        detectedInfoLabel.setVisible(false);
+        detectedInfoLabel.setManaged(false);
+
         modpackBrowseBtn.setOnAction(e -> {
             FileChooser fc = new FileChooser();
             fc.setTitle("Select Modpack File");
@@ -304,19 +316,63 @@ public class CreateInstanceDialog {
                 modpackFileHint.setText(chosen.getName());
                 modpackFileHint.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-color;");
                 modpackClearBtn.setDisable(false);
-                // Auto-populate instance name from the modpack filename (strip extension)
+
+                // Auto-populate instance name from filename (fallback)
                 String fname = chosen.getName();
                 String suggested = fname.contains(".")
                         ? fname.substring(0, fname.lastIndexOf('.'))
                         : fname;
-                // Replace underscores/hyphens with spaces, trim
                 suggested = suggested.replace('_', ' ').replace('-', ' ').trim();
                 if (!suggested.isBlank()) nameField.setText(suggested);
-                // Auto-update install path to .minecraft/ModPacks/<modpack-name>
+
+                // Auto-update install path
                 String folderName = fname.contains(".")
                         ? fname.substring(0, fname.lastIndexOf('.'))
                         : fname;
                 installPathField.setText(resolveDefaultModpackPath() + java.io.File.separator + folderName);
+
+                // ── Parse modpack metadata for version/loader auto-detection ──
+                ModpackMeta meta = parseModpackMetadata(chosen);
+                if (meta != null) {
+                    // Override instance name if modpack has a name
+                    if (meta.name != null && !meta.name.isBlank()) {
+                        nameField.setText(meta.name);
+                    }
+                    // Set Minecraft version
+                    if (meta.mcVersion != null) {
+                        // Add the version if not already in the list
+                        if (!versionBox.getItems().contains(meta.mcVersion)) {
+                            versionBox.getItems().add(0, meta.mcVersion);
+                        }
+                        versionBox.setValue(meta.mcVersion);
+                        versionBox.setDisable(true);
+                    }
+                    // Set mod loader
+                    if (meta.loaderType != null) {
+                        loaderBox.setValue(meta.loaderType);
+                        loaderBox.setDisable(true);
+                        if (meta.loaderVersion != null) {
+                            if (!loaderVerBox.getItems().contains(meta.loaderVersion)) {
+                                loaderVerBox.getItems().add(0, meta.loaderVersion);
+                            }
+                            loaderVerBox.setValue(meta.loaderVersion);
+                            loaderVerBox.setDisable(true);
+                        }
+                    }
+                    // Show detected info
+                    StringBuilder info = new StringBuilder("Detected from modpack: ");
+                    if (meta.mcVersion != null) info.append("MC ").append(meta.mcVersion);
+                    if (meta.loaderType != null) {
+                        info.append(" · ").append(meta.loaderType);
+                        if (meta.loaderVersion != null) info.append(" ").append(meta.loaderVersion);
+                    }
+                    detectedInfoLabel.setText(info.toString());
+                    detectedInfoLabel.setVisible(true);
+                    detectedInfoLabel.setManaged(true);
+                } else {
+                    detectedInfoLabel.setVisible(false);
+                    detectedInfoLabel.setManaged(false);
+                }
             }
         });
 
@@ -326,11 +382,17 @@ public class CreateInstanceDialog {
             modpackFileHint.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
             modpackClearBtn.setDisable(true);
             installPathField.setText(defaultInstallPath);
+            // Re-enable version/loader fields
+            versionBox.setDisable(false);
+            loaderBox.setDisable(false);
+            loaderVerBox.setDisable(false);
+            detectedInfoLabel.setVisible(false);
+            detectedInfoLabel.setManaged(false);
         });
 
         HBox modpackFileBtns = new HBox(8, modpackBrowseBtn, modpackClearBtn);
         modpackFileBtns.setAlignment(Pos.CENTER_LEFT);
-        VBox modpackFileBox = new VBox(6, modpackFileHint, modpackFileBtns);
+        VBox modpackFileBox = new VBox(6, modpackFileHint, modpackFileBtns, detectedInfoLabel);
 
         // ── Install path row ──────────────────────────────────────────────────
         Button installPathBrowseBtn = new Button("Browse…");
@@ -386,10 +448,14 @@ public class CreateInstanceDialog {
         // ── Assemble tabs ─────────────────────────────────────────────────────
         tabs.getTabs().addAll(generalTab, modpackTab);
 
+
         dialog.getDialogPane().setContent(tabs);
 
-        dialog.getDialogPane().getScene().getWindow().setOnShown(ev ->
-                ((javafx.stage.Stage) dialog.getDialogPane().getScene().getWindow()).setResizable(true));
+        // Make the dialog window resizable and moveable (DECORATED style is the default for Dialog)
+        dialog.getDialogPane().getScene().getWindow().setOnShown(ev -> {
+            javafx.stage.Stage dlgStage = (javafx.stage.Stage) dialog.getDialogPane().getScene().getWindow();
+            dlgStage.setResizable(true);
+        });
 
         // ─────────────────────────────────────────────────────────────────────
         //  Result converter
@@ -474,5 +540,166 @@ public class CreateInstanceDialog {
         Label l = new Label(text);
         l.setStyle("-fx-font-size:12px; -fx-text-fill:-fx-text-color;");
         return l;
+    }
+
+    // ─── Modpack metadata parsing ─────────────────────────────────────────────
+
+    /** Simple holder for detected modpack metadata. */
+    private static class ModpackMeta {
+        String name;
+        String mcVersion;
+        ModLoaderType loaderType;
+        String loaderVersion;
+    }
+
+    /**
+     * Parses a modpack file (.mrpack or .zip) to extract Minecraft version and mod loader info.
+     * Returns null if metadata could not be parsed.
+     */
+    private static ModpackMeta parseModpackMetadata(File modpackFile) {
+        String fileName = modpackFile.getName().toLowerCase();
+        try {
+            if (fileName.endsWith(".mrpack")) {
+                return parseMrpackMeta(modpackFile);
+            } else if (fileName.endsWith(".zip")) {
+                return parseZipMeta(modpackFile);
+            }
+        } catch (Exception e) {
+            // Silently fail — metadata detection is best-effort
+        }
+        return null;
+    }
+
+    /** Parses modrinth.index.json inside a .mrpack file. */
+    private static ModpackMeta parseMrpackMeta(File file) throws Exception {
+        try (ZipFile zip = new ZipFile(file)) {
+            ZipEntry entry = zip.getEntry("modrinth.index.json");
+            if (entry == null) return null;
+
+            String json;
+            try (InputStream is = zip.getInputStream(entry)) {
+                json = new String(is.readAllBytes());
+            }
+            JsonObject root = JsonUtil.parse(json).getAsJsonObject();
+            ModpackMeta meta = new ModpackMeta();
+
+            // Name
+            if (root.has("name")) {
+                meta.name = root.get("name").getAsString();
+            }
+
+            // Dependencies: { "minecraft": "1.20.1", "fabric-loader": "0.14.21", ... }
+            if (root.has("dependencies")) {
+                JsonObject deps = root.getAsJsonObject("dependencies");
+                if (deps.has("minecraft")) {
+                    meta.mcVersion = deps.get("minecraft").getAsString();
+                }
+                if (deps.has("fabric-loader")) {
+                    meta.loaderType = ModLoaderType.FABRIC;
+                    meta.loaderVersion = deps.get("fabric-loader").getAsString();
+                } else if (deps.has("quilt-loader")) {
+                    meta.loaderType = ModLoaderType.QUILT;
+                    meta.loaderVersion = deps.get("quilt-loader").getAsString();
+                } else if (deps.has("forge")) {
+                    meta.loaderType = ModLoaderType.FORGE;
+                    meta.loaderVersion = deps.get("forge").getAsString();
+                } else if (deps.has("neoforge")) {
+                    meta.loaderType = ModLoaderType.NEOFORGE;
+                    meta.loaderVersion = deps.get("neoforge").getAsString();
+                }
+            }
+            return meta;
+        }
+    }
+
+    /** Parses manifest.json (CurseForge format) or mmc-pack.json (MultiMC/Prism) inside a .zip. */
+    private static ModpackMeta parseZipMeta(File file) throws Exception {
+        try (ZipFile zip = new ZipFile(file)) {
+            // Try CurseForge manifest.json
+            ZipEntry manifestEntry = zip.getEntry("manifest.json");
+            if (manifestEntry != null) {
+                String json;
+                try (InputStream is = zip.getInputStream(manifestEntry)) {
+                    json = new String(is.readAllBytes());
+                }
+                JsonObject root = JsonUtil.parse(json).getAsJsonObject();
+                ModpackMeta meta = new ModpackMeta();
+
+                if (root.has("name")) {
+                    meta.name = root.get("name").getAsString();
+                }
+                if (root.has("minecraft")) {
+                    JsonObject mc = root.getAsJsonObject("minecraft");
+                    if (mc.has("version")) {
+                        meta.mcVersion = mc.get("version").getAsString();
+                    }
+                    if (mc.has("modLoaders")) {
+                        JsonArray loaders = mc.getAsJsonArray("modLoaders");
+                        if (!loaders.isEmpty()) {
+                            JsonObject loader = loaders.get(0).getAsJsonObject();
+                            String loaderId = loader.has("id") ? loader.get("id").getAsString() : "";
+                            if (loaderId.startsWith("forge-")) {
+                                meta.loaderType = ModLoaderType.FORGE;
+                                meta.loaderVersion = loaderId.substring("forge-".length());
+                            } else if (loaderId.startsWith("fabric-")) {
+                                meta.loaderType = ModLoaderType.FABRIC;
+                                meta.loaderVersion = loaderId.substring("fabric-".length());
+                            } else if (loaderId.startsWith("neoforge-")) {
+                                meta.loaderType = ModLoaderType.NEOFORGE;
+                                meta.loaderVersion = loaderId.substring("neoforge-".length());
+                            } else if (loaderId.startsWith("quilt-")) {
+                                meta.loaderType = ModLoaderType.QUILT;
+                                meta.loaderVersion = loaderId.substring("quilt-".length());
+                            }
+                        }
+                    }
+                }
+                return meta;
+            }
+
+            // Try MultiMC/Prism mmc-pack.json
+            ZipEntry mmcEntry = zip.getEntry("mmc-pack.json");
+            if (mmcEntry != null) {
+                String json;
+                try (InputStream is = zip.getInputStream(mmcEntry)) {
+                    json = new String(is.readAllBytes());
+                }
+                JsonObject root = JsonUtil.parse(json).getAsJsonObject();
+                ModpackMeta meta = new ModpackMeta();
+
+                if (root.has("components")) {
+                    JsonArray comps = root.getAsJsonArray("components");
+                    for (var el : comps) {
+                        JsonObject comp = el.getAsJsonObject();
+                        String uid = comp.has("uid") ? comp.get("uid").getAsString() : "";
+                        String ver = comp.has("version") ? comp.get("version").getAsString() : null;
+                        if ("net.minecraft".equals(uid)) {
+                            meta.mcVersion = ver;
+                        } else if ("net.fabricmc.fabric-loader".equals(uid)) {
+                            meta.loaderType = ModLoaderType.FABRIC;
+                            meta.loaderVersion = ver;
+                        } else if ("org.quiltmc.quilt-loader".equals(uid)) {
+                            meta.loaderType = ModLoaderType.QUILT;
+                            meta.loaderVersion = ver;
+                        } else if ("net.minecraftforge".equals(uid)) {
+                            meta.loaderType = ModLoaderType.FORGE;
+                            meta.loaderVersion = ver;
+                        } else if ("net.neoforged".equals(uid)) {
+                            meta.loaderType = ModLoaderType.NEOFORGE;
+                            meta.loaderVersion = ver;
+                        }
+                    }
+                }
+                return meta;
+            }
+
+            // Also try modrinth.index.json inside .zip (some packs are renamed .zip)
+            ZipEntry modrinthEntry = zip.getEntry("modrinth.index.json");
+            if (modrinthEntry != null) {
+                // Re-use mrpack parser
+                return parseMrpackMeta(file);
+            }
+        }
+        return null;
     }
 }
