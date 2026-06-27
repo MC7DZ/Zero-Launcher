@@ -26,7 +26,8 @@ If the launcher stops working after the "Checking for updates" screen:
   2. Delete zerolauncher_1_x_x.jar.
 
 ### Chnagelog & Updates
-if you want to see the updates jar files or change logs you will find them here : https://github.com/MC7DZ/ZeroLauncher-Updates/releases
+if you want to see the updates jar files or change logs you will find them [here](https://github.com/MC7DZ/ZeroLauncher-Updates/releases)
+
 ---
 
 ## النسخة العربية
@@ -50,4 +51,4 @@ if you want to see the updates jar files or change logs you will find them here 
   1. انتقل إلى المسار /home/.zerolauncher.
   2. احذف ملف zerolauncher_1_x_x.jar.
 ### التغيرات & التحديثات
-اذا تبغى تشوف ملفات jar الخاصةبالانشر راح تلاقيها هنا: https://github.com/MC7DZ/ZeroLauncher-Updates/releases
+اذا تبغى تشوف ملفات jar الخاصةبالانشر راح تلاقيها [هنا](https://github.com/MC7DZ/ZeroLauncher-Updates/releases)
