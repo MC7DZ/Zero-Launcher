@@ -512,7 +512,7 @@ public class CreateInstanceDialog {
     /** Load the bundled default icon into an ImageView; silently falls back if not found. */
     private static void loadDefaultIcon(ImageView view) {
         try {
-            InputStream is = CreateInstanceDialog.class.getResourceAsStream("/com/launcher/DefaultInstanceIcon.png");
+            InputStream is = CreateInstanceDialog.class.getResourceAsStream("/com/launcher/minecraft_image.png");
             if (is != null) {
                 view.setImage(new Image(is, 64, 64, true, true));
                 return;

@@ -506,3 +506,92 @@
     -fx-padding: 2px 8px;
     -fx-background-radius: 4px;
 }
+
+/* ── DISCOVER TAB (Modrinth-style browse cards) ─────────────────────────── */
+.discover-card {
+    -fx-background-color: -fx-surface;
+    -fx-background-radius: 10px;
+    -fx-border-color: -fx-border-subtle;
+    -fx-border-radius: 10px;
+    -fx-border-width: 1px;
+    -fx-padding: 14px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.15), 4, 0, 0, 1);
+}
+.discover-card:hover {
+    -fx-background-color: -fx-surface-hover;
+    -fx-border-color: rgba(255,255,255,0.14);
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 8, 0, 0, 2);
+}
+.discover-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #ffffff;
+}
+.discover-meta {
+    -fx-font-size: 10px;
+    -fx-text-fill: -fx-text-muted;
+}
+.discover-desc {
+    -fx-font-size: 11px;
+    -fx-text-fill: rgba(255,255,255,0.65);
+}
+.discover-version-ok {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #4ade80;
+    -fx-background-color: rgba(74,222,128,0.12);
+    -fx-padding: 3px 8px;
+    -fx-background-radius: 4px;
+}
+.discover-version-warning {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f59e0b;
+    -fx-background-color: rgba(245,158,11,0.12);
+    -fx-padding: 3px 8px;
+    -fx-background-radius: 4px;
+}
+
+/* ── "Feature currently unavailable" banners in Settings ────────────────── */
+.settings-unavailable-note {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f59e0b;
+    -fx-background-color: rgba(245,158,11,0.12);
+    -fx-background-radius: 6px;
+    -fx-padding: 8px 10px;
+}
+
+/* ── Discover skeleton / loading placeholders ───────────────────────────── */
+.skeleton-card {
+    -fx-cursor: default;
+}
+.skeleton-block {
+    -fx-fill: rgba(255,255,255,0.08);
+}
+
+/* ── Segmented toggle (Mods / Resource Packs) ───────────────────────────── */
+.segmented-group {
+    -fx-background-color: -fx-surface;
+    -fx-background-radius: 8px;
+    -fx-border-color: -fx-border-subtle;
+    -fx-border-radius: 8px;
+    -fx-border-width: 1px;
+}
+.segmented-toggle {
+    -fx-background-color: transparent;
+    -fx-background-radius: 8px;
+    -fx-text-fill: -fx-text-muted;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 6px 14px;
+    -fx-cursor: hand;
+}
+.segmented-toggle:selected {
+    -fx-background-color: -fx-accent-color;
+    -fx-text-fill: #000000;
+}
+.segmented-toggle:hover:armed,
+.segmented-toggle:hover:selected {
+    -fx-background-color: -fx-accent-hover;
+}

@@ -11,6 +11,7 @@ import com.launcher.model.ModLoaderType;
 import com.launcher.ui.CreateInstanceDialog;
 import com.launcher.ui.EditInstanceDialog;
 import com.launcher.ui.LoginDialog;
+import com.launcher.ui.NotificationCenter;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -35,6 +36,7 @@ public class Main extends Application {
     private final InstanceManager instanceManager = new InstanceManager();
 
     private Stage primaryStage;
+    private NotificationCenter notifications;
 
     /**
      * Runs {@code action} while preserving the primary stage's maximized state.
@@ -85,6 +87,7 @@ public class Main extends Application {
     private Button refreshModsBtn;
     private Button deleteModBtn;
     private Button dedupeModsBtn;
+    private Button installDependenciesBtn;
     private List<ModEntry> currentModEntries = new java.util.ArrayList<>();
 
     // Mod icons are loaded asynchronously (Modrinth) and cached by URL so list
@@ -92,10 +95,51 @@ public class Main extends Application {
     private final java.util.Map<String, Image> modIconCache = new java.util.concurrent.ConcurrentHashMap<>();
     private Image defaultModIcon;
 
+    // ─── Discover tab (Modrinth browser) ───────────────────────────────────────
+    private ComboBox<Instance> discoverInstanceBox;
+    private ToggleButton discoverModsToggle;
+    private ToggleButton discoverPacksToggle;
+    private TextField discoverSearchField;
+    private Button discoverSearchBtn;
+    private FlowPane discoverResultsPane;
+    private Label discoverStatusLabel;
+    private final java.util.Map<String, Image> discoverIconCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private int discoverOffset = 0;
+    private int discoverTotalHits = 0;
+    private Label discoverPageLabel;
+    private Button discoverPrevPageBtn;
+    private Button discoverNextPageBtn;
+    private Button discoverRefreshBtn;
+
+    /** One selectable file version in a Discover card's "Version" dropdown. */
+    private record VersionOption(String label, String url, String fileName) {
+        @Override public String toString() { return label; }
+    }
+
+    // ─── Server section (Discord RPC settings) ─────────────────────────────────
+    private Label serverInstanceLabel;
+    private Label serverIpLabel;
+    private Label serverPrivacyBadge;
+    private Button togglePrivateBtn;
+    private TextField addPrivateIpField;
+    private FlowPane privateIpsChips;
+    private ComboBox<InstanceServerOption> instanceServersBox;
+
+    /** One entry in the "Servers found in instances" menu — a server read from one instance's servers.dat. */
+    private record InstanceServerOption(Instance instance, com.launcher.minecraft.ServerListReader.ServerEntry entry) {
+        @Override public String toString() {
+            return instance.name + "  ›  " + entry.name + "  (" + entry.ip + ")";
+        }
+    }
+
     // ─── Transparent / blur backdrop ──────────────────────────────────────────
     // Sits behind the real UI inside sceneRoot; paints the background color/image
     // and, when enabled, a blurred backdrop so panels can be made translucent.
     private javafx.scene.layout.StackPane backdropLayer;
+
+    // ─── Tab navigation (used by "find a mod for this" shortcut buttons) ──────
+    private TabPane mainTabPane;
+    private Tab discoverTabRef;
 
     @Override
     public void start(Stage stage) {
@@ -123,6 +167,9 @@ public class Main extends Application {
         backdropLayer.setPickOnBounds(false);
         sceneRoot.getChildren().addAll(backdropLayer, root);
 
+        // Toast-notification overlay, always on top of everything else.
+        notifications = new NotificationCenter(sceneRoot);
+
         com.launcher.model.LauncherSettings initSettings = com.launcher.manager.SettingsManager.getInstance().getSettings();
         int initW = (initSettings.launcherWidth  >= 820) ? initSettings.launcherWidth  : 960;
         int initH = (initSettings.launcherHeight >= 560) ? initSettings.launcherHeight : 660;
@@ -130,8 +177,11 @@ public class Main extends Application {
 
         Tab instancesTab = new Tab("⚡  Instances", buildInstanceArea(stage));
         Tab modsTab      = new Tab("📦  Mods",      buildModsArea());
+        Tab discoverTab  = new Tab("🌐  Discover",  buildDiscoverArea());
         Tab settingsTab  = new Tab("⚙  Settings",  buildSettingsArea(scene));
-        tabPane.getTabs().addAll(instancesTab, modsTab, settingsTab);
+        tabPane.getTabs().addAll(instancesTab, modsTab, discoverTab, settingsTab);
+        this.mainTabPane = tabPane;
+        this.discoverTabRef = discoverTab;
 
         root.setCenter(tabPane);
         root.setBottom(buildLogArea());
@@ -141,6 +191,8 @@ public class Main extends Application {
 
         com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
         applyTheme(scene, settings);
+        
+        com.launcher.manager.DiscordRpcManager.getInstance().init();
 
         stage.setScene(scene);
         stage.setOnCloseRequest(e -> {
@@ -148,6 +200,7 @@ public class Main extends Application {
             if (s.clearSessionOnExit) {
                 for (Account acc : accountManager.getAccounts()) accountManager.addOrUpdate(acc);
             }
+            com.launcher.manager.DiscordRpcManager.getInstance().shutdown();
         });
         stage.iconifiedProperty().addListener((obs, was, is) -> {
             isMinimized = is;
@@ -162,6 +215,65 @@ public class Main extends Application {
         refreshAccounts();
         refreshInstances();
         updateDawnStatus(instanceList.getSelectionModel().getSelectedItem());
+
+        if (com.launcher.manager.SettingsManager.getInstance().getSettings().checkModUpdatesOnStartup) {
+            runStartupModUpdateCheck();
+        }
+    }
+
+    /**
+     * Silently scans every visible instance's mods on launcher startup and reports what it
+     * finds via toast notifications, instead of touching whatever the Mods list is currently
+     * showing. Wired to the "Check for mod updates when the launcher starts" setting.
+     */
+    private void runStartupModUpdateCheck() {
+        var targets = instanceManager.getInstances().stream().filter(i -> !i.hidden).toList();
+        if (targets.isEmpty()) return;
+
+        new Thread(() -> {
+            ModUpdateService service = new ModUpdateService();
+            java.util.Map<String, Integer> updatesByInstance = new java.util.LinkedHashMap<>();
+            int scannedInstances = 0;
+
+            for (Instance inst : targets) {
+                try {
+                    Path modsDir = instanceManager.resolveGameDir(inst).resolve("mods");
+                    List<ModEntry> mods = service.scanModsDir(modsDir);
+                    if (mods.isEmpty()) continue;
+
+                    scannedInstances++;
+                    service.identifyMods(mods, msg -> {});
+                    String loaderName = inst.modLoader != null && inst.modLoader != ModLoaderType.VANILLA
+                            ? inst.modLoader.name().toLowerCase() : null;
+                    service.checkUpdates(mods, inst.mcVersion, loaderName, msg -> {});
+
+                    long updatable = mods.stream().filter(m -> "Update available".equals(m.status)).count();
+                    if (updatable > 0) updatesByInstance.put(inst.name, (int) updatable);
+                } catch (Exception ignored) {
+                    // A single instance failing to scan shouldn't block the rest, or spam the user at startup.
+                }
+            }
+
+            final int finalScanned = scannedInstances;
+            Platform.runLater(() -> {
+                if (finalScanned == 0) return; // nothing with mods installed — stay quiet
+                if (updatesByInstance.isEmpty()) {
+                    notifications.info("Mods up to date", "Checked " + finalScanned + " instance(s) — no mod updates found.");
+                } else {
+                    StringBuilder sb = new StringBuilder();
+                    for (var entry : updatesByInstance.entrySet()) {
+                        if (sb.length() > 0) sb.append("\n");
+                        sb.append(entry.getKey()).append(": ").append(entry.getValue()).append(" update(s)");
+                    }
+                    notifications.success("Mod updates available", sb.toString());
+                }
+                // Refresh whatever the Mods tab happens to be showing right now so status badges reflect the check.
+                Instance sel = instanceList.getSelectionModel().getSelectedItem();
+                if (sel != null && updatesByInstance.containsKey(sel.name)) {
+                    refreshModsView(sel);
+                }
+            });
+        }, "startup-mod-update-check").start();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -281,6 +393,7 @@ public class Main extends Application {
         instanceList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             updateDawnStatus(newVal);
             refreshModsView(newVal);
+            refreshServerSection();
         });
 
         // ── wire toolbar buttons ──────────────────────────────────────────────
@@ -510,17 +623,20 @@ public class Main extends Application {
         updateSelectedBtn = new Button("⬆  Update Selected");
         deleteModBtn = new Button("🗑  Delete Mod");
         dedupeModsBtn = new Button("✦  Remove Duplicates");
+        installDependenciesBtn = new Button("🔗  Install Dependencies");
         updateAllBtn.setDisable(true);
         updateSelectedBtn.setDisable(true);
         checkUpdatesBtn.setDisable(true);
         refreshModsBtn.setDisable(true);
         deleteModBtn.setDisable(true);
         dedupeModsBtn.setDisable(true);
+        installDependenciesBtn.setDisable(true);
         deleteModBtn.getStyleClass().add("btn-danger");
 
         Region modsToolbarSpacer = new Region();
         HBox.setHgrow(modsToolbarSpacer, Priority.ALWAYS);
-        HBox modsToolbar = new HBox(8, headerCol, modsToolbarSpacer, deleteModBtn, dedupeModsBtn, refreshModsBtn, checkUpdatesBtn, updateSelectedBtn, updateAllBtn);
+        HBox modsToolbar = new HBox(8, headerCol, modsToolbarSpacer, deleteModBtn, dedupeModsBtn,
+                installDependenciesBtn, refreshModsBtn, checkUpdatesBtn, updateSelectedBtn, updateAllBtn);
         modsToolbar.setAlignment(Pos.CENTER_LEFT);
 
         // ── Mods list (modern card-style rows, matching the Instances tab) ────
@@ -534,7 +650,7 @@ public class Main extends Application {
         // ── Wire toolbar buttons ──────────────────────────────────────────────
         refreshModsBtn.setOnAction(e -> {
             Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            refreshModsView(sel);
+            refreshModsView(sel, true);
         });
 
         checkUpdatesBtn.setOnAction(e -> {
@@ -660,6 +776,13 @@ public class Main extends Application {
                 log("Removed " + removed + " duplicate mod file(s).");
                 refreshModsView(sel);
             });
+        });
+
+        // ── Install missing required dependencies for the currently installed mods ──
+        installDependenciesBtn.setOnAction(e -> {
+            Instance sel = instanceList.getSelectionModel().getSelectedItem();
+            if (sel == null) return;
+            installMissingDependencies(sel);
         });
 
         // ── Search bar ────────────────────────────────────────────────────────
@@ -805,8 +928,8 @@ public class Main extends Application {
     private void setModIcon(javafx.scene.image.ImageView view, ModEntry mod) {
         if (mod.iconUrl != null && !mod.iconUrl.isBlank()) {
             Image img = modIconCache.computeIfAbsent(mod.iconUrl,
-                    url -> new Image(url, 72, 72, true, true, true));
-            view.setImage(img);
+                    url -> new Image(proxiedIconUrl(url), 72, 72, true, true, true));
+            bindIconWithFallback(view, img, getDefaultModIcon());
         } else {
             view.setImage(getDefaultModIcon());
         }
@@ -815,16 +938,585 @@ public class Main extends Application {
     private Image getDefaultModIcon() {
         if (defaultModIcon == null) {
             try {
-                java.io.InputStream is = getClass().getResourceAsStream("/com/launcher/DefaultInstanceIcon.png");
+                java.io.InputStream is = getClass().getResourceAsStream("/com/launcher/minecraft_image.png");
                 if (is != null) defaultModIcon = new Image(is, 72, 72, true, true);
             } catch (Exception ignored) {}
         }
         return defaultModIcon;
     }
 
-    /** Filters the mods list to entries whose name contains the query (case-insensitive). */
+    /**
+     * Modrinth (and most modern CDNs) now serve project icons as WebP. JavaFX's built-in
+     * {@link Image} loader only understands BMP/GIF/JPEG/PNG, so a raw WebP icon URL silently
+     * fails to load and the icon just never appears. Routing the URL through a public
+     * image-proxy that re-encodes to PNG fixes this for every icon without pulling in a new
+     * image-decoding dependency.
+     */
+    private static String proxiedIconUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) return rawUrl;
+        try {
+            String encoded = java.net.URLEncoder.encode(rawUrl, "UTF-8");
+            return "https://wsrv.nl/?url=" + encoded + "&output=png&w=128&h=128&fit=cover";
+        } catch (Exception e) {
+            return rawUrl;
+        }
+    }
+
+    /**
+     * Displays {@code img} in {@code view}, swapping to {@code fallback} if the image is
+     * already in an error state or fails to load asynchronously (e.g. the proxy is
+     * unreachable, or the source URL is bad). Keeps icon tiles from being left blank.
+     */
+    private void bindIconWithFallback(javafx.scene.image.ImageView view, Image img, Image fallback) {
+        view.setImage(img);
+        if (img.isError()) {
+            view.setImage(fallback);
+            return;
+        }
+        img.errorProperty().addListener((obs, was, isNow) -> {
+            if (isNow) Platform.runLater(() -> view.setImage(fallback));
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  DISCOVER TAB — browse & install mods / resource packs from Modrinth
+    // ══════════════════════════════════════════════════════════════════════════
+    private VBox buildDiscoverArea() {
+        VBox root = new VBox(14);
+        root.setPadding(new Insets(16));
+
+        Label title = new Label("Discover");
+        title.setStyle("-fx-font-size:18px; -fx-font-weight:bold; -fx-text-fill:#ffffff;");
+        Label subtitle = new Label("Browse and install mods and resource packs from Modrinth.");
+        subtitle.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
+        VBox headerCol = new VBox(2, title, subtitle);
+
+        // ── Target instance picker ──────────────────────────────────────────
+        discoverInstanceBox = new ComboBox<>();
+        discoverInstanceBox.setPromptText("Select an instance…");
+        discoverInstanceBox.setPrefWidth(240);
+        discoverInstanceBox.setConverter(new javafx.util.StringConverter<>() {
+            @Override public String toString(Instance i) { return i == null ? "" : i.name; }
+            @Override public Instance fromString(String s) { return null; }
+        });
+
+        // ── Mod / Resource Pack segmented toggle ────────────────────────────
+        javafx.scene.control.ToggleGroup typeGroup = new javafx.scene.control.ToggleGroup();
+        discoverModsToggle = new ToggleButton("Mods");
+        discoverPacksToggle = new ToggleButton("Resource Packs");
+        discoverModsToggle.setToggleGroup(typeGroup);
+        discoverPacksToggle.setToggleGroup(typeGroup);
+        discoverModsToggle.setSelected(true);
+        discoverModsToggle.getStyleClass().add("segmented-toggle");
+        discoverPacksToggle.getStyleClass().add("segmented-toggle");
+        typeGroup.selectedToggleProperty().addListener((obs, oldT, newT) -> {
+            if (newT == null) typeGroup.selectToggle(oldT != null ? oldT : discoverModsToggle);
+            else runDiscoverSearch();
+        });
+        HBox typeToggle = new HBox(0, discoverModsToggle, discoverPacksToggle);
+        typeToggle.getStyleClass().add("segmented-group");
+
+        // ── Search row ───────────────────────────────────────────────────────
+        discoverSearchField = new TextField();
+        discoverSearchField.setPromptText("🔎  Search Modrinth…");
+        discoverSearchField.getStyleClass().add("search-field");
+        HBox.setHgrow(discoverSearchField, Priority.ALWAYS);
+        discoverSearchField.setOnAction(e -> runDiscoverSearch());
+
+        discoverSearchBtn = new Button("Search");
+        discoverSearchBtn.setOnAction(e -> runDiscoverSearch());
+
+        HBox searchRow = new HBox(8, discoverInstanceBox, typeToggle, discoverSearchField, discoverSearchBtn);
+        searchRow.setAlignment(Pos.CENTER_LEFT);
+
+        discoverStatusLabel = new Label("Select an instance, then search to browse mods or resource packs.");
+        discoverStatusLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
+        HBox.setHgrow(discoverStatusLabel, Priority.ALWAYS);
+
+        // Re-syncs the instance list and re-runs whatever search is currently active — handy
+        // right after creating/editing an instance, or if a search seems to have gone stale.
+        discoverRefreshBtn = new Button("🔄  Refresh");
+        discoverRefreshBtn.setOnAction(e -> {
+            refreshDiscoverInstances();
+            if (discoverInstanceBox.getValue() != null) {
+                runDiscoverSearch();
+            }
+        });
+        // Only useful as a "try again" affordance when nothing is on screen — once
+        // results/cards are showing, hide it so it doesn't clutter the results toolbar.
+        discoverRefreshBtn.managedProperty().bind(discoverRefreshBtn.visibleProperty());
+
+        HBox statusRow = new HBox(8, discoverStatusLabel, discoverRefreshBtn);
+        statusRow.setAlignment(Pos.CENTER_LEFT);
+
+        // ── Results grid (Modrinth-style cards, wrapping) ───────────────────
+        discoverResultsPane = new FlowPane();
+        discoverResultsPane.setHgap(12);
+        discoverResultsPane.setVgap(12);
+        discoverResultsPane.setPadding(new Insets(4, 0, 20, 0));
+
+        ScrollPane resultsScroll = new ScrollPane(discoverResultsPane);
+        resultsScroll.setFitToWidth(true);
+        resultsScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        resultsScroll.setStyle("-fx-background-color:transparent; -fx-border-color:transparent;");
+        VBox.setVgrow(resultsScroll, Priority.ALWAYS);
+
+        // ── Pagination controls ──────────────────────────────────────────────
+        discoverPrevPageBtn = new Button("←  Previous");
+        discoverPrevPageBtn.setDisable(true);
+        discoverPrevPageBtn.setOnAction(e -> {
+            discoverOffset = Math.max(0, discoverOffset - ModUpdateService.DISCOVER_PAGE_SIZE);
+            loadDiscoverPage();
+        });
+
+        discoverPageLabel = new Label("Page 1");
+        discoverPageLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
+
+        discoverNextPageBtn = new Button("Next  →");
+        discoverNextPageBtn.setDisable(true);
+        discoverNextPageBtn.setOnAction(e -> {
+            discoverOffset += ModUpdateService.DISCOVER_PAGE_SIZE;
+            loadDiscoverPage();
+        });
+
+        HBox paginationRow = new HBox(12, discoverPrevPageBtn, discoverPageLabel, discoverNextPageBtn);
+        paginationRow.setAlignment(Pos.CENTER);
+        paginationRow.setPadding(new Insets(4, 0, 0, 0));
+
+        root.getChildren().addAll(headerCol, searchRow, statusRow, resultsScroll, paginationRow);
+        updateDiscoverRefreshButtonVisibility();
+
+        // Keep the instance picker synced with the Instances list, and default
+        // to whatever is currently selected there.
+        discoverInstanceBox.getItems().setAll(instanceManager.getInstances().stream().filter(i -> !i.hidden).toList());
+        if (instanceList != null && instanceList.getSelectionModel().getSelectedItem() != null) {
+            discoverInstanceBox.setValue(instanceList.getSelectionModel().getSelectedItem());
+        } else if (!discoverInstanceBox.getItems().isEmpty()) {
+            discoverInstanceBox.setValue(discoverInstanceBox.getItems().get(0));
+        }
+        root.sceneProperty().addListener((obs, oldS, newS) -> {
+            if (newS != null) refreshDiscoverInstances();
+        });
+
+        return root;
+    }
+
+    /** Re-syncs the Discover tab's instance dropdown with the current instance list. */
+    private void refreshDiscoverInstances() {
+        if (discoverInstanceBox == null) return;
+        Instance prev = discoverInstanceBox.getValue();
+        var visible = instanceManager.getInstances().stream().filter(i -> !i.hidden).toList();
+        discoverInstanceBox.getItems().setAll(visible);
+        if (prev != null && visible.stream().anyMatch(i -> i.id.equals(prev.id))) {
+            discoverInstanceBox.setValue(prev);
+        } else if (!visible.isEmpty()) {
+            discoverInstanceBox.setValue(visible.get(0));
+        }
+    }
+
+    /** The currently active Discover project type: "mod" or "resourcepack". */
+    private String discoverProjectType() {
+        return (discoverPacksToggle != null && discoverPacksToggle.isSelected()) ? "resourcepack" : "mod";
+    }
+
+    /** Starts a brand-new search — resets pagination back to page 1. */
+    private void runDiscoverSearch() {
+        discoverOffset = 0;
+        loadDiscoverPage();
+    }
+
+    /**
+     * Switches to the Discover tab, sets it to browse the given project type, fills in a
+     * search query, and runs it. Used by "this feature is unavailable, try a mod" shortcut
+     * buttons elsewhere in the launcher (e.g. Settings → Discord RPC).
+     */
+    private void goToDiscoverAndSearch(String query, boolean modsProjectType) {
+        if (mainTabPane != null && discoverTabRef != null) {
+            mainTabPane.getSelectionModel().select(discoverTabRef);
+        }
+        if (modsProjectType && discoverModsToggle != null) {
+            discoverModsToggle.setSelected(true);
+        } else if (!modsProjectType && discoverPacksToggle != null) {
+            discoverPacksToggle.setSelected(true);
+        }
+        if (discoverSearchField != null) {
+            discoverSearchField.setText(query);
+        }
+        if (discoverInstanceBox != null && discoverInstanceBox.getValue() == null
+                && !discoverInstanceBox.getItems().isEmpty()) {
+            discoverInstanceBox.setValue(discoverInstanceBox.getItems().get(0));
+        }
+        runDiscoverSearch();
+    }
+
+    /** Loads whatever page {@link #discoverOffset} currently points at, showing skeleton cards while it loads. */
+    private void loadDiscoverPage() {
+        if (discoverInstanceBox == null) return;
+        Instance target = discoverInstanceBox.getValue();
+        if (target == null) {
+            discoverStatusLabel.setText("Select an instance first.");
+            return;
+        }
+        String query = discoverSearchField.getText();
+        String projectType = discoverProjectType();
+        String loader = target.modLoader == ModLoaderType.VANILLA ? "fabric" : target.modLoader.name().toLowerCase();
+        String gameVer = target.mcVersion;
+        int offset = discoverOffset;
+
+        discoverStatusLabel.setText("Searching Modrinth…");
+        showDiscoverSkeletons();
+        discoverSearchBtn.setDisable(true);
+        discoverPrevPageBtn.setDisable(true);
+        discoverNextPageBtn.setDisable(true);
+
+        Thread t = new Thread(() -> {
+            try {
+                ModUpdateService service = new ModUpdateService();
+                com.google.gson.JsonObject page = service.searchProjectsPage(
+                        query == null ? "" : query, projectType, loader, gameVer, offset, ModUpdateService.DISCOVER_PAGE_SIZE);
+                com.google.gson.JsonArray hits = page.getAsJsonArray("hits");
+                int totalHits = page.has("total_hits") && !page.get("total_hits").isJsonNull()
+                        ? page.get("total_hits").getAsInt() : hits.size();
+
+                Platform.runLater(() -> {
+                    discoverTotalHits = totalHits;
+                    discoverResultsPane.getChildren().clear();
+                    if (hits.isEmpty()) {
+                        discoverStatusLabel.setText(offset == 0 ? "No results found." : "No more results.");
+                    } else {
+                        discoverStatusLabel.setText(totalHits + " result(s) for " + target.name
+                                + (projectType.equals("mod")
+                                        ? " (" + loader + " loader) — showing all versions, mismatches are flagged below"
+                                        : " — showing all versions, mismatches are flagged below"));
+                        for (com.google.gson.JsonElement el : hits) {
+                            discoverResultsPane.getChildren().add(buildDiscoverCard(el.getAsJsonObject(), projectType, target));
+                        }
+                    }
+                    discoverSearchBtn.setDisable(false);
+                    updateDiscoverPagination();
+                    updateDiscoverRefreshButtonVisibility();
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    discoverStatusLabel.setText("Search failed: " + ex.getMessage());
+                    discoverResultsPane.getChildren().clear();
+                    discoverSearchBtn.setDisable(false);
+                    log("Discover search failed: " + ex.getMessage());
+                    updateDiscoverRefreshButtonVisibility();
+                });
+            }
+        }, "discover-search");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /**
+     * Shows the Discover "🔄 Refresh" button only when the results grid is empty (no mod/
+     * resource-pack cards, including skeleton loading cards, currently on screen). When
+     * there are cards showing there's nothing to refresh, so the button just gets in the way.
+     */
+    private void updateDiscoverRefreshButtonVisibility() {
+        if (discoverRefreshBtn == null || discoverResultsPane == null) return;
+        discoverRefreshBtn.setVisible(discoverResultsPane.getChildren().isEmpty());
+    }
+
+    /** Refreshes the "Page N of M" label and enables/disables the Previous/Next buttons. */
+    private void updateDiscoverPagination() {
+        int pageSize = ModUpdateService.DISCOVER_PAGE_SIZE;
+        int currentPage = (discoverOffset / pageSize) + 1;
+        int totalPages = Math.max(1, (int) Math.ceil(discoverTotalHits / (double) pageSize));
+        discoverPageLabel.setText("Page " + currentPage + " of " + totalPages);
+        discoverPrevPageBtn.setDisable(discoverOffset <= 0);
+        discoverNextPageBtn.setDisable(discoverOffset + pageSize >= discoverTotalHits);
+    }
+
+    /** Fills the results grid with pulsing gray placeholder cards while a search is in flight. */
+    private void showDiscoverSkeletons() {
+        discoverResultsPane.getChildren().clear();
+        for (int i = 0; i < 8; i++) {
+            discoverResultsPane.getChildren().add(buildDiscoverSkeletonCard());
+        }
+        updateDiscoverRefreshButtonVisibility();
+    }
+
+    /** One placeholder "loading" card matching the real card's layout, with a soft shimmer animation. */
+    private VBox buildDiscoverSkeletonCard() {
+        javafx.scene.shape.Rectangle iconBlock = skeletonBlock(48, 48, 10);
+        VBox titleLines = new VBox(6, skeletonBlock(120, 12, 4), skeletonBlock(70, 10, 4));
+        HBox headerRow = new HBox(10, iconBlock, titleLines);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        VBox descLines = new VBox(6, skeletonBlock(228, 10, 4), skeletonBlock(190, 10, 4), skeletonBlock(150, 10, 4));
+        javafx.scene.shape.Rectangle versionBlock = skeletonBlock(228, 24, 6);
+        javafx.scene.shape.Rectangle btnBlock = skeletonBlock(228, 28, 6);
+
+        VBox card = new VBox(10, headerRow, descLines, versionBlock, btnBlock);
+        card.getStyleClass().addAll("discover-card", "skeleton-card");
+        card.setPrefWidth(260);
+        card.setMaxWidth(260);
+
+        javafx.animation.FadeTransition shimmer = new javafx.animation.FadeTransition(javafx.util.Duration.millis(750), card);
+        shimmer.setFromValue(0.45);
+        shimmer.setToValue(1.0);
+        shimmer.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        shimmer.setAutoReverse(true);
+        shimmer.play();
+
+        return card;
+    }
+
+    private javafx.scene.shape.Rectangle skeletonBlock(double width, double height, double arc) {
+        javafx.scene.shape.Rectangle r = new javafx.scene.shape.Rectangle(width, height);
+        r.setArcWidth(arc);
+        r.setArcHeight(arc);
+        r.getStyleClass().add("skeleton-block");
+        return r;
+    }
+
+    /** Builds a single Modrinth-style result card for the Discover grid. */
+    private VBox buildDiscoverCard(com.google.gson.JsonObject hit, String projectType, Instance target) {
+        String projectId = hit.has("project_id") ? hit.get("project_id").getAsString() : null;
+        String titleText = hit.has("title") ? hit.get("title").getAsString() : "Unknown";
+        String author = hit.has("author") ? hit.get("author").getAsString() : "";
+        String description = hit.has("description") ? hit.get("description").getAsString() : "";
+        long downloads = hit.has("downloads") ? hit.get("downloads").getAsLong() : 0;
+        String iconUrl = hit.has("icon_url") && !hit.get("icon_url").isJsonNull()
+                ? hit.get("icon_url").getAsString() : null;
+
+        javafx.scene.image.ImageView iconView = new javafx.scene.image.ImageView();
+        iconView.setFitWidth(48);
+        iconView.setFitHeight(48);
+        iconView.setPreserveRatio(true);
+        iconView.setSmooth(true);
+        javafx.scene.shape.Rectangle clip = new javafx.scene.shape.Rectangle(48, 48);
+        clip.setArcWidth(10);
+        clip.setArcHeight(10);
+        iconView.setClip(clip);
+        if (iconUrl != null && !iconUrl.isBlank()) {
+            Image img = discoverIconCache.computeIfAbsent(iconUrl,
+                    u -> new Image(proxiedIconUrl(u), 96, 96, true, true, true));
+            bindIconWithFallback(iconView, img, getDefaultModIcon());
+        } else {
+            iconView.setImage(getDefaultModIcon());
+        }
+
+        Label nameLabel = new Label(titleText);
+        nameLabel.getStyleClass().add("discover-title");
+        nameLabel.setWrapText(true);
+
+        Label authorLabel = new Label("by " + author);
+        authorLabel.getStyleClass().add("discover-meta");
+
+        VBox titleCol = new VBox(2, nameLabel, authorLabel);
+        HBox headerRow = new HBox(10, iconView, titleCol);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label descLabel = new Label(description);
+        descLabel.getStyleClass().add("discover-desc");
+        descLabel.setWrapText(true);
+        descLabel.setMinHeight(50);
+
+        Label downloadsLabel = new Label("⬇ " + formatCount(downloads) + " downloads");
+        downloadsLabel.getStyleClass().add("discover-meta");
+
+        // ── Version-compatibility notice ──────────────────────────────────────────
+        // Mods and resource packs are both now shown regardless of the instance's Minecraft
+        // version (search no longer filters on it), so flag whether this particular result
+        // actually lists the instance's version as supported instead of hiding mismatches.
+        Label compatLabel = null;
+        if (target.mcVersion != null && !target.mcVersion.isBlank()) {
+            String kind = "resourcepack".equals(projectType) ? "resource pack" : "mod";
+            boolean compatible = true;
+            if (hit.has("versions") && hit.get("versions").isJsonArray()) {
+                compatible = false;
+                for (com.google.gson.JsonElement v : hit.getAsJsonArray("versions")) {
+                    if (target.mcVersion.equals(v.getAsString())) {
+                        compatible = true;
+                        break;
+                    }
+                }
+            }
+            compatLabel = new Label(compatible
+                    ? "✓ Supports " + target.mcVersion
+                    : "⚠ Not your version (" + target.mcVersion + ")");
+            compatLabel.getStyleClass().add(compatible ? "discover-version-ok" : "discover-version-warning");
+            compatLabel.setTooltip(new Tooltip(compatible
+                    ? "This " + kind + " lists " + target.mcVersion + " as a supported version."
+                    : "This " + kind + " doesn't list " + target.mcVersion + " as a supported version. "
+                            + "You can still download it — it may still work, but it isn't officially supported for your version."));
+        }
+
+        // ── Version picker — lets the user choose exactly which release to install ──
+        ComboBox<VersionOption> versionBox = new ComboBox<>();
+        versionBox.setPromptText("Loading versions…");
+        versionBox.setMaxWidth(Double.MAX_VALUE);
+        versionBox.setDisable(true);
+        if (projectId != null) {
+            loadDiscoverCardVersions(projectId, projectType, target, versionBox);
+        }
+
+        Button downloadBtn = new Button("Download");
+        downloadBtn.setMaxWidth(Double.MAX_VALUE);
+        downloadBtn.setOnAction(e -> {
+            Instance currentTarget = discoverInstanceBox.getValue();
+            if (currentTarget == null || projectId == null) return;
+            downloadBtn.setDisable(true);
+            VersionOption chosen = versionBox.getValue();
+            if (chosen != null) {
+                downloadDiscoverVersion(chosen, titleText, projectType, currentTarget, downloadBtn);
+            } else {
+                // Version list hasn't loaded yet (or has none) — fall back to "best match".
+                downloadDiscoverProject(projectId, titleText, projectType, currentTarget, downloadBtn);
+            }
+        });
+
+        VBox card = new VBox(8, headerRow, descLabel, downloadsLabel);
+        if (compatLabel != null) card.getChildren().add(compatLabel);
+        card.getChildren().addAll(versionBox, downloadBtn);
+        card.getStyleClass().add("discover-card");
+        card.setPrefWidth(260);
+        card.setMaxWidth(260);
+        return card;
+    }
+
+    /** Fetches every compatible version of a project and populates a card's version dropdown, newest first. */
+    private void loadDiscoverCardVersions(String projectId, String projectType, Instance target, ComboBox<VersionOption> versionBox) {
+        String loader = target.modLoader == ModLoaderType.VANILLA ? "fabric" : target.modLoader.name().toLowerCase();
+        String gameVer = target.mcVersion;
+
+        Thread t = new Thread(() -> {
+            try {
+                ModUpdateService service = new ModUpdateService();
+                com.google.gson.JsonArray versions = service.listVersions(projectId, projectType, loader, gameVer);
+                java.util.List<VersionOption> options = new java.util.ArrayList<>();
+                for (com.google.gson.JsonElement el : versions) {
+                    com.google.gson.JsonObject v = el.getAsJsonObject();
+                    String[] file = ModUpdateService.primaryFileOf(v);
+                    if (file == null) continue;
+                    String label = v.has("version_number") && !v.get("version_number").isJsonNull()
+                            ? v.get("version_number").getAsString()
+                            : (v.has("name") && !v.get("name").isJsonNull() ? v.get("name").getAsString() : "unknown");
+                    options.add(new VersionOption(label, file[0], file[1]));
+                }
+                Platform.runLater(() -> {
+                    versionBox.getItems().setAll(options);
+                    if (!options.isEmpty()) {
+                        versionBox.setValue(options.get(0)); // newest first from Modrinth
+                        versionBox.setPromptText("Latest");
+                        versionBox.setDisable(false);
+                    } else {
+                        versionBox.setPromptText("No compatible versions");
+                        versionBox.setDisable(true);
+                    }
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    versionBox.setPromptText("Version list unavailable");
+                    versionBox.setDisable(true);
+                });
+            }
+        }, "discover-card-versions");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Downloads the specific version file the user chose from a Discover card's version dropdown. */
+    private void downloadDiscoverVersion(VersionOption version, String projectTitle, String projectType,
+                                          Instance target, Button downloadBtn) {
+        Thread t = new Thread(() -> {
+            try {
+                Path gameDir = instanceManager.resolveGameDir(target);
+                String subfolder = "resourcepack".equals(projectType) ? "resourcepacks" : "mods";
+                Path targetDir = gameDir.resolve(subfolder);
+                if (!Files.exists(targetDir)) Files.createDirectories(targetDir);
+                Path targetFile = targetDir.resolve(version.fileName());
+
+                Platform.runLater(() -> log("Downloading " + projectTitle + " " + version.label() + " (" + version.fileName() + ")…"));
+                com.launcher.util.HttpUtil.downloadToFile(version.url(), targetFile);
+
+                Platform.runLater(() -> {
+                    log("Downloaded " + projectTitle + " " + version.label() + " into " + target.name + "/" + subfolder);
+                    downloadBtn.setText("✓ Installed");
+                    if ("mod".equals(projectType) && instanceList.getSelectionModel().getSelectedItem() == target) {
+                        refreshModsView(target);
+                    }
+                    notifications.success("Install finished", projectTitle + " " + version.label() + " installed into " + target.name);
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    log("Download failed for " + projectTitle + ": " + ex.getMessage());
+                    downloadBtn.setDisable(false);
+                    notifications.error("Install failed", projectTitle + ": " + ex.getMessage());
+                });
+            }
+        }, "discover-download-version");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Downloads a Modrinth project's best-matching file into the target instance's mods/resourcepacks folder. */
+    private void downloadDiscoverProject(String projectId, String projectTitle, String projectType,
+                                          Instance target, Button downloadBtn) {
+        Thread t = new Thread(() -> {
+            try {
+                ModUpdateService service = new ModUpdateService();
+                String loader = target.modLoader == ModLoaderType.VANILLA ? "fabric" : target.modLoader.name().toLowerCase();
+                String gameVer = target.mcVersion;
+
+                Platform.runLater(() -> log("Fetching download URL for " + projectTitle + "…"));
+                String downloadUrl = service.getDownloadUrlForProject(projectId, projectType, loader, gameVer);
+
+                if (downloadUrl == null) {
+                    Platform.runLater(() -> {
+                        log("No compatible version of " + projectTitle + " found for " + target.name + ".");
+                        downloadBtn.setDisable(false);
+                    });
+                    return;
+                }
+
+                Path gameDir = instanceManager.resolveGameDir(target);
+                String subfolder = "resourcepack".equals(projectType) ? "resourcepacks" : "mods";
+                Path targetDir = gameDir.resolve(subfolder);
+                if (!Files.exists(targetDir)) Files.createDirectories(targetDir);
+
+                String fileName = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1);
+                Path targetFile = targetDir.resolve(fileName);
+
+                Platform.runLater(() -> log("Downloading " + fileName + "…"));
+                com.launcher.util.HttpUtil.downloadToFile(downloadUrl, targetFile);
+
+                Platform.runLater(() -> {
+                    log("Downloaded " + projectTitle + " (" + fileName + ") into " + target.name + "/" + subfolder);
+                    downloadBtn.setText("✓ Installed");
+                    if ("mod".equals(projectType) && instanceList.getSelectionModel().getSelectedItem() == target) {
+                        refreshModsView(target);
+                    }
+                    notifications.success("Install finished", projectTitle + " installed into " + target.name);
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    log("Download failed for " + projectTitle + ": " + ex.getMessage());
+                    downloadBtn.setDisable(false);
+                    notifications.error("Install failed", projectTitle + ": " + ex.getMessage());
+                });
+            }
+        }, "discover-download");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Formats a download count like Modrinth does: 1234 -> "1.2K", 1234567 -> "1.2M". */
+    private static String formatCount(long n) {
+        if (n >= 1_000_000) return String.format("%.1fM", n / 1_000_000.0);
+        if (n >= 1_000) return String.format("%.1fK", n / 1_000.0);
+        return String.valueOf(n);
+    }
+
     private void applyModsFilter(String query) {
-        if (currentModEntries == null || currentModEntries.isEmpty()) return;
+        if (currentModEntries == null || currentModEntries.isEmpty()) {
+            modsList.getItems().clear();
+            return;
+        }
         if (query == null || query.isBlank()) {
             modsList.getItems().setAll(currentModEntries);
         } else {
@@ -843,6 +1535,17 @@ public class Main extends Application {
     }
 
     private void refreshModsView(Instance instance) {
+        refreshModsView(instance, false);
+    }
+
+    /**
+     * Rescans the current instance's mods folder. Runs the scan (which hashes every jar)
+     * off the FX thread so the list never freezes, and — importantly — never clears the
+     * mods list while loading or on failure, so the icons/names that are already on screen
+     * stay put instead of flashing away. Pass {@code notifyUser = true} for user-initiated
+     * refreshes (the Refresh button) to surface a toast when it's done.
+     */
+    private void refreshModsView(Instance instance, boolean notifyUser) {
         if (instance == null) {
             modsHeaderLabel.setText("Select an instance to view its mods.");
             modsCountLabel.setText("");
@@ -854,30 +1557,49 @@ public class Main extends Application {
             updateSelectedBtn.setDisable(true);
             deleteModBtn.setDisable(true);
             dedupeModsBtn.setDisable(true);
+            installDependenciesBtn.setDisable(true);
             return;
         }
 
         modsHeaderLabel.setText("Mods for: " + instance.name);
-        refreshModsBtn.setDisable(false);
+        refreshModsBtn.setDisable(true); // prevent overlapping scans; re-enabled once this one finishes
 
         Path modsDir = instanceManager.resolveGameDir(instance).resolve("mods");
-        try {
-            ModUpdateService service = new ModUpdateService();
-            currentModEntries = service.scanModsDir(modsDir);
-            applyModsFilter(modsSearchField != null ? modsSearchField.getText() : null);
-            modsCountLabel.setText(currentModEntries.size() + " mod(s) found");
-            checkUpdatesBtn.setDisable(currentModEntries.isEmpty());
-            dedupeModsBtn.setDisable(currentModEntries.isEmpty());
-            updateAllBtn.setDisable(true);
-            updateSelectedBtn.setDisable(true);
-            deleteModBtn.setDisable(true);
-            log("Found " + currentModEntries.size() + " mod(s) in " + modsDir);
-        } catch (Exception ex) {
-            log("Failed to scan mods directory: " + ex.getMessage());
-            modsList.getItems().clear();
-            modsCountLabel.setText("");
-            currentModEntries.clear();
-        }
+        new Thread(() -> {
+            try {
+                ModUpdateService service = new ModUpdateService();
+                List<ModEntry> scanned = service.scanModsDir(modsDir);
+                Platform.runLater(() -> {
+                    // Only apply the result if the user hasn't switched to a different instance meanwhile.
+                    if (instanceList.getSelectionModel().getSelectedItem() != instance) return;
+                    currentModEntries = scanned;
+                    applyModsFilter(modsSearchField != null ? modsSearchField.getText() : null);
+                    modsCountLabel.setText(currentModEntries.size() + " mod(s) found");
+                    checkUpdatesBtn.setDisable(currentModEntries.isEmpty());
+                    dedupeModsBtn.setDisable(currentModEntries.isEmpty());
+                    installDependenciesBtn.setDisable(currentModEntries.isEmpty());
+                    updateAllBtn.setDisable(true);
+                    updateSelectedBtn.setDisable(true);
+                    deleteModBtn.setDisable(true);
+                    refreshModsBtn.setDisable(false);
+                    log("Found " + currentModEntries.size() + " mod(s) in " + modsDir);
+                    if (notifyUser) {
+                        notifications.success("Mods refreshed",
+                                currentModEntries.size() + " mod(s) found for " + instance.name);
+                    }
+                });
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    log("Failed to scan mods directory: " + ex.getMessage());
+                    refreshModsBtn.setDisable(false);
+                    // Deliberately NOT clearing modsList/currentModEntries here — keep whatever
+                    // was already showing rather than blanking the icons/names out.
+                    if (notifyUser) {
+                        notifications.error("Mod scan failed", ex.getMessage());
+                    }
+                });
+            }
+        }, "mods-scan").start();
     }
 
     private void checkModUpdates(Instance instance) {
@@ -908,6 +1630,12 @@ public class Main extends Application {
                     setStatus(updatable > 0
                             ? updatable + " mod update(s) available."
                             : "All mods are up to date.");
+                    if (updatable > 0) {
+                        notifications.success("Updates found",
+                                updatable + " mod update(s) available for " + instance.name);
+                    } else {
+                        notifications.info("Up to date", "All mods are up to date.");
+                    }
                 });
 
             } catch (Exception ex) {
@@ -915,6 +1643,7 @@ public class Main extends Application {
                 Platform.runLater(() -> {
                     checkUpdatesBtn.setDisable(false);
                     setStatus("Update check failed — see console.");
+                    notifications.error("Update check failed", ex.getMessage());
                 });
             }
         }, "mod-update-check").start();
@@ -944,12 +1673,115 @@ public class Main extends Application {
                         .filter(m -> "Update available".equals(m.status)).count();
                 updateAllBtn.setDisable(remaining == 0);
                 setStatus("Updated " + finalSuccess + "/" + updatable.size() + " mod(s).");
+                if (finalSuccess == updatable.size()) {
+                    notifications.success("Mods updated", "Updated " + finalSuccess + "/" + updatable.size() + " mod(s).");
+                } else {
+                    notifications.warning("Mods partially updated",
+                            "Updated " + finalSuccess + "/" + updatable.size() + " mod(s) — check the console for errors.");
+                }
             });
         }, "mod-update-download").start();
     }
 
     private void updateAllMods(Instance instance) {
         updateMods(instance, new java.util.ArrayList<>(currentModEntries));
+    }
+
+    /**
+     * Finds every REQUIRED Modrinth dependency of the currently installed mods that isn't
+     * already installed, and downloads it into the instance's mods folder. Wired to the
+     * "Install Dependencies" button in the Mods tab.
+     */
+    private void installMissingDependencies(Instance instance) {
+        if (currentModEntries.isEmpty()) { log("No mods loaded for this instance."); return; }
+
+        installDependenciesBtn.setDisable(true);
+        setStatus("Checking mod dependencies…");
+
+        new Thread(() -> {
+            try {
+                ModUpdateService service = new ModUpdateService();
+
+                // Dependencies are read off each mod's Modrinth version, so mods that haven't
+                // been identified yet (no modrinthId) need identifying first.
+                boolean needsIdentify = currentModEntries.stream().anyMatch(m -> m.modrinthId == null);
+                if (needsIdentify) {
+                    log("Identifying mods on Modrinth…");
+                    service.identifyMods(currentModEntries, this::log);
+                    Platform.runLater(() -> modsList.refresh());
+                }
+
+                String loaderName = instance.modLoader != null && instance.modLoader != ModLoaderType.VANILLA
+                        ? instance.modLoader.name().toLowerCase() : "fabric";
+                String gameVer = instance.mcVersion;
+
+                log("Looking up required dependencies…");
+                java.util.LinkedHashMap<String, String> missing =
+                        service.findMissingRequiredDependencies(currentModEntries, loaderName, gameVer, this::log);
+
+                if (missing.isEmpty()) {
+                    Platform.runLater(() -> {
+                        log("No missing required dependencies found.");
+                        setStatus("All required dependencies are already installed.");
+                        installDependenciesBtn.setDisable(false);
+                        notifications.info("No dependencies missing", "All required dependencies are already installed.");
+                    });
+                    return;
+                }
+
+                log("Installing " + missing.size() + " missing dependenc" + (missing.size() == 1 ? "y" : "ies")
+                        + ": " + String.join(", ", missing.values()) + "…");
+                Platform.runLater(() -> notifications.info(
+                        "Dependencies found",
+                        missing.size() + " missing dependenc" + (missing.size() == 1 ? "y" : "ies")
+                                + " found — installing: " + String.join(", ", missing.values())));
+
+                Path modsDir = instanceManager.resolveGameDir(instance).resolve("mods");
+                if (!Files.exists(modsDir)) Files.createDirectories(modsDir);
+
+                int installed = 0;
+                for (var entry : missing.entrySet()) {
+                    String depId = entry.getKey();
+                    String depName = entry.getValue();
+                    try {
+                        String downloadUrl = service.getDownloadUrlForProject(depId, "mod", loaderName, gameVer);
+                        if (downloadUrl == null) {
+                            log("No compatible file found for dependency " + depName + ".");
+                            continue;
+                        }
+                        String fileName = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1);
+                        Path targetFile = modsDir.resolve(fileName);
+                        com.launcher.util.HttpUtil.downloadToFile(downloadUrl, targetFile);
+                        installed++;
+                        log("Installed dependency: " + depName + " (" + fileName + ")");
+                    } catch (Exception depEx) {
+                        log("Failed to install dependency " + depName + ": " + depEx.getMessage());
+                    }
+                }
+
+                int finalInstalled = installed;
+                int totalMissing = missing.size();
+                Platform.runLater(() -> {
+                    setStatus("Installed " + finalInstalled + "/" + totalMissing + " missing dependencies.");
+                    installDependenciesBtn.setDisable(false);
+                    refreshModsView(instance);
+                    if (finalInstalled == totalMissing) {
+                        notifications.success("Dependencies installed",
+                                "Installed " + finalInstalled + "/" + totalMissing + " missing dependencies.");
+                    } else {
+                        notifications.warning("Dependencies partially installed",
+                                "Installed " + finalInstalled + "/" + totalMissing + " — check the console for errors.");
+                    }
+                });
+            } catch (Exception ex) {
+                log("Failed to install dependencies: " + ex.getMessage());
+                Platform.runLater(() -> {
+                    setStatus("Dependency install failed — see console.");
+                    installDependenciesBtn.setDisable(false);
+                    notifications.error("Dependency install failed", ex.getMessage());
+                });
+            }
+        }, "install-dependencies").start();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -1042,7 +1874,7 @@ public class Main extends Application {
             }
             if (!iconLoaded) {
                 try {
-                    java.io.InputStream is = getClass().getResourceAsStream("/com/launcher/DefaultInstanceIcon.png");
+                    java.io.InputStream is = getClass().getResourceAsStream("/com/launcher/minecraft_image.png");
                     if (is != null) iconView.setImage(new javafx.scene.image.Image(is, 40, 40, true, true));
                 } catch (Exception ignored) {}
             }
@@ -1301,7 +2133,10 @@ public class Main extends Application {
         CheckBox showConsoleOnLaunchCb = styledCheckbox("Keep console visible while game is running", s.showConsoleOnLaunch);
         showConsoleOnLaunchCb.setOnAction(e -> { s.showConsoleOnLaunch = showConsoleOnLaunchCb.isSelected(); mgr.save(); });
 
-        behavior.getChildren().addAll(behTitle, minimizeCb, scanCb, showHiddenCb, closeAfterLaunchCb, showConsoleOnLaunchCb);
+        CheckBox checkModUpdatesCb = styledCheckbox("Check for mod updates when the launcher starts", s.checkModUpdatesOnStartup);
+        checkModUpdatesCb.setOnAction(e -> { s.checkModUpdatesOnStartup = checkModUpdatesCb.isSelected(); mgr.save(); });
+
+        behavior.getChildren().addAll(behTitle, minimizeCb, scanCb, showHiddenCb, closeAfterLaunchCb, showConsoleOnLaunchCb, checkModUpdatesCb);
 
         // ── Window Size ───────────────────────────────────────────────────────
         VBox windowSizeCard = card();
@@ -1381,6 +2216,220 @@ public class Main extends Application {
 
         privacy.getChildren().addAll(privTitle, hideUserCb, redactPathsCb, redactTokensCb, clearSessionCb);
 
+        // ── Discord RPC ───────────────────────────────────────────────────────
+        // Entirely client-side: Zero Launcher bundles its own Discord Application
+        // ID (the same way Discord's own discord-rpc example app does), so there's
+        // no "create a Discord app and paste in an ID" step for the user anymore.
+        //
+        // NOTE: this feature is currently disabled launcher-side. The settings below
+        // are kept visible (greyed out) for context, but forced off, and the section
+        // points people at in-game alternatives like the "Vanilla RPC" mod instead.
+        s.enableDiscordRpc = false;
+        mgr.save();
+
+        VBox discord = card();
+        Label discordTitle = sectionTitle("Discord RPC");
+        Label discordSubtitle = new Label("Works out of the box — no Discord Application ID needed.");
+        discordSubtitle.getStyleClass().add("section-subtitle");
+
+        Label discordUnavailableNote = new Label(
+                "⚠ Currently this is not available. Try using a mod like Vanilla RPC, or any other Discord Rich Presence mod, instead.");
+        discordUnavailableNote.getStyleClass().add("settings-unavailable-note");
+        discordUnavailableNote.setWrapText(true);
+        discordUnavailableNote.setMaxWidth(Double.MAX_VALUE);
+
+        Button findRpcModBtn = new Button("🌐  Find \"Vanilla RPC\" in Discover");
+        findRpcModBtn.setOnAction(e -> goToDiscoverAndSearch("Vanilla RPC", true));
+
+        CheckBox enableRpcCb = styledCheckbox("Enable Discord Rich Presence", s.enableDiscordRpc);
+        CheckBox showServerCb = styledCheckbox("Show connected server IP in Discord status", s.showServerOnRpc);
+
+        Label rpcNameLabel = settingLabel("Custom RPC Name");
+        TextField rpcNameField = new TextField(s.customDiscordRpcName != null ? s.customDiscordRpcName : "Zero Launcher");
+        rpcNameField.setPromptText("Zero Launcher");
+        rpcNameField.textProperty().addListener((obs, oldV, newV) -> {
+            s.customDiscordRpcName = newV; mgr.save();
+            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
+        });
+        HBox.setHgrow(rpcNameField, Priority.ALWAYS);
+
+        Label rpcImageLabel = settingLabel("Custom Image");
+        TextField rpcImageField = new TextField(s.customDiscordRpcImage != null ? s.customDiscordRpcImage : "minecraft_image.png");
+        rpcImageField.setPromptText("Image URL, e.g. https://i.imgur.com/yourimage.png");
+        rpcImageField.textProperty().addListener((obs, oldV, newV) -> {
+            s.customDiscordRpcImage = newV; mgr.save();
+            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
+        });
+        HBox.setHgrow(rpcImageField, Priority.ALWAYS);
+
+        Button chooseRpcImageBtn = new Button("🖼  Choose Image…");
+        chooseRpcImageBtn.setOnAction(e -> withMaximizeGuard(() -> {
+            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+            fc.setTitle("Custom Discord RPC Image");
+            fc.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"));
+            java.io.File f = fc.showOpenDialog(primaryStage);
+            if (f == null) return;
+            try {
+                Path imagesDir = LauncherPaths.launcherRoot().resolve("rpc_images");
+                if (!Files.exists(imagesDir)) Files.createDirectories(imagesDir);
+                Path dest = imagesDir.resolve(f.getName());
+                Files.copy(f.toPath(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                rpcImageField.setText(dest.toAbsolutePath().toString());
+                log("Saved custom RPC image to " + dest + ". Note: Discord needs a public image URL to actually display it — " +
+                        "upload this file somewhere (e.g. Imgur) and paste the direct link into the Custom Image field, " +
+                        "or set it to an existing Rich Presence asset key.");
+            } catch (Exception ex) {
+                log("Failed to copy custom RPC image: " + ex.getMessage());
+            }
+        }));
+
+        Button resetRpcImageBtn = new Button("↺  Reset to Default");
+        resetRpcImageBtn.setOnAction(e -> {
+            String def = com.launcher.manager.DiscordRpcManager.defaultImageKey();
+            rpcImageField.setText(def);
+            s.customDiscordRpcImage = def;
+            mgr.save();
+            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
+        });
+
+        HBox rpcImageBtnRow = new HBox(8, chooseRpcImageBtn, resetRpcImageBtn);
+
+        GridPane discordGrid = settingsGrid();
+        discordGrid.addRow(0, rpcNameLabel, rpcNameField);
+        discordGrid.addRow(1, rpcImageLabel, rpcImageField);
+        discordGrid.addRow(2, new Label(""), rpcImageBtnRow);
+
+        enableRpcCb.setOnAction(e -> {
+            s.enableDiscordRpc = enableRpcCb.isSelected();
+            mgr.save();
+            if (s.enableDiscordRpc) com.launcher.manager.DiscordRpcManager.getInstance().init();
+            else com.launcher.manager.DiscordRpcManager.getInstance().shutdown();
+        });
+        showServerCb.setOnAction(e -> {
+            s.showServerOnRpc = showServerCb.isSelected();
+            mgr.save();
+            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
+        });
+
+        discord.getChildren().addAll(discordTitle, discordSubtitle, discordUnavailableNote, findRpcModBtn);
+
+        VBox discordControls = new VBox(10, enableRpcCb, showServerCb, discordGrid);
+        discordControls.setDisable(true);
+        discordControls.setOpacity(0.5);
+        discord.getChildren().add(discordControls);
+
+        // ── Connected Server ─────────────────────────────────────────────────
+        // Shows the currently selected instance's last-known multiplayer server,
+        // and lets the user mark servers private. Since privateServersIps is a
+        // single global list, privatizing a server here applies across every
+        // instance that connects to it.
+        //
+        // NOTE: this only mattered to hide server IPs from Discord Rich Presence,
+        // which is disabled above — so it's disabled here too, for the same reason.
+        VBox serverCard = card();
+        Label serverTitle = sectionTitle("Connected Server");
+        Label serverSubtitle = new Label("Servers marked private show as \"Private Server\" in Discord instead of the real address — everywhere, on every instance.");
+        serverSubtitle.getStyleClass().add("section-subtitle");
+        serverSubtitle.setWrapText(true);
+
+        Label serverUnavailableNote = new Label(
+                "⚠ Currently this is not available. Try using a mod like Vanilla RPC, or any other mod, instead.");
+        serverUnavailableNote.getStyleClass().add("settings-unavailable-note");
+        serverUnavailableNote.setWrapText(true);
+        serverUnavailableNote.setMaxWidth(Double.MAX_VALUE);
+
+        Button findServerModBtn = new Button("🌐  Find \"Vanilla RPC\" in Discover");
+        findServerModBtn.setOnAction(e -> goToDiscoverAndSearch("Vanilla RPC", true));
+
+        serverInstanceLabel = new Label("No instance selected.");
+        serverInstanceLabel.setStyle("-fx-font-size:12px; -fx-text-fill:-fx-text-color;");
+
+        serverIpLabel = new Label("Server: —");
+        serverIpLabel.setStyle("-fx-font-size:12px; -fx-font-weight:bold; -fx-text-fill:-fx-text-color;");
+
+        serverPrivacyBadge = new Label();
+        serverPrivacyBadge.getStyleClass().add("mod-status-unknown");
+
+        HBox serverStatusRow = new HBox(8, serverIpLabel, serverPrivacyBadge);
+        serverStatusRow.setAlignment(Pos.CENTER_LEFT);
+
+        togglePrivateBtn = new Button("🔒  Private This Server");
+        togglePrivateBtn.setOnAction(e -> {
+            Instance sel = instanceList != null ? instanceList.getSelectionModel().getSelectedItem() : null;
+            String ip = sel != null ? sel.lastServerIp : null;
+            if (ip == null || ip.isBlank()) return;
+            if (s.isServerPrivate(ip)) s.removePrivateServer(ip);
+            else s.addPrivateServer(ip);
+            mgr.save();
+            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
+            refreshServerSection();
+        });
+
+        VBox serverInfoBox = new VBox(6, serverInstanceLabel, serverStatusRow, togglePrivateBtn);
+
+        addPrivateIpField = new TextField();
+        addPrivateIpField.setPromptText("play.example.com or 192.168.1.100:25565");
+        HBox.setHgrow(addPrivateIpField, Priority.ALWAYS);
+
+        Button addPrivateIpBtn = new Button("➕  Add Private Server IP");
+        Runnable addIpAction = () -> {
+            String ip = addPrivateIpField.getText();
+            if (ip == null || ip.isBlank()) return;
+            s.addPrivateServer(ip.trim());
+            mgr.save();
+            addPrivateIpField.clear();
+            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
+            refreshServerSection();
+        };
+        addPrivateIpBtn.setOnAction(e -> addIpAction.run());
+        addPrivateIpField.setOnAction(e -> addIpAction.run());
+
+        HBox addIpRow = new HBox(8, addPrivateIpField, addPrivateIpBtn);
+        addIpRow.setAlignment(Pos.CENTER_LEFT);
+
+        // ── Menu of servers read directly from each instance's servers.dat ──
+        Label instanceServersLabel = settingLabel("Servers found in instances");
+        Label instanceServersSubtitle = new Label("Read straight from each instance's multiplayer server list — no typing IPs by hand.");
+        instanceServersSubtitle.getStyleClass().add("section-subtitle");
+        instanceServersSubtitle.setWrapText(true);
+
+        instanceServersBox = new ComboBox<>();
+        instanceServersBox.setPromptText("No saved servers found yet");
+        instanceServersBox.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(instanceServersBox, Priority.ALWAYS);
+
+        Button refreshInstanceServersBtn = new Button("🔄");
+        refreshInstanceServersBtn.setOnAction(e -> refreshInstanceServersMenu());
+
+        Button addFromInstanceBtn = new Button("➕  Mark Private");
+        addFromInstanceBtn.setOnAction(e -> {
+            InstanceServerOption sel = instanceServersBox.getValue();
+            if (sel == null) return;
+            s.addPrivateServer(sel.entry().ip);
+            mgr.save();
+            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
+            refreshServerSection();
+        });
+
+        HBox instanceServersRow = new HBox(8, instanceServersBox, refreshInstanceServersBtn, addFromInstanceBtn);
+        instanceServersRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label privateListLabel = settingLabel("Private servers (all instances)");
+        privateIpsChips = new FlowPane();
+        privateIpsChips.setHgap(6);
+        privateIpsChips.setVgap(6);
+
+        serverCard.getChildren().addAll(serverTitle, serverSubtitle, serverUnavailableNote, findServerModBtn);
+
+        VBox serverControls = new VBox(14, serverInfoBox,
+                new Separator(), instanceServersLabel, instanceServersSubtitle, instanceServersRow,
+                new Separator(), privateListLabel, addIpRow, privateIpsChips);
+        serverControls.setDisable(true);
+        serverControls.setOpacity(0.5);
+        serverCard.getChildren().add(serverControls);
+
+        refreshServerSection();
+
         // ── About ─────────────────────────────────────────────────────────────
         VBox about = card();
         Label aboutTitle = sectionTitle("About");
@@ -1405,7 +2454,7 @@ public class Main extends Application {
         });
         about.getChildren().addAll(aboutTitle, aboutInfo, openDataDir);
 
-        root.getChildren().addAll(appearance, behavior, windowSizeCard, performance, privacy, about);
+        root.getChildren().addAll(appearance, behavior, windowSizeCard, performance, privacy, discord, serverCard, about);
 
         ScrollPane sp = new ScrollPane(root);
         sp.setFitToWidth(true);
@@ -1600,13 +2649,28 @@ public class Main extends Application {
                 });
                 System.gc();
 
+                com.launcher.manager.DiscordRpcManager.getInstance().updatePlaying(instance, resolved.id);
                 try (var reader = process.inputReader()) {
                     String line;
-                    while ((line = reader.readLine()) != null) log("[game] " + line);
+                    java.util.regex.Pattern serverRegex = java.util.regex.Pattern.compile("Connecting to (\\S+),");
+                    while ((line = reader.readLine()) != null) {
+                        log("[game] " + line);
+                        java.util.regex.Matcher matcher = serverRegex.matcher(line);
+                        if (matcher.find()) {
+                            String serverIp = matcher.group(1);
+                            instance.lastServerIp = serverIp;
+                            instance.lastServerConnectedAt = System.currentTimeMillis();
+                            instanceManager.save();
+                            com.launcher.manager.DiscordRpcManager.getInstance().updatePlayingServer(instance, resolved.id, serverIp);
+                            Platform.runLater(this::refreshServerSection);
+                        }
+                    }
                 }
                 int exit = process.waitFor();
                 log("Minecraft exited with code " + exit);
                 setStatus(exit == 0 ? "Game closed normally." : "Game exited (code " + exit + ")");
+                com.launcher.manager.DiscordRpcManager.getInstance().updateIdle();
+                Platform.runLater(this::refreshServerSection);
 
             } catch (Exception ex) {
                 log("ERROR: " + ex.getMessage());
@@ -1788,6 +2852,124 @@ public class Main extends Application {
         var filtered = instanceManager.getInstances().stream()
                 .filter(i -> showHidden || !i.hidden).toList();
         instanceList.getItems().setAll(filtered);
+        refreshDiscoverInstances();
+    }
+
+    /**
+     * Rebuilds the "Connected Server" panel in Settings: which instance is selected,
+     * its last-known server address, whether that server is private, and the chip
+     * list of every globally-private server address.
+     */
+    private void refreshServerSection() {
+        if (serverInstanceLabel == null) return; // Settings tab not built yet
+
+        com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        Instance sel = instanceList != null ? instanceList.getSelectionModel().getSelectedItem() : null;
+
+        if (sel == null) {
+            serverInstanceLabel.setText("No instance selected.");
+            serverIpLabel.setText("Server: —");
+            serverPrivacyBadge.setText("");
+            serverPrivacyBadge.setVisible(false);
+            togglePrivateBtn.setDisable(true);
+            togglePrivateBtn.setText("🔒  Private This Server");
+        } else {
+            serverInstanceLabel.setText("Instance: " + sel.name);
+            String ip = sel.lastServerIp;
+            if (ip == null || ip.isBlank()) {
+                serverIpLabel.setText("Server: not connected to multiplayer yet");
+                serverPrivacyBadge.setVisible(false);
+                togglePrivateBtn.setDisable(true);
+                togglePrivateBtn.setText("🔒  Private This Server");
+            } else {
+                boolean isPrivate = s.isServerPrivate(ip);
+                serverIpLabel.setText("Server: " + ip);
+                serverPrivacyBadge.setVisible(true);
+                serverPrivacyBadge.setText(isPrivate ? "Private" : "Public");
+                serverPrivacyBadge.getStyleClass().removeAll("mod-status-uptodate", "mod-status-unknown");
+                serverPrivacyBadge.getStyleClass().add(isPrivate ? "mod-status-uptodate" : "mod-status-unknown");
+                togglePrivateBtn.setDisable(false);
+                togglePrivateBtn.setText(isPrivate ? "🔓  Unprivate This Server" : "🔒  Private This Server");
+            }
+        }
+
+        if (privateIpsChips != null) {
+            privateIpsChips.getChildren().clear();
+            var list = s.privateServerList();
+            if (list.isEmpty()) {
+                Label none = new Label("No private servers yet.");
+                none.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
+                privateIpsChips.getChildren().add(none);
+            } else {
+                for (String ip : list) {
+                    privateIpsChips.getChildren().add(buildPrivateIpChip(ip, s));
+                }
+            }
+        }
+
+        refreshInstanceServersMenu();
+    }
+
+    /**
+     * Rebuilds the "Servers found in instances" menu by reading every non-hidden
+     * instance's servers.dat file directly (basic NBT parse — see ServerListReader).
+     * Runs the file reads off the FX thread so a slow/odd disk never freezes the UI.
+     */
+    private void refreshInstanceServersMenu() {
+        if (instanceServersBox == null) return;
+        InstanceServerOption prevSelection = instanceServersBox.getValue();
+
+        Thread t = new Thread(() -> {
+            java.util.List<InstanceServerOption> options = new java.util.ArrayList<>();
+            for (Instance inst : instanceManager.getInstances()) {
+                if (inst.hidden) continue;
+                try {
+                    Path gameDir = instanceManager.resolveGameDir(inst);
+                    for (com.launcher.minecraft.ServerListReader.ServerEntry entry : com.launcher.minecraft.ServerListReader.readServers(gameDir)) {
+                        options.add(new InstanceServerOption(inst, entry));
+                    }
+                } catch (Exception ignored) {
+                    // Instance directory missing / unreadable servers.dat — just skip it.
+                }
+            }
+            Platform.runLater(() -> {
+                instanceServersBox.getItems().setAll(options);
+                if (prevSelection != null) {
+                    for (InstanceServerOption opt : options) {
+                        if (opt.instance().id.equals(prevSelection.instance().id) && opt.entry().ip.equals(prevSelection.entry().ip)) {
+                            instanceServersBox.setValue(opt);
+                            break;
+                        }
+                    }
+                }
+                instanceServersBox.setPromptText(options.isEmpty()
+                        ? "No saved servers found yet — join a server first" : "Select a saved server…");
+            });
+        }, "instance-servers-scan");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Builds a small removable "chip" for one entry in the private-server list. */
+    private HBox buildPrivateIpChip(String ip, com.launcher.model.LauncherSettings s) {
+        Label ipLabel = new Label(ip);
+        ipLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-color;");
+
+        Button removeBtn = new Button("✕");
+        removeBtn.setStyle("-fx-padding:1px 6px; -fx-font-size:10px;");
+        removeBtn.setTooltip(new Tooltip("Remove from private servers"));
+        removeBtn.setOnAction(e -> {
+            s.removePrivateServer(ip);
+            com.launcher.manager.SettingsManager.getInstance().save();
+            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
+            refreshServerSection();
+        });
+
+        HBox chip = new HBox(6, ipLabel, removeBtn);
+        chip.setAlignment(Pos.CENTER_LEFT);
+        chip.getStyleClass().add("tag-version");
+        chip.setStyle(chip.getStyle() + "; -fx-padding:4px 8px; -fx-background-radius:12px;");
+        return chip;
     }
 
     private void log(String msg) {

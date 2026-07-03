@@ -29,6 +29,12 @@ public class Instance {
     public String modpackFilePath;       // absolute path to the .mrpack or .zip file
     public String modpackInstallPath;    // directory where the modpack is installed
 
+    // Last known multiplayer server this instance connected to (host:port or host).
+    // Populated by scanning the game log while Minecraft is running. Used by the
+    // Discord RPC "connected server" section and by the Settings > Server panel.
+    public String lastServerIp;
+    public long lastServerConnectedAt = 0L;
+
     public Instance() {}
 
     public Instance(String name, String mcVersion, ModLoaderType loader, String loaderVersion) {

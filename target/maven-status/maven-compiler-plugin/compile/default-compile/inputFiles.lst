@@ -2,6 +2,7 @@
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/MainWrapper.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/auth/OfflineAuthService.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/manager/AccountManager.java
+/home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/manager/DiscordRpcManager.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/manager/InstanceManager.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/manager/LauncherPaths.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/manager/SettingsManager.java
@@ -14,6 +15,7 @@
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/NeoForgeInstaller.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/QuiltInstaller.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/ResolvedVersion.java
+/home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/ServerListReader.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/minecraft/VersionManifestService.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/model/Account.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/model/AccountType.java
@@ -24,5 +26,6 @@
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/ui/CreateInstanceDialog.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/ui/EditInstanceDialog.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/ui/LoginDialog.java
+/home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/ui/NotificationCenter.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/util/HttpUtil.java
 /home/monib/IdeaProjects/Zero-Launcher/src/main/java/com/launcher/util/JsonUtil.java

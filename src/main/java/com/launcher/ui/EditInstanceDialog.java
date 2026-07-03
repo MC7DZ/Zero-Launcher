@@ -435,7 +435,7 @@ public class EditInstanceDialog {
             } catch (Exception ignored) {}
         }
         try {
-            InputStream is = EditInstanceDialog.class.getResourceAsStream("/com/launcher/DefaultInstanceIcon.png");
+            InputStream is = EditInstanceDialog.class.getResourceAsStream("/com/launcher/minecraft_image.png");
             if (is != null) { view.setImage(new Image(is, 64, 64, true, true)); return; }
         } catch (Exception ignored) {}
         view.setImage(null);
