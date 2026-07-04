@@ -30,6 +30,8 @@ public class LauncherSettings {
     public int defaultRamGb             = 3;
     /** Extra JVM arguments appended to every launch command. */
     public String extraJvmArgs          = "";
+    public String javaPath              = "";
+    public String jvmArgs               = "";
 
     // Window size (0 = use defaults 960×660)
     public int launcherWidth            = 0;

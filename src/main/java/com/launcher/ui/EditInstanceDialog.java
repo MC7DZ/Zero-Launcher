@@ -5,188 +5,422 @@ import com.launcher.minecraft.VersionManifestService;
 import com.launcher.model.Instance;
 import com.launcher.model.ModLoaderType;
 import com.launcher.Main;
-import javafx.application.Platform;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.control.*;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
-import javafx.scene.layout.*;
-import javafx.stage.DirectoryChooser;
-import javafx.stage.FileChooser;
-import javafx.stage.Stage;
 import com.launcher.manager.LauncherPaths;
+import com.launcher.model.LauncherSettings;
+import com.launcher.manager.SettingsManager;
 
+import javax.imageio.ImageIO;
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.filechooser.FileNameExtensionFilter;
+import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
-public class EditInstanceDialog {
+public class EditInstanceDialog extends JDialog {
 
-    public static Optional<Instance> show(Stage owner, Instance inst) {
-        Dialog<Instance> dialog = new Dialog<>();
-        dialog.initOwner(owner);
-        dialog.setTitle("Edit Instance — " + inst.name);
-        dialog.setHeaderText("Editing: " + inst.name);
-        dialog.getDialogPane().setPrefWidth(760);
-        dialog.getDialogPane().setMinWidth(720);
+    private Instance result = null;
 
-        var css = EditInstanceDialog.class.getResource("/com/launcher/styles.css");
-        if (css != null) dialog.getDialogPane().getStylesheets().add(css.toExternalForm());
-        com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
-        Main.applyThemeToPane(dialog.getDialogPane(), settings);
-        // Override background image so the dialog always has a solid background
-        dialog.getDialogPane().setStyle(dialog.getDialogPane().getStyle()
-                + "; -fx-background-image: none;");
+    public static Optional<Instance> show(JFrame owner, Instance inst) {
+        EditInstanceDialog dialog = new EditInstanceDialog(owner, inst);
+        dialog.setVisible(true);
+        return Optional.ofNullable(dialog.result);
+    }
 
-        ButtonType saveBtn = new ButtonType("Save Changes", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(saveBtn, ButtonType.CANCEL);
+    private EditInstanceDialog(JFrame owner, Instance inst) {
+        super(owner, "Edit Instance — " + inst.name, true);
+        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+        setSize(760, 600);
+        setLocationRelativeTo(owner);
 
-        TabPane tabs = new TabPane();
-        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        LauncherSettings settings = SettingsManager.getInstance().getSettings();
+        Color bg = Main.hexToColor(settings.bgColor, new Color(10, 10, 15));
+        Color panelBg = Main.hexToColor(settings.panelBgColor, new Color(19, 19, 26));
+        Color textColor = Main.hexToColor(settings.textColor, new Color(226, 226, 234));
+        Color accent = Main.hexToColor(settings.accentColor, new Color(16, 185, 129));
+
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.setBackground(panelBg);
+
+        // Header
+        JPanel headerPanel = new JPanel();
+        headerPanel.setLayout(new BoxLayout(headerPanel, BoxLayout.Y_AXIS));
+        headerPanel.setBackground(panelBg);
+        headerPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(40, 40, 50)),
+                new EmptyBorder(16, 20, 16, 20)
+        ));
+        JLabel titleLbl = new JLabel("Edit Instance");
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 18));
+        titleLbl.setForeground(Color.WHITE);
+        JLabel subLbl = new JLabel("Editing: " + inst.name);
+        subLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        subLbl.setForeground(new Color(150, 150, 160));
+        headerPanel.add(titleLbl);
+        headerPanel.add(Box.createVerticalStrut(4));
+        headerPanel.add(subLbl);
+        mainPanel.add(headerPanel, BorderLayout.NORTH);
+
+        JTabbedPane tabs = new JTabbedPane();
 
         // ═════════════════════════════════════════════════════════════════════
         //  TAB 1: General
         // ═════════════════════════════════════════════════════════════════════
+        JPanel generalPanel = new JPanel(new GridBagLayout());
+        generalPanel.setBackground(panelBg);
+        generalPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(6, 6, 6, 6);
 
-        // ── Image picker ──────────────────────────────────────────────────────
+        int row = 0;
+        addSectionHeader(generalPanel, "Appearance", row++, gbc, textColor);
+
         final String[] chosenImagePath = {inst.imagePath};
+        JLabel iconView = new JLabel();
+        iconView.setPreferredSize(new Dimension(64, 64));
+        iconView.setBorder(BorderFactory.createLineBorder(new Color(60, 60, 70), 1));
+        loadIcon(iconView, inst.imagePath);
 
-        ImageView instanceIconView = new ImageView();
-        instanceIconView.setFitWidth(64);
-        instanceIconView.setFitHeight(64);
-        instanceIconView.setPreserveRatio(true);
-        instanceIconView.setStyle("-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 6, 0, 0, 2);");
-        loadIcon(instanceIconView, inst.imagePath);
+        JButton changeImageBtn = new JButton("Change Image…");
+        changeImageBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        JButton resetImageBtn = new JButton("Reset");
+        resetImageBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        resetImageBtn.setEnabled(inst.imagePath != null);
 
-        Button changeImageBtn = new Button("Change Image…");
-        changeImageBtn.setStyle("-fx-font-size:11px; -fx-padding:4px 10px;");
-        Button resetImageBtn  = new Button("Reset");
-        resetImageBtn.setStyle("-fx-font-size:11px; -fx-padding:4px 10px;");
-        resetImageBtn.setDisable(inst.imagePath == null);
-
-        changeImageBtn.setOnAction(e -> {
-            FileChooser fc = new FileChooser();
-            fc.setTitle("Choose Instance Image");
-            fc.getExtensionFilters().add(
-                    new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"));
-            File chosen = fc.showOpenDialog(owner);
-            if (chosen != null) {
+        changeImageBtn.addActionListener(e -> {
+            JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle("Choose Instance Image");
+            fc.setFileFilter(new FileNameExtensionFilter("Images", "png", "jpg", "jpeg", "gif", "bmp"));
+            int res = fc.showOpenDialog(this);
+            if (res == JFileChooser.APPROVE_OPTION) {
+                File chosen = fc.getSelectedFile();
                 try {
-                    Image img = new Image(chosen.toURI().toString(), 64, 64, true, true);
-                    instanceIconView.setImage(img);
+                    ImageIcon img = new ImageIcon(chosen.getAbsolutePath());
+                    Image scaled = img.getImage().getScaledInstance(64, 64, Image.SCALE_SMOOTH);
+                    iconView.setIcon(new ImageIcon(scaled));
                     chosenImagePath[0] = chosen.getAbsolutePath();
-                    resetImageBtn.setDisable(false);
+                    resetImageBtn.setEnabled(true);
                 } catch (Exception ex) {}
             }
         });
-        resetImageBtn.setOnAction(e -> {
-            loadIcon(instanceIconView, null);
+
+        resetImageBtn.addActionListener(e -> {
+            loadIcon(iconView, null);
             chosenImagePath[0] = null;
-            resetImageBtn.setDisable(true);
+            resetImageBtn.setEnabled(false);
         });
 
-        VBox imgBtnCol = new VBox(6, changeImageBtn, resetImageBtn);
-        imgBtnCol.setAlignment(Pos.CENTER_LEFT);
-        HBox imageRow = new HBox(14, instanceIconView, imgBtnCol);
-        imageRow.setAlignment(Pos.CENTER_LEFT);
+        JPanel imgBtnCol = new JPanel();
+        imgBtnCol.setLayout(new BoxLayout(imgBtnCol, BoxLayout.Y_AXIS));
+        imgBtnCol.setBackground(panelBg);
+        imgBtnCol.add(changeImageBtn);
+        imgBtnCol.add(Box.createVerticalStrut(4));
+        imgBtnCol.add(resetImageBtn);
 
-        // ── Other general fields ──────────────────────────────────────────────
-        TextField nameField = new TextField(inst.name);
+        JPanel imageRowPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        imageRowPanel.setBackground(panelBg);
+        imageRowPanel.add(iconView);
+        imageRowPanel.add(imgBtnCol);
 
-        ComboBox<String> versionBox = new ComboBox<>();
-        versionBox.setMaxWidth(Double.MAX_VALUE);
-        versionBox.setPromptText("Loading…");
-        versionBox.setDisable(true);
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
+        generalPanel.add(fieldLabel("Icon", textColor), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        generalPanel.add(imageRowPanel, gbc);
+        row++;
 
-        CheckBox snapshotsCb = new CheckBox("Include snapshots");
+        addSectionHeader(generalPanel, "General", row++, gbc, textColor);
 
-        ComboBox<ModLoaderType> loaderBox = new ComboBox<>();
-        loaderBox.setMaxWidth(Double.MAX_VALUE);
-        loaderBox.getItems().addAll(ModLoaderType.VANILLA, ModLoaderType.FABRIC, ModLoaderType.QUILT, ModLoaderType.FORGE, ModLoaderType.NEOFORGE);
-        loaderBox.setValue(inst.modLoader);
+        JTextField nameField = new JTextField(inst.name);
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
+        generalPanel.add(fieldLabel("Name", textColor), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        generalPanel.add(nameField, gbc);
+        row++;
 
-        ComboBox<String> loaderVerBox = new ComboBox<>();
-        loaderVerBox.setMaxWidth(Double.MAX_VALUE);
-        loaderVerBox.setPromptText("(no loader)");
-        loaderVerBox.setDisable(true);
+        JComboBox<String> versionBox = new JComboBox<>();
+        versionBox.setEnabled(false);
+        JCheckBox snapshotsCb = new JCheckBox("Include snapshots");
+        snapshotsCb.setBackground(panelBg);
+        snapshotsCb.setForeground(textColor);
 
-        Slider ramSlider = new Slider(1024, 8192, inst.ramMb > 0 ? inst.ramMb : 3072);
-        ramSlider.setMajorTickUnit(1024);
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
+        generalPanel.add(fieldLabel("MC Version", textColor), gbc);
+        gbc.gridx = 1; gbc.weightx = 0.6;
+        generalPanel.add(versionBox, gbc);
+        gbc.gridx = 2; gbc.weightx = 0.4;
+        generalPanel.add(snapshotsCb, gbc);
+        row++;
+
+        JComboBox<ModLoaderType> loaderBox = new JComboBox<>(ModLoaderType.values());
+        loaderBox.setSelectedItem(inst.modLoader);
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
+        generalPanel.add(fieldLabel("Mod loader", textColor), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        generalPanel.add(loaderBox, gbc);
+        row++;
+
+        JComboBox<String> loaderVerBox = new JComboBox<>();
+        loaderVerBox.setEnabled(false);
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
+        generalPanel.add(fieldLabel("Loader version", textColor), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        generalPanel.add(loaderVerBox, gbc);
+        row++;
+
+        addSectionHeader(generalPanel, "Memory", row++, gbc, textColor);
+
+        JSlider ramSlider = new JSlider(1024, 8192, inst.ramMb > 0 ? inst.ramMb : 3072);
+        ramSlider.setMajorTickSpacing(1024);
         ramSlider.setSnapToTicks(true);
-        Label ramLbl = new Label(String.format("%d MB  (%.1f GB)", (int) ramSlider.getValue(), ramSlider.getValue() / 1024));
-        ramLbl.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-        ramSlider.valueProperty().addListener((o, a, b) ->
-            ramLbl.setText(String.format("%d MB  (%.1f GB)", b.intValue(), b.doubleValue() / 1024)));
-
-        RadioButton defaultDirRadio = new RadioButton("Standard .minecraft directory");
-        RadioButton customDirRadio  = new RadioButton("Custom directory");
-        ToggleGroup dirGroup = new ToggleGroup();
-        defaultDirRadio.setToggleGroup(dirGroup);
-        customDirRadio.setToggleGroup(dirGroup);
-
-        TextField customDirField = new TextField(inst.customDirectoryPath != null ? inst.customDirectoryPath : "");
-        customDirField.setDisable(true);
-        Button browseBtn = new Button("Browse…");
-        browseBtn.setDisable(true);
-        browseBtn.setOnAction(e -> {
-            DirectoryChooser dc = new DirectoryChooser();
-            var d = dc.showDialog(owner);
-            if (d != null) customDirField.setText(d.getAbsolutePath());
+        ramSlider.setBackground(panelBg);
+        JLabel ramLbl = new JLabel(String.format("%d MB  (%.1f GB)", ramSlider.getValue(), (double) ramSlider.getValue() / 1024));
+        ramLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        ramLbl.setForeground(new Color(150, 150, 160));
+        ramSlider.addChangeListener(e -> {
+            int val = ramSlider.getValue();
+            ramLbl.setText(String.format("%d MB  (%.1f GB)", val, (double) val / 1024));
         });
-        customDirRadio.selectedProperty().addListener((o, a, b) -> { customDirField.setDisable(!b); browseBtn.setDisable(!b); });
 
-        // Pre-select directory mode
+        JPanel ramContainer = new JPanel(new BorderLayout());
+        ramContainer.setBackground(panelBg);
+        ramContainer.add(ramSlider, BorderLayout.CENTER);
+        ramContainer.add(ramLbl, BorderLayout.SOUTH);
+
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
+        generalPanel.add(fieldLabel("Allocated RAM", textColor), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        generalPanel.add(ramContainer, gbc);
+        row++;
+
+        addSectionHeader(generalPanel, "Directory", row++, gbc, textColor);
+
+        JRadioButton defaultDirRadio = new JRadioButton("Standard .minecraft directory");
+        JRadioButton customDirRadio = new JRadioButton("Custom directory");
+        defaultDirRadio.setBackground(panelBg); defaultDirRadio.setForeground(textColor);
+        customDirRadio.setBackground(panelBg); customDirRadio.setForeground(textColor);
+        ButtonGroup dirGroup = new ButtonGroup();
+        dirGroup.add(defaultDirRadio);
+        dirGroup.add(customDirRadio);
+
+        JTextField customDirField = new JTextField(inst.customDirectoryPath != null ? inst.customDirectoryPath : "");
+        customDirField.setEnabled(false);
+        JButton browseBtn = new JButton("Browse…");
+        browseBtn.setEnabled(false);
+
+        browseBtn.addActionListener(e -> {
+            JFileChooser dc = new JFileChooser();
+            dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            int d = dc.showOpenDialog(this);
+            if (d == JFileChooser.APPROVE_OPTION) {
+                customDirField.setText(dc.getSelectedFile().getAbsolutePath());
+            }
+        });
+
+        defaultDirRadio.addActionListener(e -> {
+            customDirField.setEnabled(false);
+            browseBtn.setEnabled(false);
+        });
+        customDirRadio.addActionListener(e -> {
+            customDirField.setEnabled(true);
+            browseBtn.setEnabled(true);
+        });
+
         if (inst.useCustomDirectory && inst.customDirectoryPath != null &&
                 !Path.of(inst.customDirectoryPath).equals(LauncherPaths.getDefaultMinecraftPath())) {
             customDirRadio.setSelected(true);
+            customDirField.setEnabled(true);
+            browseBtn.setEnabled(true);
         } else {
             defaultDirRadio.setSelected(true);
         }
 
-        CheckBox hiddenCb = new CheckBox("Hide this instance");
+        JPanel dirFieldRow = new JPanel(new BorderLayout(8, 0));
+        dirFieldRow.setBackground(panelBg);
+        dirFieldRow.add(customDirField, BorderLayout.CENTER);
+        dirFieldRow.add(browseBtn, BorderLayout.EAST);
+
+        JPanel dirGroupPanel = new JPanel();
+        dirGroupPanel.setLayout(new BoxLayout(dirGroupPanel, BoxLayout.Y_AXIS));
+        dirGroupPanel.setBackground(panelBg);
+        dirGroupPanel.add(defaultDirRadio);
+        dirGroupPanel.add(customDirRadio);
+        dirGroupPanel.add(Box.createVerticalStrut(4));
+        dirGroupPanel.add(dirFieldRow);
+
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
+        generalPanel.add(fieldLabel("Game directory", textColor), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        generalPanel.add(dirGroupPanel, gbc);
+        row++;
+
+        addSectionHeader(generalPanel, "Visibility", row++, gbc, textColor);
+        JCheckBox hiddenCb = new JCheckBox("Hide this instance");
+        hiddenCb.setBackground(panelBg);
+        hiddenCb.setForeground(textColor);
         hiddenCb.setSelected(inst.hidden);
 
-        // ─────────────────────────────────────────────────────────────────────
-        //  Background loaders
-        // ─────────────────────────────────────────────────────────────────────
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
+        generalPanel.add(fieldLabel("Visibility", textColor), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        generalPanel.add(hiddenCb, gbc);
+        row++;
+
+        JScrollPane generalScroll = new JScrollPane(generalPanel);
+        generalScroll.setBorder(null);
+        tabs.addTab("General", generalScroll);
+
+        // ═════════════════════════════════════════════════════════════════════
+        //  TAB 2: Modpack
+        // ═════════════════════════════════════════════════════════════════════
+        JPanel modpackPanel = new JPanel(new GridBagLayout());
+        modpackPanel.setBackground(panelBg);
+        modpackPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
+        GridBagConstraints mgbc = new GridBagConstraints();
+        mgbc.fill = GridBagConstraints.HORIZONTAL;
+        mgbc.insets = new Insets(6, 6, 6, 6);
+
+        int mrow = 0;
+        addSectionHeader(modpackPanel, "Modpack File", mrow++, mgbc, textColor);
+
+        final String[] chosenModpackPath = {inst.modpackFilePath};
+        JLabel modpackFileHint = new JLabel(inst.modpackFilePath != null ? new File(inst.modpackFilePath).getName() : "No file selected");
+        modpackFileHint.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        modpackFileHint.setForeground(inst.modpackFilePath != null ? textColor : new Color(150, 150, 160));
+
+        JButton modpackBrowseBtn = new JButton("Browse…");
+        JButton modpackClearBtn = new JButton("Clear");
+        modpackClearBtn.setEnabled(inst.modpackFilePath != null);
+
+        String defaultInstallPath = resolveDefaultModpackPath();
+        JTextField installPathField = new JTextField(inst.modpackInstallPath != null ? inst.modpackInstallPath : defaultInstallPath);
+
+        modpackBrowseBtn.addActionListener(e -> {
+            JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle("Select Modpack File");
+            fc.setFileFilter(new FileNameExtensionFilter("Modpack files", "mrpack", "zip"));
+            int res = fc.showOpenDialog(this);
+            if (res == JFileChooser.APPROVE_OPTION) {
+                File chosen = fc.getSelectedFile();
+                chosenModpackPath[0] = chosen.getAbsolutePath();
+                modpackFileHint.setText(chosen.getName());
+                modpackFileHint.setForeground(textColor);
+                modpackClearBtn.setEnabled(true);
+            }
+        });
+
+        modpackClearBtn.addActionListener(e -> {
+            chosenModpackPath[0] = null;
+            modpackFileHint.setText("No file selected");
+            modpackFileHint.setForeground(new Color(150, 150, 160));
+            modpackClearBtn.setEnabled(false);
+        });
+
+        JPanel modpackFileBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        modpackFileBtns.setBackground(panelBg);
+        modpackFileBtns.add(modpackBrowseBtn);
+        modpackFileBtns.add(modpackClearBtn);
+
+        JPanel modpackFileBox = new JPanel();
+        modpackFileBox.setLayout(new BoxLayout(modpackFileBox, BoxLayout.Y_AXIS));
+        modpackFileBox.setBackground(panelBg);
+        modpackFileBox.add(modpackFileHint);
+        modpackFileBox.add(Box.createVerticalStrut(4));
+        modpackFileBox.add(modpackFileBtns);
+
+        mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 1; mgbc.weightx = 0;
+        modpackPanel.add(fieldLabel("File (.mrpack / .zip)", textColor), mgbc);
+        mgbc.gridx = 1; mgbc.gridwidth = 1; mgbc.weightx = 1.0;
+        modpackPanel.add(modpackFileBox, mgbc);
+        mrow++;
+
+        addSectionHeader(modpackPanel, "Install Location", mrow++, mgbc, textColor);
+
+        JButton installPathBrowseBtn = new JButton("Browse…");
+        installPathBrowseBtn.addActionListener(e -> {
+            JFileChooser dc = new JFileChooser();
+            dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            int chosenRes = dc.showOpenDialog(this);
+            if (chosenRes == JFileChooser.APPROVE_OPTION) {
+                installPathField.setText(dc.getSelectedFile().getAbsolutePath());
+            }
+        });
+
+        JButton resetInstallPathBtn = new JButton("Reset");
+        resetInstallPathBtn.addActionListener(e -> installPathField.setText(defaultInstallPath));
+
+        JPanel installPathRow = new JPanel(new BorderLayout(8, 0));
+        installPathRow.setBackground(panelBg);
+        installPathRow.add(installPathField, BorderLayout.CENTER);
+        JPanel installPathBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        installPathBtns.setBackground(panelBg);
+        installPathBtns.add(installPathBrowseBtn);
+        installPathBtns.add(resetInstallPathBtn);
+        installPathRow.add(installPathBtns, BorderLayout.EAST);
+
+        mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 1; mgbc.weightx = 0;
+        modpackPanel.add(fieldLabel("Install path", textColor), mgbc);
+        mgbc.gridx = 1; mgbc.gridwidth = 1; mgbc.weightx = 1.0;
+        modpackPanel.add(installPathRow, mgbc);
+        mrow++;
+
+        JLabel modpackInfoLabel = new JLabel("Supported formats: .mrpack (Modrinth) and .zip modpacks.");
+        modpackInfoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        modpackInfoLabel.setForeground(new Color(150, 150, 160));
+        mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 2; mgbc.weightx = 1.0;
+        modpackPanel.add(modpackInfoLabel, mgbc);
+
+        JScrollPane modpackScroll = new JScrollPane(modpackPanel);
+        modpackScroll.setBorder(null);
+        tabs.addTab("Modpack", modpackScroll);
+
+        mainPanel.add(tabs, BorderLayout.CENTER);
+
+        // Loaders
         Runnable loadVersions = () -> {
-            versionBox.setDisable(true); versionBox.setPromptText("Loading…");
+            versionBox.setEnabled(false);
             new Thread(() -> {
                 try {
                     List<String> ids = snapshotsCb.isSelected()
                             ? new VersionManifestService().fetchAllVersionIds()
                             : new VersionManifestService().fetchReleaseVersionIds();
-                    Platform.runLater(() -> {
-                        versionBox.getItems().setAll(ids);
-                        versionBox.setValue(inst.mcVersion);
-                        versionBox.setPromptText(null);
-                        versionBox.setDisable(false);
+                    SwingUtilities.invokeLater(() -> {
+                        versionBox.removeAllItems();
+                        for (String id : ids) versionBox.addItem(id);
+                        versionBox.setSelectedItem(inst.mcVersion);
+                        versionBox.setEnabled(true);
                     });
                 } catch (Exception ex) {
-                    Platform.runLater(() -> { versionBox.setPromptText("Failed to load"); versionBox.setDisable(false); });
+                    SwingUtilities.invokeLater(() -> {
+                        versionBox.removeAllItems();
+                        versionBox.addItem("Failed to load versions");
+                        versionBox.setEnabled(true);
+                    });
                 }
             }, "fetch-versions").start();
         };
-        loadVersions.run();
-        snapshotsCb.setOnAction(e -> loadVersions.run());
 
         Runnable loadLoaderVers = () -> {
-            loaderVerBox.getItems().clear();
-            ModLoaderType loader = loaderBox.getValue();
-            String mcVer = versionBox.getValue();
+            loaderVerBox.removeAllItems();
+            ModLoaderType loader = (ModLoaderType) loaderBox.getSelectedItem();
+            String mcVer = (String) versionBox.getSelectedItem();
             if (loader == ModLoaderType.VANILLA || mcVer == null) {
-                loaderVerBox.setDisable(true); loaderVerBox.setPromptText("(no loader)"); return;
+                loaderVerBox.setEnabled(false);
+                return;
             }
             if (loader == ModLoaderType.FORGE) {
-                loaderVerBox.setDisable(false);
-                loaderVerBox.getItems().addAll("Recommended", "Latest");
-                loaderVerBox.setValue(inst.modLoaderVersion != null ? inst.modLoaderVersion : "Recommended"); return;
+                loaderVerBox.setEnabled(true);
+                loaderVerBox.addItem("Recommended");
+                loaderVerBox.addItem("Latest");
+                loaderVerBox.setSelectedItem(inst.modLoaderVersion != null ? inst.modLoaderVersion : "Recommended");
+                return;
             }
             if (loader == ModLoaderType.NEOFORGE) {
-                loaderVerBox.setDisable(true); loaderVerBox.setPromptText("Loading…");
+                loaderVerBox.setEnabled(false);
                 new Thread(() -> {
                     try {
                         String body = com.launcher.util.HttpUtil.getString(
@@ -198,226 +432,114 @@ public class EditInstanceDialog {
                         String prefix = parts.length >= 2 ? (Integer.parseInt(parts[1]) + ".") : "";
                         for (var el : arr) { String v = el.getAsString(); if (v.startsWith(prefix)) vers.add(0, v); }
                         if (vers.isEmpty()) for (var el : arr) vers.add(0, el.getAsString());
-                        Platform.runLater(() -> {
-                            loaderVerBox.getItems().setAll(vers);
-                            loaderVerBox.setValue(inst.modLoaderVersion != null && vers.contains(inst.modLoaderVersion)
+                        SwingUtilities.invokeLater(() -> {
+                            loaderVerBox.removeAllItems();
+                            for (String v : vers) loaderVerBox.addItem(v);
+                            loaderVerBox.setSelectedItem(inst.modLoaderVersion != null && vers.contains(inst.modLoaderVersion)
                                     ? inst.modLoaderVersion : (vers.isEmpty() ? null : vers.get(0)));
-                            loaderVerBox.setDisable(false);
+                            loaderVerBox.setEnabled(true);
                         });
-                    } catch (Exception ex) { Platform.runLater(() -> { loaderVerBox.setPromptText("Failed to load"); loaderVerBox.setDisable(false); }); }
+                    } catch (Exception ex) {
+                        SwingUtilities.invokeLater(() -> {
+                            loaderVerBox.removeAllItems();
+                            loaderVerBox.addItem("Failed to load");
+                            loaderVerBox.setEnabled(true);
+                        });
+                    }
                 }, "fetch-neoforge-vers").start();
                 return;
             }
-            // FABRIC or QUILT
-            loaderVerBox.setDisable(true); loaderVerBox.setPromptText("Loading…");
+            loaderVerBox.setEnabled(false);
             final boolean isQuilt = loader == ModLoaderType.QUILT;
             new Thread(() -> {
                 try {
-                    java.util.List<String> vers;
+                    List<String> vers;
                     if (isQuilt) {
-                        String body = com.launcher.util.HttpUtil.getString(
-                                "https://meta.quiltmc.org/v3/versions/loader/" + mcVer);
+                        String body = com.launcher.util.HttpUtil.getString("https://meta.quiltmc.org/v3/versions/loader/" + mcVer);
                         com.google.gson.JsonArray arr = com.launcher.util.JsonUtil.parse(body).getAsJsonArray();
                         vers = new java.util.ArrayList<>();
-                        for (var el : arr)
+                        for (var el : arr) {
                             vers.add(el.getAsJsonObject().getAsJsonObject("loader").get("version").getAsString());
+                        }
                     } else {
                         vers = new FabricInstaller().fetchLoaderVersions(mcVer);
                     }
-                    final java.util.List<String> fv = vers;
-                    Platform.runLater(() -> {
-                        loaderVerBox.getItems().setAll(fv);
-                        loaderVerBox.setValue(inst.modLoaderVersion != null && fv.contains(inst.modLoaderVersion)
-                                ? inst.modLoaderVersion : (fv.isEmpty() ? null : fv.get(0)));
-                        loaderVerBox.setDisable(false);
+                    SwingUtilities.invokeLater(() -> {
+                        loaderVerBox.removeAllItems();
+                        for (String v : vers) loaderVerBox.addItem(v);
+                        loaderVerBox.setSelectedItem(inst.modLoaderVersion != null && vers.contains(inst.modLoaderVersion)
+                                ? inst.modLoaderVersion : (vers.isEmpty() ? null : vers.get(0)));
+                        loaderVerBox.setEnabled(true);
                     });
-                } catch (Exception ex) { Platform.runLater(() -> { loaderVerBox.setPromptText("Failed to load"); loaderVerBox.setDisable(false); }); }
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> {
+                        loaderVerBox.removeAllItems();
+                        loaderVerBox.addItem("Failed to load");
+                        loaderVerBox.setEnabled(true);
+                    });
+                }
             }, "fetch-loader-vers").start();
         };
-        loaderBox.valueProperty().addListener((o, a, b) -> loadLoaderVers.run());
-        versionBox.valueProperty().addListener((o, a, b) -> loadLoaderVers.run());
-        loadLoaderVers.run();
 
-        // ─────────────────────────────────────────────────────────────────────
-        //  Layout — General tab
-        // ─────────────────────────────────────────────────────────────────────
-        GridPane grid = new GridPane();
-        grid.setHgap(12); grid.setVgap(12);
-        grid.setPadding(new Insets(20));
-        ColumnConstraints lCol = new ColumnConstraints(); lCol.setMinWidth(140); lCol.setHgrow(Priority.NEVER);
-        ColumnConstraints rCol = new ColumnConstraints(); rCol.setHgrow(Priority.ALWAYS);
-        ColumnConstraints xCol = new ColumnConstraints(); xCol.setMinWidth(130);
-        grid.getColumnConstraints().addAll(lCol, rCol, xCol);
+        versionBox.addActionListener(e -> loadLoaderVers.run());
+        loaderBox.addActionListener(e -> loadLoaderVers.run());
+        snapshotsCb.addActionListener(e -> loadVersions.run());
 
-        int r = 0;
-        addSectionHeader(grid, "Appearance", r++, 3);
-        grid.add(fl("Icon"), 0, r);
-        grid.add(imageRow, 1, r++, 2, 1);
+        loadVersions.run();
 
-        addSectionHeader(grid, "General", r++, 3);
-        grid.addRow(r++, fl("Name"),           nameField,    new Label());
-        grid.add(fl("MC Version"), 0, r);
-        grid.add(versionBox, 1, r);
-        grid.add(snapshotsCb, 2, r++);
-        grid.addRow(r++, fl("Mod loader"),     loaderBox,    new Label());
-        grid.addRow(r++, fl("Loader version"), loaderVerBox, new Label());
+        // Footer buttons
+        JPanel footerPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        footerPanel.setBackground(panelBg);
+        footerPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(40, 40, 50)));
 
-        addSectionHeader(grid, "Memory", r++, 3);
-        VBox ramBox = new VBox(4, ramSlider, ramLbl);
-        grid.addRow(r++, fl("Allocated RAM"),  ramBox,       new Label());
+        JButton cancelBtn = new JButton("Cancel");
+        cancelBtn.addActionListener(e -> dispose());
+        footerPanel.add(cancelBtn);
 
-        addSectionHeader(grid, "Directory", r++, 3);
-        grid.add(fl("Game directory"), 0, r);
-        grid.add(defaultDirRadio, 1, r++, 2, 1);
-        grid.add(customDirRadio, 1, r++, 2, 1);
-        HBox dirRow = new HBox(8, customDirField, browseBtn);
-        HBox.setHgrow(customDirField, Priority.ALWAYS);
-        grid.add(dirRow, 1, r++, 2, 1);
-
-        addSectionHeader(grid, "Visibility", r++, 3);
-        grid.add(hiddenCb, 1, r++, 2, 1);
-
-        ScrollPane scroll = new ScrollPane(grid);
-        scroll.setFitToWidth(true);
-        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-
-        Tab generalTab = new Tab("⚙  General", scroll);
-
-        // ═════════════════════════════════════════════════════════════════════
-        //  TAB 2: Modpack
-        // ═════════════════════════════════════════════════════════════════════
-        final String[] chosenModpackPath = {inst.modpackFilePath};
-
-        Label modpackFileHint = new Label(inst.modpackFilePath != null
-                ? new File(inst.modpackFilePath).getName() : "No file selected");
-        modpackFileHint.setStyle("-fx-font-size:11px; -fx-text-fill:" +
-                (inst.modpackFilePath != null ? "-fx-text-color" : "-fx-text-muted") + ";");
-        modpackFileHint.setWrapText(true);
-
-        Button modpackBrowseBtn = new Button("Browse…");
-        Button modpackClearBtn  = new Button("Clear");
-        modpackClearBtn.setDisable(inst.modpackFilePath == null);
-
-        modpackBrowseBtn.setOnAction(e -> {
-            FileChooser fc = new FileChooser();
-            fc.setTitle("Select Modpack File");
-            fc.getExtensionFilters().addAll(
-                    new FileChooser.ExtensionFilter("Modpack files", "*.mrpack", "*.zip"),
-                    new FileChooser.ExtensionFilter("All files", "*.*"));
-            File chosen = fc.showOpenDialog(owner);
-            if (chosen != null) {
-                chosenModpackPath[0] = chosen.getAbsolutePath();
-                modpackFileHint.setText(chosen.getName());
-                modpackFileHint.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-color;");
-                modpackClearBtn.setDisable(false);
+        JButton saveBtn = new JButton("Save Changes");
+        saveBtn.setBackground(accent);
+        saveBtn.setForeground(Color.WHITE);
+        saveBtn.addActionListener(e -> {
+            String name = nameField.getText().trim();
+            String ver = (String) versionBox.getSelectedItem();
+            if (name.isEmpty() || ver == null) {
+                JOptionPane.showMessageDialog(this, "Instance name and MC version are required.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
             }
-        });
-        modpackClearBtn.setOnAction(e -> {
-            chosenModpackPath[0] = null;
-            modpackFileHint.setText("No file selected");
-            modpackFileHint.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-            modpackClearBtn.setDisable(true);
-        });
-
-        HBox modpackFileBtns = new HBox(8, modpackBrowseBtn, modpackClearBtn);
-        VBox modpackFileBox  = new VBox(6, modpackFileHint, modpackFileBtns);
-
-        // Install path
-        String defaultInstallPath = resolveDefaultModpackPath();
-        TextField installPathField = new TextField(
-                inst.modpackInstallPath != null ? inst.modpackInstallPath : defaultInstallPath);
-        HBox.setHgrow(installPathField, Priority.ALWAYS);
-
-        Button installPathBrowseBtn = new Button("Browse…");
-        installPathBrowseBtn.setOnAction(e -> {
-            DirectoryChooser dc = new DirectoryChooser();
-            dc.setTitle("Choose Install Location");
-            try { File f = new File(installPathField.getText()); if (f.exists()) dc.setInitialDirectory(f); } catch (Exception ignored) {}
-            File chosen = dc.showDialog(owner);
-            if (chosen != null) installPathField.setText(chosen.getAbsolutePath());
-        });
-        Button resetInstallPathBtn = new Button("Reset");
-        resetInstallPathBtn.setOnAction(e -> installPathField.setText(defaultInstallPath));
-
-        HBox installPathRow = new HBox(8, installPathField, installPathBrowseBtn, resetInstallPathBtn);
-        installPathRow.setAlignment(Pos.CENTER_LEFT);
-
-        Label modpackInfoLabel = new Label("Supported formats: .mrpack (Modrinth) and .zip modpacks.");
-        modpackInfoLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-        modpackInfoLabel.setWrapText(true);
-
-        GridPane modpackGrid = new GridPane();
-        modpackGrid.setHgap(12); modpackGrid.setVgap(12);
-        modpackGrid.setPadding(new Insets(20));
-        ColumnConstraints lColM = new ColumnConstraints(); lColM.setMinWidth(140); lColM.setHgrow(Priority.NEVER);
-        ColumnConstraints rColM = new ColumnConstraints(); rColM.setHgrow(Priority.ALWAYS);
-        modpackGrid.getColumnConstraints().addAll(lColM, rColM);
-
-        int mr = 0;
-        addSectionHeader(modpackGrid, "Modpack File", mr++, 2);
-        modpackGrid.add(fl("File (.mrpack / .zip)"), 0, mr);
-        modpackGrid.add(modpackFileBox, 1, mr++);
-        addSectionHeader(modpackGrid, "Install Location", mr++, 2);
-        modpackGrid.add(fl("Install path"), 0, mr);
-        modpackGrid.add(installPathRow, 1, mr++);
-        modpackGrid.add(modpackInfoLabel, 0, mr++, 2, 1);
-
-        ScrollPane modpackScroll = new ScrollPane(modpackGrid);
-        modpackScroll.setFitToWidth(true);
-        modpackScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-
-        Tab modpackTab = new Tab("📦  Modpack", modpackScroll);
-        tabs.getTabs().addAll(generalTab, modpackTab);
-
-        dialog.getDialogPane().setContent(tabs);
-
-        // Make the dialog window resizable and moveable (DECORATED style is the default for Dialog)
-        dialog.getDialogPane().getScene().getWindow().setOnShown(ev -> {
-            javafx.stage.Stage dlgStage = (javafx.stage.Stage) dialog.getDialogPane().getScene().getWindow();
-            dlgStage.setResizable(true);
-        });
-
-        // ─────────────────────────────────────────────────────────────────────
-        //  Result converter
-        // ─────────────────────────────────────────────────────────────────────
-        dialog.setResultConverter(bt -> {
-            if (bt != saveBtn) return null;
-            if (nameField.getText().isBlank() || versionBox.getValue() == null) return null;
-            inst.name             = nameField.getText().trim();
-            inst.mcVersion        = versionBox.getValue();
-            inst.modLoader        = loaderBox.getValue();
-            inst.modLoaderVersion = loaderBox.getValue() == ModLoaderType.VANILLA ? null : loaderVerBox.getValue();
-            inst.ramMb            = (int) ramSlider.getValue();
-            inst.hidden           = hiddenCb.isSelected();
-
-            // Image
+            inst.name = name;
+            inst.mcVersion = ver;
+            inst.modLoader = (ModLoaderType) loaderBox.getSelectedItem();
+            inst.modLoaderVersion = inst.modLoader == ModLoaderType.VANILLA ? null : (String) loaderVerBox.getSelectedItem();
+            inst.ramMb = ramSlider.getValue();
+            inst.hidden = hiddenCb.isSelected();
             inst.imagePath = chosenImagePath[0];
-
-            // Modpack
             inst.modpackFilePath = chosenModpackPath[0];
+
             if (chosenModpackPath[0] != null) {
-                String installPath = installPathField.getText().isBlank() ? defaultInstallPath : installPathField.getText();
-                inst.modpackInstallPath  = installPath;
-                // Game directory follows modpack install path automatically
-                inst.useCustomDirectory  = true;
-                inst.customDirectoryPath = installPath;
+                String path = installPathField.getText().trim().isEmpty() ? defaultInstallPath : installPathField.getText().trim();
+                inst.modpackInstallPath = path;
+                inst.useCustomDirectory = true;
+                inst.customDirectoryPath = path;
             } else {
                 inst.modpackInstallPath = null;
                 if (defaultDirRadio.isSelected()) {
-                    inst.useCustomDirectory  = true;
+                    inst.useCustomDirectory = true;
                     inst.customDirectoryPath = LauncherPaths.getDefaultMinecraftPath().toAbsolutePath().toString();
                 } else if (customDirRadio.isSelected()) {
-                    inst.useCustomDirectory  = true;
-                    inst.customDirectoryPath = customDirField.getText();
+                    inst.useCustomDirectory = true;
+                    inst.customDirectoryPath = customDirField.getText().trim();
                 } else {
-                    inst.useCustomDirectory  = false;
+                    inst.useCustomDirectory = false;
                     inst.customDirectoryPath = null;
                 }
             }
-            return inst;
+            result = inst;
+            dispose();
         });
+        footerPanel.add(saveBtn);
 
-        return dialog.showAndWait();
+        mainPanel.add(footerPanel, BorderLayout.SOUTH);
+        setContentPane(mainPanel);
     }
 
     private static String resolveDefaultModpackPath() {
@@ -427,33 +549,51 @@ public class EditInstanceDialog {
         } catch (Exception e) { return ".minecraft/ModPacks"; }
     }
 
-    private static void loadIcon(ImageView view, String imagePath) {
+    private static void loadIcon(JLabel label, String imagePath) {
         if (imagePath != null && !imagePath.isBlank()) {
             try {
                 File f = new File(imagePath);
-                if (f.exists()) { view.setImage(new Image(f.toURI().toString(), 64, 64, true, true)); return; }
+                if (f.exists()) {
+                    ImageIcon img = new ImageIcon(f.getAbsolutePath());
+                    Image scaled = img.getImage().getScaledInstance(64, 64, Image.SCALE_SMOOTH);
+                    label.setIcon(new ImageIcon(scaled));
+                    return;
+                }
             } catch (Exception ignored) {}
         }
         try {
             InputStream is = EditInstanceDialog.class.getResourceAsStream("/com/launcher/minecraft_image.png");
-            if (is != null) { view.setImage(new Image(is, 64, 64, true, true)); return; }
+            if (is != null) {
+                BufferedImage img = ImageIO.read(is);
+                Image scaled = img.getScaledInstance(64, 64, Image.SCALE_SMOOTH);
+                label.setIcon(new ImageIcon(scaled));
+                return;
+            }
         } catch (Exception ignored) {}
-        view.setImage(null);
+        label.setIcon(null);
     }
 
-    private static void addSectionHeader(GridPane grid, String text, int row, int colspan) {
-        Label l = new Label(text.toUpperCase());
-        l.setStyle("-fx-font-size:10px; -fx-font-weight:bold; -fx-text-fill:-fx-text-muted; -fx-letter-spacing:1.5px; -fx-padding:8px 0 2px 0;");
-        Separator sep = new Separator();
-        HBox h = new HBox(8, l, sep);
-        HBox.setHgrow(sep, Priority.ALWAYS);
-        h.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        grid.add(h, 0, row, colspan, 1);
+    private static void addSectionHeader(JPanel panel, String text, int row, GridBagConstraints gbc, Color textColor) {
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weightx = 1.0;
+        JPanel sepPanel = new JPanel(new GridBagLayout());
+        sepPanel.setBackground(panel.getBackground());
+        JLabel l = new JLabel(text.toUpperCase());
+        l.setFont(new Font("SansSerif", Font.BOLD, 10));
+        l.setForeground(new Color(150, 150, 160));
+        JSeparator sep = new JSeparator();
+        GridBagConstraints sgbc = new GridBagConstraints();
+        sgbc.fill = GridBagConstraints.HORIZONTAL;
+        sgbc.insets = new Insets(0, 8, 0, 0);
+        sgbc.weightx = 1.0;
+        sepPanel.add(l);
+        sepPanel.add(sep, sgbc);
+        panel.add(sepPanel, gbc);
     }
 
-    private static Label fl(String text) {
-        Label l = new Label(text);
-        l.setStyle("-fx-font-size:12px; -fx-text-fill:-fx-text-color;");
+    private static JLabel fieldLabel(String text, Color textColor) {
+        JLabel l = new JLabel(text);
+        l.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        l.setForeground(textColor);
         return l;
     }
 }

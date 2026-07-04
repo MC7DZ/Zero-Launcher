@@ -9,95 +9,89 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.util.function.Consumer;
 
-/** Thin wrapper around java.net.http so the rest of the codebase doesn't repeat boilerplate. */
-public class HttpUtil {
+public final class HttpUtil {
 
+    private static final String USER_AGENT = "minecraft-launcher/1.0";
     private static final HttpClient CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
+    // --- Helper for consistent request headers ---
+    private static HttpRequest.Builder baseRequestBuilder(String url) {
+        return HttpRequest.newBuilder(URI.create(url))
+                .header("User-Agent", USER_AGENT);
+    }
+
+    // --- Standard HTTP Requests ---
     public static String getString(String url) throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                .header("User-Agent", "minecraft-launcher/1.0")
-                .GET().build();
-        HttpResponse<String> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
-        if (resp.statusCode() / 100 != 2) {
-            throw new IOException("GET " + url + " -> HTTP " + resp.statusCode() + ": " + resp.body());
-        }
-        return resp.body();
+        HttpRequest req = baseRequestBuilder(url).GET().build();
+        return sendAndValidate(req, HttpResponse.BodyHandlers.ofString());
     }
 
     public static String getStringAuthorized(String url, String bearerToken) throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                .header("User-Agent", "minecraft-launcher/1.0")
+        HttpRequest req = baseRequestBuilder(url)
                 .header("Authorization", "Bearer " + bearerToken)
                 .GET().build();
-        HttpResponse<String> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
-        if (resp.statusCode() / 100 != 2) {
-            throw new IOException("GET " + url + " -> HTTP " + resp.statusCode() + ": " + resp.body());
-        }
-        return resp.body();
+        return sendAndValidate(req, HttpResponse.BodyHandlers.ofString());
     }
 
     public static String postJson(String url, String jsonBody) throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+        HttpRequest req = baseRequestBuilder(url)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
-                .header("User-Agent", "minecraft-launcher/1.0")
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
-        HttpResponse<String> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
+        return sendAndValidate(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    public static String postFormRaw(String url, String formBody) throws IOException, InterruptedException {
+        HttpRequest req = baseRequestBuilder(url)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(formBody))
+                .build();
+        return CLIENT.send(req, HttpResponse.BodyHandlers.ofString()).body();
+    }
+
+    // --- Validation Logic ---
+    private static <T> T sendAndValidate(HttpRequest req, HttpResponse.BodyHandler<T> handler) throws IOException, InterruptedException {
+        HttpResponse<T> resp = CLIENT.send(req, handler);
         if (resp.statusCode() / 100 != 2) {
-            throw new IOException("POST " + url + " -> HTTP " + resp.statusCode() + ": " + resp.body());
+            throw new IOException("Request to " + req.uri() + " failed with HTTP " + resp.statusCode());
         }
         return resp.body();
     }
 
-    /** Returns raw body even on non-2xx; some OAuth endpoints use 4xx for "pending" style responses. */
-    public static String postFormRaw(String url, String formBody) throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .header("User-Agent", "minecraft-launcher/1.0")
-                .POST(HttpRequest.BodyPublishers.ofString(formBody))
-                .build();
-        HttpResponse<String> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
-        return resp.body();
+    // --- File Downloads ---
+    public static void downloadFile(String url, Path target, Consumer<String> statusCallback) throws IOException, InterruptedException {
+        if (statusCallback != null) statusCallback.accept("Downloading " + target.getFileName() + "...");
+        downloadToFile(url, target);
     }
 
     public static void downloadToFile(String url, Path target) throws IOException, InterruptedException {
         Files.createDirectories(target.getParent());
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                .header("User-Agent", "minecraft-launcher/1.0")
-                .timeout(Duration.ofSeconds(30))
-                .GET().build();
         Path tmp = target.resolveSibling(target.getFileName().toString() + ".part");
 
-        int maxRetries = 3;
-        int attempt = 0;
-        while (true) {
-            attempt++;
+        for (int i = 0; i < 3; i++) {
             try {
+                HttpRequest req = baseRequestBuilder(url).timeout(Duration.ofSeconds(30)).GET().build();
                 HttpResponse<Path> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofFile(tmp));
-                if (resp.statusCode() / 100 != 2) {
-                    Files.deleteIfExists(tmp);
-                    throw new IOException("Download failed " + url + " -> HTTP " + resp.statusCode());
-                }
+
+                if (resp.statusCode() / 100 != 2) throw new IOException("HTTP " + resp.statusCode());
+
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
                 return;
             } catch (IOException e) {
                 Files.deleteIfExists(tmp);
-                if (attempt >= maxRetries) {
-                    throw e;
-                }
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw ie;
-                }
+                if (i == 2) throw e;
+                Thread.sleep(1000); // Wait longer between retries
             }
         }
+    }
+
+    public static String encode(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 }

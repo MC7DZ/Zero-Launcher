@@ -1,5 +1,6 @@
 package com.launcher;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.launcher.manager.AccountManager;
 import com.launcher.manager.InstanceManager;
@@ -12,227 +13,217 @@ import com.launcher.ui.CreateInstanceDialog;
 import com.launcher.ui.EditInstanceDialog;
 import com.launcher.ui.LoginDialog;
 import com.launcher.ui.NotificationCenter;
-import javafx.application.Application;
-import javafx.application.Platform;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.Scene;
-import javafx.scene.control.*;
-import javafx.scene.image.Image;
-import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
-import javafx.scene.shape.Circle;
-import javafx.stage.Stage;
-
-import java.nio.file.Path;
-import java.nio.file.Files;
-import java.util.List;
+import com.launcher.ui.WrapLayout;
 import com.launcher.util.JsonUtil;
 import com.launcher.manager.LauncherPaths;
+import com.formdev.flatlaf.FlatDarkLaf;
 
-public class Main extends Application {
+import javax.imageio.ImageIO;
+import javax.swing.*;
+import javax.swing.border.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import java.awt.*;
+import java.awt.event.*;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.InputStream;
+import java.net.URI;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+public class Main extends JFrame {
 
     private final AccountManager accountManager = new AccountManager();
     private final InstanceManager instanceManager = new InstanceManager();
 
-    private Stage primaryStage;
     private NotificationCenter notifications;
 
-    /**
-     * Runs {@code action} while preserving the primary stage's maximized state.
-     * JavaFX restores (un-maximizes) the owner window when a child Dialog or
-     * FileChooser is shown; this wrapper saves and re-applies the flag so the
-     * launcher stays maximized.
-     */
-    private void withMaximizeGuard(Runnable action) {
-        boolean wasMaximized = primaryStage != null && primaryStage.isMaximized();
-        action.run();
-        if (wasMaximized && primaryStage != null && !primaryStage.isMaximized()) {
-            primaryStage.setMaximized(true);
-        }
-    }
-    private final java.util.concurrent.ConcurrentLinkedQueue<String> logQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<String> logQueue = new ConcurrentLinkedQueue<>();
     private volatile boolean logFlushScheduled = false;
     private volatile boolean isMinimized = false;
     private long lastLogFlushWhenMinimized = 0;
 
-    private ComboBox<Account> accountBox;
-    private ListView<Instance> instanceList;
-    private TextArea logArea;
-    private Button playButton;
-    private Button killButton;
+    private JComboBox<Account> accountBox;
+    private JList<Instance> instanceList;
+    private DefaultListModel<Instance> instanceListModel;
+    private JTextArea logArea;
+    private JButton playButton;
+    private JButton killButton;
     private Process activeProcess;
 
     // ─── Status bar ───────────────────────────────────────────────────────────
-    private Label statusLabel;
+    private JLabel statusLabel;
 
     // ─── Dawn client ──────────────────────────────────────────────────────────
-    private Label dawnStatusLabel;
-    private Button installDawnButton;
-    private Button deleteDawnButton;
+    private JLabel dawnStatusLabel;
+    private JButton installDawnButton;
+    private JButton deleteDawnButton;
 
-    // Dawn client JAR is stored in the instance's mods folder
     private static final String DAWN_JAR_NAME = "dawn-standalone.jar";
-    private static final String DAWN_DOWNLOAD_URL =
-            "https://cdn.dawn.gg/files/standalone/libraries/dawn-standalone.jar";
+    private static final String DAWN_DOWNLOAD_URL = "https://cdn.dawn.gg/files/standalone/libraries/dawn-standalone.jar";
 
     // ─── Mods tab ─────────────────────────────────────────────────────────────
-    private Label modsHeaderLabel;
-    private Label modsCountLabel;
-    private ListView<ModEntry> modsList;
-    private TextField modsSearchField;
-    private Button checkUpdatesBtn;
-    private Button updateAllBtn;
-    private Button updateSelectedBtn;
-    private Button refreshModsBtn;
-    private Button deleteModBtn;
-    private Button dedupeModsBtn;
-    private Button installDependenciesBtn;
-    private List<ModEntry> currentModEntries = new java.util.ArrayList<>();
+    private JLabel modsHeaderLabel;
+    private JLabel modsCountLabel;
+    private JList<ModEntry> modsList;
+    private DefaultListModel<ModEntry> modsListModel;
+    private JTextField modsSearchField;
+    private JButton checkUpdatesBtn;
+    private JButton updateAllBtn;
+    private JButton updateSelectedBtn;
+    private JButton refreshModsBtn;
+    private JButton deleteModBtn;
+    private JButton dedupeModsBtn;
+    private JButton installDependenciesBtn;
+    private List<ModEntry> currentModEntries = new ArrayList<>();
 
-    // Mod icons are loaded asynchronously (Modrinth) and cached by URL so list
-    // cells don't re-request the same image every time they're recycled.
-    private final java.util.Map<String, Image> modIconCache = new java.util.concurrent.ConcurrentHashMap<>();
-    private Image defaultModIcon;
+    private final Map<String, ImageIcon> modIconCache = new ConcurrentHashMap<>();
+    private ImageIcon defaultModIcon;
 
     // ─── Discover tab (Modrinth browser) ───────────────────────────────────────
-    private ComboBox<Instance> discoverInstanceBox;
-    private ToggleButton discoverModsToggle;
-    private ToggleButton discoverPacksToggle;
-    private TextField discoverSearchField;
-    private Button discoverSearchBtn;
-    private FlowPane discoverResultsPane;
-    private Label discoverStatusLabel;
-    private final java.util.Map<String, Image> discoverIconCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private JComboBox<Instance> discoverInstanceBox;
+    private JToggleButton discoverModsToggle;
+    private JToggleButton discoverPacksToggle;
+    private JTextField discoverSearchField;
+    private JButton discoverSearchBtn;
+    private JPanel discoverResultsPane;
+    private JLabel discoverStatusLabel;
+    private final Map<String, ImageIcon> discoverIconCache = new ConcurrentHashMap<>();
     private int discoverOffset = 0;
     private int discoverTotalHits = 0;
-    private Label discoverPageLabel;
-    private Button discoverPrevPageBtn;
-    private Button discoverNextPageBtn;
-    private Button discoverRefreshBtn;
+    private JLabel discoverPageLabel;
+    private JButton discoverPrevPageBtn;
+    private JButton discoverNextPageBtn;
+    private JButton discoverRefreshBtn;
+    private final ModUpdateService discoverModService = new ModUpdateService();
 
-    /** One selectable file version in a Discover card's "Version" dropdown. */
     private record VersionOption(String label, String url, String fileName) {
         @Override public String toString() { return label; }
     }
 
     // ─── Server section (Discord RPC settings) ─────────────────────────────────
-    private Label serverInstanceLabel;
-    private Label serverIpLabel;
-    private Label serverPrivacyBadge;
-    private Button togglePrivateBtn;
-    private TextField addPrivateIpField;
-    private FlowPane privateIpsChips;
-    private ComboBox<InstanceServerOption> instanceServersBox;
+    private JLabel serverInstanceLabel;
+    private JLabel serverIpLabel;
+    private JLabel serverPrivacyBadge;
+    private JButton togglePrivateBtn;
+    private JTextField addPrivateIpField;
+    private JPanel privateIpsChips;
+    private JComboBox<InstanceServerOption> instanceServersBox;
 
-    /** One entry in the "Servers found in instances" menu — a server read from one instance's servers.dat. */
     private record InstanceServerOption(Instance instance, com.launcher.minecraft.ServerListReader.ServerEntry entry) {
         @Override public String toString() {
             return instance.name + "  ›  " + entry.name + "  (" + entry.ip + ")";
         }
     }
 
-    // ─── Transparent / blur backdrop ──────────────────────────────────────────
-    // Sits behind the real UI inside sceneRoot; paints the background color/image
-    // and, when enabled, a blurred backdrop so panels can be made translucent.
-    private javafx.scene.layout.StackPane backdropLayer;
+    private JTabbedPane mainTabPane;
 
-    // ─── Tab navigation (used by "find a mod for this" shortcut buttons) ──────
-    private TabPane mainTabPane;
-    private Tab discoverTabRef;
-
-    @Override
-    public void start(Stage stage) {
-        this.primaryStage = stage;
-        stage.setTitle("Zero Launcher");
-        stage.setMinWidth(820);
-        stage.setMinHeight(560);
-
-        var iconUrl = getClass().getResource("/com/launcher/ZeroLauncherIcon.png");
-        if (iconUrl != null) stage.getIcons().add(new Image(iconUrl.toExternalForm()));
-
-        BorderPane root = new BorderPane();
-        root.setTop(buildTopBar());
-
-        TabPane tabPane = new TabPane();
-        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-
-        // Wrap root in a StackPane so a backdrop layer can sit behind it.
-        // The backdrop paints the background color/image and (when the
-        // transparent/blur effect is enabled) a blurred backdrop, while
-        // panels above it become translucent so it shows through.
-        javafx.scene.layout.StackPane sceneRoot = new javafx.scene.layout.StackPane();
-        backdropLayer = new javafx.scene.layout.StackPane();
-        backdropLayer.setMouseTransparent(true);
-        backdropLayer.setPickOnBounds(false);
-        sceneRoot.getChildren().addAll(backdropLayer, root);
-
-        // Toast-notification overlay, always on top of everything else.
-        notifications = new NotificationCenter(sceneRoot);
+    public Main() {
+        setTitle("Zero Launcher");
+        setMinimumSize(new Dimension(820, 560));
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 
         com.launcher.model.LauncherSettings initSettings = com.launcher.manager.SettingsManager.getInstance().getSettings();
-        int initW = (initSettings.launcherWidth  >= 820) ? initSettings.launcherWidth  : 960;
+        int initW = (initSettings.launcherWidth >= 820) ? initSettings.launcherWidth : 960;
         int initH = (initSettings.launcherHeight >= 560) ? initSettings.launcherHeight : 660;
-        Scene scene = new Scene(sceneRoot, initW, initH);
+        setSize(initW, initH);
+        setLocationRelativeTo(null);
 
-        Tab instancesTab = new Tab("⚡  Instances", buildInstanceArea(stage));
-        Tab modsTab      = new Tab("📦  Mods",      buildModsArea());
-        Tab discoverTab  = new Tab("🌐  Discover",  buildDiscoverArea());
-        Tab settingsTab  = new Tab("⚙  Settings",  buildSettingsArea(scene));
-        tabPane.getTabs().addAll(instancesTab, modsTab, discoverTab, settingsTab);
-        this.mainTabPane = tabPane;
-        this.discoverTabRef = discoverTab;
+        // Load default window icon
+        try {
+            URL iconUrl = getClass().getResource("/com/launcher/ZeroLauncherIcon.png");
+            if (iconUrl != null) {
+                setIconImage(new ImageIcon(iconUrl).getImage());
+            }
+        } catch (Exception ignored) {}
 
-        root.setCenter(tabPane);
-        root.setBottom(buildLogArea());
+        // Load default mod icon
+        try {
+            InputStream is = getClass().getResourceAsStream("/com/launcher/minecraft_image.png");
+            if (is != null) {
+                defaultModIcon = new ImageIcon(ImageIO.read(is));
+            }
+        } catch (Exception ignored) {}
 
-        var resourceUrl = getClass().getResource("/com/launcher/styles.css");
-        if (resourceUrl != null) scene.getStylesheets().add(resourceUrl.toExternalForm());
+        // Setup Main Layout
+        JPanel rootPanel = new JPanel(new BorderLayout());
+        setContentPane(rootPanel);
 
-        com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
-        applyTheme(scene, settings);
-        
+        rootPanel.add(buildTopBar(), BorderLayout.NORTH);
+
+        mainTabPane = new JTabbedPane();
+        mainTabPane.addTab("⚡  Instances", buildInstanceArea());
+        mainTabPane.addTab("📦  Mods", buildModsArea());
+        mainTabPane.addTab("🌐  Discover", buildDiscoverArea());
+        mainTabPane.addTab("⚙  Settings", buildSettingsArea());
+        rootPanel.add(mainTabPane, BorderLayout.CENTER);
+
+        rootPanel.add(buildLogArea(), BorderLayout.SOUTH);
+
+        // Toast-notification overlay
+        notifications = new NotificationCenter(this);
+
+        applyTheme();
+
         com.launcher.manager.DiscordRpcManager.getInstance().init();
 
-        stage.setScene(scene);
-        stage.setOnCloseRequest(e -> {
-            com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
-            if (s.clearSessionOnExit) {
-                for (Account acc : accountManager.getAccounts()) accountManager.addOrUpdate(acc);
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
+                if (s.clearSessionOnExit) {
+                    for (Account acc : accountManager.getAccounts()) accountManager.addOrUpdate(acc);
+                }
+                com.launcher.manager.DiscordRpcManager.getInstance().shutdown();
+                System.exit(0);
             }
-            com.launcher.manager.DiscordRpcManager.getInstance().shutdown();
-        });
-        stage.iconifiedProperty().addListener((obs, was, is) -> {
-            isMinimized = is;
-            if (is) {
+
+            @Override
+            public void windowIconified(WindowEvent e) {
+                isMinimized = true;
                 logFlushScheduled = false;
                 long now = System.currentTimeMillis();
-                if (now - lastLogFlushWhenMinimized > 30_000) { lastLogFlushWhenMinimized = now; System.gc(); }
+                if (now - lastLogFlushWhenMinimized > 30_000) {
+                    lastLogFlushWhenMinimized = now;
+                    System.gc();
+                }
+            }
+
+            @Override
+            public void windowDeiconified(WindowEvent e) {
+                isMinimized = false;
             }
         });
-        stage.show();
 
+        // Initial refreshes
         refreshAccounts();
         refreshInstances();
-        updateDawnStatus(instanceList.getSelectionModel().getSelectedItem());
+        if (instanceList.getSelectedValue() != null) {
+            updateDawnStatus(instanceList.getSelectedValue());
+        }
+
+        // Auto-refresh Discover tab with trending content
+        refreshDiscoverInstances();
+        SwingUtilities.invokeLater(() -> performDiscoverSearch());
 
         if (com.launcher.manager.SettingsManager.getInstance().getSettings().checkModUpdatesOnStartup) {
             runStartupModUpdateCheck();
         }
     }
 
-    /**
-     * Silently scans every visible instance's mods on launcher startup and reports what it
-     * finds via toast notifications, instead of touching whatever the Mods list is currently
-     * showing. Wired to the "Check for mod updates when the launcher starts" setting.
-     */
     private void runStartupModUpdateCheck() {
         var targets = instanceManager.getInstances().stream().filter(i -> !i.hidden).toList();
         if (targets.isEmpty()) return;
 
         new Thread(() -> {
             ModUpdateService service = new ModUpdateService();
-            java.util.Map<String, Integer> updatesByInstance = new java.util.LinkedHashMap<>();
+            Map<String, Integer> updatesByInstance = new LinkedHashMap<>();
             int scannedInstances = 0;
 
             for (Instance inst : targets) {
@@ -249,14 +240,12 @@ public class Main extends Application {
 
                     long updatable = mods.stream().filter(m -> "Update available".equals(m.status)).count();
                     if (updatable > 0) updatesByInstance.put(inst.name, (int) updatable);
-                } catch (Exception ignored) {
-                    // A single instance failing to scan shouldn't block the rest, or spam the user at startup.
-                }
+                } catch (Exception ignored) {}
             }
 
             final int finalScanned = scannedInstances;
-            Platform.runLater(() -> {
-                if (finalScanned == 0) return; // nothing with mods installed — stay quiet
+            SwingUtilities.invokeLater(() -> {
+                if (finalScanned == 0) return;
                 if (updatesByInstance.isEmpty()) {
                     notifications.info("Mods up to date", "Checked " + finalScanned + " instance(s) — no mod updates found.");
                 } else {
@@ -267,8 +256,7 @@ public class Main extends Application {
                     }
                     notifications.success("Mod updates available", sb.toString());
                 }
-                // Refresh whatever the Mods tab happens to be showing right now so status badges reflect the check.
-                Instance sel = instanceList.getSelectionModel().getSelectedItem();
+                Instance sel = instanceList.getSelectedValue();
                 if (sel != null && updatesByInstance.containsKey(sel.name)) {
                     refreshModsView(sel);
                 }
@@ -279,2300 +267,1593 @@ public class Main extends Application {
     // ══════════════════════════════════════════════════════════════════════════
     //  TOP BAR — account selector + launcher branding
     // ══════════════════════════════════════════════════════════════════════════
-    private VBox buildTopBar() {
-        Label logo = new Label("ZERO");
-        logo.setStyle("-fx-font-size:17px; -fx-font-weight:bold; -fx-text-fill:#ffffff; -fx-letter-spacing:3px;");
-        Label logoSub = new Label("LAUNCHER");
-        logoSub.setStyle("-fx-font-size:8px; -fx-text-fill:-fx-accent-color; -fx-letter-spacing:4px; -fx-font-weight:bold;");
-        VBox brand = new VBox(0, logo, logoSub);
-        brand.setAlignment(Pos.CENTER_LEFT);
+    private JPanel buildTopBar() {
+        JPanel bar = new JPanel(new BorderLayout());
+        bar.setBorder(new EmptyBorder(10, 16, 10, 16));
 
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
+        // Branding
+        JPanel brand = new JPanel();
+        brand.setLayout(new BoxLayout(brand, BoxLayout.Y_AXIS));
+        JLabel logo = new JLabel("ZERO");
+        logo.setFont(new Font("SansSerif", Font.BOLD, 17));
+        logo.setForeground(Color.WHITE);
+        JLabel logoSub = new JLabel("LAUNCHER");
+        logoSub.setFont(new Font("SansSerif", Font.BOLD, 8));
+        logoSub.setForeground(new Color(16, 185, 129));
+        brand.add(logo);
+        brand.add(logoSub);
+        bar.add(brand, BorderLayout.WEST);
 
-        accountBox = new ComboBox<>();
-        accountBox.setPrefWidth(210);
-        accountBox.setPromptText("No account selected");
-        accountBox.setConverter(new javafx.util.StringConverter<>() {
-            @Override public String toString(Account a) {
-                if (a == null) return "";
-                com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
-                return (s.hideUsername ? "●●●●●" : a.username) + "  ·  Offline";
+        // Account box panel
+        JPanel accPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        accountBox = new JComboBox<>();
+        accountBox.setPreferredSize(new Dimension(210, 30));
+        accountBox.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Account a) {
+                    com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
+                    setText((s.hideUsername ? "●●●●●" : a.username) + "  ·  Offline");
+                } else {
+                    setText("No account selected");
+                }
+                return this;
             }
-            @Override public Account fromString(String s) { return null; }
         });
-        accountBox.setOnAction(e -> {
-            if (accountBox.getValue() != null) accountManager.setActiveAccount(accountBox.getValue());
+        accountBox.addActionListener(e -> {
+            Account a = (Account) accountBox.getSelectedItem();
+            if (a != null) {
+                accountManager.setActiveAccount(a);
+            }
         });
 
-        Button addAccBtn = new Button("+ Account");
-        addAccBtn.setOnAction(e -> LoginDialog.show(primaryStage, acc -> {
+        JButton addAccBtn = new JButton("+");
+        addAccBtn.setPreferredSize(new Dimension(30, 30));
+        addAccBtn.setToolTipText("Add Account");
+        addAccBtn.addActionListener(e -> LoginDialog.show(this, acc -> {
             accountManager.addOrUpdate(acc);
+            accountManager.setActiveAccount(acc);
             refreshAccounts();
+            notifications.success("Account added", "Added offline account: " + acc.username);
         }));
 
-        Button removeAccBtn = new Button("Remove");
-        removeAccBtn.setOnAction(e -> {
-            Account sel = accountBox.getValue();
-            if (sel != null) { accountManager.remove(sel); refreshAccounts(); }
+        JButton rmAccBtn = new JButton("✕");
+        rmAccBtn.setPreferredSize(new Dimension(30, 30));
+        rmAccBtn.setToolTipText("Remove Account");
+        rmAccBtn.addActionListener(e -> {
+            Account selected = (Account) accountBox.getSelectedItem();
+            if (selected != null) {
+                accountManager.remove(selected);
+                refreshAccounts();
+                notifications.warning("Account removed", "Removed account " + selected.username);
+            }
         });
 
-        HBox accountRow = new HBox(8, new Label("Account:"), accountBox, addAccBtn, removeAccBtn);
-        accountRow.setAlignment(Pos.CENTER_LEFT);
+        accPanel.add(accountBox);
+        accPanel.add(addAccBtn);
+        accPanel.add(rmAccBtn);
+        bar.add(accPanel, BorderLayout.EAST);
 
-        HBox bar = new HBox(20, brand, spacer, accountRow);
-        bar.setAlignment(Pos.CENTER_LEFT);
-        bar.setPadding(new Insets(12, 20, 12, 20));
-        bar.getStyleClass().add("top-bar");
-
-        Label note = new Label("Microsoft accounts are not supported — use the in-game account switcher instead.");
-        note.setStyle("-fx-font-size:10px; -fx-text-fill:-fx-text-muted; -fx-padding:0 0 6px 20px;");
-
-        VBox container = new VBox(bar, note);
-        container.setStyle("-fx-background-color:-fx-panel-background; -fx-background-image: none; -fx-border-color:transparent transparent -fx-border-subtle transparent; -fx-border-width:0 0 1px 0;");
-        return container;
+        return bar;
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  INSTANCE PANEL
+    //  INSTANCES TAB
     // ══════════════════════════════════════════════════════════════════════════
-    private VBox buildInstanceArea(Stage stage) {
-        VBox root = new VBox(12);
-        root.setPadding(new Insets(16));
+    private JPanel buildInstanceArea() {
+        JPanel p = new JPanel(new BorderLayout());
 
-        // ── toolbar ──────────────────────────────────────────────────────────
-        Button newBtn  = new Button("＋  New Instance");
-        Button editBtn = new Button("✏  Edit");
-        Button delBtn  = new Button("✕  Delete");
-        delBtn.getStyleClass().add("btn-danger");
-
-        Button openFolderBtn = new Button("📂  Open Folder");
-        openFolderBtn.setTooltip(new Tooltip("Open the instance's game directory in the file explorer"));
-
-        playButton = new Button("▶  Play");
-        playButton.setId("playButton");
-        killButton = new Button("■  Kill");
-        killButton.setId("killButton");
-        killButton.setDisable(true);
-
-        Region tbSpacer = new Region();
-        HBox.setHgrow(tbSpacer, Priority.ALWAYS);
-        HBox toolbar = new HBox(8, newBtn, editBtn, delBtn, openFolderBtn, tbSpacer, killButton, playButton);
-        toolbar.setAlignment(Pos.CENTER_LEFT);
-
-        // ── instance list ─────────────────────────────────────────────────────
-        instanceList = new ListView<>();
-        VBox.setVgrow(instanceList, Priority.ALWAYS);
-        instanceList.setCellFactory(lv -> new InstanceCell());
-
-        // ── Dawn client section ───────────────────────────────────────────────
-        dawnStatusLabel = new Label("Select an instance to manage Dawn Client.");
-        dawnStatusLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-
-        installDawnButton = new Button("⬇  Install Dawn Client");
-        installDawnButton.setDisable(true);
-        installDawnButton.setTooltip(new Tooltip("Download and install the Dawn Client mod into this instance"));
-
-        deleteDawnButton = new Button("✕  Remove Dawn Client");
-        deleteDawnButton.setDisable(true);
-        deleteDawnButton.getStyleClass().add("btn-danger");
-        deleteDawnButton.setTooltip(new Tooltip("Remove Dawn Client from this instance"));
-
-        HBox dawnButtons = new HBox(8, installDawnButton, deleteDawnButton);
-        dawnButtons.setAlignment(Pos.CENTER_LEFT);
-
-        VBox dawnSection = new VBox(6, dawnStatusLabel, dawnButtons);
-        dawnSection.setPadding(new Insets(10, 12, 10, 12));
-        dawnSection.setStyle("-fx-background-color:-fx-surface; -fx-background-radius:8px; -fx-border-color:-fx-border-subtle; -fx-border-radius:8px; -fx-border-width:1px;");
-
-        Label dawnHeader = new Label("Dawn Client");
-        dawnHeader.setStyle("-fx-font-size:13px; -fx-font-weight:bold; -fx-text-fill:-fx-accent-color;");
-        dawnSection.getChildren().add(0, dawnHeader);
-
-        // ── selection listener ────────────────────────────────────────────────
-        instanceList.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            updateDawnStatus(newVal);
-            refreshModsView(newVal);
-            refreshServerSection();
-        });
-
-        // ── wire toolbar buttons ──────────────────────────────────────────────
-        newBtn.setOnAction(e -> withMaximizeGuard(() ->
-            CreateInstanceDialog.show(stage).ifPresent(inst -> {
-                instanceManager.add(inst);
-                refreshInstances();
-                // Extract modpack if one was selected
-                if (inst.modpackFilePath != null && !inst.modpackFilePath.isBlank()) {
-                    extractModpack(inst);
-                }
-            })
-        ));
-
-        editBtn.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) { log("Select an instance to edit."); return; }
-            withMaximizeGuard(() ->
-                EditInstanceDialog.show(stage, sel).ifPresent(upd -> {
-                    instanceManager.update(upd);
-                    refreshInstances();
-                })
-            );
-        });
-
-        delBtn.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) { log("Select an instance to delete."); return; }
-
-            // Determine whether the instance lives directly inside .minecraft
-            // (scanned vanilla install) vs. a subdirectory (modpack/custom path).
-            Path defaultMcPath = com.launcher.manager.LauncherPaths.getDefaultMinecraftPath();
-            Path gameDir2      = instanceManager.resolveGameDir(sel);
-            boolean isModpack  = sel.modpackInstallPath != null && !sel.modpackInstallPath.isBlank();
-
-            // Effective directory that "owns" this instance on disk
-            Path effectiveDir  = isModpack ? java.nio.file.Path.of(sel.modpackInstallPath) : gameDir2;
-
-            // True when the instance IS the root .minecraft folder (scanned vanilla).
-            // In this case deleting the whole folder would break the user's real Minecraft,
-            // so we only delete the version jar file(s) for that instance.
-            final boolean isRootMinecraft;
-            boolean _rootCheck;
-            try {
-                _rootCheck = Files.exists(effectiveDir)
-                        && effectiveDir.toRealPath().equals(defaultMcPath.toRealPath());
-            } catch (Exception ignored) {
-                _rootCheck = effectiveDir.toAbsolutePath().equals(defaultMcPath.toAbsolutePath());
-            }
-            isRootMinecraft = _rootCheck;
-
-            // Build description for the dialog so the user knows what will happen
-            String deleteLabel;
-            String deleteDescription;
-            if (isRootMinecraft) {
-                deleteLabel = "Delete Instance Jar Only";
-                deleteDescription = "This instance points to your .minecraft folder.\n"
-                        + "Only the version jar file(s) for \"" + sel.name + "\" will be deleted.\n"
-                        + "Your saves, mods, and other versions are NOT affected.";
-            } else {
-                deleteLabel = "Delete Instance Files";
-                deleteDescription = "All files in the instance folder will be permanently deleted:\n"
-                        + effectiveDir.toAbsolutePath();
-            }
-
-            Alert alert = new Alert(Alert.AlertType.NONE);
-            alert.initOwner(stage);
-            alert.setTitle("Delete Instance");
-            alert.setHeaderText("Delete \"" + sel.name + "\"?");
-            alert.setContentText(deleteDescription);
-
-            ButtonType removeLauncherOnly = new ButtonType("Remove from Launcher Only",
-                    ButtonBar.ButtonData.LEFT);
-            ButtonType deleteFiles        = new ButtonType(deleteLabel,
-                    ButtonBar.ButtonData.OTHER);
-            ButtonType cancel             = new ButtonType("Cancel",
-                    ButtonBar.ButtonData.CANCEL_CLOSE);
-            alert.getButtonTypes().setAll(removeLauncherOnly, deleteFiles, cancel);
-
-            // Style the dialog — NO background image so it stays readable
-            var css2 = getClass().getResource("/com/launcher/styles.css");
-            if (css2 != null) alert.getDialogPane().getStylesheets().add(css2.toExternalForm());
-            com.launcher.model.LauncherSettings alertSettings =
-                    com.launcher.manager.SettingsManager.getInstance().getSettings();
-            applyThemeToPane(alert.getDialogPane(), alertSettings);
-            // Force solid background regardless of user background-image setting
-            alert.getDialogPane().setStyle(alert.getDialogPane().getStyle()
-                    + "; -fx-background-image: none;");
-
-            alert.showAndWait().ifPresent(choice -> {
-                if (choice == cancel) return;
-
-                if (choice == deleteFiles) {
-                    try {
-                        if (isRootMinecraft) {
-                            // ── Safe mode: only delete the version jar(s) for this instance ──
-                            // Version jars live under .minecraft/versions/<mcVersion>/<mcVersion>.jar
-                            String mcVer = sel.mcVersion;
-                            if (mcVer != null && !mcVer.isBlank()) {
-                                Path versionFolder = defaultMcPath.resolve("versions").resolve(mcVer);
-                                Path jarFile = versionFolder.resolve(mcVer + ".jar");
-                                if (Files.exists(jarFile)) {
-                                    Files.delete(jarFile);
-                                    log("Deleted version jar: " + jarFile);
-                                } else {
-                                    log("No version jar found at: " + jarFile);
-                                }
+        // Left List
+        instanceListModel = new DefaultListModel<>();
+        instanceList = new JList<>(instanceListModel);
+        instanceList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        instanceList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Instance inst) {
+                    setText(inst.name + " (" + inst.mcVersion + ")");
+                    // Try to load custom icon
+                    if (inst.imagePath != null && !inst.imagePath.isBlank()) {
+                        try {
+                            File file = new File(inst.imagePath);
+                            if (file.exists()) {
+                                setIcon(new ImageIcon(new ImageIcon(file.getAbsolutePath()).getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH)));
                             } else {
-                                log("Warning: could not determine MC version to delete jar.");
+                                setIcon(defaultModIcon != null ? new ImageIcon(defaultModIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH)) : null);
                             }
-                        } else {
-                            // ── Full delete: remove the entire instance/modpack folder ──
-                            if (Files.exists(effectiveDir)) {
-                                try (var walk = Files.walk(effectiveDir)) {
-                                    walk.sorted(java.util.Comparator.reverseOrder())
-                                        .map(java.nio.file.Path::toFile)
-                                        .forEach(java.io.File::delete);
-                                }
-                                log("Deleted instance files: " + effectiveDir);
-                            }
-                            // Also clean up launcher-internal cache dir if different
-                            Path launcherInstanceDir =
-                                    com.launcher.manager.LauncherPaths.defaultInstanceDir(sel.id);
-                            if (Files.exists(launcherInstanceDir)
-                                    && !launcherInstanceDir.toAbsolutePath()
-                                                           .equals(effectiveDir.toAbsolutePath())) {
-                                try (var walk2 = Files.walk(launcherInstanceDir)) {
-                                    walk2.sorted(java.util.Comparator.reverseOrder())
-                                         .map(java.nio.file.Path::toFile)
-                                         .forEach(java.io.File::delete);
-                                }
-                                log("Deleted launcher instance dir: " + launcherInstanceDir);
-                            }
-                        }
-                    } catch (Exception ex) {
-                        log("Warning: could not fully delete files — " + ex.getMessage());
-                    }
-                }
-
-                // In both cases, remove from the launcher list
-                instanceManager.remove(sel);
-                refreshInstances();
-            });
-        });
-
-        openFolderBtn.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) { log("Select an instance first."); return; }
-            Path gameDir = instanceManager.resolveGameDir(sel);
-            withMaximizeGuard(() -> {
-                try {
-                    if (!Files.exists(gameDir)) Files.createDirectories(gameDir);
-                    String os = System.getProperty("os.name", "").toLowerCase();
-                    ProcessBuilder pb;
-                    if (os.contains("win")) {
-                        pb = new ProcessBuilder("explorer.exe", gameDir.toAbsolutePath().toString());
-                    } else if (os.contains("mac")) {
-                        pb = new ProcessBuilder("open", gameDir.toAbsolutePath().toString());
+                        } catch (Exception ignored) {}
                     } else {
-                        pb = new ProcessBuilder("xdg-open", gameDir.toAbsolutePath().toString());
+                        setIcon(defaultModIcon != null ? new ImageIcon(defaultModIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH)) : null);
                     }
-                    pb.start();
-                } catch (Exception ex) {
-                    log("Could not open folder: " + ex.getMessage());
                 }
-            });
-        });
-
-        playButton.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            Account acc  = accountBox.getValue();
-            if (sel == null) { log("Select an instance first."); return; }
-            if (acc == null) { log("Add and select an account first."); return; }
-            launchInstance(sel, acc);
-        });
-
-        killButton.setOnAction(e -> {
-            if (activeProcess != null && activeProcess.isAlive()) {
-                log("Killing Minecraft...");
-                activeProcess.destroyForcibly();
+                return this;
             }
         });
 
-        // ── Dawn client buttons ───────────────────────────────────────────────
-        installDawnButton.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) return;
-            installDawn(sel);
+        JScrollPane listScroll = new JScrollPane(instanceList);
+        listScroll.setPreferredSize(new Dimension(240, 0));
+        p.add(listScroll, BorderLayout.WEST);
+
+        // Center Panel: Selected Instance Info
+        JPanel detailsPanel = new JPanel(new BorderLayout());
+        detailsPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        JPanel centerInfo = new JPanel();
+        centerInfo.setLayout(new BoxLayout(centerInfo, BoxLayout.Y_AXIS));
+
+        JLabel nameLbl = new JLabel("No instance selected");
+        nameLbl.setFont(new Font("SansSerif", Font.BOLD, 20));
+        nameLbl.setForeground(Color.WHITE);
+        centerInfo.add(nameLbl);
+        centerInfo.add(Box.createVerticalStrut(10));
+
+        JLabel infoLbl = new JLabel("");
+        infoLbl.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        centerInfo.add(infoLbl);
+        centerInfo.add(Box.createVerticalStrut(10));
+
+        // Dawn status panel
+        JPanel dawnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 4));
+        dawnStatusLabel = new JLabel("Dawn client: —");
+        installDawnButton = new JButton("Install Dawn Client");
+        deleteDawnButton = new JButton("Uninstall");
+        dawnPanel.add(dawnStatusLabel);
+        dawnPanel.add(Box.createHorizontalStrut(10));
+        dawnPanel.add(installDawnButton);
+        dawnPanel.add(Box.createHorizontalStrut(4));
+        dawnPanel.add(deleteDawnButton);
+        centerInfo.add(dawnPanel);
+
+        detailsPanel.add(centerInfo, BorderLayout.CENTER);
+
+        // Buttons Panel at the bottom of detail panel
+        JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        playButton = new JButton("PLAY");
+        playButton.setPreferredSize(new Dimension(120, 36));
+        playButton.setFont(new Font("SansSerif", Font.BOLD, 14));
+        actionRow.add(playButton);
+
+        JButton editBtn = new JButton("Edit");
+        editBtn.setPreferredSize(new Dimension(80, 36));
+        actionRow.add(editBtn);
+
+        JButton delBtn = new JButton("Delete");
+        delBtn.setPreferredSize(new Dimension(80, 36));
+        actionRow.add(delBtn);
+
+        JButton manageModsBtn = new JButton("Manage Mods");
+        manageModsBtn.setPreferredSize(new Dimension(130, 36));
+        actionRow.add(manageModsBtn);
+
+        detailsPanel.add(actionRow, BorderLayout.SOUTH);
+        p.add(detailsPanel, BorderLayout.CENTER);
+
+        // Selection Listener
+        instanceList.addListSelectionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel != null) {
+                nameLbl.setText(sel.name);
+                String details = String.format("<html>Minecraft: %s<br>Loader: %s (%s)<br>RAM: %d MB<br>Path: %s</html>",
+                        sel.mcVersion,
+                        sel.modLoader,
+                        sel.modLoaderVersion != null ? sel.modLoaderVersion : "None",
+                        sel.ramMb,
+                        sel.customDirectoryPath != null ? sel.customDirectoryPath : "Standard");
+                infoLbl.setText(details);
+                updateDawnStatus(sel);
+            } else {
+                nameLbl.setText("No instance selected");
+                infoLbl.setText("");
+            }
         });
 
-        deleteDawnButton.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) return;
-            removeDawn(sel);
+        // Add instance button at bottom of list
+        JPanel listButtons = new JPanel(new GridLayout(1, 2));
+        JButton addInstBtn = new JButton("+ New Instance");
+        addInstBtn.addActionListener(e -> {
+            Optional<Instance> res = CreateInstanceDialog.show(this);
+            res.ifPresent(i -> {
+                instanceManager.add(i);
+                instanceManager.save();
+                refreshInstances();
+                notifications.success("Instance created", "Created: " + i.name);
+            });
+        });
+        listButtons.add(addInstBtn);
+        p.add(listButtons, BorderLayout.SOUTH);
+
+        // Action Handlers
+        playButton.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            Account acc = (Account) accountBox.getSelectedItem();
+            if (sel == null) {
+                notifications.error("Launch failed", "No instance selected.");
+                return;
+            }
+            if (acc == null) {
+                notifications.error("Launch failed", "Please select or create an account first.");
+                return;
+            }
+            playButton.setEnabled(false);
+            launchGame(sel, acc);
         });
 
-        // ── empty-state hint ──────────────────────────────────────────────────
-        Label empty = new Label("No instances yet — click  ＋ New Instance  to get started.");
-        empty.setStyle("-fx-text-fill:-fx-text-muted; -fx-font-size:13px;");
-        instanceList.setPlaceholder(empty);
+        editBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel != null) {
+                Optional<Instance> res = EditInstanceDialog.show(this, sel);
+                res.ifPresent(i -> {
+                    instanceManager.save();
+                    refreshInstances();
+                    notifications.success("Instance updated", "Saved changes for: " + i.name);
+                });
+            }
+        });
 
-        root.getChildren().addAll(toolbar, instanceList, dawnSection);
-        return root;
+        delBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel != null) {
+                int res = JOptionPane.showConfirmDialog(this, "Are you sure you want to delete " + sel.name + "?", "Delete Instance", JOptionPane.YES_NO_OPTION);
+                if (res == JOptionPane.YES_OPTION) {
+                    instanceManager.remove(sel);
+                    instanceManager.save();
+                    refreshInstances();
+                    notifications.warning("Instance deleted", "Deleted: " + sel.name);
+                }
+            }
+        });
+
+        manageModsBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel != null) {
+                mainTabPane.setSelectedIndex(1); // Select mods tab
+                refreshModsView(sel);
+            }
+        });
+
+        installDawnButton.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel != null) {
+                installDawn(sel);
+            }
+        });
+
+        deleteDawnButton.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel != null) {
+                uninstallDawn(sel);
+            }
+        });
+
+        return p;
     }
 
     // ══════════════════════════════════════════════════════════════════════════
     //  MODS TAB
     // ══════════════════════════════════════════════════════════════════════════
-    @SuppressWarnings("unchecked")
-    private VBox buildModsArea() {
-        VBox root = new VBox(12);
-        root.setPadding(new Insets(16));
+    private JPanel buildModsArea() {
+        JPanel p = new JPanel(new BorderLayout(0, 8));
+        p.setBorder(new EmptyBorder(14, 14, 10, 14));
 
-        // ── Header ────────────────────────────────────────────────────────────
-        modsHeaderLabel = new Label("Select an instance to view its mods.");
-        modsHeaderLabel.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:-fx-text-color;");
+        // ── Header ──────────────────────────────────────────────────────────
+        JPanel header = new JPanel(new BorderLayout(10, 0));
+        JPanel headerLeft = new JPanel();
+        headerLeft.setLayout(new BoxLayout(headerLeft, BoxLayout.Y_AXIS));
+        modsHeaderLabel = new JLabel("Manage Mods");
+        modsHeaderLabel.setFont(new Font("SansSerif", Font.BOLD, 20));
+        modsHeaderLabel.setForeground(Color.WHITE);
+        modsCountLabel = new JLabel("Select an instance to view mods");
+        modsCountLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        modsCountLabel.setForeground(new Color(150, 150, 165));
+        headerLeft.add(modsHeaderLabel);
+        headerLeft.add(modsCountLabel);
+        header.add(headerLeft, BorderLayout.WEST);
 
-        modsCountLabel = new Label("");
-        modsCountLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
+        // ── Toolbar row ─────────────────────────────────────────────────────
+        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
 
-        VBox headerCol = new VBox(2, modsHeaderLabel, modsCountLabel);
-
-        // ── Toolbar ───────────────────────────────────────────────────────────
-        refreshModsBtn = new Button("🔃  Refresh");
-        checkUpdatesBtn = new Button("🔍  Check for Updates");
-        updateAllBtn = new Button("⬆  Update All");
-        updateSelectedBtn = new Button("⬆  Update Selected");
-        deleteModBtn = new Button("🗑  Delete Mod");
-        dedupeModsBtn = new Button("✦  Remove Duplicates");
-        installDependenciesBtn = new Button("🔗  Install Dependencies");
-        updateAllBtn.setDisable(true);
-        updateSelectedBtn.setDisable(true);
-        checkUpdatesBtn.setDisable(true);
-        refreshModsBtn.setDisable(true);
-        deleteModBtn.setDisable(true);
-        dedupeModsBtn.setDisable(true);
-        installDependenciesBtn.setDisable(true);
-        deleteModBtn.getStyleClass().add("btn-danger");
-
-        Region modsToolbarSpacer = new Region();
-        HBox.setHgrow(modsToolbarSpacer, Priority.ALWAYS);
-        HBox modsToolbar = new HBox(8, headerCol, modsToolbarSpacer, deleteModBtn, dedupeModsBtn,
-                installDependenciesBtn, refreshModsBtn, checkUpdatesBtn, updateSelectedBtn, updateAllBtn);
-        modsToolbar.setAlignment(Pos.CENTER_LEFT);
-
-        // ── Mods list (modern card-style rows, matching the Instances tab) ────
-        modsList = new ListView<>();
-        modsList.setPlaceholder(new Label("No mods found. Select a modded instance."));
-        modsList.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
-        modsList.setCellFactory(lv -> new ModCell());
-        modsList.getStyleClass().add("mods-list");
-        VBox.setVgrow(modsList, Priority.ALWAYS);
-
-        // ── Wire toolbar buttons ──────────────────────────────────────────────
-        refreshModsBtn.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            refreshModsView(sel, true);
+        modsSearchField = new JTextField();
+        modsSearchField.putClientProperty("JTextField.placeholderText", "Filter mods…");
+        modsSearchField.setPreferredSize(new Dimension(170, 30));
+        modsSearchField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { filterMods(); }
+            @Override public void removeUpdate(DocumentEvent e) { filterMods(); }
+            @Override public void changedUpdate(DocumentEvent e) { filterMods(); }
         });
+        toolbar.add(modsSearchField);
 
-        checkUpdatesBtn.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) return;
-            checkModUpdates(sel);
-        });
+        refreshModsBtn = new JButton("↻ Refresh");
+        checkUpdatesBtn = new JButton("Check Updates");
+        updateAllBtn = new JButton("Update All");
+        updateSelectedBtn = new JButton("Update Selected");
+        deleteModBtn = new JButton("Delete");
+        dedupeModsBtn = new JButton("Deduplicate");
+        installDependenciesBtn = new JButton("Install Deps");
 
-        updateSelectedBtn.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) return;
-            var selectedMods = modsList.getSelectionModel().getSelectedItems();
-            if (selectedMods.isEmpty()) { log("Select mod(s) to update."); return; }
-            updateMods(sel, new java.util.ArrayList<>(selectedMods));
-        });
-
-        updateAllBtn.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) return;
-            updateAllMods(sel);
-        });
-
-        // ── Enable/disable "Update Selected" based on whether any selected
-        //    mod actually has an update available ─────────────────────────────
-        modsList.getSelectionModel().getSelectedItems().addListener(
-                (javafx.collections.ListChangeListener<ModEntry>) c -> {
-                    boolean hasUpdate = modsList.getSelectionModel().getSelectedItems().stream()
-                            .anyMatch(m -> "Update available".equals(m.status));
-                    updateSelectedBtn.setDisable(!hasUpdate);
-                    deleteModBtn.setDisable(modsList.getSelectionModel().getSelectedItems().isEmpty());
-                });
-
-        // ── Delete selected mod(s) ─────────────────────────────────────────
-        deleteModBtn.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) return;
-            var selected = new java.util.ArrayList<>(modsList.getSelectionModel().getSelectedItems());
-            if (selected.isEmpty()) { log("Select mod(s) to delete."); return; }
-
-            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-            confirm.initOwner(primaryStage);
-            confirm.setTitle("Delete Mod" + (selected.size() > 1 ? "s" : ""));
-            confirm.setHeaderText("Delete " + selected.size() + " selected mod" + (selected.size() > 1 ? "s" : "") + "?");
-            confirm.setContentText("The file(s) will be permanently deleted from the mods folder.");
-            var css3 = getClass().getResource("/com/launcher/styles.css");
-            if (css3 != null) confirm.getDialogPane().getStylesheets().add(css3.toExternalForm());
-            applyThemeToPane(confirm.getDialogPane(),
-                    com.launcher.manager.SettingsManager.getInstance().getSettings());
-            confirm.getDialogPane().setStyle(confirm.getDialogPane().getStyle()
-                    + "; -fx-background-image: none;");
-
-            confirm.showAndWait().ifPresent(bt -> {
-                if (bt != ButtonType.OK) return;
-                int deleted = 0;
-                for (ModEntry mod : selected) {
-                    try {
-                        Files.deleteIfExists(java.nio.file.Path.of(mod.filePath));
-                        deleted++;
-                    } catch (Exception ex) {
-                        log("Could not delete " + mod.fileName + ": " + ex.getMessage());
-                    }
-                }
-                log("Deleted " + deleted + " mod file(s).");
-                refreshModsView(sel);
-            });
-        });
-
-        // ── Remove duplicate mods (keep latest version of each mod) ──────────
-        dedupeModsBtn.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) return;
-            if (currentModEntries.isEmpty()) { log("No mods loaded."); return; }
-
-            java.util.Map<String, java.util.List<ModEntry>> groups = new java.util.LinkedHashMap<>();
-            for (ModEntry mod : currentModEntries) {
-                String key = (mod.modrinthId != null && !mod.modrinthId.isBlank())
-                        ? "id:" + mod.modrinthId
-                        : "name:" + normalizeModBaseName(mod.fileName);
-                groups.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(mod);
-            }
-
-            java.util.List<ModEntry> toDelete = new java.util.ArrayList<>();
-            for (var entry : groups.entrySet()) {
-                var group = entry.getValue();
-                if (group.size() <= 1) continue;
-                group.sort((a, b2) -> {
-                    if (a.currentVersion == null && b2.currentVersion == null) return 0;
-                    if (a.currentVersion == null) return 1;
-                    if (b2.currentVersion == null) return -1;
-                    return compareVersionStrings(b2.currentVersion, a.currentVersion);
-                });
-                toDelete.addAll(group.subList(1, group.size()));
-            }
-
-            if (toDelete.isEmpty()) { log("No duplicate mods found."); return; }
-
-            StringBuilder sb = new StringBuilder();
-            for (ModEntry m : toDelete) sb.append("  \u2022 ").append(m.fileName).append("\n");
-
-            Alert confirm2 = new Alert(Alert.AlertType.CONFIRMATION);
-            confirm2.initOwner(primaryStage);
-            confirm2.setTitle("Remove Duplicates");
-            confirm2.setHeaderText("Remove " + toDelete.size() + " duplicate mod file(s)?");
-            confirm2.setContentText("Older duplicates to delete:\n" + sb);
-            var css4 = getClass().getResource("/com/launcher/styles.css");
-            if (css4 != null) confirm2.getDialogPane().getStylesheets().add(css4.toExternalForm());
-            applyThemeToPane(confirm2.getDialogPane(),
-                    com.launcher.manager.SettingsManager.getInstance().getSettings());
-            confirm2.getDialogPane().setStyle(confirm2.getDialogPane().getStyle()
-                    + "; -fx-background-image: none;");
-
-            confirm2.showAndWait().ifPresent(bt -> {
-                if (bt != ButtonType.OK) return;
-                int removed = 0;
-                for (ModEntry mod : toDelete) {
-                    try {
-                        Files.deleteIfExists(java.nio.file.Path.of(mod.filePath));
-                        removed++;
-                    } catch (Exception ex) {
-                        log("Could not delete " + mod.fileName + ": " + ex.getMessage());
-                    }
-                }
-                log("Removed " + removed + " duplicate mod file(s).");
-                refreshModsView(sel);
-            });
-        });
-
-        // ── Install missing required dependencies for the currently installed mods ──
-        installDependenciesBtn.setOnAction(e -> {
-            Instance sel = instanceList.getSelectionModel().getSelectedItem();
-            if (sel == null) return;
-            installMissingDependencies(sel);
-        });
-
-        // ── Search bar ────────────────────────────────────────────────────────
-        modsSearchField = new TextField();
-        modsSearchField.setPromptText("🔎  Search mods by name…");
-        modsSearchField.getStyleClass().add("search-field");
-        HBox.setHgrow(modsSearchField, Priority.ALWAYS);
-
-        Button clearSearchBtn = new Button("✕");
-        clearSearchBtn.setTooltip(new Tooltip("Clear search"));
-        clearSearchBtn.setStyle("-fx-padding:4px 8px; -fx-font-size:11px;");
-        clearSearchBtn.setVisible(false);
-
-        modsSearchField.textProperty().addListener((obs, oldV, newV) -> {
-            clearSearchBtn.setVisible(newV != null && !newV.isBlank());
-            applyModsFilter(newV);
-        });
-        clearSearchBtn.setOnAction(e -> modsSearchField.clear());
-
-        HBox searchRow = new HBox(6, modsSearchField, clearSearchBtn);
-        searchRow.setAlignment(Pos.CENTER_LEFT);
-
-        root.getChildren().addAll(modsToolbar, searchRow, modsList);
-        return root;
-    }
-
-    /** Strips version suffixes from a mod filename to get a comparable base name. */
-    private String normalizeModBaseName(String fileName) {
-        if (fileName == null) return "";
-        String n = fileName.replaceAll("(?i)\\.jar$", "");
-        n = n.replaceAll("(?i)[-_](mc|fabric|forge|quilt|neoforge)[\\d._-]*", "");
-        n = n.replaceAll("[-_]\\d+[\\d._]*.*$", "");
-        return n.toLowerCase();
-    }
-
-    /** Simple best-effort semantic version comparator. */
-    private int compareVersionStrings(String a, String b) {
-        String[] pa = a.split("[.\\-]");
-        String[] pb = b.split("[.\\-]");
-        int len = Math.max(pa.length, pb.length);
-        for (int i = 0; i < len; i++) {
-            String sa = i < pa.length ? pa[i].replaceAll("[^0-9]", "") : "0";
-            String sb2 = i < pb.length ? pb[i].replaceAll("[^0-9]", "") : "0";
-            if (sa.isEmpty()) sa = "0";
-            if (sb2.isEmpty()) sb2 = "0";
-            try {
-                int diff = Integer.compare(Integer.parseInt(sa), Integer.parseInt(sb2));
-                if (diff != 0) return diff;
-            } catch (NumberFormatException ignored) {
-                int diff = sa.compareTo(sb2);
-                if (diff != 0) return diff;
-            }
-        }
-        return 0;
-    }
-
-    /** Card-style cell for the Mods list — icon, name, file/version, and a status badge. */
-    private class ModCell extends ListCell<ModEntry> {
-        private final javafx.scene.image.ImageView iconView = new javafx.scene.image.ImageView();
-        private final Label nameLabel = new Label();
-        private final Label fileLabel = new Label();
-        private final Label versionLabel = new Label();
-        private final Label sizeLabel = new Label();
-        private final Label statusBadge = new Label();
-        private final HBox card;
-
-        ModCell() {
-            iconView.setFitWidth(36);
-            iconView.setFitHeight(36);
-            iconView.setPreserveRatio(true);
-            iconView.setSmooth(true);
-            javafx.scene.shape.Rectangle clip = new javafx.scene.shape.Rectangle(36, 36);
-            clip.setArcWidth(9);
-            clip.setArcHeight(9);
-            iconView.setClip(clip);
-
-            nameLabel.getStyleClass().add("mod-name");
-            fileLabel.getStyleClass().add("mod-file");
-            versionLabel.getStyleClass().add("mod-version");
-            sizeLabel.getStyleClass().add("mod-file");
-
-            HBox metaRow = new HBox(8, fileLabel, versionLabel);
-            metaRow.setAlignment(Pos.CENTER_LEFT);
-
-            VBox textCol = new VBox(4, nameLabel, metaRow);
-            textCol.setAlignment(Pos.CENTER_LEFT);
-            HBox.setHgrow(textCol, Priority.ALWAYS);
-
-            Region spacer = new Region();
-            HBox.setHgrow(spacer, Priority.ALWAYS);
-
-            VBox rightCol = new VBox(6, statusBadge, sizeLabel);
-            rightCol.setAlignment(Pos.CENTER_RIGHT);
-
-            card = new HBox(12, iconView, textCol, spacer, rightCol);
-            card.setAlignment(Pos.CENTER_LEFT);
-            card.getStyleClass().add("mod-card");
-
-            setText(null);
-            setStyle("-fx-padding:0; -fx-background-color:transparent;");
+        JButton[] btns = {refreshModsBtn, checkUpdatesBtn, updateAllBtn, updateSelectedBtn,
+                           deleteModBtn, dedupeModsBtn, installDependenciesBtn};
+        for (JButton b : btns) {
+            b.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            b.setFocusPainted(false);
+            toolbar.add(b);
         }
 
-        @Override
-        protected void updateItem(ModEntry mod, boolean empty) {
-            super.updateItem(mod, empty);
-            if (empty || mod == null) {
-                setGraphic(null);
+        JPanel topSection = new JPanel(new BorderLayout());
+        topSection.add(header, BorderLayout.NORTH);
+        topSection.add(toolbar, BorderLayout.SOUTH);
+        p.add(topSection, BorderLayout.NORTH);
+
+        // ── Mod List with rich card renderer ────────────────────────────────
+        modsListModel = new DefaultListModel<>();
+        modsList = new JList<>(modsListModel);
+        modsList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+        modsList.setFixedCellHeight(62);
+        modsList.setCellRenderer((list, value, index, isSelected, cellHasFocus) -> {
+            if (!(value instanceof ModEntry)) return new JLabel();
+            ModEntry mod = (ModEntry) value;
+
+            JPanel card = new JPanel(new BorderLayout(10, 0));
+            card.setBorder(new EmptyBorder(6, 10, 6, 10));
+            card.setBackground(isSelected ? new Color(16, 185, 129, 30) : new Color(26, 26, 36));
+
+            if (isSelected) {
+                card.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(new Color(16, 185, 129, 80), 1),
+                        new EmptyBorder(5, 9, 5, 9)));
+            }
+
+            // Icon (32×32, async-loaded)
+            JLabel iconLbl = new JLabel();
+            iconLbl.setPreferredSize(new Dimension(32, 32));
+            if (mod.iconUrl != null && !mod.iconUrl.isBlank()) {
+                ImageIcon icon = modIconCache.get(mod.iconUrl);
+                if (icon != null) {
+                    iconLbl.setIcon(icon);
+                } else {
+                    iconLbl.setIcon(defaultModIcon);
+                    final String url = mod.iconUrl;
+                    new Thread(() -> {
+                        try {
+                            ImageIcon ic = new ImageIcon(new ImageIcon(new URI(url).toURL())
+                                    .getImage().getScaledInstance(32, 32, Image.SCALE_SMOOTH));
+                            modIconCache.put(url, ic);
+                            SwingUtilities.invokeLater(() -> modsList.repaint());
+                        } catch (Exception ignored) {}
+                    }, "mod-icon").start();
+                }
+            } else {
+                iconLbl.setIcon(defaultModIcon);
+            }
+            card.add(iconLbl, BorderLayout.WEST);
+
+            // Center: name, file name, version info
+            JPanel center = new JPanel();
+            center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
+            center.setOpaque(false);
+
+            JLabel nameLbl = new JLabel(mod.displayName());
+            nameLbl.setFont(new Font("SansSerif", Font.BOLD, 13));
+            nameLbl.setForeground(Color.WHITE);
+            nameLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+            center.add(nameLbl);
+
+            // Second row: file name + size
+            String infoText = mod.fileName + "  ·  " + mod.formattedSize();
+            JLabel infoLbl = new JLabel(infoText);
+            infoLbl.setFont(new Font("SansSerif", Font.PLAIN, 10));
+            infoLbl.setForeground(new Color(120, 120, 140));
+            infoLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+            center.add(infoLbl);
+
+            // Third row: version info
+            String verText = mod.currentVersion != null ? "v" + mod.currentVersion : "local";
+            if (mod.latestVersion != null && !mod.latestVersion.equals(mod.currentVersion)) {
+                verText += "  →  v" + mod.latestVersion;
+            }
+            JLabel verLbl = new JLabel(verText);
+            verLbl.setFont(new Font("SansSerif", Font.PLAIN, 10));
+            verLbl.setForeground(mod.latestVersion != null ? new Color(245, 158, 11) : new Color(140, 140, 160));
+            verLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+            center.add(verLbl);
+
+            card.add(center, BorderLayout.CENTER);
+
+            // Right: status pill
+            JLabel statusLbl = new JLabel(mod.status);
+            statusLbl.setFont(new Font("SansSerif", Font.BOLD, 10));
+            statusLbl.setOpaque(true);
+            statusLbl.setBorder(new EmptyBorder(3, 8, 3, 8));
+            switch (mod.status) {
+                case "Up to date" -> {
+                    statusLbl.setForeground(new Color(16, 185, 129));
+                    statusLbl.setBackground(new Color(16, 185, 129, 25));
+                }
+                case "Update available" -> {
+                    statusLbl.setForeground(new Color(245, 158, 11));
+                    statusLbl.setBackground(new Color(245, 158, 11, 25));
+                }
+                case "Checking…" -> {
+                    statusLbl.setForeground(new Color(129, 140, 248));
+                    statusLbl.setBackground(new Color(99, 102, 241, 25));
+                }
+                case "Error" -> {
+                    statusLbl.setForeground(new Color(239, 68, 68));
+                    statusLbl.setBackground(new Color(239, 68, 68, 20));
+                }
+                default -> { // Unknown
+                    statusLbl.setForeground(new Color(140, 140, 160));
+                    statusLbl.setBackground(new Color(255, 255, 255, 10));
+                }
+            }
+            JPanel statusWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 12));
+            statusWrap.setOpaque(false);
+            statusWrap.add(statusLbl);
+            card.add(statusWrap, BorderLayout.EAST);
+
+            return card;
+        });
+
+        JScrollPane scroll = new JScrollPane(modsList);
+        scroll.setBorder(null);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        p.add(scroll, BorderLayout.CENTER);
+
+        // ── Button actions ──────────────────────────────────────────────────
+        refreshModsBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel != null) refreshModsView(sel);
+        });
+
+        checkUpdatesBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null) return;
+            checkUpdatesBtn.setEnabled(false);
+            notifications.info("Checking Updates", "Scanning Modrinth for mod updates…");
+            new Thread(() -> {
+                try {
+                    ModUpdateService service = new ModUpdateService();
+                    service.identifyMods(currentModEntries, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                    String loader = sel.modLoader != null && sel.modLoader != ModLoaderType.VANILLA ? sel.modLoader.name().toLowerCase() : null;
+                    service.checkUpdates(currentModEntries, sel.mcVersion, loader, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                    SwingUtilities.invokeLater(() -> {
+                        filterMods();
+                        checkUpdatesBtn.setEnabled(true);
+                        long updatable = currentModEntries.stream().filter(m -> "Update available".equals(m.status)).count();
+                        notifications.success("Check completed", updatable + " update(s) available out of " + currentModEntries.size() + " mods.");
+                    });
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> {
+                        notifications.error("Update check failed", ex.getMessage());
+                        checkUpdatesBtn.setEnabled(true);
+                    });
+                }
+            }, "check-updates").start();
+        });
+
+        updateAllBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null) return;
+            List<ModEntry> updatable = currentModEntries.stream()
+                    .filter(m -> "Update available".equals(m.status) && m.updateUrl != null)
+                    .toList();
+            if (updatable.isEmpty()) {
+                notifications.info("No updates", "All mods are up to date.");
                 return;
             }
-
-            nameLabel.setText(mod.displayName());
-            fileLabel.setText(mod.fileName);
-            versionLabel.setText(mod.currentVersion != null && !mod.currentVersion.isBlank()
-                    ? "v" + mod.currentVersion : "");
-            sizeLabel.setText(mod.formattedSize());
-
-            String status = mod.status != null ? mod.status : "Unknown";
-            statusBadge.setText(status);
-            statusBadge.getStyleClass().removeAll(
-                    "mod-status-uptodate", "mod-status-update", "mod-status-unknown",
-                    "mod-status-checking", "mod-status-error");
-            statusBadge.getStyleClass().add(switch (status) {
-                case "Up to date" -> "mod-status-uptodate";
-                case "Update available" -> "mod-status-update";
-                case "Unknown" -> "mod-status-unknown";
-                case "Error" -> "mod-status-error";
-                default -> "mod-status-checking";
-            });
-
-            setModIcon(iconView, mod);
-            setGraphic(card);
-        }
-
-        @Override
-        public void updateSelected(boolean selected) {
-            super.updateSelected(selected);
-            card.getStyleClass().remove("mod-card-selected");
-            if (selected) card.getStyleClass().add("mod-card-selected");
-        }
-    }
-
-    /** Resolves and caches a mod's icon (Modrinth icon if identified, otherwise a default). */
-    private void setModIcon(javafx.scene.image.ImageView view, ModEntry mod) {
-        if (mod.iconUrl != null && !mod.iconUrl.isBlank()) {
-            Image img = modIconCache.computeIfAbsent(mod.iconUrl,
-                    url -> new Image(proxiedIconUrl(url), 72, 72, true, true, true));
-            bindIconWithFallback(view, img, getDefaultModIcon());
-        } else {
-            view.setImage(getDefaultModIcon());
-        }
-    }
-
-    private Image getDefaultModIcon() {
-        if (defaultModIcon == null) {
-            try {
-                java.io.InputStream is = getClass().getResourceAsStream("/com/launcher/minecraft_image.png");
-                if (is != null) defaultModIcon = new Image(is, 72, 72, true, true);
-            } catch (Exception ignored) {}
-        }
-        return defaultModIcon;
-    }
-
-    /**
-     * Modrinth (and most modern CDNs) now serve project icons as WebP. JavaFX's built-in
-     * {@link Image} loader only understands BMP/GIF/JPEG/PNG, so a raw WebP icon URL silently
-     * fails to load and the icon just never appears. Routing the URL through a public
-     * image-proxy that re-encodes to PNG fixes this for every icon without pulling in a new
-     * image-decoding dependency.
-     */
-    private static String proxiedIconUrl(String rawUrl) {
-        if (rawUrl == null || rawUrl.isBlank()) return rawUrl;
-        try {
-            String encoded = java.net.URLEncoder.encode(rawUrl, "UTF-8");
-            return "https://wsrv.nl/?url=" + encoded + "&output=png&w=128&h=128&fit=cover";
-        } catch (Exception e) {
-            return rawUrl;
-        }
-    }
-
-    /**
-     * Displays {@code img} in {@code view}, swapping to {@code fallback} if the image is
-     * already in an error state or fails to load asynchronously (e.g. the proxy is
-     * unreachable, or the source URL is bad). Keeps icon tiles from being left blank.
-     */
-    private void bindIconWithFallback(javafx.scene.image.ImageView view, Image img, Image fallback) {
-        view.setImage(img);
-        if (img.isError()) {
-            view.setImage(fallback);
-            return;
-        }
-        img.errorProperty().addListener((obs, was, isNow) -> {
-            if (isNow) Platform.runLater(() -> view.setImage(fallback));
-        });
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  DISCOVER TAB — browse & install mods / resource packs from Modrinth
-    // ══════════════════════════════════════════════════════════════════════════
-    private VBox buildDiscoverArea() {
-        VBox root = new VBox(14);
-        root.setPadding(new Insets(16));
-
-        Label title = new Label("Discover");
-        title.setStyle("-fx-font-size:18px; -fx-font-weight:bold; -fx-text-fill:#ffffff;");
-        Label subtitle = new Label("Browse and install mods and resource packs from Modrinth.");
-        subtitle.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-        VBox headerCol = new VBox(2, title, subtitle);
-
-        // ── Target instance picker ──────────────────────────────────────────
-        discoverInstanceBox = new ComboBox<>();
-        discoverInstanceBox.setPromptText("Select an instance…");
-        discoverInstanceBox.setPrefWidth(240);
-        discoverInstanceBox.setConverter(new javafx.util.StringConverter<>() {
-            @Override public String toString(Instance i) { return i == null ? "" : i.name; }
-            @Override public Instance fromString(String s) { return null; }
+            updateAllBtn.setEnabled(false);
+            notifications.info("Updating", "Updating " + updatable.size() + " mod(s)…");
+            new Thread(() -> {
+                ModUpdateService service = new ModUpdateService();
+                Path modsDir = instanceManager.resolveGameDir(sel).resolve("mods");
+                int ok = 0;
+                for (ModEntry mod : updatable) {
+                    if (service.downloadUpdate(mod, modsDir, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)))) ok++;
+                }
+                final int finalOk = ok;
+                SwingUtilities.invokeLater(() -> {
+                    filterMods();
+                    updateAllBtn.setEnabled(true);
+                    notifications.success("Updates complete", "Updated " + finalOk + " of " + updatable.size() + " mods.");
+                });
+            }, "update-all").start();
         });
 
-        // ── Mod / Resource Pack segmented toggle ────────────────────────────
-        javafx.scene.control.ToggleGroup typeGroup = new javafx.scene.control.ToggleGroup();
-        discoverModsToggle = new ToggleButton("Mods");
-        discoverPacksToggle = new ToggleButton("Resource Packs");
-        discoverModsToggle.setToggleGroup(typeGroup);
-        discoverPacksToggle.setToggleGroup(typeGroup);
-        discoverModsToggle.setSelected(true);
-        discoverModsToggle.getStyleClass().add("segmented-toggle");
-        discoverPacksToggle.getStyleClass().add("segmented-toggle");
-        typeGroup.selectedToggleProperty().addListener((obs, oldT, newT) -> {
-            if (newT == null) typeGroup.selectToggle(oldT != null ? oldT : discoverModsToggle);
-            else runDiscoverSearch();
+        updateSelectedBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null) return;
+            List<ModEntry> selected = modsList.getSelectedValuesList().stream()
+                    .filter(m -> "Update available".equals(m.status) && m.updateUrl != null)
+                    .toList();
+            if (selected.isEmpty()) {
+                notifications.info("No updates", "Selected mods have no available updates.");
+                return;
+            }
+            updateSelectedBtn.setEnabled(false);
+            new Thread(() -> {
+                ModUpdateService service = new ModUpdateService();
+                Path modsDir = instanceManager.resolveGameDir(sel).resolve("mods");
+                int ok = 0;
+                for (ModEntry mod : selected) {
+                    if (service.downloadUpdate(mod, modsDir, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)))) ok++;
+                }
+                final int finalOk = ok;
+                SwingUtilities.invokeLater(() -> {
+                    filterMods();
+                    updateSelectedBtn.setEnabled(true);
+                    notifications.success("Updates complete", "Updated " + finalOk + " of " + selected.size() + " selected mods.");
+                });
+            }, "update-selected").start();
         });
-        HBox typeToggle = new HBox(0, discoverModsToggle, discoverPacksToggle);
-        typeToggle.getStyleClass().add("segmented-group");
 
-        // ── Search row ───────────────────────────────────────────────────────
-        discoverSearchField = new TextField();
-        discoverSearchField.setPromptText("🔎  Search Modrinth…");
-        discoverSearchField.getStyleClass().add("search-field");
-        HBox.setHgrow(discoverSearchField, Priority.ALWAYS);
-        discoverSearchField.setOnAction(e -> runDiscoverSearch());
-
-        discoverSearchBtn = new Button("Search");
-        discoverSearchBtn.setOnAction(e -> runDiscoverSearch());
-
-        HBox searchRow = new HBox(8, discoverInstanceBox, typeToggle, discoverSearchField, discoverSearchBtn);
-        searchRow.setAlignment(Pos.CENTER_LEFT);
-
-        discoverStatusLabel = new Label("Select an instance, then search to browse mods or resource packs.");
-        discoverStatusLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-        HBox.setHgrow(discoverStatusLabel, Priority.ALWAYS);
-
-        // Re-syncs the instance list and re-runs whatever search is currently active — handy
-        // right after creating/editing an instance, or if a search seems to have gone stale.
-        discoverRefreshBtn = new Button("🔄  Refresh");
-        discoverRefreshBtn.setOnAction(e -> {
-            refreshDiscoverInstances();
-            if (discoverInstanceBox.getValue() != null) {
-                runDiscoverSearch();
+        deleteModBtn.addActionListener(e -> {
+            List<ModEntry> selected = modsList.getSelectedValuesList();
+            if (selected.isEmpty()) return;
+            int res = JOptionPane.showConfirmDialog(this, "Delete " + selected.size() + " mod(s)?", "Delete Mods", JOptionPane.YES_NO_OPTION);
+            if (res == JOptionPane.YES_OPTION) {
+                for (ModEntry m : selected) {
+                    try { Files.deleteIfExists(Path.of(m.filePath)); } catch (Exception ignored) {}
+                }
+                Instance sel = instanceList.getSelectedValue();
+                if (sel != null) refreshModsView(sel);
+                notifications.warning("Mods deleted", "Deleted " + selected.size() + " mod(s).");
             }
         });
-        // Only useful as a "try again" affordance when nothing is on screen — once
-        // results/cards are showing, hide it so it doesn't clutter the results toolbar.
-        discoverRefreshBtn.managedProperty().bind(discoverRefreshBtn.visibleProperty());
 
-        HBox statusRow = new HBox(8, discoverStatusLabel, discoverRefreshBtn);
-        statusRow.setAlignment(Pos.CENTER_LEFT);
-
-        // ── Results grid (Modrinth-style cards, wrapping) ───────────────────
-        discoverResultsPane = new FlowPane();
-        discoverResultsPane.setHgap(12);
-        discoverResultsPane.setVgap(12);
-        discoverResultsPane.setPadding(new Insets(4, 0, 20, 0));
-
-        ScrollPane resultsScroll = new ScrollPane(discoverResultsPane);
-        resultsScroll.setFitToWidth(true);
-        resultsScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        resultsScroll.setStyle("-fx-background-color:transparent; -fx-border-color:transparent;");
-        VBox.setVgrow(resultsScroll, Priority.ALWAYS);
-
-        // ── Pagination controls ──────────────────────────────────────────────
-        discoverPrevPageBtn = new Button("←  Previous");
-        discoverPrevPageBtn.setDisable(true);
-        discoverPrevPageBtn.setOnAction(e -> {
-            discoverOffset = Math.max(0, discoverOffset - ModUpdateService.DISCOVER_PAGE_SIZE);
-            loadDiscoverPage();
+        dedupeModsBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null) return;
+            // Find mods with the same Modrinth project ID (keeping the newest version)
+            Map<String, List<ModEntry>> byProject = new LinkedHashMap<>();
+            for (ModEntry m : currentModEntries) {
+                if (m.modrinthId != null) {
+                    byProject.computeIfAbsent(m.modrinthId, k -> new ArrayList<>()).add(m);
+                }
+            }
+            int removed = 0;
+            for (var group : byProject.values()) {
+                if (group.size() <= 1) continue;
+                // Keep the first (typically identified version); delete the rest
+                for (int i = 1; i < group.size(); i++) {
+                    try {
+                        Files.deleteIfExists(Path.of(group.get(i).filePath));
+                        removed++;
+                    } catch (Exception ignored) {}
+                }
+            }
+            if (removed == 0) {
+                notifications.info("No duplicates", "No duplicate mods found.");
+            } else {
+                refreshModsView(sel);
+                notifications.success("Deduplicated", "Removed " + removed + " duplicate mod(s).");
+            }
         });
 
-        discoverPageLabel = new Label("Page 1");
-        discoverPageLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-
-        discoverNextPageBtn = new Button("Next  →");
-        discoverNextPageBtn.setDisable(true);
-        discoverNextPageBtn.setOnAction(e -> {
-            discoverOffset += ModUpdateService.DISCOVER_PAGE_SIZE;
-            loadDiscoverPage();
+        installDependenciesBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null) return;
+            installDependenciesBtn.setEnabled(false);
+            notifications.info("Finding dependencies", "Scanning for missing required dependencies…");
+            new Thread(() -> {
+                try {
+                    ModUpdateService service = new ModUpdateService();
+                    String loader = sel.modLoader != null && sel.modLoader != ModLoaderType.VANILLA ? sel.modLoader.name().toLowerCase() : null;
+                    var missing = service.findMissingRequiredDependencies(
+                            currentModEntries, loader, sel.mcVersion, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                    if (missing.isEmpty()) {
+                        SwingUtilities.invokeLater(() -> {
+                            installDependenciesBtn.setEnabled(true);
+                            notifications.info("No missing deps", "All required dependencies are already installed.");
+                        });
+                        return;
+                    }
+                    // Download each missing dependency
+                    Path modsDir = instanceManager.resolveGameDir(sel).resolve("mods");
+                    Files.createDirectories(modsDir);
+                    int installed = 0;
+                    for (var entry : missing.entrySet()) {
+                        try {
+                            String url = service.getDownloadUrlForProject(entry.getKey(), "mod", loader, sel.mcVersion);
+                            if (url == null) continue;
+                            String fileName = url.substring(url.lastIndexOf('/') + 1);
+                            com.launcher.util.HttpUtil.downloadToFile(url, modsDir.resolve(fileName));
+                            installed++;
+                            final String depName = entry.getValue();
+                            SwingUtilities.invokeLater(() -> setStatus("Installed dependency: " + depName));
+                        } catch (Exception ignored) {}
+                    }
+                    final int finalInstalled = installed;
+                    SwingUtilities.invokeLater(() -> {
+                        installDependenciesBtn.setEnabled(true);
+                        refreshModsView(sel);
+                        notifications.success("Dependencies installed", "Installed " + finalInstalled + " of " + missing.size() + " dependencies.");
+                    });
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> {
+                        installDependenciesBtn.setEnabled(true);
+                        notifications.error("Dependency check failed", ex.getMessage());
+                    });
+                }
+            }, "install-deps").start();
         });
 
-        HBox paginationRow = new HBox(12, discoverPrevPageBtn, discoverPageLabel, discoverNextPageBtn);
-        paginationRow.setAlignment(Pos.CENTER);
-        paginationRow.setPadding(new Insets(4, 0, 0, 0));
-
-        root.getChildren().addAll(headerCol, searchRow, statusRow, resultsScroll, paginationRow);
-        updateDiscoverRefreshButtonVisibility();
-
-        // Keep the instance picker synced with the Instances list, and default
-        // to whatever is currently selected there.
-        discoverInstanceBox.getItems().setAll(instanceManager.getInstances().stream().filter(i -> !i.hidden).toList());
-        if (instanceList != null && instanceList.getSelectionModel().getSelectedItem() != null) {
-            discoverInstanceBox.setValue(instanceList.getSelectionModel().getSelectedItem());
-        } else if (!discoverInstanceBox.getItems().isEmpty()) {
-            discoverInstanceBox.setValue(discoverInstanceBox.getItems().get(0));
-        }
-        root.sceneProperty().addListener((obs, oldS, newS) -> {
-            if (newS != null) refreshDiscoverInstances();
-        });
-
-        return root;
+        return p;
     }
 
-    /** Re-syncs the Discover tab's instance dropdown with the current instance list. */
+    private void refreshModsView(Instance inst) {
+        modsHeaderLabel.setText("Mods — " + inst.name);
+        modsCountLabel.setText("Scanning…");
+        new Thread(() -> {
+            try {
+                ModUpdateService service = new ModUpdateService();
+                Path modsDir = instanceManager.resolveGameDir(inst).resolve("mods");
+                List<ModEntry> list = service.scanModsDir(modsDir);
+                // Auto-identify mods in background
+                service.identifyMods(list, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                SwingUtilities.invokeLater(() -> {
+                    currentModEntries = list;
+                    filterMods();
+                });
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> notifications.error("Mod scan failed", ex.getMessage()));
+            }
+        }, "mod-scan").start();
+    }
+
+    private void filterMods() {
+        String filter = modsSearchField.getText().toLowerCase().trim();
+        modsListModel.clear();
+        int count = 0;
+        for (ModEntry m : currentModEntries) {
+            if (filter.isEmpty() || m.displayName().toLowerCase().contains(filter)) {
+                modsListModel.addElement(m);
+                count++;
+            }
+        }
+        modsCountLabel.setText(count + " mod" + (count != 1 ? "s" : "") + " shown");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  DISCOVER TAB (Modrinth)
+    // ══════════════════════════════════════════════════════════════════════════
+    private JPanel buildDiscoverArea() {
+        JPanel p = new JPanel(new BorderLayout(0, 8));
+        p.setBorder(new EmptyBorder(12, 14, 10, 14));
+
+        // ── Header row ──────────────────────────────────────────────────────
+        JPanel header = new JPanel(new BorderLayout());
+        JPanel headerLeft = new JPanel();
+        headerLeft.setLayout(new BoxLayout(headerLeft, BoxLayout.Y_AXIS));
+        JLabel titleLbl = new JLabel("Discover");
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 20));
+        titleLbl.setForeground(Color.WHITE);
+        JLabel subtitleLbl = new JLabel("Browse mods & resource packs on Modrinth");
+        subtitleLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        subtitleLbl.setForeground(new Color(160, 160, 175));
+        headerLeft.add(titleLbl);
+        headerLeft.add(subtitleLbl);
+        header.add(headerLeft, BorderLayout.WEST);
+
+        // ── Filter bar ──────────────────────────────────────────────────────
+        JPanel filters = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+
+        filters.add(new JLabel("Target:"));
+        discoverInstanceBox = new JComboBox<>();
+        discoverInstanceBox.setPreferredSize(new Dimension(180, 30));
+        filters.add(discoverInstanceBox);
+
+        // Segmented toggle for Mods / Resource Packs
+        discoverModsToggle = new JToggleButton("Mods", true);
+        discoverPacksToggle = new JToggleButton("Resource Packs", false);
+        discoverModsToggle.setFont(new Font("SansSerif", Font.BOLD, 11));
+        discoverPacksToggle.setFont(new Font("SansSerif", Font.BOLD, 11));
+        discoverModsToggle.setFocusPainted(false);
+        discoverPacksToggle.setFocusPainted(false);
+        ButtonGroup discoverGroup = new ButtonGroup();
+        discoverGroup.add(discoverModsToggle);
+        discoverGroup.add(discoverPacksToggle);
+        filters.add(discoverModsToggle);
+        filters.add(discoverPacksToggle);
+
+        discoverSearchField = new JTextField();
+        discoverSearchField.putClientProperty("JTextField.placeholderText", "Search Modrinth...");
+        discoverSearchField.setPreferredSize(new Dimension(220, 30));
+        filters.add(discoverSearchField);
+
+        discoverSearchBtn = new JButton("Search");
+        filters.add(discoverSearchBtn);
+
+        discoverRefreshBtn = new JButton("↻ Refresh");
+        discoverRefreshBtn.setVisible(false); // shown only when results are empty
+        filters.add(discoverRefreshBtn);
+
+        JPanel topSection = new JPanel(new BorderLayout());
+        topSection.add(header, BorderLayout.NORTH);
+        topSection.add(filters, BorderLayout.SOUTH);
+        p.add(topSection, BorderLayout.NORTH);
+
+        // ── Results pane (WrapLayout inside JScrollPane) ────────────────────
+        discoverResultsPane = new JPanel(new WrapLayout(FlowLayout.LEFT, 10, 10));
+        JScrollPane scroll = new JScrollPane(discoverResultsPane);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        scroll.setBorder(null);
+        // Re-layout on resize so WrapLayout recalculates row heights
+        scroll.addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent e) {
+                discoverResultsPane.revalidate();
+            }
+        });
+        p.add(scroll, BorderLayout.CENTER);
+
+        // ── Bottom pagination row ───────────────────────────────────────────
+        JPanel bottomRow = new JPanel(new BorderLayout());
+        discoverStatusLabel = new JLabel("Enter a query to discover mods.");
+        discoverStatusLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        discoverStatusLabel.setForeground(new Color(160, 160, 175));
+        bottomRow.add(discoverStatusLabel, BorderLayout.WEST);
+
+        JPanel pag = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 5));
+        discoverPrevPageBtn = new JButton("‹ Prev");
+        discoverNextPageBtn = new JButton("Next ›");
+        discoverPageLabel = new JLabel("Page 1");
+        discoverPageLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        discoverPrevPageBtn.setEnabled(false);
+        discoverNextPageBtn.setEnabled(false);
+        pag.add(discoverPrevPageBtn);
+        pag.add(discoverPageLabel);
+        pag.add(discoverNextPageBtn);
+        bottomRow.add(pag, BorderLayout.EAST);
+        p.add(bottomRow, BorderLayout.SOUTH);
+
+        // ── Action listeners ────────────────────────────────────────────────
+        Runnable doSearch = () -> { discoverOffset = 0; performDiscoverSearch(); };
+        discoverSearchBtn.addActionListener(e -> doSearch.run());
+        discoverSearchField.addActionListener(e -> doSearch.run()); // Enter key
+        discoverRefreshBtn.addActionListener(e -> performDiscoverSearch());
+
+        // Toggle also triggers a fresh search when results are already showing
+        ActionListener toggleAction = e -> {
+            if (discoverTotalHits > 0 || !discoverSearchField.getText().isBlank()) {
+                discoverOffset = 0;
+                performDiscoverSearch();
+            }
+        };
+        discoverModsToggle.addActionListener(toggleAction);
+        discoverPacksToggle.addActionListener(toggleAction);
+
+        discoverPrevPageBtn.addActionListener(e -> {
+            if (discoverOffset >= ModUpdateService.DISCOVER_PAGE_SIZE) {
+                discoverOffset -= ModUpdateService.DISCOVER_PAGE_SIZE;
+                performDiscoverSearch();
+            }
+        });
+
+        discoverNextPageBtn.addActionListener(e -> {
+            if (discoverOffset + ModUpdateService.DISCOVER_PAGE_SIZE < discoverTotalHits) {
+                discoverOffset += ModUpdateService.DISCOVER_PAGE_SIZE;
+                performDiscoverSearch();
+            }
+        });
+
+        return p;
+    }
+
     private void refreshDiscoverInstances() {
         if (discoverInstanceBox == null) return;
-        Instance prev = discoverInstanceBox.getValue();
-        var visible = instanceManager.getInstances().stream().filter(i -> !i.hidden).toList();
-        discoverInstanceBox.getItems().setAll(visible);
-        if (prev != null && visible.stream().anyMatch(i -> i.id.equals(prev.id))) {
-            discoverInstanceBox.setValue(prev);
-        } else if (!visible.isEmpty()) {
-            discoverInstanceBox.setValue(visible.get(0));
+        discoverInstanceBox.removeAllItems();
+        for (Instance inst : instanceManager.getInstances()) {
+            discoverInstanceBox.addItem(inst);
         }
     }
 
-    /** The currently active Discover project type: "mod" or "resourcepack". */
-    private String discoverProjectType() {
-        return (discoverPacksToggle != null && discoverPacksToggle.isSelected()) ? "resourcepack" : "mod";
-    }
-
-    /** Starts a brand-new search — resets pagination back to page 1. */
-    private void runDiscoverSearch() {
-        discoverOffset = 0;
-        loadDiscoverPage();
-    }
-
-    /**
-     * Switches to the Discover tab, sets it to browse the given project type, fills in a
-     * search query, and runs it. Used by "this feature is unavailable, try a mod" shortcut
-     * buttons elsewhere in the launcher (e.g. Settings → Discord RPC).
-     */
-    private void goToDiscoverAndSearch(String query, boolean modsProjectType) {
-        if (mainTabPane != null && discoverTabRef != null) {
-            mainTabPane.getSelectionModel().select(discoverTabRef);
-        }
-        if (modsProjectType && discoverModsToggle != null) {
-            discoverModsToggle.setSelected(true);
-        } else if (!modsProjectType && discoverPacksToggle != null) {
-            discoverPacksToggle.setSelected(true);
-        }
-        if (discoverSearchField != null) {
-            discoverSearchField.setText(query);
-        }
-        if (discoverInstanceBox != null && discoverInstanceBox.getValue() == null
-                && !discoverInstanceBox.getItems().isEmpty()) {
-            discoverInstanceBox.setValue(discoverInstanceBox.getItems().get(0));
-        }
-        runDiscoverSearch();
-    }
-
-    /** Loads whatever page {@link #discoverOffset} currently points at, showing skeleton cards while it loads. */
-    private void loadDiscoverPage() {
-        if (discoverInstanceBox == null) return;
-        Instance target = discoverInstanceBox.getValue();
-        if (target == null) {
-            discoverStatusLabel.setText("Select an instance first.");
-            return;
-        }
-        String query = discoverSearchField.getText();
-        String projectType = discoverProjectType();
-        String loader = target.modLoader == ModLoaderType.VANILLA ? "fabric" : target.modLoader.name().toLowerCase();
-        String gameVer = target.mcVersion;
-        int offset = discoverOffset;
-
-        discoverStatusLabel.setText("Searching Modrinth…");
-        showDiscoverSkeletons();
-        discoverSearchBtn.setDisable(true);
-        discoverPrevPageBtn.setDisable(true);
-        discoverNextPageBtn.setDisable(true);
-
-        Thread t = new Thread(() -> {
-            try {
-                ModUpdateService service = new ModUpdateService();
-                com.google.gson.JsonObject page = service.searchProjectsPage(
-                        query == null ? "" : query, projectType, loader, gameVer, offset, ModUpdateService.DISCOVER_PAGE_SIZE);
-                com.google.gson.JsonArray hits = page.getAsJsonArray("hits");
-                int totalHits = page.has("total_hits") && !page.get("total_hits").isJsonNull()
-                        ? page.get("total_hits").getAsInt() : hits.size();
-
-                Platform.runLater(() -> {
-                    discoverTotalHits = totalHits;
-                    discoverResultsPane.getChildren().clear();
-                    if (hits.isEmpty()) {
-                        discoverStatusLabel.setText(offset == 0 ? "No results found." : "No more results.");
-                    } else {
-                        discoverStatusLabel.setText(totalHits + " result(s) for " + target.name
-                                + (projectType.equals("mod")
-                                        ? " (" + loader + " loader) — showing all versions, mismatches are flagged below"
-                                        : " — showing all versions, mismatches are flagged below"));
-                        for (com.google.gson.JsonElement el : hits) {
-                            discoverResultsPane.getChildren().add(buildDiscoverCard(el.getAsJsonObject(), projectType, target));
-                        }
-                    }
-                    discoverSearchBtn.setDisable(false);
-                    updateDiscoverPagination();
-                    updateDiscoverRefreshButtonVisibility();
-                });
-            } catch (Exception ex) {
-                Platform.runLater(() -> {
-                    discoverStatusLabel.setText("Search failed: " + ex.getMessage());
-                    discoverResultsPane.getChildren().clear();
-                    discoverSearchBtn.setDisable(false);
-                    log("Discover search failed: " + ex.getMessage());
-                    updateDiscoverRefreshButtonVisibility();
-                });
-            }
-        }, "discover-search");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    /**
-     * Shows the Discover "🔄 Refresh" button only when the results grid is empty (no mod/
-     * resource-pack cards, including skeleton loading cards, currently on screen). When
-     * there are cards showing there's nothing to refresh, so the button just gets in the way.
-     */
-    private void updateDiscoverRefreshButtonVisibility() {
-        if (discoverRefreshBtn == null || discoverResultsPane == null) return;
-        discoverRefreshBtn.setVisible(discoverResultsPane.getChildren().isEmpty());
-    }
-
-    /** Refreshes the "Page N of M" label and enables/disables the Previous/Next buttons. */
-    private void updateDiscoverPagination() {
-        int pageSize = ModUpdateService.DISCOVER_PAGE_SIZE;
-        int currentPage = (discoverOffset / pageSize) + 1;
-        int totalPages = Math.max(1, (int) Math.ceil(discoverTotalHits / (double) pageSize));
-        discoverPageLabel.setText("Page " + currentPage + " of " + totalPages);
-        discoverPrevPageBtn.setDisable(discoverOffset <= 0);
-        discoverNextPageBtn.setDisable(discoverOffset + pageSize >= discoverTotalHits);
-    }
-
-    /** Fills the results grid with pulsing gray placeholder cards while a search is in flight. */
+    // ── Skeleton loading placeholders ────────────────────────────────────────
     private void showDiscoverSkeletons() {
-        discoverResultsPane.getChildren().clear();
-        for (int i = 0; i < 8; i++) {
-            discoverResultsPane.getChildren().add(buildDiscoverSkeletonCard());
+        discoverResultsPane.removeAll();
+        for (int i = 0; i < 6; i++) {
+            discoverResultsPane.add(buildDiscoverSkeletonCard());
         }
-        updateDiscoverRefreshButtonVisibility();
+        discoverResultsPane.revalidate();
+        discoverResultsPane.repaint();
     }
 
-    /** One placeholder "loading" card matching the real card's layout, with a soft shimmer animation. */
-    private VBox buildDiscoverSkeletonCard() {
-        javafx.scene.shape.Rectangle iconBlock = skeletonBlock(48, 48, 10);
-        VBox titleLines = new VBox(6, skeletonBlock(120, 12, 4), skeletonBlock(70, 10, 4));
-        HBox headerRow = new HBox(10, iconBlock, titleLines);
-        headerRow.setAlignment(Pos.CENTER_LEFT);
+    private JPanel buildDiscoverSkeletonCard() {
+        JPanel card = new JPanel(new BorderLayout(8, 6)) {
+            private float phase = 0f;
+            {
+                // Subtle shimmer animation
+                javax.swing.Timer shimmer = new javax.swing.Timer(50, e -> {
+                    phase += 0.08f;
+                    if (phase > 2f) phase = 0f;
+                    repaint();
+                });
+                shimmer.start();
+            }
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g.create();
+                int w = getWidth();
+                // Shimmer overlay
+                float shimmerX = (phase - 1f) * w;
+                java.awt.GradientPaint gp = new java.awt.GradientPaint(
+                        shimmerX, 0, new Color(255, 255, 255, 0),
+                        shimmerX + w * 0.4f, 0, new Color(255, 255, 255, 12));
+                g2.setPaint(gp);
+                g2.fillRect(0, 0, w, getHeight());
+                g2.dispose();
+            }
+        };
+        card.setPreferredSize(new Dimension(310, 160));
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(55, 55, 65), 1),
+                new EmptyBorder(10, 10, 10, 10)
+        ));
+        card.setBackground(new Color(30, 30, 40));
 
-        VBox descLines = new VBox(6, skeletonBlock(228, 10, 4), skeletonBlock(190, 10, 4), skeletonBlock(150, 10, 4));
-        javafx.scene.shape.Rectangle versionBlock = skeletonBlock(228, 24, 6);
-        javafx.scene.shape.Rectangle btnBlock = skeletonBlock(228, 28, 6);
+        // Placeholder icon
+        JPanel iconPlaceholder = new JPanel();
+        iconPlaceholder.setPreferredSize(new Dimension(48, 48));
+        iconPlaceholder.setBackground(new Color(45, 45, 58));
+        card.add(iconPlaceholder, BorderLayout.WEST);
 
-        VBox card = new VBox(10, headerRow, descLines, versionBlock, btnBlock);
-        card.getStyleClass().addAll("discover-card", "skeleton-card");
-        card.setPrefWidth(260);
-        card.setMaxWidth(260);
-
-        javafx.animation.FadeTransition shimmer = new javafx.animation.FadeTransition(javafx.util.Duration.millis(750), card);
-        shimmer.setFromValue(0.45);
-        shimmer.setToValue(1.0);
-        shimmer.setCycleCount(javafx.animation.Animation.INDEFINITE);
-        shimmer.setAutoReverse(true);
-        shimmer.play();
-
+        // Placeholder text lines
+        JPanel textCol = new JPanel();
+        textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
+        textCol.setBackground(new Color(30, 30, 40));
+        for (int i = 0; i < 3; i++) {
+            JPanel line = new JPanel();
+            line.setMaximumSize(new Dimension(i == 0 ? 160 : (i == 1 ? 200 : 80), 12));
+            line.setPreferredSize(new Dimension(i == 0 ? 160 : (i == 1 ? 200 : 80), 12));
+            line.setBackground(new Color(45, 45, 58));
+            textCol.add(line);
+            textCol.add(Box.createVerticalStrut(6));
+        }
+        card.add(textCol, BorderLayout.CENTER);
         return card;
     }
 
-    private javafx.scene.shape.Rectangle skeletonBlock(double width, double height, double arc) {
-        javafx.scene.shape.Rectangle r = new javafx.scene.shape.Rectangle(width, height);
-        r.setArcWidth(arc);
-        r.setArcHeight(arc);
-        r.getStyleClass().add("skeleton-block");
-        return r;
+    // ── Search ──────────────────────────────────────────────────────────────
+    private void performDiscoverSearch() {
+        String query = discoverSearchField.getText().trim();
+        boolean isPack = discoverPacksToggle.isSelected();
+        String projectType = isPack ? "resourcepack" : "mod";
+
+        Instance target = (Instance) discoverInstanceBox.getSelectedItem();
+        String loader = null;
+        String gameVersion = null;
+        if (target != null) {
+            gameVersion = target.mcVersion;
+            if (target.modLoader != null && target.modLoader != ModLoaderType.VANILLA) {
+                loader = target.modLoader.name().toLowerCase();
+            }
+        }
+
+        discoverStatusLabel.setText("Searching Modrinth…");
+        discoverSearchBtn.setEnabled(false);
+        showDiscoverSkeletons();
+
+        final String fLoader = loader;
+        final String fGameVersion = gameVersion;
+
+        new Thread(() -> {
+            try {
+                JsonObject result = discoverModService.searchProjectsPage(
+                        query, projectType, fLoader, fGameVersion,
+                        discoverOffset, ModUpdateService.DISCOVER_PAGE_SIZE);
+
+                JsonArray hits = result.getAsJsonArray("hits");
+                discoverTotalHits = result.get("total_hits").getAsInt();
+
+                SwingUtilities.invokeLater(() -> {
+                    discoverResultsPane.removeAll();
+                    for (var el : hits) {
+                        JsonObject hit = el.getAsJsonObject();
+                        discoverResultsPane.add(buildDiscoverCard(hit, projectType, fLoader, fGameVersion));
+                    }
+                    discoverResultsPane.revalidate();
+                    discoverResultsPane.repaint();
+
+                    updateDiscoverPagination();
+                    discoverStatusLabel.setText("Found " + discoverTotalHits + " result(s).");
+                    discoverSearchBtn.setEnabled(true);
+                    discoverRefreshBtn.setVisible(hits.isEmpty());
+                });
+
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> {
+                    discoverResultsPane.removeAll();
+                    discoverResultsPane.revalidate();
+                    discoverResultsPane.repaint();
+                    discoverStatusLabel.setText("Search failed: " + ex.getMessage());
+                    discoverSearchBtn.setEnabled(true);
+                    discoverRefreshBtn.setVisible(true);
+                });
+            }
+        }, "modrinth-search").start();
     }
 
-    /** Builds a single Modrinth-style result card for the Discover grid. */
-    private VBox buildDiscoverCard(com.google.gson.JsonObject hit, String projectType, Instance target) {
-        String projectId = hit.has("project_id") ? hit.get("project_id").getAsString() : null;
-        String titleText = hit.has("title") ? hit.get("title").getAsString() : "Unknown";
-        String author = hit.has("author") ? hit.get("author").getAsString() : "";
-        String description = hit.has("description") ? hit.get("description").getAsString() : "";
-        long downloads = hit.has("downloads") ? hit.get("downloads").getAsLong() : 0;
-        String iconUrl = hit.has("icon_url") && !hit.get("icon_url").isJsonNull()
-                ? hit.get("icon_url").getAsString() : null;
+    private void updateDiscoverPagination() {
+        int pageSize = ModUpdateService.DISCOVER_PAGE_SIZE;
+        int page = (discoverOffset / pageSize) + 1;
+        int totalPages = Math.max(1, (discoverTotalHits + pageSize - 1) / pageSize);
+        discoverPageLabel.setText("Page " + page + " of " + totalPages);
+        discoverPrevPageBtn.setEnabled(discoverOffset >= pageSize);
+        discoverNextPageBtn.setEnabled(discoverOffset + pageSize < discoverTotalHits);
+    }
 
-        javafx.scene.image.ImageView iconView = new javafx.scene.image.ImageView();
-        iconView.setFitWidth(48);
-        iconView.setFitHeight(48);
-        iconView.setPreserveRatio(true);
-        iconView.setSmooth(true);
-        javafx.scene.shape.Rectangle clip = new javafx.scene.shape.Rectangle(48, 48);
-        clip.setArcWidth(10);
-        clip.setArcHeight(10);
-        iconView.setClip(clip);
-        if (iconUrl != null && !iconUrl.isBlank()) {
-            Image img = discoverIconCache.computeIfAbsent(iconUrl,
-                    u -> new Image(proxiedIconUrl(u), 96, 96, true, true, true));
-            bindIconWithFallback(iconView, img, getDefaultModIcon());
-        } else {
-            iconView.setImage(getDefaultModIcon());
-        }
+    // ── Rich Discover Card ──────────────────────────────────────────────────
+    private JPanel buildDiscoverCard(JsonObject hit, String projectType, String loader, String gameVersion) {
+        JPanel card = new JPanel(new BorderLayout(8, 6));
+        card.setPreferredSize(new Dimension(310, 175));
+        Border defaultBorder = BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(55, 55, 65), 1),
+                new EmptyBorder(10, 10, 10, 10));
+        Border hoverBorder = BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(80, 80, 100), 1),
+                new EmptyBorder(10, 10, 10, 10));
+        card.setBorder(defaultBorder);
+        card.setBackground(new Color(28, 28, 38));
 
-        Label nameLabel = new Label(titleText);
-        nameLabel.getStyleClass().add("discover-title");
-        nameLabel.setWrapText(true);
-
-        Label authorLabel = new Label("by " + author);
-        authorLabel.getStyleClass().add("discover-meta");
-
-        VBox titleCol = new VBox(2, nameLabel, authorLabel);
-        HBox headerRow = new HBox(10, iconView, titleCol);
-        headerRow.setAlignment(Pos.CENTER_LEFT);
-
-        Label descLabel = new Label(description);
-        descLabel.getStyleClass().add("discover-desc");
-        descLabel.setWrapText(true);
-        descLabel.setMinHeight(50);
-
-        Label downloadsLabel = new Label("⬇ " + formatCount(downloads) + " downloads");
-        downloadsLabel.getStyleClass().add("discover-meta");
-
-        // ── Version-compatibility notice ──────────────────────────────────────────
-        // Mods and resource packs are both now shown regardless of the instance's Minecraft
-        // version (search no longer filters on it), so flag whether this particular result
-        // actually lists the instance's version as supported instead of hiding mismatches.
-        Label compatLabel = null;
-        if (target.mcVersion != null && !target.mcVersion.isBlank()) {
-            String kind = "resourcepack".equals(projectType) ? "resource pack" : "mod";
-            boolean compatible = true;
-            if (hit.has("versions") && hit.get("versions").isJsonArray()) {
-                compatible = false;
-                for (com.google.gson.JsonElement v : hit.getAsJsonArray("versions")) {
-                    if (target.mcVersion.equals(v.getAsString())) {
-                        compatible = true;
-                        break;
-                    }
-                }
+        // Hover effect
+        card.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) {
+                card.setBorder(hoverBorder);
+                card.setBackground(new Color(32, 32, 44));
             }
-            compatLabel = new Label(compatible
-                    ? "✓ Supports " + target.mcVersion
-                    : "⚠ Not your version (" + target.mcVersion + ")");
-            compatLabel.getStyleClass().add(compatible ? "discover-version-ok" : "discover-version-warning");
-            compatLabel.setTooltip(new Tooltip(compatible
-                    ? "This " + kind + " lists " + target.mcVersion + " as a supported version."
-                    : "This " + kind + " doesn't list " + target.mcVersion + " as a supported version. "
-                            + "You can still download it — it may still work, but it isn't officially supported for your version."));
-        }
-
-        // ── Version picker — lets the user choose exactly which release to install ──
-        ComboBox<VersionOption> versionBox = new ComboBox<>();
-        versionBox.setPromptText("Loading versions…");
-        versionBox.setMaxWidth(Double.MAX_VALUE);
-        versionBox.setDisable(true);
-        if (projectId != null) {
-            loadDiscoverCardVersions(projectId, projectType, target, versionBox);
-        }
-
-        Button downloadBtn = new Button("Download");
-        downloadBtn.setMaxWidth(Double.MAX_VALUE);
-        downloadBtn.setOnAction(e -> {
-            Instance currentTarget = discoverInstanceBox.getValue();
-            if (currentTarget == null || projectId == null) return;
-            downloadBtn.setDisable(true);
-            VersionOption chosen = versionBox.getValue();
-            if (chosen != null) {
-                downloadDiscoverVersion(chosen, titleText, projectType, currentTarget, downloadBtn);
-            } else {
-                // Version list hasn't loaded yet (or has none) — fall back to "best match".
-                downloadDiscoverProject(projectId, titleText, projectType, currentTarget, downloadBtn);
+            @Override public void mouseExited(MouseEvent e) {
+                card.setBorder(defaultBorder);
+                card.setBackground(new Color(28, 28, 38));
             }
         });
 
-        VBox card = new VBox(8, headerRow, descLabel, downloadsLabel);
-        if (compatLabel != null) card.getChildren().add(compatLabel);
-        card.getChildren().addAll(versionBox, downloadBtn);
-        card.getStyleClass().add("discover-card");
-        card.setPrefWidth(260);
-        card.setMaxWidth(260);
+        String title = hit.get("title").getAsString();
+        String desc = hit.has("description") ? hit.get("description").getAsString() : "";
+        String author = hit.has("author") && !hit.get("author").isJsonNull() ? hit.get("author").getAsString() : "";
+        String iconUrl = hit.has("icon_url") && !hit.get("icon_url").isJsonNull() ? hit.get("icon_url").getAsString() : null;
+        String slug = hit.has("slug") ? hit.get("slug").getAsString() : "";
+        String projectId = hit.has("project_id") ? hit.get("project_id").getAsString() : slug;
+        int downloads = hit.has("downloads") ? hit.get("downloads").getAsInt() : 0;
+
+        // Version compatibility — check if any of the project's listed versions match
+        // the target instance's Minecraft version.
+        boolean compatible = false;
+        if (gameVersion != null && hit.has("versions") && hit.get("versions").isJsonArray()) {
+            for (var v : hit.getAsJsonArray("versions")) {
+                if (gameVersion.equals(v.getAsString())) { compatible = true; break; }
+            }
+        }
+
+        // ── Left: icon (rounded corners) ────────────────────────────────────
+        JLabel iconLabel = new JLabel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Icon ic = getIcon();
+                if (ic != null) {
+                    Graphics2D g2 = (Graphics2D) g.create();
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    int s = Math.min(getWidth(), getHeight());
+                    g2.setClip(new java.awt.geom.RoundRectangle2D.Float(0, 0, s, s, 12, 12));
+                    ic.paintIcon(this, g2, 0, 0);
+                    g2.dispose();
+                } else {
+                    super.paintComponent(g);
+                }
+            }
+        };
+        iconLabel.setPreferredSize(new Dimension(48, 48));
+        iconLabel.setVerticalAlignment(SwingConstants.TOP);
+        if (iconUrl != null) {
+            final String fIconUrl = iconUrl;
+            // Load icon async to avoid blocking EDT
+            ImageIcon cached = discoverIconCache.get(fIconUrl);
+            if (cached != null) {
+                iconLabel.setIcon(cached);
+            } else {
+                iconLabel.setIcon(defaultModIcon);
+                new Thread(() -> {
+                    try {
+                        ImageIcon icon = new ImageIcon(new ImageIcon(new URI(fIconUrl).toURL())
+                                .getImage().getScaledInstance(48, 48, Image.SCALE_SMOOTH));
+                        discoverIconCache.put(fIconUrl, icon);
+                        SwingUtilities.invokeLater(() -> iconLabel.setIcon(icon));
+                    } catch (Exception ignored) {}
+                }, "icon-load").start();
+            }
+        } else {
+            iconLabel.setIcon(defaultModIcon);
+        }
+        card.add(iconLabel, BorderLayout.WEST);
+
+        // ── Center: text info ───────────────────────────────────────────────
+        JPanel textCol = new JPanel();
+        textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
+        textCol.setBackground(card.getBackground());
+
+        // Title
+        JLabel titleLbl = new JLabel("<html><b>" + escapeHtml(title) + "</b></html>");
+        titleLbl.setForeground(Color.WHITE);
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 13));
+        titleLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        textCol.add(titleLbl);
+
+        // Author + download count
+        String meta = "";
+        if (!author.isEmpty()) meta += "by " + author;
+        if (downloads > 0) {
+            if (!meta.isEmpty()) meta += "  ·  ";
+            meta += "⬇ " + formatCount(downloads);
+        }
+        if (!meta.isEmpty()) {
+            JLabel metaLbl = new JLabel(meta);
+            metaLbl.setFont(new Font("SansSerif", Font.PLAIN, 10));
+            metaLbl.setForeground(new Color(140, 140, 155));
+            metaLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+            textCol.add(metaLbl);
+        }
+
+        // Compatibility badge
+        if (gameVersion != null) {
+            JLabel badge;
+            if (compatible) {
+                badge = new JLabel("✓ Supports " + gameVersion);
+                badge.setForeground(new Color(80, 200, 120));
+            } else {
+                badge = new JLabel("⚠ Not your version");
+                badge.setForeground(new Color(230, 170, 60));
+            }
+            badge.setFont(new Font("SansSerif", Font.PLAIN, 10));
+            badge.setAlignmentX(Component.LEFT_ALIGNMENT);
+            textCol.add(badge);
+        }
+
+        // Description
+        JLabel descLbl = new JLabel("<html><body style='width: 180px;'>" + escapeHtml(desc) + "</body></html>");
+        descLbl.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        descLbl.setForeground(new Color(170, 170, 180));
+        descLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        textCol.add(Box.createVerticalStrut(2));
+        textCol.add(descLbl);
+
+        card.add(textCol, BorderLayout.CENTER);
+
+        // ── Bottom: version picker + download button ────────────────────────
+        JPanel bottomRow = new JPanel(new BorderLayout(6, 0));
+        bottomRow.setBackground(card.getBackground());
+
+        JComboBox<VersionOption> versionPicker = new JComboBox<>();
+        versionPicker.setPreferredSize(new Dimension(140, 28));
+        versionPicker.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        versionPicker.addItem(new VersionOption("Loading versions…", null, null));
+        versionPicker.setEnabled(false);
+        bottomRow.add(versionPicker, BorderLayout.CENTER);
+
+        JButton downloadBtn = new JButton("Download");
+        downloadBtn.setEnabled(false);
+        bottomRow.add(downloadBtn, BorderLayout.EAST);
+
+        card.add(bottomRow, BorderLayout.SOUTH);
+
+        // ── Async: load versions for the picker ─────────────────────────────
+        loadDiscoverCardVersions(projectId, projectType, loader, gameVersion, versionPicker, downloadBtn, title);
+
         return card;
     }
 
-    /** Fetches every compatible version of a project and populates a card's version dropdown, newest first. */
-    private void loadDiscoverCardVersions(String projectId, String projectType, Instance target, ComboBox<VersionOption> versionBox) {
-        String loader = target.modLoader == ModLoaderType.VANILLA ? "fabric" : target.modLoader.name().toLowerCase();
-        String gameVer = target.mcVersion;
-
-        Thread t = new Thread(() -> {
+    /** Asynchronously loads version list into a card's dropdown and wires the download button. */
+    private void loadDiscoverCardVersions(String projectId, String projectType,
+                                           String loader, String gameVersion,
+                                           JComboBox<VersionOption> picker,
+                                           JButton downloadBtn, String title) {
+        new Thread(() -> {
             try {
-                ModUpdateService service = new ModUpdateService();
-                com.google.gson.JsonArray versions = service.listVersions(projectId, projectType, loader, gameVer);
-                java.util.List<VersionOption> options = new java.util.ArrayList<>();
-                for (com.google.gson.JsonElement el : versions) {
-                    com.google.gson.JsonObject v = el.getAsJsonObject();
+                JsonArray versions = discoverModService.listVersions(projectId, projectType, loader, gameVersion);
+                List<VersionOption> options = new ArrayList<>();
+                for (var el : versions) {
+                    JsonObject v = el.getAsJsonObject();
+                    String versionNumber = v.has("version_number") ? v.get("version_number").getAsString() : "?";
+                    String versionName = v.has("name") && !v.get("name").isJsonNull() ? v.get("name").getAsString() : versionNumber;
+
+                    // Check game version support for the label
+                    boolean supportsTarget = false;
+                    if (gameVersion != null && v.has("game_versions") && v.get("game_versions").isJsonArray()) {
+                        for (var gv : v.getAsJsonArray("game_versions")) {
+                            if (gameVersion.equals(gv.getAsString())) { supportsTarget = true; break; }
+                        }
+                    }
+
                     String[] file = ModUpdateService.primaryFileOf(v);
                     if (file == null) continue;
-                    String label = v.has("version_number") && !v.get("version_number").isJsonNull()
-                            ? v.get("version_number").getAsString()
-                            : (v.has("name") && !v.get("name").isJsonNull() ? v.get("name").getAsString() : "unknown");
+
+                    String label = versionNumber;
+                    if (supportsTarget) label += "  ✓";
+                    if (versionName != null && !versionName.equals(versionNumber)) {
+                        // Truncate long names
+                        String displayName = versionName.length() > 25 ? versionName.substring(0, 22) + "…" : versionName;
+                        label += "  (" + displayName + ")";
+                    }
                     options.add(new VersionOption(label, file[0], file[1]));
                 }
-                Platform.runLater(() -> {
-                    versionBox.getItems().setAll(options);
-                    if (!options.isEmpty()) {
-                        versionBox.setValue(options.get(0)); // newest first from Modrinth
-                        versionBox.setPromptText("Latest");
-                        versionBox.setDisable(false);
+
+                SwingUtilities.invokeLater(() -> {
+                    picker.removeAllItems();
+                    if (options.isEmpty()) {
+                        picker.addItem(new VersionOption("No versions available", null, null));
                     } else {
-                        versionBox.setPromptText("No compatible versions");
-                        versionBox.setDisable(true);
+                        for (VersionOption opt : options) picker.addItem(opt);
+                        picker.setEnabled(true);
+                        downloadBtn.setEnabled(true);
                     }
                 });
             } catch (Exception ex) {
-                Platform.runLater(() -> {
-                    versionBox.setPromptText("Version list unavailable");
-                    versionBox.setDisable(true);
+                SwingUtilities.invokeLater(() -> {
+                    picker.removeAllItems();
+                    picker.addItem(new VersionOption("Failed to load", null, null));
                 });
             }
-        }, "discover-card-versions");
-        t.setDaemon(true);
-        t.start();
-    }
+        }, "load-versions-" + projectId).start();
 
-    /** Downloads the specific version file the user chose from a Discover card's version dropdown. */
-    private void downloadDiscoverVersion(VersionOption version, String projectTitle, String projectType,
-                                          Instance target, Button downloadBtn) {
-        Thread t = new Thread(() -> {
-            try {
-                Path gameDir = instanceManager.resolveGameDir(target);
-                String subfolder = "resourcepack".equals(projectType) ? "resourcepacks" : "mods";
-                Path targetDir = gameDir.resolve(subfolder);
-                if (!Files.exists(targetDir)) Files.createDirectories(targetDir);
-                Path targetFile = targetDir.resolve(version.fileName());
-
-                Platform.runLater(() -> log("Downloading " + projectTitle + " " + version.label() + " (" + version.fileName() + ")…"));
-                com.launcher.util.HttpUtil.downloadToFile(version.url(), targetFile);
-
-                Platform.runLater(() -> {
-                    log("Downloaded " + projectTitle + " " + version.label() + " into " + target.name + "/" + subfolder);
-                    downloadBtn.setText("✓ Installed");
-                    if ("mod".equals(projectType) && instanceList.getSelectionModel().getSelectedItem() == target) {
-                        refreshModsView(target);
-                    }
-                    notifications.success("Install finished", projectTitle + " " + version.label() + " installed into " + target.name);
-                });
-            } catch (Exception ex) {
-                Platform.runLater(() -> {
-                    log("Download failed for " + projectTitle + ": " + ex.getMessage());
-                    downloadBtn.setDisable(false);
-                    notifications.error("Install failed", projectTitle + ": " + ex.getMessage());
-                });
+        // Wire download action
+        downloadBtn.addActionListener(e -> {
+            VersionOption selected = (VersionOption) picker.getSelectedItem();
+            if (selected == null || selected.url() == null) return;
+            Instance target = (Instance) discoverInstanceBox.getSelectedItem();
+            if (target == null) {
+                notifications.error("No target", "Select a target instance first.");
+                return;
             }
-        }, "discover-download-version");
-        t.setDaemon(true);
-        t.start();
-    }
+            boolean isPack = "resourcepack".equals(projectType);
+            downloadBtn.setEnabled(false);
+            downloadBtn.setText("…");
+            new Thread(() -> {
+                try {
+                    String subDir = isPack ? "resourcepacks" : "mods";
+                    Path destDir = instanceManager.resolveGameDir(target).resolve(subDir);
+                    Files.createDirectories(destDir);
+                    Path destFile = destDir.resolve(selected.fileName());
 
-    /** Downloads a Modrinth project's best-matching file into the target instance's mods/resourcepacks folder. */
-    private void downloadDiscoverProject(String projectId, String projectTitle, String projectType,
-                                          Instance target, Button downloadBtn) {
-        Thread t = new Thread(() -> {
-            try {
-                ModUpdateService service = new ModUpdateService();
-                String loader = target.modLoader == ModLoaderType.VANILLA ? "fabric" : target.modLoader.name().toLowerCase();
-                String gameVer = target.mcVersion;
-
-                Platform.runLater(() -> log("Fetching download URL for " + projectTitle + "…"));
-                String downloadUrl = service.getDownloadUrlForProject(projectId, projectType, loader, gameVer);
-
-                if (downloadUrl == null) {
-                    Platform.runLater(() -> {
-                        log("No compatible version of " + projectTitle + " found for " + target.name + ".");
-                        downloadBtn.setDisable(false);
+                    com.launcher.util.HttpUtil.downloadFile(selected.url(), destFile,
+                            msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                    SwingUtilities.invokeLater(() -> {
+                        String kind = isPack ? "resource pack" : "mod";
+                        notifications.success("Downloaded " + kind, title + " installed into " + target.name);
+                        downloadBtn.setText("✓ Done");
                     });
-                    return;
-                }
-
-                Path gameDir = instanceManager.resolveGameDir(target);
-                String subfolder = "resourcepack".equals(projectType) ? "resourcepacks" : "mods";
-                Path targetDir = gameDir.resolve(subfolder);
-                if (!Files.exists(targetDir)) Files.createDirectories(targetDir);
-
-                String fileName = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1);
-                Path targetFile = targetDir.resolve(fileName);
-
-                Platform.runLater(() -> log("Downloading " + fileName + "…"));
-                com.launcher.util.HttpUtil.downloadToFile(downloadUrl, targetFile);
-
-                Platform.runLater(() -> {
-                    log("Downloaded " + projectTitle + " (" + fileName + ") into " + target.name + "/" + subfolder);
-                    downloadBtn.setText("✓ Installed");
-                    if ("mod".equals(projectType) && instanceList.getSelectionModel().getSelectedItem() == target) {
-                        refreshModsView(target);
-                    }
-                    notifications.success("Install finished", projectTitle + " installed into " + target.name);
-                });
-            } catch (Exception ex) {
-                Platform.runLater(() -> {
-                    log("Download failed for " + projectTitle + ": " + ex.getMessage());
-                    downloadBtn.setDisable(false);
-                    notifications.error("Install failed", projectTitle + ": " + ex.getMessage());
-                });
-            }
-        }, "discover-download");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    /** Formats a download count like Modrinth does: 1234 -> "1.2K", 1234567 -> "1.2M". */
-    private static String formatCount(long n) {
-        if (n >= 1_000_000) return String.format("%.1fM", n / 1_000_000.0);
-        if (n >= 1_000) return String.format("%.1fK", n / 1_000.0);
-        return String.valueOf(n);
-    }
-
-    private void applyModsFilter(String query) {
-        if (currentModEntries == null || currentModEntries.isEmpty()) {
-            modsList.getItems().clear();
-            return;
-        }
-        if (query == null || query.isBlank()) {
-            modsList.getItems().setAll(currentModEntries);
-        } else {
-            String q = query.trim().toLowerCase();
-            java.util.List<ModEntry> filtered = currentModEntries.stream()
-                    .filter(m -> {
-                        String dn = m.displayName();
-                        if (dn       != null && dn.toLowerCase().contains(q))          return true;
-                        if (m.fileName != null && m.fileName.toLowerCase().contains(q)) return true;
-                        return false;
-                    })
-                    .collect(java.util.stream.Collectors.toList());
-            modsList.getItems().setAll(filtered);
-        }
-        modsCountLabel.setText(modsList.getItems().size() + " / " + currentModEntries.size() + " mod(s)");
-    }
-
-    private void refreshModsView(Instance instance) {
-        refreshModsView(instance, false);
-    }
-
-    /**
-     * Rescans the current instance's mods folder. Runs the scan (which hashes every jar)
-     * off the FX thread so the list never freezes, and — importantly — never clears the
-     * mods list while loading or on failure, so the icons/names that are already on screen
-     * stay put instead of flashing away. Pass {@code notifyUser = true} for user-initiated
-     * refreshes (the Refresh button) to surface a toast when it's done.
-     */
-    private void refreshModsView(Instance instance, boolean notifyUser) {
-        if (instance == null) {
-            modsHeaderLabel.setText("Select an instance to view its mods.");
-            modsCountLabel.setText("");
-            modsList.getItems().clear();
-            currentModEntries.clear();
-            checkUpdatesBtn.setDisable(true);
-            refreshModsBtn.setDisable(true);
-            updateAllBtn.setDisable(true);
-            updateSelectedBtn.setDisable(true);
-            deleteModBtn.setDisable(true);
-            dedupeModsBtn.setDisable(true);
-            installDependenciesBtn.setDisable(true);
-            return;
-        }
-
-        modsHeaderLabel.setText("Mods for: " + instance.name);
-        refreshModsBtn.setDisable(true); // prevent overlapping scans; re-enabled once this one finishes
-
-        Path modsDir = instanceManager.resolveGameDir(instance).resolve("mods");
-        new Thread(() -> {
-            try {
-                ModUpdateService service = new ModUpdateService();
-                List<ModEntry> scanned = service.scanModsDir(modsDir);
-                Platform.runLater(() -> {
-                    // Only apply the result if the user hasn't switched to a different instance meanwhile.
-                    if (instanceList.getSelectionModel().getSelectedItem() != instance) return;
-                    currentModEntries = scanned;
-                    applyModsFilter(modsSearchField != null ? modsSearchField.getText() : null);
-                    modsCountLabel.setText(currentModEntries.size() + " mod(s) found");
-                    checkUpdatesBtn.setDisable(currentModEntries.isEmpty());
-                    dedupeModsBtn.setDisable(currentModEntries.isEmpty());
-                    installDependenciesBtn.setDisable(currentModEntries.isEmpty());
-                    updateAllBtn.setDisable(true);
-                    updateSelectedBtn.setDisable(true);
-                    deleteModBtn.setDisable(true);
-                    refreshModsBtn.setDisable(false);
-                    log("Found " + currentModEntries.size() + " mod(s) in " + modsDir);
-                    if (notifyUser) {
-                        notifications.success("Mods refreshed",
-                                currentModEntries.size() + " mod(s) found for " + instance.name);
-                    }
-                });
-            } catch (Exception ex) {
-                Platform.runLater(() -> {
-                    log("Failed to scan mods directory: " + ex.getMessage());
-                    refreshModsBtn.setDisable(false);
-                    // Deliberately NOT clearing modsList/currentModEntries here — keep whatever
-                    // was already showing rather than blanking the icons/names out.
-                    if (notifyUser) {
-                        notifications.error("Mod scan failed", ex.getMessage());
-                    }
-                });
-            }
-        }, "mods-scan").start();
-    }
-
-    private void checkModUpdates(Instance instance) {
-        checkUpdatesBtn.setDisable(true);
-        setStatus("Checking for mod updates…");
-
-        new Thread(() -> {
-            try {
-                ModUpdateService service = new ModUpdateService();
-
-                // Step 1: Identify mods on Modrinth
-                log("Identifying mods on Modrinth…");
-                service.identifyMods(currentModEntries, this::log);
-                Platform.runLater(() -> modsList.refresh());
-
-                // Step 2: Check for updates
-                String loaderName = instance.modLoader != null && instance.modLoader != ModLoaderType.VANILLA
-                        ? instance.modLoader.name().toLowerCase() : null;
-                log("Checking for compatible updates (MC " + instance.mcVersion + ", loader: " + loaderName + ")…");
-                service.checkUpdates(currentModEntries, instance.mcVersion, loaderName, this::log);
-
-                Platform.runLater(() -> {
-                    modsList.refresh();
-                    long updatable = currentModEntries.stream()
-                            .filter(m -> "Update available".equals(m.status)).count();
-                    updateAllBtn.setDisable(updatable == 0);
-                    checkUpdatesBtn.setDisable(false);
-                    setStatus(updatable > 0
-                            ? updatable + " mod update(s) available."
-                            : "All mods are up to date.");
-                    if (updatable > 0) {
-                        notifications.success("Updates found",
-                                updatable + " mod update(s) available for " + instance.name);
-                    } else {
-                        notifications.info("Up to date", "All mods are up to date.");
-                    }
-                });
-
-            } catch (Exception ex) {
-                log("Error checking mod updates: " + ex.getMessage());
-                Platform.runLater(() -> {
-                    checkUpdatesBtn.setDisable(false);
-                    setStatus("Update check failed — see console.");
-                    notifications.error("Update check failed", ex.getMessage());
-                });
-            }
-        }, "mod-update-check").start();
-    }
-
-    private void updateMods(Instance instance, List<ModEntry> modsToUpdate) {
-        List<ModEntry> updatable = modsToUpdate.stream()
-                .filter(m -> "Update available".equals(m.status) && m.updateUrl != null)
-                .toList();
-        if (updatable.isEmpty()) { log("No updatable mods selected."); return; }
-
-        updateSelectedBtn.setDisable(true);
-        updateAllBtn.setDisable(true);
-        setStatus("Updating " + updatable.size() + " mod(s)…");
-
-        Path modsDir = instanceManager.resolveGameDir(instance).resolve("mods");
-        new Thread(() -> {
-            ModUpdateService service = new ModUpdateService();
-            int success = 0;
-            for (ModEntry mod : updatable) {
-                if (service.downloadUpdate(mod, modsDir, this::log)) success++;
-            }
-            int finalSuccess = success;
-            Platform.runLater(() -> {
-                modsList.refresh();
-                long remaining = currentModEntries.stream()
-                        .filter(m -> "Update available".equals(m.status)).count();
-                updateAllBtn.setDisable(remaining == 0);
-                setStatus("Updated " + finalSuccess + "/" + updatable.size() + " mod(s).");
-                if (finalSuccess == updatable.size()) {
-                    notifications.success("Mods updated", "Updated " + finalSuccess + "/" + updatable.size() + " mod(s).");
-                } else {
-                    notifications.warning("Mods partially updated",
-                            "Updated " + finalSuccess + "/" + updatable.size() + " mod(s) — check the console for errors.");
-                }
-            });
-        }, "mod-update-download").start();
-    }
-
-    private void updateAllMods(Instance instance) {
-        updateMods(instance, new java.util.ArrayList<>(currentModEntries));
-    }
-
-    /**
-     * Finds every REQUIRED Modrinth dependency of the currently installed mods that isn't
-     * already installed, and downloads it into the instance's mods folder. Wired to the
-     * "Install Dependencies" button in the Mods tab.
-     */
-    private void installMissingDependencies(Instance instance) {
-        if (currentModEntries.isEmpty()) { log("No mods loaded for this instance."); return; }
-
-        installDependenciesBtn.setDisable(true);
-        setStatus("Checking mod dependencies…");
-
-        new Thread(() -> {
-            try {
-                ModUpdateService service = new ModUpdateService();
-
-                // Dependencies are read off each mod's Modrinth version, so mods that haven't
-                // been identified yet (no modrinthId) need identifying first.
-                boolean needsIdentify = currentModEntries.stream().anyMatch(m -> m.modrinthId == null);
-                if (needsIdentify) {
-                    log("Identifying mods on Modrinth…");
-                    service.identifyMods(currentModEntries, this::log);
-                    Platform.runLater(() -> modsList.refresh());
-                }
-
-                String loaderName = instance.modLoader != null && instance.modLoader != ModLoaderType.VANILLA
-                        ? instance.modLoader.name().toLowerCase() : "fabric";
-                String gameVer = instance.mcVersion;
-
-                log("Looking up required dependencies…");
-                java.util.LinkedHashMap<String, String> missing =
-                        service.findMissingRequiredDependencies(currentModEntries, loaderName, gameVer, this::log);
-
-                if (missing.isEmpty()) {
-                    Platform.runLater(() -> {
-                        log("No missing required dependencies found.");
-                        setStatus("All required dependencies are already installed.");
-                        installDependenciesBtn.setDisable(false);
-                        notifications.info("No dependencies missing", "All required dependencies are already installed.");
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> {
+                        notifications.error("Download failed", ex.getMessage());
+                        downloadBtn.setEnabled(true);
+                        downloadBtn.setText("Download");
                     });
-                    return;
                 }
+            }, "discover-download").start();
+        });
+    }
 
-                log("Installing " + missing.size() + " missing dependenc" + (missing.size() == 1 ? "y" : "ies")
-                        + ": " + String.join(", ", missing.values()) + "…");
-                Platform.runLater(() -> notifications.info(
-                        "Dependencies found",
-                        missing.size() + " missing dependenc" + (missing.size() == 1 ? "y" : "ies")
-                                + " found — installing: " + String.join(", ", missing.values())));
+    /** Formats a download count into a compact human-readable string (1.2K, 3.4M). */
+    private static String formatCount(int count) {
+        if (count >= 1_000_000) return String.format("%.1fM", count / 1_000_000.0);
+        if (count >= 1_000) return String.format("%.1fK", count / 1_000.0);
+        return String.valueOf(count);
+    }
 
-                Path modsDir = instanceManager.resolveGameDir(instance).resolve("mods");
-                if (!Files.exists(modsDir)) Files.createDirectories(modsDir);
-
-                int installed = 0;
-                for (var entry : missing.entrySet()) {
-                    String depId = entry.getKey();
-                    String depName = entry.getValue();
-                    try {
-                        String downloadUrl = service.getDownloadUrlForProject(depId, "mod", loaderName, gameVer);
-                        if (downloadUrl == null) {
-                            log("No compatible file found for dependency " + depName + ".");
-                            continue;
-                        }
-                        String fileName = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1);
-                        Path targetFile = modsDir.resolve(fileName);
-                        com.launcher.util.HttpUtil.downloadToFile(downloadUrl, targetFile);
-                        installed++;
-                        log("Installed dependency: " + depName + " (" + fileName + ")");
-                    } catch (Exception depEx) {
-                        log("Failed to install dependency " + depName + ": " + depEx.getMessage());
-                    }
-                }
-
-                int finalInstalled = installed;
-                int totalMissing = missing.size();
-                Platform.runLater(() -> {
-                    setStatus("Installed " + finalInstalled + "/" + totalMissing + " missing dependencies.");
-                    installDependenciesBtn.setDisable(false);
-                    refreshModsView(instance);
-                    if (finalInstalled == totalMissing) {
-                        notifications.success("Dependencies installed",
-                                "Installed " + finalInstalled + "/" + totalMissing + " missing dependencies.");
-                    } else {
-                        notifications.warning("Dependencies partially installed",
-                                "Installed " + finalInstalled + "/" + totalMissing + " — check the console for errors.");
-                    }
-                });
-            } catch (Exception ex) {
-                log("Failed to install dependencies: " + ex.getMessage());
-                Platform.runLater(() -> {
-                    setStatus("Dependency install failed — see console.");
-                    installDependenciesBtn.setDisable(false);
-                    notifications.error("Dependency install failed", ex.getMessage());
-                });
-            }
-        }, "install-dependencies").start();
+    /** Simple HTML-escape to prevent injection via project titles/descriptions. */
+    private static String escapeHtml(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  DAWN CLIENT LOGIC
+    //  SETTINGS TAB
     // ══════════════════════════════════════════════════════════════════════════
-    private Path getDawnJarPath(Instance instance) {
-        Path gameDir = instanceManager.resolveGameDir(instance);
-        return gameDir.resolve("mods").resolve(DAWN_JAR_NAME);
+    private JPanel createCard(String title) {
+        JPanel card = new JPanel();
+        card.setLayout(new GridBagLayout());
+        card.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(new Color(60, 60, 70), 1, true),
+                title,
+                TitledBorder.LEFT,
+                TitledBorder.TOP,
+                new Font("SansSerif", Font.BOLD, 13),
+                new Color(16, 185, 129)
+            ),
+            BorderFactory.createEmptyBorder(10, 12, 10, 12)
+        ));
+        card.setBackground(new Color(19, 19, 26));
+        return card;
     }
 
-    private void updateDawnStatus(Instance instance) {
-        if (instance == null) {
-            dawnStatusLabel.setText("Select an instance to manage Dawn Client.");
-            installDawnButton.setDisable(true);
-            deleteDawnButton.setDisable(true);
+    private JScrollPane buildSettingsArea() {
+        JPanel mainPanel = new JPanel();
+        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+        mainPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        com.launcher.manager.SettingsManager mgr = com.launcher.manager.SettingsManager.getInstance();
+
+        // ── 1. APPEARANCE CARD ────────────────────────────────────────────────
+        JPanel appearanceCard = createCard("Appearance");
+        GridBagConstraints gbc = createGbc();
+
+        JTextField accentField = new JTextField(s.accentColor);
+        accentField.addActionListener(e -> { s.accentColor = accentField.getText().trim(); mgr.save(); applyTheme(); });
+        accentField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) { s.accentColor = accentField.getText().trim(); mgr.save(); applyTheme(); }
+        });
+        addSettingsRow(appearanceCard, "Accent Color (Hex)", accentField, gbc);
+
+        JTextField bgField = new JTextField(s.bgColor);
+        bgField.addActionListener(e -> { s.bgColor = bgField.getText().trim(); mgr.save(); applyTheme(); });
+        bgField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) { s.bgColor = bgField.getText().trim(); mgr.save(); applyTheme(); }
+        });
+        addSettingsRow(appearanceCard, "Background Color (Hex)", bgField, gbc);
+
+        JTextField panelBgField = new JTextField(s.panelBgColor);
+        panelBgField.addActionListener(e -> { s.panelBgColor = panelBgField.getText().trim(); mgr.save(); applyTheme(); });
+        panelBgField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) { s.panelBgColor = panelBgField.getText().trim(); mgr.save(); applyTheme(); }
+        });
+        addSettingsRow(appearanceCard, "Panel Background (Hex)", panelBgField, gbc);
+
+        JTextField textColorField = new JTextField(s.textColor);
+        textColorField.addActionListener(e -> { s.textColor = textColorField.getText().trim(); mgr.save(); applyTheme(); });
+        textColorField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) { s.textColor = textColorField.getText().trim(); mgr.save(); applyTheme(); }
+        });
+        addSettingsRow(appearanceCard, "Text Color (Hex)", textColorField, gbc);
+
+        JTextField logBgField = new JTextField(s.logBgColor);
+        logBgField.addActionListener(e -> { s.logBgColor = logBgField.getText().trim(); mgr.save(); applyTheme(); });
+        logBgField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) { s.logBgColor = logBgField.getText().trim(); mgr.save(); applyTheme(); }
+        });
+        addSettingsRow(appearanceCard, "Log Background (Hex)", logBgField, gbc);
+
+        JCheckBox enableBlurCb = new JCheckBox("Enable transparent/blur effect");
+        enableBlurCb.setSelected(s.enableBlurEffect);
+        
+        JSlider blurSlider = new JSlider(1, 40, s.blurStrength > 0 ? s.blurStrength : 10);
+        blurSlider.setEnabled(s.enableBlurEffect);
+        JLabel blurValLabel = new JLabel(String.valueOf(blurSlider.getValue()));
+        blurValLabel.setForeground(Color.LIGHT_GRAY);
+
+        enableBlurCb.addActionListener(e -> {
+            s.enableBlurEffect = enableBlurCb.isSelected();
+            blurSlider.setEnabled(s.enableBlurEffect);
+            mgr.save();
+            applyTheme();
+        });
+
+        blurSlider.addChangeListener(e -> {
+            s.blurStrength = blurSlider.getValue();
+            blurValLabel.setText(String.valueOf(s.blurStrength));
+            mgr.save();
+            applyTheme();
+        });
+
+        addSettingsRow(appearanceCard, "Transparent/Blur", enableBlurCb, gbc);
+        JPanel sliderPane = new JPanel(new BorderLayout(8, 0));
+        sliderPane.setOpaque(false);
+        sliderPane.add(blurSlider, BorderLayout.CENTER);
+        sliderPane.add(blurValLabel, BorderLayout.EAST);
+        addSettingsRow(appearanceCard, "Blur Strength", sliderPane, gbc);
+
+        mainPanel.add(appearanceCard);
+        mainPanel.add(Box.createVerticalStrut(12));
+
+        // ── 2. BEHAVIOR CARD ──────────────────────────────────────────────────
+        JPanel behaviorCard = createCard("Behavior");
+        gbc = createGbc();
+
+        JCheckBox minimizeCb = new JCheckBox("Minimize launcher while game is running");
+        minimizeCb.setSelected(s.minimizeOnLaunch);
+        minimizeCb.addActionListener(e -> { s.minimizeOnLaunch = minimizeCb.isSelected(); mgr.save(); });
+        addSettingsRow(behaviorCard, "", minimizeCb, gbc);
+
+        JCheckBox closeCb = new JCheckBox("Close launcher after game starts");
+        closeCb.setSelected(s.closeAfterLaunch);
+        closeCb.addActionListener(e -> { s.closeAfterLaunch = closeCb.isSelected(); mgr.save(); });
+        addSettingsRow(behaviorCard, "", closeCb, gbc);
+
+        JCheckBox showConsoleCb = new JCheckBox("Keep console visible while game is running");
+        showConsoleCb.setSelected(s.showConsoleOnLaunch);
+        showConsoleCb.addActionListener(e -> { s.showConsoleOnLaunch = showConsoleCb.isSelected(); mgr.save(); });
+        addSettingsRow(behaviorCard, "", showConsoleCb, gbc);
+
+        JCheckBox scanCb = new JCheckBox("Scan .minecraft folder for installed versions on startup");
+        scanCb.setSelected(s.scanOnStartup);
+        scanCb.addActionListener(e -> { s.scanOnStartup = scanCb.isSelected(); mgr.save(); });
+        addSettingsRow(behaviorCard, "", scanCb, gbc);
+
+        JCheckBox showHiddenCb = new JCheckBox("Show hidden instances");
+        showHiddenCb.setSelected(s.showHiddenInstances);
+        showHiddenCb.addActionListener(e -> { s.showHiddenInstances = showHiddenCb.isSelected(); mgr.save(); refreshInstances(); });
+        addSettingsRow(behaviorCard, "", showHiddenCb, gbc);
+
+        JCheckBox checkModUpdatesCb = new JCheckBox("Check for mod updates when launcher starts");
+        checkModUpdatesCb.setSelected(s.checkModUpdatesOnStartup);
+        checkModUpdatesCb.addActionListener(e -> { s.checkModUpdatesOnStartup = checkModUpdatesCb.isSelected(); mgr.save(); });
+        addSettingsRow(behaviorCard, "", checkModUpdatesCb, gbc);
+
+        mainPanel.add(behaviorCard);
+        mainPanel.add(Box.createVerticalStrut(12));
+
+        // ── 3. WINDOW SIZE CARD ───────────────────────────────────────────────
+        JPanel sizeCard = createCard("Window Size");
+        gbc = createGbc();
+
+        int savedW = (s.launcherWidth >= 820) ? s.launcherWidth : 960;
+        int savedH = (s.launcherHeight >= 560) ? s.launcherHeight : 660;
+
+        SpinnerModel widthModel = new SpinnerNumberModel(savedW, 820, 3840, 10);
+        JSpinner widthSpinner = new JSpinner(widthModel);
+        widthSpinner.addChangeListener(e -> { s.launcherWidth = (int) widthSpinner.getValue(); mgr.save(); });
+        addSettingsRow(sizeCard, "Width (px)", widthSpinner, gbc);
+
+        SpinnerModel heightModel = new SpinnerNumberModel(savedH, 560, 2160, 10);
+        JSpinner heightSpinner = new JSpinner(heightModel);
+        heightSpinner.addChangeListener(e -> { s.launcherHeight = (int) heightSpinner.getValue(); mgr.save(); });
+        addSettingsRow(sizeCard, "Height (px)", heightSpinner, gbc);
+
+        JButton applySizeBtn = new JButton("Apply Now");
+        applySizeBtn.addActionListener(e -> {
+            if ((getExtendedState() & JFrame.MAXIMIZED_BOTH) == 0) {
+                setSize(s.launcherWidth >= 820 ? s.launcherWidth : 960, s.launcherHeight >= 560 ? s.launcherHeight : 660);
+                setLocationRelativeTo(null);
+            }
+        });
+        addSettingsRow(sizeCard, "", applySizeBtn, gbc);
+
+        mainPanel.add(sizeCard);
+        mainPanel.add(Box.createVerticalStrut(12));
+
+        // ── 4. PERFORMANCE CARD ───────────────────────────────────────────────
+        JPanel performanceCard = createCard("Performance");
+        gbc = createGbc();
+
+        SpinnerModel ramModel = new SpinnerNumberModel(s.defaultRamGb > 0 ? s.defaultRamGb : 3, 1, 64, 1);
+        JSpinner ramSpinner = new JSpinner(ramModel);
+        ramSpinner.addChangeListener(e -> { s.defaultRamGb = (int) ramSpinner.getValue(); mgr.save(); });
+        addSettingsRow(performanceCard, "Default RAM (GB)", ramSpinner, gbc);
+
+        JTextField extraJvmField = new JTextField(s.extraJvmArgs != null ? s.extraJvmArgs : "");
+        extraJvmField.addActionListener(e -> { s.extraJvmArgs = extraJvmField.getText().trim(); s.jvmArgs = s.extraJvmArgs; mgr.save(); });
+        extraJvmField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) { s.extraJvmArgs = extraJvmField.getText().trim(); s.jvmArgs = s.extraJvmArgs; mgr.save(); }
+        });
+        addSettingsRow(performanceCard, "Extra JVM Arguments", extraJvmField, gbc);
+
+        JTextField javaPathField = new JTextField(s.javaPath != null ? s.javaPath : "");
+        javaPathField.addActionListener(e -> { s.javaPath = javaPathField.getText().trim(); mgr.save(); });
+        javaPathField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) { s.javaPath = javaPathField.getText().trim(); mgr.save(); }
+        });
+        addSettingsRow(performanceCard, "Java Executable Path", javaPathField, gbc);
+
+        mainPanel.add(performanceCard);
+        mainPanel.add(Box.createVerticalStrut(12));
+
+        // ── 5. PRIVACY & SECURITY CARD ────────────────────────────────────────
+        JPanel privacyCard = createCard("Privacy & Security");
+        gbc = createGbc();
+
+        JCheckBox hideUserCb = new JCheckBox("Hide username in launcher UI");
+        hideUserCb.setSelected(s.hideUsername);
+        hideUserCb.addActionListener(e -> { s.hideUsername = hideUserCb.isSelected(); mgr.save(); refreshAccounts(); });
+        addSettingsRow(privacyCard, "", hideUserCb, gbc);
+
+        JCheckBox redactPathsCb = new JCheckBox("Redact OS username from log paths");
+        redactPathsCb.setSelected(s.redactPaths);
+        redactPathsCb.addActionListener(e -> { s.redactPaths = redactPathsCb.isSelected(); mgr.save(); refreshInstances(); });
+        addSettingsRow(privacyCard, "", redactPathsCb, gbc);
+
+        JCheckBox redactTokensCb = new JCheckBox("Redact Minecraft session tokens in logs");
+        redactTokensCb.setSelected(s.redactTokens);
+        redactTokensCb.addActionListener(e -> { s.redactTokens = redactTokensCb.isSelected(); mgr.save(); });
+        addSettingsRow(privacyCard, "", redactTokensCb, gbc);
+
+        JCheckBox clearSessionCb = new JCheckBox("Clear account sessions when the launcher closes");
+        clearSessionCb.setSelected(s.clearSessionOnExit);
+        clearSessionCb.addActionListener(e -> { s.clearSessionOnExit = clearSessionCb.isSelected(); mgr.save(); });
+        addSettingsRow(privacyCard, "", clearSessionCb, gbc);
+
+        mainPanel.add(privacyCard);
+        mainPanel.add(Box.createVerticalStrut(12));
+
+        // ── 6. DISCORD RPC CARD ───────────────────────────────────────────────
+        JPanel discordCard = createCard("Discord RPC (Forced Off)");
+        gbc = createGbc();
+
+        JCheckBox enableRpcCb = new JCheckBox("Enable Discord Rich Presence");
+        enableRpcCb.setSelected(false);
+        enableRpcCb.setEnabled(false);
+        addSettingsRow(discordCard, "", enableRpcCb, gbc);
+
+        JCheckBox showServerCb = new JCheckBox("Show connected server IP in Discord status");
+        showServerCb.setSelected(false);
+        showServerCb.setEnabled(false);
+        addSettingsRow(discordCard, "", showServerCb, gbc);
+
+        JTextField rpcNameField = new JTextField(s.customDiscordRpcName != null ? s.customDiscordRpcName : "Zero Launcher");
+        rpcNameField.setEnabled(false);
+        addSettingsRow(discordCard, "Custom RPC Name", rpcNameField, gbc);
+
+        JLabel discordNote = new JLabel("<html><body style='color:#ef4444;'>⚠ Currently this is not available. Try using a mod like Vanilla RPC instead.</body></html>");
+        addSettingsRow(discordCard, "", discordNote, gbc);
+
+        mainPanel.add(discordCard);
+
+        JScrollPane scroll = new JScrollPane(mainPanel);
+        scroll.setBorder(null);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        return scroll;
+    }
+
+    private GridBagConstraints createGbc() {
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(4, 6, 4, 6);
+        gbc.weightx = 1.0;
+        gbc.gridx = 0; gbc.gridy = 0;
+        return gbc;
+    }
+
+    private void addSettingsRow(JPanel panel, String label, JComponent comp, GridBagConstraints gbc) {
+        gbc.gridx = 0;
+        if (label != null && !label.isEmpty()) {
+            JLabel lbl = new JLabel(label);
+            lbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+            lbl.setForeground(new Color(226, 226, 234));
+            gbc.weightx = 0.3;
+            panel.add(lbl, gbc);
+            gbc.gridx = 1;
+            gbc.weightx = 0.7;
+            panel.add(comp, gbc);
+        } else {
+            gbc.gridwidth = 2;
+            gbc.weightx = 1.0;
+            panel.add(comp, gbc);
+            gbc.gridwidth = 1;
+        }
+        gbc.gridy++;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  CONSOLE LOG AREA
+    // ══════════════════════════════════════════════════════════════════════════
+    private JPanel buildLogArea() {
+        JPanel p = new JPanel(new BorderLayout());
+        p.setBorder(new EmptyBorder(10, 16, 10, 16));
+
+        // Console area
+        logArea = new JTextArea();
+        logArea.setEditable(false);
+        logArea.setRows(6);
+        logArea.setBackground(new Color(6, 6, 8));
+        logArea.setForeground(new Color(226, 226, 234));
+        logArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
+
+        JScrollPane scroll = new JScrollPane(logArea);
+        p.add(scroll, BorderLayout.CENTER);
+
+        // Control Panel
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+        statusLabel = new JLabel("Ready.");
+        statusLabel.setForeground(new Color(156, 163, 175));
+
+        JButton clearBtn = new JButton("Clear Console");
+        clearBtn.addActionListener(e -> logArea.setText(""));
+
+        killButton = new JButton("Kill Game");
+        killButton.setEnabled(false);
+        killButton.setBackground(new Color(239, 68, 68));
+        killButton.setForeground(Color.WHITE);
+        killButton.addActionListener(e -> {
+            if (activeProcess != null && activeProcess.isAlive()) {
+                activeProcess.destroyForcibly();
+                notifications.warning("Game terminated", "Minecraft process killed.");
+            }
+        });
+
+        controls.add(statusLabel);
+        controls.add(clearBtn);
+        controls.add(killButton);
+        p.add(controls, BorderLayout.SOUTH);
+
+        return p;
+    }
+
+    private void refreshAccounts() {
+        accountBox.removeAllItems();
+        for (Account a : accountManager.getAccounts()) {
+            accountBox.addItem(a);
+        }
+        accountManager.getActiveAccount().ifPresent(accountBox::setSelectedItem);
+    }
+
+    private void refreshInstances() {
+        boolean showHidden = com.launcher.manager.SettingsManager.getInstance().getSettings().showHiddenInstances;
+        instanceListModel.clear();
+        for (Instance i : instanceManager.getInstances()) {
+            if (showHidden || !i.hidden) {
+                instanceListModel.addElement(i);
+            }
+        }
+        refreshDiscoverInstances();
+    }
+
+    // ─── Dawn Install / Delete ────────────────────────────────────────────────
+    private void updateDawnStatus(Instance inst) {
+        if (dawnStatusLabel == null) return;
+        if (inst == null) {
+            dawnStatusLabel.setText("Dawn client: —");
+            installDawnButton.setEnabled(false);
+            deleteDawnButton.setEnabled(false);
             return;
         }
-        Path dawnJar = getDawnJarPath(instance);
-        boolean installed = Files.exists(dawnJar);
-        if (installed) {
-            dawnStatusLabel.setText("✅  Dawn Client is installed for: " + instance.name);
-            installDawnButton.setDisable(true);
-            deleteDawnButton.setDisable(false);
+        Path jar = instanceManager.resolveGameDir(inst).resolve("mods").resolve(DAWN_JAR_NAME);
+        if (Files.exists(jar)) {
+            dawnStatusLabel.setText("Dawn client: Installed");
+            installDawnButton.setEnabled(false);
+            deleteDawnButton.setEnabled(true);
         } else {
-            dawnStatusLabel.setText("Dawn Client is not installed for: " + instance.name);
-            installDawnButton.setDisable(false);
-            deleteDawnButton.setDisable(true);
+            dawnStatusLabel.setText("Dawn client: Not Installed");
+            installDawnButton.setEnabled(true);
+            deleteDawnButton.setEnabled(false);
         }
     }
 
-    private void installDawn(Instance instance) {
-        installDawnButton.setDisable(true);
-        dawnStatusLabel.setText("Downloading Dawn Client...");
+    private void installDawn(Instance inst) {
+        installDawnButton.setEnabled(false);
+        setStatus("Downloading Dawn standalone client…");
         new Thread(() -> {
             try {
-                Path dawnJar = getDawnJarPath(instance);
-                Files.createDirectories(dawnJar.getParent());
-                log("Downloading Dawn Client from " + DAWN_DOWNLOAD_URL);
-                com.launcher.util.HttpUtil.downloadToFile(DAWN_DOWNLOAD_URL, dawnJar);
-                log("Dawn Client installed to: " + dawnJar);
-                Platform.runLater(() -> updateDawnStatus(instance));
+                Path mods = instanceManager.resolveGameDir(inst).resolve("mods");
+                Files.createDirectories(mods);
+                Path jar = mods.resolve(DAWN_JAR_NAME);
+                com.launcher.util.HttpUtil.downloadFile(DAWN_DOWNLOAD_URL, jar, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                SwingUtilities.invokeLater(() -> {
+                    notifications.success("Dawn client installed", "Standalone JAR placed in mods.");
+                    updateDawnStatus(inst);
+                });
             } catch (Exception ex) {
-                log("Failed to install Dawn Client: " + ex.getMessage());
-                Platform.runLater(() -> {
-                    dawnStatusLabel.setText("Download failed — check console.");
-                    installDawnButton.setDisable(false);
+                SwingUtilities.invokeLater(() -> {
+                    notifications.error("Dawn install failed", ex.getMessage());
+                    updateDawnStatus(inst);
                 });
             }
         }, "dawn-install").start();
     }
 
-    private void removeDawn(Instance instance) {
-        Path dawnJar = getDawnJarPath(instance);
+    private void uninstallDawn(Instance inst) {
         try {
-            Files.deleteIfExists(dawnJar);
-            log("Dawn Client removed from: " + instance.name);
+            Path jar = instanceManager.resolveGameDir(inst).resolve("mods").resolve(DAWN_JAR_NAME);
+            Files.deleteIfExists(jar);
+            notifications.warning("Dawn client removed", "Removed Standalone JAR.");
+            updateDawnStatus(inst);
         } catch (Exception ex) {
-            log("Failed to remove Dawn Client: " + ex.getMessage());
-        }
-        updateDawnStatus(instance);
-    }
-
-    // Custom list cell
-    private class InstanceCell extends ListCell<Instance> {
-        @Override
-        protected void updateItem(Instance i, boolean empty) {
-            super.updateItem(i, empty);
-            if (empty || i == null) { setGraphic(null); setText(null); return; }
-
-            // ── Instance icon ─────────────────────────────────────────────────
-            javafx.scene.image.ImageView iconView = new javafx.scene.image.ImageView();
-            iconView.setFitWidth(40);
-            iconView.setFitHeight(40);
-            iconView.setPreserveRatio(true);
-            iconView.setSmooth(true);
-            // clip to rounded rectangle
-            javafx.scene.shape.Rectangle clip = new javafx.scene.shape.Rectangle(40, 40);
-            clip.setArcWidth(8); clip.setArcHeight(8);
-            iconView.setClip(clip);
-
-            boolean iconLoaded = false;
-            if (i.imagePath != null && !i.imagePath.isBlank()) {
-                try {
-                    java.io.File f = new java.io.File(i.imagePath);
-                    if (f.exists()) {
-                        iconView.setImage(new javafx.scene.image.Image(f.toURI().toString(), 40, 40, true, true));
-                        iconLoaded = true;
-                    }
-                } catch (Exception ignored) {}
-            }
-            if (!iconLoaded) {
-                try {
-                    java.io.InputStream is = getClass().getResourceAsStream("/com/launcher/minecraft_image.png");
-                    if (is != null) iconView.setImage(new javafx.scene.image.Image(is, 40, 40, true, true));
-                } catch (Exception ignored) {}
-            }
-
-            // ── Status dot ────────────────────────────────────────────────────
-            Circle dot = new Circle(5);
-            dot.setFill(i.installed ? Color.web("#10b981") : Color.web("#f59e0b"));
-            Tooltip.install(dot, new Tooltip(i.installed ? "Installed" : "Not installed"));
-
-            Label name = new Label(i.name);
-            name.getStyleClass().add("instance-name");
-
-            Label verTag = new Label("MC " + i.mcVersion);
-            verTag.getStyleClass().add("tag-version");
-
-            HBox tags = new HBox(6, dot, verTag);
-            tags.setAlignment(Pos.CENTER_LEFT);
-
-            if (i.modLoader != ModLoaderType.VANILLA) {
-                String loaderColor = switch (i.modLoader) {
-                    case FABRIC   -> "#dda0dd";
-                    case QUILT    -> "#c084fc";
-                    case NEOFORGE -> "#e76e39";
-                    default       -> "#f97316"; // FORGE
-                };
-                Label loaderTag = new Label(i.modLoader.toString()
-                        + (i.modLoaderVersion != null ? " " + i.modLoaderVersion : ""));
-                loaderTag.getStyleClass().add("tag-loader");
-                loaderTag.setStyle("-fx-background-color:" + loaderColor + ";");
-                tags.getChildren().add(loaderTag);
-            }
-
-            int ramGb = i.ramMb > 0 ? Math.max(1, i.ramMb / 1024) : 3;
-            Label ramTag = new Label(ramGb + " GB RAM");
-            ramTag.getStyleClass().add("tag-ram");
-            tags.getChildren().add(ramTag);
-
-            // Modpack indicator
-            if (i.modpackFilePath != null && !i.modpackFilePath.isBlank()) {
-                Label mpTag = new Label("Modpack");
-                mpTag.setStyle("-fx-background-color:#0891b2; -fx-text-fill:#ffffff; -fx-font-size:10px; -fx-padding:2px 6px; -fx-background-radius:4px; -fx-font-weight:bold;");
-                tags.getChildren().add(mpTag);
-            }
-
-            // Dawn indicator
-            if (Files.exists(getDawnJarPath(i))) {
-                Label dawnTag = new Label("Dawn");
-                dawnTag.setStyle("-fx-background-color:#7c3aed; -fx-text-fill:#ffffff; -fx-font-size:10px; -fx-padding:2px 6px; -fx-background-radius:4px; -fx-font-weight:bold;");
-                tags.getChildren().add(dawnTag);
-            }
-
-            String dirStr = (i.useCustomDirectory && i.customDirectoryPath != null)
-                    ? i.customDirectoryPath : "Default directory";
-            Label pathLbl = new Label(sanitizePrivacy(dirStr));
-            pathLbl.getStyleClass().add("instance-path");
-
-            VBox textCol = new VBox(5, name, tags, pathLbl);
-
-            HBox card = new HBox(12, iconView, textCol);
-            card.setPadding(new Insets(8, 12, 8, 12));
-            card.setAlignment(Pos.CENTER_LEFT);
-            HBox.setHgrow(textCol, Priority.ALWAYS);
-
-            setGraphic(card);
-            setText(null);
+            notifications.error("Uninstall failed", ex.getMessage());
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  LOG / CONSOLE
-    // ══════════════════════════════════════════════════════════════════════════
-    private VBox buildLogArea() {
-        logArea = new TextArea();
-        logArea.setEditable(false);
-        logArea.setPrefHeight(140);
-        logArea.setMinHeight(80);
-
-        Label title = new Label("Console");
-        title.setStyle("-fx-font-weight:bold; -fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-
-        statusLabel = new Label("Ready");
-        statusLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-
-        Button copyBtn = new Button("Copy");
-        copyBtn.setStyle("-fx-font-size:10px; -fx-padding:3px 10px;");
-        copyBtn.setOnAction(e -> {
-            javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-            cc.putString(logArea.getText());
-            javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
-        });
-
-        Button clearBtn = new Button("Clear");
-        clearBtn.setStyle("-fx-font-size:10px; -fx-padding:3px 10px;");
-        clearBtn.setOnAction(e -> logArea.clear());
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox header = new HBox(10, title, statusLabel, spacer, copyBtn, clearBtn);
-        header.setAlignment(Pos.CENTER_LEFT);
-
-        VBox box = new VBox(6, header, logArea);
-        box.setPadding(new Insets(10, 16, 12, 16));
-        box.setStyle("-fx-background-color:-fx-panel-background; -fx-border-color:-fx-border-subtle transparent transparent transparent; -fx-border-width:1px 0 0 0;");
-        return box;
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  SETTINGS
-    // ══════════════════════════════════════════════════════════════════════════
-    private ScrollPane buildSettingsArea(Scene scene) {
-        com.launcher.manager.SettingsManager mgr = com.launcher.manager.SettingsManager.getInstance();
-        com.launcher.model.LauncherSettings s = mgr.getSettings();
-
-        VBox root = new VBox(16);
-        root.setPadding(new Insets(20));
-
-        // ── Appearance ────────────────────────────────────────────────────────
-        VBox appearance = card();
-        Label appTitle = sectionTitle("Appearance");
-
-        // Helper: build a color row with picker + hex field + reset button
-        // Accent color
-        ColorPicker accentPicker = colorPicker(s.accentColor, "#10b981");
-        TextField accentHex = hexField(s.accentColor, "#10b981");
-        Button accentReset = resetBtn();
-        wireColorRow(accentPicker, accentHex, accentReset, "#10b981",
-                hex -> { s.accentColor = hex; mgr.save(); applyTheme(scene, s); refreshInstances(); });
-
-        // Window background
-        ColorPicker bgPicker = colorPicker(s.bgColor, "#0a0a0f");
-        TextField bgHex = hexField(s.bgColor, "#0a0a0f");
-        Button bgReset = resetBtn();
-        wireColorRow(bgPicker, bgHex, bgReset, "#0a0a0f",
-                hex -> { s.bgColor = hex; mgr.save(); applyTheme(scene, s); });
-
-        // Panel background
-        ColorPicker panelPicker = colorPicker(s.panelBgColor, "#13131a");
-        TextField panelHex = hexField(s.panelBgColor, "#13131a");
-        Button panelReset = resetBtn();
-        wireColorRow(panelPicker, panelHex, panelReset, "#13131a",
-                hex -> { s.panelBgColor = hex; mgr.save(); applyTheme(scene, s); });
-
-        // Text color
-        ColorPicker textPicker = colorPicker(s.textColor, "#e2e2ea");
-        TextField textHex = hexField(s.textColor, "#e2e2ea");
-        Button textReset = resetBtn();
-        wireColorRow(textPicker, textHex, textReset, "#e2e2ea",
-                hex -> { s.textColor = hex; mgr.save(); applyTheme(scene, s); });
-
-        // Console background
-        ColorPicker logBgPicker = colorPicker(s.logBgColor, "#060608");
-        TextField logBgHex = hexField(s.logBgColor, "#060608");
-        Button logBgReset = resetBtn();
-        wireColorRow(logBgPicker, logBgHex, logBgReset, "#060608",
-                hex -> { s.logBgColor = hex; mgr.save(); applyTheme(scene, s); });
-
-        // Font
-        ComboBox<String> fontPicker = new ComboBox<>();
-        fontPicker.setEditable(true);
-        fontPicker.getItems().addAll("Inter", "Segoe UI", "Arial", "Verdana", "Roboto", "Consolas", "SansSerif");
-        fontPicker.setValue(s.fontFamily != null && !s.fontFamily.isBlank() ? s.fontFamily : "Inter");
-        fontPicker.setOnAction(e -> { s.fontFamily = fontPicker.getValue(); mgr.save(); applyTheme(scene, s); });
-
-        GridPane grid = settingsGrid();
-        grid.addRow(0, settingLabel("Accent color"),        colorRow(accentPicker, accentHex, accentReset));
-        grid.addRow(1, settingLabel("Window background"),   colorRow(bgPicker, bgHex, bgReset));
-        grid.addRow(2, settingLabel("Panel background"),    colorRow(panelPicker, panelHex, panelReset));
-        grid.addRow(3, settingLabel("Text color"),          colorRow(textPicker, textHex, textReset));
-        grid.addRow(4, settingLabel("Console background"),  colorRow(logBgPicker, logBgHex, logBgReset));
-        grid.addRow(5, settingLabel("Font family"),         fontPicker);
-
-        // Background image
-        Label imgNote = new Label(s.useBackgroundImage && s.backgroundImagePath != null && !s.backgroundImagePath.isBlank()
-                ? "Image: " + new java.io.File(s.backgroundImagePath).getName()
-                : "No background image");
-        imgNote.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-
-        CheckBox useBgImg = new CheckBox("Use custom background image");
-        useBgImg.setSelected(s.useBackgroundImage);
-        useBgImg.setOnAction(e -> { s.useBackgroundImage = useBgImg.isSelected(); mgr.save(); applyTheme(scene, s); });
-
-        Button chooseImg = new Button("Choose Image…");
-        chooseImg.setOnAction(e -> withMaximizeGuard(() -> {
-            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
-            fc.setTitle("Background Image");
-            fc.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("Images","*.png","*.jpg","*.jpeg","*.bmp","*.gif"));
-            java.io.File f = fc.showOpenDialog(primaryStage);
-            if (f != null) {
-                s.backgroundImagePath = f.getAbsolutePath();
-                s.useBackgroundImage = true;
-                useBgImg.setSelected(true);
-                imgNote.setText("Image: " + f.getName());
-                mgr.save(); applyTheme(scene, s);
-            }
-        }));
-        Button clearImg = new Button("Remove Image");
-        clearImg.setOnAction(e -> {
-            s.backgroundImagePath = ""; s.useBackgroundImage = false;
-            useBgImg.setSelected(false); imgNote.setText("No background image");
-            mgr.save(); applyTheme(scene, s);
-        });
-        HBox imgBtns = new HBox(8, chooseImg, clearImg);
-
-        // Transparent / blur effect
-        CheckBox enableBlurCb = styledCheckbox("Enable transparent/blur effect", s.enableBlurEffect);
-
-        Slider blurSlider = new Slider(1, 40, s.blurStrength > 0 ? s.blurStrength : 10);
-        blurSlider.setPrefWidth(220);
-        blurSlider.setDisable(!s.enableBlurEffect);
-
-        Label blurValueLabel = new Label(String.valueOf((int) blurSlider.getValue()));
-        blurValueLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted; -fx-min-width:24px;");
-
-        HBox blurSliderRow = new HBox(10, blurSlider, blurValueLabel);
-        blurSliderRow.setAlignment(Pos.CENTER_LEFT);
-
-        Label blurNote = new Label("Makes panels translucent for a frosted-glass look. Looks best with a background image.");
-        blurNote.setStyle("-fx-font-size:10px; -fx-text-fill:-fx-text-muted; -fx-wrap-text:true;");
-
-        enableBlurCb.setOnAction(e -> {
-            s.enableBlurEffect = enableBlurCb.isSelected();
-            blurSlider.setDisable(!s.enableBlurEffect);
-            mgr.save();
-            applyTheme(scene, s);
-        });
-
-        blurSlider.valueProperty().addListener((obs, oldV, newV) -> {
-            s.blurStrength = newV.intValue();
-            blurValueLabel.setText(String.valueOf(newV.intValue()));
-            mgr.save();
-            applyTheme(scene, s);
-        });
-
-        GridPane blurGrid = settingsGrid();
-        blurGrid.addRow(0, settingLabel("Blur strength"), blurSliderRow);
-
-        appearance.getChildren().addAll(appTitle, grid, new Separator(), useBgImg, imgBtns, imgNote,
-                new Separator(), enableBlurCb, blurGrid, blurNote);
-
-        // ── Behavior ──────────────────────────────────────────────────────────
-        VBox behavior = card();
-        Label behTitle = sectionTitle("Launcher Behavior");
-
-        CheckBox minimizeCb = styledCheckbox("Minimize launcher when Minecraft launches (like the original Minecraft launcher)", s.minimizeOnLaunch);
-        minimizeCb.setOnAction(e -> { s.minimizeOnLaunch = minimizeCb.isSelected(); mgr.save(); });
-
-        CheckBox scanCb = styledCheckbox("Scan .minecraft folder for installed versions on startup", s.scanOnStartup);
-        scanCb.setOnAction(e -> { s.scanOnStartup = scanCb.isSelected(); mgr.save(); });
-
-        CheckBox showHiddenCb = styledCheckbox("Show hidden instances", s.showHiddenInstances);
-        showHiddenCb.setOnAction(e -> { s.showHiddenInstances = showHiddenCb.isSelected(); mgr.save(); refreshInstances(); });
-
-        CheckBox closeAfterLaunchCb = styledCheckbox("Close launcher after Minecraft launches (saves RAM)", s.closeAfterLaunch);
-        closeAfterLaunchCb.setOnAction(e -> { s.closeAfterLaunch = closeAfterLaunchCb.isSelected(); mgr.save(); });
-
-        CheckBox showConsoleOnLaunchCb = styledCheckbox("Keep console visible while game is running", s.showConsoleOnLaunch);
-        showConsoleOnLaunchCb.setOnAction(e -> { s.showConsoleOnLaunch = showConsoleOnLaunchCb.isSelected(); mgr.save(); });
-
-        CheckBox checkModUpdatesCb = styledCheckbox("Check for mod updates when the launcher starts", s.checkModUpdatesOnStartup);
-        checkModUpdatesCb.setOnAction(e -> { s.checkModUpdatesOnStartup = checkModUpdatesCb.isSelected(); mgr.save(); });
-
-        behavior.getChildren().addAll(behTitle, minimizeCb, scanCb, showHiddenCb, closeAfterLaunchCb, showConsoleOnLaunchCb, checkModUpdatesCb);
-
-        // ── Window Size ───────────────────────────────────────────────────────
-        VBox windowSizeCard = card();
-        Label winSizeTitle = sectionTitle("Window Size");
-
-        Label winSizeNote = new Label("Set the launcher width and height when it opens. Minimum: 820 × 560. Changes take effect on next launch.");
-        winSizeNote.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted; -fx-wrap-text:true;");
-
-        int savedW = (s.launcherWidth  >= 820) ? s.launcherWidth  : 960;
-        int savedH = (s.launcherHeight >= 560) ? s.launcherHeight : 660;
-
-        Spinner<Integer> widthSpinner  = new Spinner<>(820, 3840, savedW, 10);
-        Spinner<Integer> heightSpinner = new Spinner<>(560, 2160, savedH, 10);
-        widthSpinner.setEditable(true);
-        heightSpinner.setEditable(true);
-        widthSpinner.setPrefWidth(110);
-        heightSpinner.setPrefWidth(110);
-
-        widthSpinner.valueProperty().addListener((obs, oldV, newV) -> {
-            s.launcherWidth = newV; mgr.save();
-        });
-        heightSpinner.valueProperty().addListener((obs, oldV, newV) -> {
-            s.launcherHeight = newV; mgr.save();
-        });
-
-        Button applyWinSize = new Button("Apply Now");
-        applyWinSize.setOnAction(e -> {
-            if (primaryStage != null && !primaryStage.isMaximized()) {
-                primaryStage.setWidth(s.launcherWidth  >= 820 ? s.launcherWidth  : 960);
-                primaryStage.setHeight(s.launcherHeight >= 560 ? s.launcherHeight : 660);
-            }
-        });
-
-        GridPane winGrid = settingsGrid();
-        winGrid.addRow(0, settingLabel("Width (px)"),  widthSpinner);
-        winGrid.addRow(1, settingLabel("Height (px)"), heightSpinner);
-
-        windowSizeCard.getChildren().addAll(winSizeTitle, winGrid, applyWinSize, winSizeNote);
-
-        // ── Performance ───────────────────────────────────────────────────────
-        VBox performance = card();
-        Label perfTitle = sectionTitle("Performance");
-
-        Label defaultRamLabel = settingLabel("Default RAM (GB)");
-        Spinner<Integer> ramSpinner = new Spinner<>(1, 64, s.defaultRamGb > 0 ? s.defaultRamGb : 3);
-        ramSpinner.setEditable(true);
-        ramSpinner.setPrefWidth(90);
-        ramSpinner.valueProperty().addListener((obs, oldV, newV) -> { s.defaultRamGb = newV; mgr.save(); });
-
-        Label jvmArgsLabel = settingLabel("Extra JVM arguments");
-        TextField jvmArgsField = new TextField(s.extraJvmArgs != null ? s.extraJvmArgs : "");
-        jvmArgsField.setPromptText("e.g. -XX:+UseZGC -Dfml.ignoreInvalidMinecraftCertificates=true");
-        jvmArgsField.textProperty().addListener((obs, oldV, newV) -> { s.extraJvmArgs = newV; mgr.save(); });
-        HBox.setHgrow(jvmArgsField, Priority.ALWAYS);
-
-        GridPane perfGrid = settingsGrid();
-        perfGrid.addRow(0, defaultRamLabel, ramSpinner);
-        perfGrid.addRow(1, jvmArgsLabel, jvmArgsField);
-
-        performance.getChildren().addAll(perfTitle, perfGrid);
-
-        // ── Privacy ───────────────────────────────────────────────────────────
-        VBox privacy = card();
-        Label privTitle = sectionTitle("Privacy & Security");
-
-        CheckBox hideUserCb = styledCheckbox("Hide username in launcher UI", s.hideUsername);
-        hideUserCb.setOnAction(e -> { s.hideUsername = hideUserCb.isSelected(); mgr.save(); refreshAccounts(); });
-
-        CheckBox redactPathsCb = styledCheckbox("Redact OS username from log paths", s.redactPaths);
-        redactPathsCb.setOnAction(e -> { s.redactPaths = redactPathsCb.isSelected(); mgr.save(); refreshInstances(); });
-
-        CheckBox redactTokensCb = styledCheckbox("Redact Minecraft session tokens in logs", s.redactTokens);
-        redactTokensCb.setOnAction(e -> { s.redactTokens = redactTokensCb.isSelected(); mgr.save(); });
-
-        CheckBox clearSessionCb = styledCheckbox("Clear account sessions when the launcher closes", s.clearSessionOnExit);
-        clearSessionCb.setOnAction(e -> { s.clearSessionOnExit = clearSessionCb.isSelected(); mgr.save(); });
-
-        privacy.getChildren().addAll(privTitle, hideUserCb, redactPathsCb, redactTokensCb, clearSessionCb);
-
-        // ── Discord RPC ───────────────────────────────────────────────────────
-        // Entirely client-side: Zero Launcher bundles its own Discord Application
-        // ID (the same way Discord's own discord-rpc example app does), so there's
-        // no "create a Discord app and paste in an ID" step for the user anymore.
-        //
-        // NOTE: this feature is currently disabled launcher-side. The settings below
-        // are kept visible (greyed out) for context, but forced off, and the section
-        // points people at in-game alternatives like the "Vanilla RPC" mod instead.
-        s.enableDiscordRpc = false;
-        mgr.save();
-
-        VBox discord = card();
-        Label discordTitle = sectionTitle("Discord RPC");
-        Label discordSubtitle = new Label("Works out of the box — no Discord Application ID needed.");
-        discordSubtitle.getStyleClass().add("section-subtitle");
-
-        Label discordUnavailableNote = new Label(
-                "⚠ Currently this is not available. Try using a mod like Vanilla RPC, or any other Discord Rich Presence mod, instead.");
-        discordUnavailableNote.getStyleClass().add("settings-unavailable-note");
-        discordUnavailableNote.setWrapText(true);
-        discordUnavailableNote.setMaxWidth(Double.MAX_VALUE);
-
-        Button findRpcModBtn = new Button("🌐  Find \"Vanilla RPC\" in Discover");
-        findRpcModBtn.setOnAction(e -> goToDiscoverAndSearch("Vanilla RPC", true));
-
-        CheckBox enableRpcCb = styledCheckbox("Enable Discord Rich Presence", s.enableDiscordRpc);
-        CheckBox showServerCb = styledCheckbox("Show connected server IP in Discord status", s.showServerOnRpc);
-
-        Label rpcNameLabel = settingLabel("Custom RPC Name");
-        TextField rpcNameField = new TextField(s.customDiscordRpcName != null ? s.customDiscordRpcName : "Zero Launcher");
-        rpcNameField.setPromptText("Zero Launcher");
-        rpcNameField.textProperty().addListener((obs, oldV, newV) -> {
-            s.customDiscordRpcName = newV; mgr.save();
-            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
-        });
-        HBox.setHgrow(rpcNameField, Priority.ALWAYS);
-
-        Label rpcImageLabel = settingLabel("Custom Image");
-        TextField rpcImageField = new TextField(s.customDiscordRpcImage != null ? s.customDiscordRpcImage : "minecraft_image.png");
-        rpcImageField.setPromptText("Image URL, e.g. https://i.imgur.com/yourimage.png");
-        rpcImageField.textProperty().addListener((obs, oldV, newV) -> {
-            s.customDiscordRpcImage = newV; mgr.save();
-            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
-        });
-        HBox.setHgrow(rpcImageField, Priority.ALWAYS);
-
-        Button chooseRpcImageBtn = new Button("🖼  Choose Image…");
-        chooseRpcImageBtn.setOnAction(e -> withMaximizeGuard(() -> {
-            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
-            fc.setTitle("Custom Discord RPC Image");
-            fc.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"));
-            java.io.File f = fc.showOpenDialog(primaryStage);
-            if (f == null) return;
-            try {
-                Path imagesDir = LauncherPaths.launcherRoot().resolve("rpc_images");
-                if (!Files.exists(imagesDir)) Files.createDirectories(imagesDir);
-                Path dest = imagesDir.resolve(f.getName());
-                Files.copy(f.toPath(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                rpcImageField.setText(dest.toAbsolutePath().toString());
-                log("Saved custom RPC image to " + dest + ". Note: Discord needs a public image URL to actually display it — " +
-                        "upload this file somewhere (e.g. Imgur) and paste the direct link into the Custom Image field, " +
-                        "or set it to an existing Rich Presence asset key.");
-            } catch (Exception ex) {
-                log("Failed to copy custom RPC image: " + ex.getMessage());
-            }
-        }));
-
-        Button resetRpcImageBtn = new Button("↺  Reset to Default");
-        resetRpcImageBtn.setOnAction(e -> {
-            String def = com.launcher.manager.DiscordRpcManager.defaultImageKey();
-            rpcImageField.setText(def);
-            s.customDiscordRpcImage = def;
-            mgr.save();
-            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
-        });
-
-        HBox rpcImageBtnRow = new HBox(8, chooseRpcImageBtn, resetRpcImageBtn);
-
-        GridPane discordGrid = settingsGrid();
-        discordGrid.addRow(0, rpcNameLabel, rpcNameField);
-        discordGrid.addRow(1, rpcImageLabel, rpcImageField);
-        discordGrid.addRow(2, new Label(""), rpcImageBtnRow);
-
-        enableRpcCb.setOnAction(e -> {
-            s.enableDiscordRpc = enableRpcCb.isSelected();
-            mgr.save();
-            if (s.enableDiscordRpc) com.launcher.manager.DiscordRpcManager.getInstance().init();
-            else com.launcher.manager.DiscordRpcManager.getInstance().shutdown();
-        });
-        showServerCb.setOnAction(e -> {
-            s.showServerOnRpc = showServerCb.isSelected();
-            mgr.save();
-            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
-        });
-
-        discord.getChildren().addAll(discordTitle, discordSubtitle, discordUnavailableNote, findRpcModBtn);
-
-        VBox discordControls = new VBox(10, enableRpcCb, showServerCb, discordGrid);
-        discordControls.setDisable(true);
-        discordControls.setOpacity(0.5);
-        discord.getChildren().add(discordControls);
-
-        // ── Connected Server ─────────────────────────────────────────────────
-        // Shows the currently selected instance's last-known multiplayer server,
-        // and lets the user mark servers private. Since privateServersIps is a
-        // single global list, privatizing a server here applies across every
-        // instance that connects to it.
-        //
-        // NOTE: this only mattered to hide server IPs from Discord Rich Presence,
-        // which is disabled above — so it's disabled here too, for the same reason.
-        VBox serverCard = card();
-        Label serverTitle = sectionTitle("Connected Server");
-        Label serverSubtitle = new Label("Servers marked private show as \"Private Server\" in Discord instead of the real address — everywhere, on every instance.");
-        serverSubtitle.getStyleClass().add("section-subtitle");
-        serverSubtitle.setWrapText(true);
-
-        Label serverUnavailableNote = new Label(
-                "⚠ Currently this is not available. Try using a mod like Vanilla RPC, or any other mod, instead.");
-        serverUnavailableNote.getStyleClass().add("settings-unavailable-note");
-        serverUnavailableNote.setWrapText(true);
-        serverUnavailableNote.setMaxWidth(Double.MAX_VALUE);
-
-        Button findServerModBtn = new Button("🌐  Find \"Vanilla RPC\" in Discover");
-        findServerModBtn.setOnAction(e -> goToDiscoverAndSearch("Vanilla RPC", true));
-
-        serverInstanceLabel = new Label("No instance selected.");
-        serverInstanceLabel.setStyle("-fx-font-size:12px; -fx-text-fill:-fx-text-color;");
-
-        serverIpLabel = new Label("Server: —");
-        serverIpLabel.setStyle("-fx-font-size:12px; -fx-font-weight:bold; -fx-text-fill:-fx-text-color;");
-
-        serverPrivacyBadge = new Label();
-        serverPrivacyBadge.getStyleClass().add("mod-status-unknown");
-
-        HBox serverStatusRow = new HBox(8, serverIpLabel, serverPrivacyBadge);
-        serverStatusRow.setAlignment(Pos.CENTER_LEFT);
-
-        togglePrivateBtn = new Button("🔒  Private This Server");
-        togglePrivateBtn.setOnAction(e -> {
-            Instance sel = instanceList != null ? instanceList.getSelectionModel().getSelectedItem() : null;
-            String ip = sel != null ? sel.lastServerIp : null;
-            if (ip == null || ip.isBlank()) return;
-            if (s.isServerPrivate(ip)) s.removePrivateServer(ip);
-            else s.addPrivateServer(ip);
-            mgr.save();
-            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
-            refreshServerSection();
-        });
-
-        VBox serverInfoBox = new VBox(6, serverInstanceLabel, serverStatusRow, togglePrivateBtn);
-
-        addPrivateIpField = new TextField();
-        addPrivateIpField.setPromptText("play.example.com or 192.168.1.100:25565");
-        HBox.setHgrow(addPrivateIpField, Priority.ALWAYS);
-
-        Button addPrivateIpBtn = new Button("➕  Add Private Server IP");
-        Runnable addIpAction = () -> {
-            String ip = addPrivateIpField.getText();
-            if (ip == null || ip.isBlank()) return;
-            s.addPrivateServer(ip.trim());
-            mgr.save();
-            addPrivateIpField.clear();
-            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
-            refreshServerSection();
-        };
-        addPrivateIpBtn.setOnAction(e -> addIpAction.run());
-        addPrivateIpField.setOnAction(e -> addIpAction.run());
-
-        HBox addIpRow = new HBox(8, addPrivateIpField, addPrivateIpBtn);
-        addIpRow.setAlignment(Pos.CENTER_LEFT);
-
-        // ── Menu of servers read directly from each instance's servers.dat ──
-        Label instanceServersLabel = settingLabel("Servers found in instances");
-        Label instanceServersSubtitle = new Label("Read straight from each instance's multiplayer server list — no typing IPs by hand.");
-        instanceServersSubtitle.getStyleClass().add("section-subtitle");
-        instanceServersSubtitle.setWrapText(true);
-
-        instanceServersBox = new ComboBox<>();
-        instanceServersBox.setPromptText("No saved servers found yet");
-        instanceServersBox.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(instanceServersBox, Priority.ALWAYS);
-
-        Button refreshInstanceServersBtn = new Button("🔄");
-        refreshInstanceServersBtn.setOnAction(e -> refreshInstanceServersMenu());
-
-        Button addFromInstanceBtn = new Button("➕  Mark Private");
-        addFromInstanceBtn.setOnAction(e -> {
-            InstanceServerOption sel = instanceServersBox.getValue();
-            if (sel == null) return;
-            s.addPrivateServer(sel.entry().ip);
-            mgr.save();
-            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
-            refreshServerSection();
-        });
-
-        HBox instanceServersRow = new HBox(8, instanceServersBox, refreshInstanceServersBtn, addFromInstanceBtn);
-        instanceServersRow.setAlignment(Pos.CENTER_LEFT);
-
-        Label privateListLabel = settingLabel("Private servers (all instances)");
-        privateIpsChips = new FlowPane();
-        privateIpsChips.setHgap(6);
-        privateIpsChips.setVgap(6);
-
-        serverCard.getChildren().addAll(serverTitle, serverSubtitle, serverUnavailableNote, findServerModBtn);
-
-        VBox serverControls = new VBox(14, serverInfoBox,
-                new Separator(), instanceServersLabel, instanceServersSubtitle, instanceServersRow,
-                new Separator(), privateListLabel, addIpRow, privateIpsChips);
-        serverControls.setDisable(true);
-        serverControls.setOpacity(0.5);
-        serverCard.getChildren().add(serverControls);
-
-        refreshServerSection();
-
-        // ── About ─────────────────────────────────────────────────────────────
-        VBox about = card();
-        Label aboutTitle = sectionTitle("About");
-        Label aboutInfo = new Label("Zero Launcher  —  a lightweight, privacy-respecting Minecraft launcher.\nBuilt with JavaFX. Dawn Client integration included.");
-        aboutInfo.setStyle("-fx-font-size:12px; -fx-text-fill:-fx-text-muted; -fx-wrap-text:true;");
-        Button openDataDir = new Button("📂 Open Launcher Data Folder");
-        openDataDir.setOnAction(e -> {
-            try {
-                Path dir = LauncherPaths.instancesFile().getParent();
-                if (!Files.exists(dir)) Files.createDirectories(dir);
-                String os = System.getProperty("os.name", "").toLowerCase();
-                ProcessBuilder pb;
-                if (os.contains("win")) {
-                    pb = new ProcessBuilder("explorer.exe", dir.toAbsolutePath().toString());
-                } else if (os.contains("mac")) {
-                    pb = new ProcessBuilder("open", dir.toAbsolutePath().toString());
-                } else {
-                    pb = new ProcessBuilder("xdg-open", dir.toAbsolutePath().toString());
-                }
-                pb.start();
-            } catch (Exception ex) { log("Could not open data folder: " + ex.getMessage()); }
-        });
-        about.getChildren().addAll(aboutTitle, aboutInfo, openDataDir);
-
-        root.getChildren().addAll(appearance, behavior, windowSizeCard, performance, privacy, discord, serverCard, about);
-
-        ScrollPane sp = new ScrollPane(root);
-        sp.setFitToWidth(true);
-        sp.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        sp.setStyle("-fx-background-color:transparent; -fx-border-color:transparent;");
-        return sp;
-    }
-
-    // ── Color row helpers ─────────────────────────────────────────────────────
-
-    /** Builds a hex input TextField pre-filled with a color value */
-    private static TextField hexField(String hex, String fallback) {
-        String val = (hex != null && !hex.isBlank()) ? hex : fallback;
-        TextField tf = new TextField(val);
-        tf.setPrefWidth(86);
-        tf.setPromptText("#rrggbb");
-        tf.setStyle("-fx-font-family: Consolas, monospace; -fx-font-size:11px;");
-        return tf;
-    }
-
-    /** Builds a reset (↺) button */
-    private static Button resetBtn() {
-        Button b = new Button("↺");
-        b.setTooltip(new Tooltip("Reset to default"));
-        b.setStyle("-fx-font-size:12px; -fx-padding:4px 8px;");
-        return b;
-    }
-
-    /** Packs picker + hex + reset into a single HBox */
-    private static HBox colorRow(ColorPicker picker, TextField hex, Button reset) {
-        HBox hb = new HBox(6, picker, hex, reset);
-        hb.setAlignment(Pos.CENTER_LEFT);
-        return hb;
-    }
-
-    /**
-     * Wires the three controls so they stay in sync, and calls {@code onChange} with
-     * the new hex string whenever any of them is updated.
-     */
-    private void wireColorRow(ColorPicker picker, TextField hexTf, Button resetBtn,
-                               String defaultHex, java.util.function.Consumer<String> onChange) {
-        // Picker → hex field + callback
-        picker.setOnAction(e -> {
-            String hex = toHex(picker.getValue());
-            hexTf.setText(hex);
-            onChange.accept(hex);
-        });
-
-        // Hex field → picker + callback (on Enter or focus-lost)
-        Runnable applyHex = () -> {
-            String raw = hexTf.getText().trim();
-            if (!raw.startsWith("#")) raw = "#" + raw;
-            try {
-                Color c = Color.web(raw);
-                picker.setValue(c);
-                hexTf.setStyle("-fx-font-family: Consolas, monospace; -fx-font-size:11px;");
-                onChange.accept(toHex(c));
-            } catch (Exception ex) {
-                hexTf.setStyle("-fx-font-family: Consolas, monospace; -fx-font-size:11px; -fx-border-color:#ef4444;");
-            }
-        };
-        hexTf.setOnAction(e -> applyHex.run());
-        hexTf.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
-            if (!isFocused) applyHex.run();
-        });
-
-        // Reset → default
-        resetBtn.setOnAction(e -> {
-            try { picker.setValue(Color.web(defaultHex)); } catch (Exception ignored) {}
-            hexTf.setText(defaultHex);
-            hexTf.setStyle("-fx-font-family: Consolas, monospace; -fx-font-size:11px;");
-            onChange.accept(defaultHex);
-        });
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  MODPACK EXTRACTION
-    // ══════════════════════════════════════════════════════════════════════════
-    private void extractModpack(Instance instance) {
-        playButton.setDisable(true);
-        setStatus("Extracting modpack for " + instance.name + "…");
-        log("Starting modpack extraction: " + instance.modpackFilePath);
-
-        new Thread(() -> {
-            try {
-                Path modpackFile = Path.of(instance.modpackFilePath);
-                String installPath = (instance.modpackInstallPath != null && !instance.modpackInstallPath.isBlank())
-                        ? instance.modpackInstallPath
-                        : instanceManager.resolveGameDir(instance).toAbsolutePath().toString();
-                Path installDir = Path.of(installPath);
-
-                ModpackExtractor extractor = new ModpackExtractor();
-                extractor.extract(modpackFile, installDir, this::log);
-
-                log("Modpack extracted successfully to: " + installDir);
-                setStatus("Modpack extracted — " + instance.name);
-                Platform.runLater(() -> instanceList.refresh());
-
-            } catch (Exception ex) {
-                log("ERROR extracting modpack: " + ex.getMessage());
-                setStatus("Modpack extraction failed — see console.");
-            } finally {
-                Platform.runLater(() -> playButton.setDisable(false));
-            }
-        }, "modpack-extract").start();
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  LAUNCH LOGIC
-    // ══════════════════════════════════════════════════════════════════════════
-    private void launchInstance(Instance instance, Account account) {
-        playButton.setDisable(true);
-        setStatus("Preparing " + instance.name + "…");
+    // ─── Launcher Game Launch Thread ──────────────────────────────────────────
+    private void launchGame(Instance instance, Account account) {
+        setStatus("Preparing files…");
+        log("----------------------------------------------------------------");
+        log("Launching " + instance.name + " (" + instance.mcVersion + ") as " + account.username);
+        log("----------------------------------------------------------------");
 
         new Thread(() -> {
             try {
                 Path gameDir = instanceManager.resolveGameDir(instance);
-                Path nativesDir = gameDir.resolve("natives");
+                Path nativesDir = instanceManager.resolveNativesDir(instance);
+                Files.createDirectories(gameDir);
+                Files.createDirectories(nativesDir);
+
                 GameInstaller installer = new GameInstaller();
                 VersionManifestService manifestService = new VersionManifestService();
                 JsonObject versionJson = null;
@@ -2581,12 +1862,15 @@ public class Main extends Application {
                     Path localJson = LauncherPaths.findLocalVersionJson(instance.mcVersion, gameDir);
                     if (localJson != null) {
                         log("Loading local version JSON for " + instance.mcVersion + "…");
-                        try { versionJson = JsonUtil.parse(Files.readString(localJson)).getAsJsonObject(); }
-                        catch (Exception ex) { log("Local JSON unreadable, fetching from network."); }
+                        try {
+                            versionJson = JsonUtil.parse(Files.readString(localJson)).getAsJsonObject();
+                        } catch (Exception ex) {
+                            log("Local JSON unreadable, fetching from network.");
+                        }
                     }
                     if (versionJson == null) {
                         log("Fetching vanilla version " + instance.mcVersion + "…");
-                        setStatus("Fetching version data…");
+                        SwingUtilities.invokeLater(() -> setStatus("Fetching version data…"));
                         var urls = manifestService.fetchVersionUrls();
                         String url = urls.get(instance.mcVersion);
                         if (url == null) throw new RuntimeException("Unknown version: " + instance.mcVersion);
@@ -2595,17 +1879,17 @@ public class Main extends Application {
 
                 } else if (instance.modLoader == ModLoaderType.FABRIC) {
                     log("Fetching Fabric profile " + instance.modLoaderVersion + "…");
-                    setStatus("Fetching Fabric profile…");
+                    SwingUtilities.invokeLater(() -> setStatus("Fetching Fabric profile…"));
                     versionJson = new FabricInstaller().fetchProfileJson(instance.mcVersion, instance.modLoaderVersion);
 
                 } else if (instance.modLoader == ModLoaderType.QUILT) {
                     log("Fetching Quilt profile " + instance.modLoaderVersion + "…");
-                    setStatus("Fetching Quilt profile…");
+                    SwingUtilities.invokeLater(() -> setStatus("Fetching Quilt profile…"));
                     versionJson = new QuiltInstaller().fetchProfileJson(instance.mcVersion, instance.modLoaderVersion);
 
                 } else if (instance.modLoader == ModLoaderType.NEOFORGE) {
                     log("Installing NeoForge " + instance.modLoaderVersion + "…");
-                    setStatus("Installing NeoForge…");
+                    SwingUtilities.invokeLater(() -> setStatus("Installing NeoForge…"));
                     NeoForgeInstaller nfi = new NeoForgeInstaller();
                     String vid = nfi.installClient(instance.mcVersion, instance.modLoaderVersion, gameDir, this::log);
                     versionJson = nfi.loadGeneratedVersionJson(gameDir, vid);
@@ -2614,37 +1898,38 @@ public class Main extends Application {
                     // FORGE
                     ForgeInstaller fi = new ForgeInstaller();
                     String fv = instance.modLoaderVersion;
-                    if ("Recommended".equals(fv) || "Latest".equals(fv))
+                    if ("Recommended".equals(fv) || "Latest".equals(fv)) {
                         fv = fi.fetchPromotedLatest(instance.mcVersion, "Recommended".equals(fv));
+                    }
                     String vid = fi.installClient(instance.mcVersion, fv, gameDir, this::log);
                     versionJson = fi.loadGeneratedVersionJson(gameDir, vid);
                 }
 
-                setStatus("Resolving dependencies…");
+                SwingUtilities.invokeLater(() -> setStatus("Resolving dependencies…"));
                 JsonObject merged = installer.resolveInheritance(versionJson, this::log);
                 log("Downloading/verifying files…");
-                setStatus("Installing files…");
+                SwingUtilities.invokeLater(() -> setStatus("Installing files…"));
                 ResolvedVersion resolved = installer.installAndResolve(merged, nativesDir, this::log);
 
                 instance.installed = true;
                 instanceManager.save();
-                Platform.runLater(() -> instanceList.refresh());
+                SwingUtilities.invokeLater(() -> instanceList.repaint());
 
                 log("Launching Minecraft in separate window…");
-                setStatus("Running " + instance.name);
+                SwingUtilities.invokeLater(() -> setStatus("Running " + instance.name));
 
                 GameLauncher launcher = new GameLauncher();
                 Process process = launcher.launch(instance, gameDir, nativesDir, resolved, account, this::log);
                 this.activeProcess = process;
 
-                Platform.runLater(() -> {
-                    killButton.setDisable(false);
+                SwingUtilities.invokeLater(() -> {
+                    killButton.setEnabled(true);
                     com.launcher.model.LauncherSettings cs = com.launcher.manager.SettingsManager.getInstance().getSettings();
-                    if (primaryStage != null && cs.minimizeOnLaunch) {
-                        primaryStage.setIconified(true);
+                    if (cs.minimizeOnLaunch) {
+                        setExtendedState(JFrame.ICONIFIED);
                     }
                     if (com.launcher.manager.SettingsManager.getInstance().getSettings().closeAfterLaunch) {
-                        Platform.exit();
+                        System.exit(0);
                     }
                 });
                 System.gc();
@@ -2662,323 +1947,89 @@ public class Main extends Application {
                             instance.lastServerConnectedAt = System.currentTimeMillis();
                             instanceManager.save();
                             com.launcher.manager.DiscordRpcManager.getInstance().updatePlayingServer(instance, resolved.id, serverIp);
-                            Platform.runLater(this::refreshServerSection);
                         }
                     }
                 }
                 int exit = process.waitFor();
                 log("Minecraft exited with code " + exit);
-                setStatus(exit == 0 ? "Game closed normally." : "Game exited (code " + exit + ")");
+                SwingUtilities.invokeLater(() -> setStatus(exit == 0 ? "Game closed normally." : "Game exited (code " + exit + ")"));
                 com.launcher.manager.DiscordRpcManager.getInstance().updateIdle();
-                Platform.runLater(this::refreshServerSection);
 
             } catch (Exception ex) {
                 log("ERROR: " + ex.getMessage());
-                setStatus("Launch failed — see console.");
+                SwingUtilities.invokeLater(() -> setStatus("Launch failed — see console."));
             } finally {
                 this.activeProcess = null;
-                Platform.runLater(() -> {
-                    playButton.setDisable(false);
-                    killButton.setDisable(true);
-                    if (primaryStage != null) {
-                        primaryStage.setIconified(false);
-                        primaryStage.toFront();
-                    }
+                SwingUtilities.invokeLater(() -> {
+                    playButton.setEnabled(true);
+                    killButton.setEnabled(false);
+                    setExtendedState(JFrame.NORMAL);
+                    toFront();
                 });
                 System.gc();
             }
         }, "launch-thread").start();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  THEME
-    // ══════════════════════════════════════════════════════════════════════════
-    private void applyTheme(Scene scene, com.launcher.model.LauncherSettings settings) {
-        if (scene == null || settings == null) return;
-        scene.getRoot().setStyle(buildMainSceneStyle(settings));
-        if (logArea != null)
-            logArea.setStyle("-fx-control-inner-background:" + safeColor(settings.logBgColor, "#060608") + ";");
-        refreshBackdrop(settings);
-    }
-
-    public static void applyThemeToPane(javafx.scene.layout.Pane pane, com.launcher.model.LauncherSettings settings) {
-        if (pane == null || settings == null) return;
-        pane.setStyle(buildThemeStyle(settings));
-    }
-
-    private static String buildThemeStyle(com.launcher.model.LauncherSettings settings) {
-        String accent   = safeColor(settings.accentColor, "#10b981");
-        String hover    = lighten(accent);
-        String dim      = hexToRgba(accent, 0.15);
-        String logBg    = safeColor(settings.logBgColor,   "#060608");
-        String panel    = safeColor(settings.panelBgColor, "#13131a");
-        String text     = safeColor(settings.textColor,    "#e2e2ea");
-        String bg       = safeColor(settings.bgColor,      "#0a0a0f");
-        String font     = (settings.fontFamily == null || settings.fontFamily.isBlank()) ? "Inter" : settings.fontFamily.replace("\"","");
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("-fx-accent-color:").append(accent).append(";");
-        sb.append("-fx-accent-hover:").append(hover).append(";");
-        sb.append("-fx-accent-dim:").append(dim).append(";");
-        sb.append("-fx-log-bg-color:").append(logBg).append(";");
-        sb.append("-fx-panel-background:").append(panel).append(";");
-        sb.append("-fx-surface:").append(panel).append(";");
-        sb.append("-fx-text-color:").append(text).append(";");
-        sb.append("-fx-font-name:\"").append(font).append("\";");
-
-        java.io.File imgFile = (settings.backgroundImagePath != null && !settings.backgroundImagePath.isBlank())
-                ? new java.io.File(settings.backgroundImagePath) : null;
-
-        if (settings.useBackgroundImage && imgFile != null && imgFile.isFile()) {
-            sb.append("-fx-app-background:").append(bg).append(";");
-            sb.append("-fx-background-color:").append(bg).append(";");
-            sb.append("-fx-background-image:url('").append(imgFile.toURI()).append("');");
-            sb.append("-fx-background-size:cover;");
-            sb.append("-fx-background-position:center center;");
-            sb.append("-fx-background-repeat:no-repeat;");
-        } else {
-            sb.append("-fx-app-background:").append(bg).append(";");
-            sb.append("-fx-background-color:").append(bg).append(";");
-        }
-        return sb.toString();
-    }
-
-    /**
-     * Builds the style applied to the main window's root only (never to dialogs).
-     * When the transparent/blur effect is enabled, panels become translucent and
-     * the root's own background is cleared so the {@link #backdropLayer} — which
-     * paints the real background and, optionally, a blurred backdrop — shows through.
-     */
-    private static String buildMainSceneStyle(com.launcher.model.LauncherSettings settings) {
-        String base = buildThemeStyle(settings);
-        if (!settings.enableBlurEffect) return base;
-
-        String panel = safeColor(settings.panelBgColor, "#13131a");
-        double alpha = blurAlpha(settings);
-        String translucentPanel = hexToRgba(panel, alpha);
-
-        StringBuilder sb = new StringBuilder(base);
-        sb.append("-fx-panel-background:").append(translucentPanel).append(";");
-        sb.append("-fx-surface:").append(translucentPanel).append(";");
-        sb.append("-fx-app-background:transparent;");
-        sb.append("-fx-background-color:transparent;");
-        sb.append("-fx-background-image:none;");
-        return sb.toString();
-    }
-
-    /** Clamps blurStrength to a sane 1–40 range. */
-    private static int clampBlurStrength(com.launcher.model.LauncherSettings settings) {
-        int s = settings.blurStrength <= 0 ? 10 : settings.blurStrength;
-        return Math.max(1, Math.min(40, s));
-    }
-
-    /** Maps blur strength to a panel opacity: higher strength = more transparent. */
     private static double blurAlpha(com.launcher.model.LauncherSettings settings) {
-        int strength = clampBlurStrength(settings);
-        return Math.max(0.30, 1.0 - (strength / 40.0) * 0.6);
+        int s = settings.blurStrength <= 0 ? 10 : settings.blurStrength;
+        s = Math.min(40, Math.max(1, s));
+        return Math.max(0.30, 1.0 - (s / 40.0) * 0.6);
     }
 
-    /**
-     * (Re)builds the backdrop layer that sits behind the whole UI: a flat fill
-     * (or the user's chosen background image), plus — when the transparent/blur
-     * effect is on — either a blurred version of that image, or a few soft,
-     * blurred accent-colored shapes so the glass effect still has something
-     * to blur even without a custom background.
-     */
-    private void refreshBackdrop(com.launcher.model.LauncherSettings settings) {
-        if (backdropLayer == null) return;
-        backdropLayer.getChildren().clear();
-
-        String bg = safeColor(settings.bgColor, "#0a0a0f");
-        boolean blur = settings.enableBlurEffect;
-        int strength = clampBlurStrength(settings);
-
-        Region base = new Region();
-        base.setStyle("-fx-background-color:" + bg + ";");
-        backdropLayer.getChildren().add(base);
-
-        java.io.File imgFile = (settings.backgroundImagePath != null && !settings.backgroundImagePath.isBlank())
-                ? new java.io.File(settings.backgroundImagePath) : null;
-
-        if (settings.useBackgroundImage && imgFile != null && imgFile.isFile()) {
-            Region imgRegion = new Region();
-            imgRegion.setStyle(
-                    "-fx-background-image:url('" + imgFile.toURI() + "');" +
-                    "-fx-background-size:cover;" +
-                    "-fx-background-position:center center;" +
-                    "-fx-background-repeat:no-repeat;");
-            if (blur) imgRegion.setEffect(new javafx.scene.effect.GaussianBlur(strength));
-            backdropLayer.getChildren().add(imgRegion);
-        } else if (blur) {
-            backdropLayer.getChildren().add(buildBlurBlobs(settings, strength));
-        }
-    }
-
-    /** Soft blurred accent-colored shapes used as a backdrop when no background image is set. */
-    private Pane buildBlurBlobs(com.launcher.model.LauncherSettings settings, int strength) {
-        Pane blobs = new Pane();
-        blobs.setMouseTransparent(true);
-        String accent = safeColor(settings.accentColor, "#10b981");
-
-        Circle c1 = new Circle(220);
-        Circle c2 = new Circle(260);
-        Circle c3 = new Circle(160);
-        try { c1.setFill(Color.web(accent, 0.35)); } catch (Exception ignored) { c1.setFill(Color.web("#10b981", 0.35)); }
-        try { c2.setFill(Color.web(accent, 0.18)); } catch (Exception ignored) { c2.setFill(Color.web("#10b981", 0.18)); }
-        c3.setFill(Color.web("#ffffff", 0.05));
-
-        c1.centerXProperty().bind(blobs.widthProperty().multiply(0.15));
-        c1.centerYProperty().bind(blobs.heightProperty().multiply(0.18));
-        c2.centerXProperty().bind(blobs.widthProperty().multiply(0.85));
-        c2.centerYProperty().bind(blobs.heightProperty().multiply(0.82));
-        c3.centerXProperty().bind(blobs.widthProperty().multiply(0.55));
-        c3.centerYProperty().bind(blobs.heightProperty().multiply(0.35));
-
-        blobs.getChildren().addAll(c1, c2, c3);
-        blobs.setEffect(new javafx.scene.effect.GaussianBlur(Math.min(63, strength * 2.0)));
-        return blobs;
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  HELPERS
-    // ══════════════════════════════════════════════════════════════════════════
-    private void refreshAccounts() {
-        accountBox.getItems().setAll(accountManager.getAccounts());
-        accountManager.getActiveAccount().ifPresent(accountBox::setValue);
-    }
-
-    private void refreshInstances() {
-        boolean showHidden = com.launcher.manager.SettingsManager.getInstance().getSettings().showHiddenInstances;
-        var filtered = instanceManager.getInstances().stream()
-                .filter(i -> showHidden || !i.hidden).toList();
-        instanceList.getItems().setAll(filtered);
-        refreshDiscoverInstances();
-    }
-
-    /**
-     * Rebuilds the "Connected Server" panel in Settings: which instance is selected,
-     * its last-known server address, whether that server is private, and the chip
-     * list of every globally-private server address.
-     */
-    private void refreshServerSection() {
-        if (serverInstanceLabel == null) return; // Settings tab not built yet
-
-        com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
-        Instance sel = instanceList != null ? instanceList.getSelectionModel().getSelectedItem() : null;
-
-        if (sel == null) {
-            serverInstanceLabel.setText("No instance selected.");
-            serverIpLabel.setText("Server: —");
-            serverPrivacyBadge.setText("");
-            serverPrivacyBadge.setVisible(false);
-            togglePrivateBtn.setDisable(true);
-            togglePrivateBtn.setText("🔒  Private This Server");
+    private void applyTheme() {
+        com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        Color bg = hexToColor(settings.bgColor, new Color(10, 10, 15));
+        
+        if (settings.enableBlurEffect) {
+            double alpha = blurAlpha(settings);
+            Color translucentBg = new Color(bg.getRed(), bg.getGreen(), bg.getBlue(), (int) (alpha * 255));
+            getContentPane().setBackground(translucentBg);
+            
+            // Set window opacity for the decorated frame if supported
+            try {
+                setOpacity((float) Math.min(1.0f, Math.max(0.60f, alpha)));
+            } catch (Exception ignored) {}
         } else {
-            serverInstanceLabel.setText("Instance: " + sel.name);
-            String ip = sel.lastServerIp;
-            if (ip == null || ip.isBlank()) {
-                serverIpLabel.setText("Server: not connected to multiplayer yet");
-                serverPrivacyBadge.setVisible(false);
-                togglePrivateBtn.setDisable(true);
-                togglePrivateBtn.setText("🔒  Private This Server");
-            } else {
-                boolean isPrivate = s.isServerPrivate(ip);
-                serverIpLabel.setText("Server: " + ip);
-                serverPrivacyBadge.setVisible(true);
-                serverPrivacyBadge.setText(isPrivate ? "Private" : "Public");
-                serverPrivacyBadge.getStyleClass().removeAll("mod-status-uptodate", "mod-status-unknown");
-                serverPrivacyBadge.getStyleClass().add(isPrivate ? "mod-status-uptodate" : "mod-status-unknown");
-                togglePrivateBtn.setDisable(false);
-                togglePrivateBtn.setText(isPrivate ? "🔓  Unprivate This Server" : "🔒  Private This Server");
-            }
+            getContentPane().setBackground(bg);
+            try {
+                setOpacity(1.0f);
+            } catch (Exception ignored) {}
         }
-
-        if (privateIpsChips != null) {
-            privateIpsChips.getChildren().clear();
-            var list = s.privateServerList();
-            if (list.isEmpty()) {
-                Label none = new Label("No private servers yet.");
-                none.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-muted;");
-                privateIpsChips.getChildren().add(none);
-            } else {
-                for (String ip : list) {
-                    privateIpsChips.getChildren().add(buildPrivateIpChip(ip, s));
-                }
-            }
-        }
-
-        refreshInstanceServersMenu();
+        
+        // Ensure child components are non-opaque if transparent is on, so background shows through
+        setComponentTranslucent(getContentPane(), settings.enableBlurEffect);
+        repaint();
     }
 
-    /**
-     * Rebuilds the "Servers found in instances" menu by reading every non-hidden
-     * instance's servers.dat file directly (basic NBT parse — see ServerListReader).
-     * Runs the file reads off the FX thread so a slow/odd disk never freezes the UI.
-     */
-    private void refreshInstanceServersMenu() {
-        if (instanceServersBox == null) return;
-        InstanceServerOption prevSelection = instanceServersBox.getValue();
-
-        Thread t = new Thread(() -> {
-            java.util.List<InstanceServerOption> options = new java.util.ArrayList<>();
-            for (Instance inst : instanceManager.getInstances()) {
-                if (inst.hidden) continue;
-                try {
-                    Path gameDir = instanceManager.resolveGameDir(inst);
-                    for (com.launcher.minecraft.ServerListReader.ServerEntry entry : com.launcher.minecraft.ServerListReader.readServers(gameDir)) {
-                        options.add(new InstanceServerOption(inst, entry));
-                    }
-                } catch (Exception ignored) {
-                    // Instance directory missing / unreadable servers.dat — just skip it.
-                }
+    private void setComponentTranslucent(Component comp, boolean transparent) {
+        if (comp instanceof JPanel panel) {
+            // Let text fields, lists, buttons keep their opacity for readability
+            if (panel.getClass() == JPanel.class || panel.getLayout() instanceof BoxLayout || panel.getLayout() instanceof GridBagLayout || panel.getLayout() instanceof BorderLayout) {
+                panel.setOpaque(!transparent);
             }
-            Platform.runLater(() -> {
-                instanceServersBox.getItems().setAll(options);
-                if (prevSelection != null) {
-                    for (InstanceServerOption opt : options) {
-                        if (opt.instance().id.equals(prevSelection.instance().id) && opt.entry().ip.equals(prevSelection.entry().ip)) {
-                            instanceServersBox.setValue(opt);
-                            break;
-                        }
-                    }
-                }
-                instanceServersBox.setPromptText(options.isEmpty()
-                        ? "No saved servers found yet — join a server first" : "Select a saved server…");
-            });
-        }, "instance-servers-scan");
-        t.setDaemon(true);
-        t.start();
+        } else if (comp instanceof JScrollPane scroll) {
+            scroll.setOpaque(!transparent);
+            scroll.getViewport().setOpaque(!transparent);
+        } else if (comp instanceof JTabbedPane tab) {
+            tab.setOpaque(!transparent);
+        }
+        if (comp instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                setComponentTranslucent(child, transparent);
+            }
+        }
     }
 
-    /** Builds a small removable "chip" for one entry in the private-server list. */
-    private HBox buildPrivateIpChip(String ip, com.launcher.model.LauncherSettings s) {
-        Label ipLabel = new Label(ip);
-        ipLabel.setStyle("-fx-font-size:11px; -fx-text-fill:-fx-text-color;");
-
-        Button removeBtn = new Button("✕");
-        removeBtn.setStyle("-fx-padding:1px 6px; -fx-font-size:10px;");
-        removeBtn.setTooltip(new Tooltip("Remove from private servers"));
-        removeBtn.setOnAction(e -> {
-            s.removePrivateServer(ip);
-            com.launcher.manager.SettingsManager.getInstance().save();
-            com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
-            refreshServerSection();
+    private void setStatus(String msg) {
+        SwingUtilities.invokeLater(() -> {
+            if (statusLabel != null) statusLabel.setText(msg);
         });
-
-        HBox chip = new HBox(6, ipLabel, removeBtn);
-        chip.setAlignment(Pos.CENTER_LEFT);
-        chip.getStyleClass().add("tag-version");
-        chip.setStyle(chip.getStyle() + "; -fx-padding:4px 8px; -fx-background-radius:12px;");
-        return chip;
     }
 
     private void log(String msg) {
         logQueue.add(sanitizePrivacy(msg));
         scheduleLogFlush();
-    }
-
-    private void setStatus(String msg) {
-        Platform.runLater(() -> { if (statusLabel != null) statusLabel.setText(msg); });
     }
 
     private void scheduleLogFlush() {
@@ -2989,7 +2040,7 @@ public class Main extends Application {
             lastLogFlushWhenMinimized = now;
         }
         logFlushScheduled = true;
-        Platform.runLater(() -> {
+        SwingUtilities.invokeLater(() -> {
             logFlushScheduled = false;
             StringBuilder sb = new StringBuilder();
             String line; int count = 0;
@@ -2998,10 +2049,12 @@ public class Main extends Application {
                 if (++count > 400) break;
             }
             if (sb.length() > 0) {
-                logArea.appendText(sb.toString());
+                logArea.append(sb.toString());
                 String text = logArea.getText();
-                if (text.length() > 30000) logArea.setText(text.substring(text.length() - 20000));
-                logArea.selectPositionCaret(logArea.getText().length());
+                if (text.length() > 30000) {
+                    logArea.setText(text.substring(text.length() - 20000));
+                }
+                logArea.setCaretPosition(logArea.getText().length());
             }
             if (!logQueue.isEmpty()) scheduleLogFlush();
         });
@@ -3013,70 +2066,21 @@ public class Main extends Application {
         return s.redactPaths ? message.replace(System.getProperty("user.name"), "unnamed_user") : message;
     }
 
-    // ── Static CSS helpers ────────────────────────────────────────────────────
-    private static String safeColor(String v, String fallback) {
-        if (v == null || v.isBlank()) return fallback;
-        try { Color.web(v); return v; } catch (Exception e) { return fallback; }
-    }
-
-    private static String lighten(String hex) {
+    public static Color hexToColor(String hex, Color fallback) {
+        if (hex == null || hex.isBlank()) return fallback;
         try {
-            Color c = Color.web(hex).brighter();
-            return String.format("#%02X%02X%02X",(int)(c.getRed()*255),(int)(c.getGreen()*255),(int)(c.getBlue()*255));
-        } catch (Exception e) { return hex; }
+            return Color.decode(hex);
+        } catch (Exception e) {
+            return fallback;
+        }
     }
 
-    private static String hexToRgba(String hex, double alpha) {
+    public static void main(String[] args) {
         try {
-            Color c = Color.web(hex);
-            return String.format("rgba(%d,%d,%d,%.2f)",(int)(c.getRed()*255),(int)(c.getGreen()*255),(int)(c.getBlue()*255),alpha);
-        } catch (Exception e) { return "rgba(16,185,129,0.15)"; }
+            UIManager.setLookAndFeel(new FlatDarkLaf());
+        } catch (Exception ignored) {}
+        SwingUtilities.invokeLater(() -> {
+            new Main().setVisible(true);
+        });
     }
-
-    private String toHex(Color c) {
-        return String.format("#%02X%02X%02X",(int)(c.getRed()*255),(int)(c.getGreen()*255),(int)(c.getBlue()*255));
-    }
-
-    // ── Settings UI factory helpers ──────────────────────────────────────────
-    private static VBox card() {
-        VBox v = new VBox(10);
-        v.getStyleClass().add("settings-card");
-        return v;
-    }
-
-    private static Label sectionTitle(String text) {
-        Label l = new Label(text);
-        l.getStyleClass().add("section-title");
-        return l;
-    }
-
-    private static Label settingLabel(String text) {
-        Label l = new Label(text);
-        l.setStyle("-fx-text-fill:-fx-text-color; -fx-font-size:12px; -fx-min-width:170px;");
-        return l;
-    }
-
-    private static GridPane settingsGrid() {
-        GridPane g = new GridPane();
-        g.setHgap(14); g.setVgap(10);
-        ColumnConstraints c0 = new ColumnConstraints(); c0.setMinWidth(170);
-        ColumnConstraints c1 = new ColumnConstraints(); c1.setHgrow(Priority.ALWAYS);
-        g.getColumnConstraints().addAll(c0, c1);
-        return g;
-    }
-
-    private static CheckBox styledCheckbox(String label, boolean selected) {
-        CheckBox cb = new CheckBox(label);
-        cb.setSelected(selected);
-        cb.setWrapText(true);
-        return cb;
-    }
-
-    private static ColorPicker colorPicker(String hex, String fallback) {
-        ColorPicker cp = new ColorPicker();
-        try { cp.setValue(Color.web(hex)); } catch (Exception e) { cp.setValue(Color.web(fallback)); }
-        return cp;
-    }
-
-    public static void main(String[] args) { launch(args); }
 }

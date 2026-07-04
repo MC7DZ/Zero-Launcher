@@ -151,4 +151,8 @@ public class InstanceManager {
         }
         save(); // Save any newly added instances
     }
+
+    public Path resolveNativesDir(Instance instance) {
+        return resolveGameDir(instance).resolve("natives");
+    }
 }
