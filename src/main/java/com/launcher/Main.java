@@ -55,6 +55,7 @@ public class Main extends JFrame {
     private JTextArea logArea;
     private JButton playButton;
     private JButton killButton;
+    private JButton killInstanceButton;
     private Process activeProcess;
 
     // ─── Status bar ───────────────────────────────────────────────────────────
@@ -85,6 +86,8 @@ public class Main extends JFrame {
 
     private final Map<String, ImageIcon> modIconCache = new ConcurrentHashMap<>();
     private ImageIcon defaultModIcon;
+    private ImageIcon defaultModIcon24;
+    private ImageIcon defaultModIcon48;
 
     // ─── Discover tab (Modrinth browser) ───────────────────────────────────────
     private JComboBox<Instance> discoverInstanceBox;
@@ -103,7 +106,7 @@ public class Main extends JFrame {
     private JButton discoverRefreshBtn;
     private final ModUpdateService discoverModService = new ModUpdateService();
 
-    private record VersionOption(String label, String url, String fileName) {
+    private record VersionOption(String label, String url, String fileName, boolean matchesTarget, boolean failed) {
         @Override public String toString() { return label; }
     }
 
@@ -123,6 +126,8 @@ public class Main extends JFrame {
     }
 
     private JTabbedPane mainTabPane;
+    private com.launcher.ui.CustomTitleBar customTitleBar;
+    private static final int RESIZE_MARGIN = 5;
 
     public Main() {
         setTitle("Zero Launcher");
@@ -132,28 +137,41 @@ public class Main extends JFrame {
         com.launcher.model.LauncherSettings initSettings = com.launcher.manager.SettingsManager.getInstance().getSettings();
         int initW = (initSettings.launcherWidth >= 820) ? initSettings.launcherWidth : 960;
         int initH = (initSettings.launcherHeight >= 560) ? initSettings.launcherHeight : 660;
+
+        // Must be set before the frame becomes displayable, so this has to
+        // happen here rather than later on in the constructor.
+        setUndecorated(initSettings.useCustomTitleBar);
+        if (initSettings.useCustomTitleBar) {
+            setMaximizedBounds(GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds());
+        }
+
         setSize(initW, initH);
         setLocationRelativeTo(null);
 
         // Load default window icon
+        Image windowIcon = null;
         try {
             URL iconUrl = getClass().getResource("/com/launcher/ZeroLauncherIcon.png");
             if (iconUrl != null) {
-                setIconImage(new ImageIcon(iconUrl).getImage());
+                windowIcon = new ImageIcon(iconUrl).getImage();
+                setIconImage(windowIcon);
             }
         } catch (Exception ignored) {}
 
-        // Load default mod icon
+        // Load default mod icon (scaled down — the source asset is 1024x1024 and must
+        // never be assigned to a label at full size, or it renders as a giant image).
         try {
             InputStream is = getClass().getResourceAsStream("/com/launcher/minecraft_image.png");
             if (is != null) {
-                defaultModIcon = new ImageIcon(ImageIO.read(is));
+                Image raw = ImageIO.read(is);
+                defaultModIcon = new ImageIcon(raw.getScaledInstance(32, 32, Image.SCALE_SMOOTH));
+                defaultModIcon24 = new ImageIcon(raw.getScaledInstance(24, 24, Image.SCALE_SMOOTH));
+                defaultModIcon48 = new ImageIcon(raw.getScaledInstance(48, 48, Image.SCALE_SMOOTH));
             }
         } catch (Exception ignored) {}
 
         // Setup Main Layout
         JPanel rootPanel = new JPanel(new BorderLayout());
-        setContentPane(rootPanel);
 
         rootPanel.add(buildTopBar(), BorderLayout.NORTH);
 
@@ -165,6 +183,25 @@ public class Main extends JFrame {
         rootPanel.add(mainTabPane, BorderLayout.CENTER);
 
         rootPanel.add(buildLogArea(), BorderLayout.SOUTH);
+
+        if (initSettings.useCustomTitleBar) {
+            customTitleBar = new com.launcher.ui.CustomTitleBar(this, "Zero Launcher", windowIcon);
+
+            JPanel decorated = new JPanel(new BorderLayout());
+            decorated.add(customTitleBar, BorderLayout.NORTH);
+            decorated.add(rootPanel, BorderLayout.CENTER);
+
+            // A thin margin panel around everything is what gives an undecorated
+            // frame its resize handles back — see WindowResizer's class comment.
+            JPanel marginPanel = new JPanel(new BorderLayout());
+            marginPanel.setBorder(new EmptyBorder(RESIZE_MARGIN, RESIZE_MARGIN, RESIZE_MARGIN, RESIZE_MARGIN));
+            marginPanel.add(decorated, BorderLayout.CENTER);
+
+            setContentPane(marginPanel);
+            new com.launcher.ui.WindowResizer(this, marginPanel, RESIZE_MARGIN);
+        } else {
+            setContentPane(rootPanel);
+        }
 
         // Toast-notification overlay
         notifications = new NotificationCenter(this);
@@ -204,8 +241,12 @@ public class Main extends JFrame {
         // Initial refreshes
         refreshAccounts();
         refreshInstances();
+        if (!instanceListModel.isEmpty() && instanceList.getSelectedValue() == null) {
+            instanceList.setSelectedIndex(0);
+        }
         if (instanceList.getSelectedValue() != null) {
             updateDawnStatus(instanceList.getSelectedValue());
+            refreshModsView(instanceList.getSelectedValue());
         }
 
         // Auto-refresh Discover tab with trending content
@@ -373,8 +414,33 @@ public class Main extends JFrame {
         });
 
         JScrollPane listScroll = new JScrollPane(instanceList);
-        listScroll.setPreferredSize(new Dimension(240, 0));
-        p.add(listScroll, BorderLayout.WEST);
+        listScroll.setBorder(BorderFactory.createEmptyBorder());
+
+        // West panel: header with "New Instance" action + the list below it
+        JPanel westPanel = new JPanel(new BorderLayout(0, 8));
+        westPanel.setPreferredSize(new Dimension(240, 0));
+        westPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        JButton newInstanceBtn = new JButton("+  New Instance");
+        newInstanceBtn.setFont(new Font("SansSerif", Font.BOLD, 13));
+        newInstanceBtn.setForeground(Color.WHITE);
+        newInstanceBtn.setBackground(new Color(16, 185, 129));
+        newInstanceBtn.setFocusPainted(false);
+        newInstanceBtn.setBorder(new EmptyBorder(10, 10, 10, 10));
+        newInstanceBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+        newInstanceBtn.addActionListener(e -> {
+            Optional<Instance> res = CreateInstanceDialog.show(this);
+            res.ifPresent(i -> {
+                instanceManager.add(i);
+                instanceManager.save();
+                refreshInstances();
+                notifications.success("Instance created", "Created: " + i.name);
+            });
+        });
+        westPanel.add(newInstanceBtn, BorderLayout.NORTH);
+        westPanel.add(listScroll, BorderLayout.CENTER);
+
+        p.add(westPanel, BorderLayout.WEST);
 
         // Center Panel: Selected Instance Info
         JPanel detailsPanel = new JPanel(new BorderLayout());
@@ -408,24 +474,47 @@ public class Main extends JFrame {
 
         detailsPanel.add(centerInfo, BorderLayout.CENTER);
 
-        // Buttons Panel at the bottom of detail panel
-        JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        // Buttons Panel at the bottom of detail panel — primary actions on the
+        // left, destructive/secondary actions grouped on the right.
+        JPanel actionRow = new JPanel(new BorderLayout());
+
+        JPanel primaryActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        JPanel destructiveActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+        actionRow.add(primaryActions, BorderLayout.WEST);
+        actionRow.add(destructiveActions, BorderLayout.EAST);
+
         playButton = new JButton("PLAY");
-        playButton.setPreferredSize(new Dimension(120, 36));
+        playButton.setPreferredSize(new Dimension(130, 36));
         playButton.setFont(new Font("SansSerif", Font.BOLD, 14));
-        actionRow.add(playButton);
-
-        JButton editBtn = new JButton("Edit");
-        editBtn.setPreferredSize(new Dimension(80, 36));
-        actionRow.add(editBtn);
-
-        JButton delBtn = new JButton("Delete");
-        delBtn.setPreferredSize(new Dimension(80, 36));
-        actionRow.add(delBtn);
+        playButton.setBackground(new Color(16, 185, 129));
+        playButton.setForeground(Color.WHITE);
+        playButton.setFocusPainted(false);
+        primaryActions.add(playButton);
 
         JButton manageModsBtn = new JButton("Manage Mods");
         manageModsBtn.setPreferredSize(new Dimension(130, 36));
-        actionRow.add(manageModsBtn);
+        primaryActions.add(manageModsBtn);
+
+        JButton editBtn = new JButton("Edit");
+        editBtn.setPreferredSize(new Dimension(80, 36));
+        primaryActions.add(editBtn);
+
+        JButton killInstanceBtn = new JButton("Kill Instance");
+        killInstanceBtn.setPreferredSize(new Dimension(110, 36));
+        killInstanceBtn.setBackground(new Color(245, 158, 11));
+        killInstanceBtn.setForeground(Color.WHITE);
+        killInstanceBtn.setFocusPainted(false);
+        killInstanceBtn.setEnabled(false);
+        killInstanceBtn.addActionListener(e -> killActiveGame());
+        destructiveActions.add(killInstanceBtn);
+        this.killInstanceButton = killInstanceBtn;
+
+        JButton delBtn = new JButton("Delete");
+        delBtn.setPreferredSize(new Dimension(80, 36));
+        delBtn.setBackground(new Color(239, 68, 68));
+        delBtn.setForeground(Color.WHITE);
+        delBtn.setFocusPainted(false);
+        destructiveActions.add(delBtn);
 
         detailsPanel.add(actionRow, BorderLayout.SOUTH);
         p.add(detailsPanel, BorderLayout.CENTER);
@@ -440,29 +529,15 @@ public class Main extends JFrame {
                         sel.modLoader,
                         sel.modLoaderVersion != null ? sel.modLoaderVersion : "None",
                         sel.ramMb,
-                        sel.customDirectoryPath != null ? sel.customDirectoryPath : "Standard");
+                        escapeHtml(sanitizePrivacy(sel.customDirectoryPath != null ? sel.customDirectoryPath : "Standard")));
                 infoLbl.setText(details);
                 updateDawnStatus(sel);
+                if (logArea != null) log("Selected instance \"" + sel.name + "\" (" + sel.mcVersion + ", " + sel.modLoader + ").");
             } else {
                 nameLbl.setText("No instance selected");
                 infoLbl.setText("");
             }
         });
-
-        // Add instance button at bottom of list
-        JPanel listButtons = new JPanel(new GridLayout(1, 2));
-        JButton addInstBtn = new JButton("+ New Instance");
-        addInstBtn.addActionListener(e -> {
-            Optional<Instance> res = CreateInstanceDialog.show(this);
-            res.ifPresent(i -> {
-                instanceManager.add(i);
-                instanceManager.save();
-                refreshInstances();
-                notifications.success("Instance created", "Created: " + i.name);
-            });
-        });
-        listButtons.add(addInstBtn);
-        p.add(listButtons, BorderLayout.SOUTH);
 
         // Action Handlers
         playButton.addActionListener(e -> {
@@ -884,18 +959,25 @@ public class Main extends JFrame {
     private void refreshModsView(Instance inst) {
         modsHeaderLabel.setText("Mods — " + inst.name);
         modsCountLabel.setText("Scanning…");
+        log("Scanning mods for \"" + inst.name + "\"…");
+        long startedAt = System.currentTimeMillis();
         new Thread(() -> {
             try {
                 ModUpdateService service = new ModUpdateService();
                 Path modsDir = instanceManager.resolveGameDir(inst).resolve("mods");
                 List<ModEntry> list = service.scanModsDir(modsDir);
+                log("Found " + list.size() + " mod jar(s) in " + modsDir + " (hashed in "
+                        + (System.currentTimeMillis() - startedAt) + " ms).");
                 // Auto-identify mods in background
                 service.identifyMods(list, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                long identified = list.stream().filter(m -> m.modrinthId != null).count();
+                log("Identified " + identified + " of " + list.size() + " mod(s) on Modrinth.");
                 SwingUtilities.invokeLater(() -> {
                     currentModEntries = list;
                     filterMods();
                 });
             } catch (Exception ex) {
+                log("Mod scan failed: " + ex.getMessage());
                 SwingUtilities.invokeLater(() -> notifications.error("Mod scan failed", ex.getMessage()));
             }
         }, "mod-scan").start();
@@ -917,68 +999,120 @@ public class Main extends JFrame {
     // ══════════════════════════════════════════════════════════════════════════
     //  DISCOVER TAB (Modrinth)
     // ══════════════════════════════════════════════════════════════════════════
+    // Discover tab palette — a slightly bluer, more saturated dark theme than the
+    // rest of the app so the tab feels like a distinct "store" surface.
+    private static final Color DISC_BG        = new Color(19, 20, 28);
+    private static final Color DISC_SURFACE   = new Color(27, 28, 38);
+    private static final Color DISC_SURFACE_HOVER = new Color(34, 35, 48);
+    private static final Color DISC_BORDER    = new Color(50, 51, 66);
+    private static final Color DISC_BORDER_HOVER = new Color(124, 109, 255);
+    private static final Color DISC_ACCENT    = new Color(124, 109, 255);
+    private static final Color DISC_TEXT      = new Color(238, 238, 244);
+    private static final Color DISC_TEXT_DIM  = new Color(150, 150, 168);
+
     private JPanel buildDiscoverArea() {
-        JPanel p = new JPanel(new BorderLayout(0, 8));
-        p.setBorder(new EmptyBorder(12, 14, 10, 14));
+        JPanel p = new JPanel(new BorderLayout(0, 12));
+        p.setBackground(DISC_BG);
+        p.setBorder(new EmptyBorder(18, 20, 16, 20));
 
         // ── Header row ──────────────────────────────────────────────────────
         JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
         JPanel headerLeft = new JPanel();
+        headerLeft.setOpaque(false);
         headerLeft.setLayout(new BoxLayout(headerLeft, BoxLayout.Y_AXIS));
         JLabel titleLbl = new JLabel("Discover");
-        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 20));
-        titleLbl.setForeground(Color.WHITE);
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 26));
+        titleLbl.setForeground(DISC_TEXT);
         JLabel subtitleLbl = new JLabel("Browse mods & resource packs on Modrinth");
-        subtitleLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        subtitleLbl.setForeground(new Color(160, 160, 175));
+        subtitleLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        subtitleLbl.setForeground(DISC_TEXT_DIM);
+        subtitleLbl.setBorder(new EmptyBorder(3, 1, 0, 0));
         headerLeft.add(titleLbl);
         headerLeft.add(subtitleLbl);
         header.add(headerLeft, BorderLayout.WEST);
 
-        // ── Filter bar ──────────────────────────────────────────────────────
-        JPanel filters = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        // ── Filter toolbar (rounded surface) ────────────────────────────────
+        RoundedPanel filters = new RoundedPanel(16, DISC_SURFACE, DISC_BORDER);
+        filters.setLayout(new FlowLayout(FlowLayout.LEFT, 10, 10));
+        filters.setBorder(new EmptyBorder(4, 12, 4, 12));
 
-        filters.add(new JLabel("Target:"));
+        JLabel targetLbl = new JLabel("Target");
+        targetLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        targetLbl.setForeground(DISC_TEXT_DIM);
+        filters.add(targetLbl);
+
         discoverInstanceBox = new JComboBox<>();
-        discoverInstanceBox.setPreferredSize(new Dimension(180, 30));
+        discoverInstanceBox.setPreferredSize(new Dimension(170, 32));
+        discoverInstanceBox.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Instance inst) {
+                    setText(inst.name);
+                } else if (value == null) {
+                    setText("No instances");
+                }
+                return this;
+            }
+        });
         filters.add(discoverInstanceBox);
+
+        filters.add(Box.createHorizontalStrut(4));
 
         // Segmented toggle for Mods / Resource Packs
         discoverModsToggle = new JToggleButton("Mods", true);
         discoverPacksToggle = new JToggleButton("Resource Packs", false);
-        discoverModsToggle.setFont(new Font("SansSerif", Font.BOLD, 11));
-        discoverPacksToggle.setFont(new Font("SansSerif", Font.BOLD, 11));
-        discoverModsToggle.setFocusPainted(false);
-        discoverPacksToggle.setFocusPainted(false);
+        styleDiscoverSegment(discoverModsToggle);
+        styleDiscoverSegment(discoverPacksToggle);
         ButtonGroup discoverGroup = new ButtonGroup();
         discoverGroup.add(discoverModsToggle);
         discoverGroup.add(discoverPacksToggle);
-        filters.add(discoverModsToggle);
-        filters.add(discoverPacksToggle);
+        JPanel segment = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        segment.setOpaque(false);
+        segment.add(discoverModsToggle);
+        segment.add(discoverPacksToggle);
+        filters.add(segment);
 
         discoverSearchField = new JTextField();
-        discoverSearchField.putClientProperty("JTextField.placeholderText", "Search Modrinth...");
-        discoverSearchField.setPreferredSize(new Dimension(220, 30));
+        discoverSearchField.putClientProperty("JTextField.placeholderText", "Search on Modrinth...");
+        discoverSearchField.setPreferredSize(new Dimension(260, 32));
+        discoverSearchField.setBackground(new Color(38, 39, 52));
+        discoverSearchField.setForeground(DISC_TEXT);
+        discoverSearchField.setCaretColor(DISC_TEXT);
+        discoverSearchField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(DISC_BORDER, 1, true),
+                new EmptyBorder(4, 10, 4, 10)));
         filters.add(discoverSearchField);
 
         discoverSearchBtn = new JButton("Search");
+        styleDiscoverPrimaryButton(discoverSearchBtn);
         filters.add(discoverSearchBtn);
 
+        // Sits right next to Search, at the same y-position, and is always visible
+        // (not just when results happen to be empty).
         discoverRefreshBtn = new JButton("↻ Refresh");
-        discoverRefreshBtn.setVisible(false); // shown only when results are empty
+        styleDiscoverGhostButton(discoverRefreshBtn);
         filters.add(discoverRefreshBtn);
 
-        JPanel topSection = new JPanel(new BorderLayout());
+        JPanel topSection = new JPanel(new BorderLayout(0, 14));
+        topSection.setOpaque(false);
         topSection.add(header, BorderLayout.NORTH);
         topSection.add(filters, BorderLayout.SOUTH);
         p.add(topSection, BorderLayout.NORTH);
 
         // ── Results pane (WrapLayout inside JScrollPane) ────────────────────
-        discoverResultsPane = new JPanel(new WrapLayout(FlowLayout.LEFT, 10, 10));
+        // Must be built via wrapScrollablePanel (Scrollable + tracks viewport
+        // width) or the viewport never constrains its width and every card
+        // gets crammed onto one clipped row instead of wrapping.
+        discoverResultsPane = WrapLayout.wrapScrollablePanel(FlowLayout.CENTER, 14, 14);
+        discoverResultsPane.setBackground(DISC_BG);
         JScrollPane scroll = new JScrollPane(discoverResultsPane);
         scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
+        scroll.getViewport().setBackground(DISC_BG);
+        scroll.setBackground(DISC_BG);
         scroll.setBorder(null);
         // Re-layout on resize so WrapLayout recalculates row heights
         scroll.addComponentListener(new ComponentAdapter() {
@@ -988,18 +1122,36 @@ public class Main extends JFrame {
         });
         p.add(scroll, BorderLayout.CENTER);
 
+        // Keep already-loaded results visible when the user switches away to another
+        // tab and back — force a re-validate/repaint whenever this panel becomes
+        // showing again instead of relying on results still being freshly loaded.
+        p.addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0 && p.isShowing()) {
+                discoverResultsPane.revalidate();
+                discoverResultsPane.repaint();
+                scroll.revalidate();
+                scroll.repaint();
+            }
+        });
+
         // ── Bottom pagination row ───────────────────────────────────────────
         JPanel bottomRow = new JPanel(new BorderLayout());
+        bottomRow.setOpaque(false);
+        bottomRow.setBorder(new EmptyBorder(6, 2, 0, 2));
         discoverStatusLabel = new JLabel("Enter a query to discover mods.");
         discoverStatusLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        discoverStatusLabel.setForeground(new Color(160, 160, 175));
+        discoverStatusLabel.setForeground(DISC_TEXT_DIM);
         bottomRow.add(discoverStatusLabel, BorderLayout.WEST);
 
-        JPanel pag = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 5));
+        JPanel pag = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        pag.setOpaque(false);
         discoverPrevPageBtn = new JButton("‹ Prev");
         discoverNextPageBtn = new JButton("Next ›");
+        styleDiscoverGhostButton(discoverPrevPageBtn);
+        styleDiscoverGhostButton(discoverNextPageBtn);
         discoverPageLabel = new JLabel("Page 1");
         discoverPageLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        discoverPageLabel.setForeground(DISC_TEXT_DIM);
         discoverPrevPageBtn.setEnabled(false);
         discoverNextPageBtn.setEnabled(false);
         pag.add(discoverPrevPageBtn);
@@ -1041,6 +1193,72 @@ public class Main extends JFrame {
         return p;
     }
 
+    /** Rounded-rect panel used for the Discover tab's "card" surfaces. */
+    private static class RoundedPanel extends JPanel {
+        private final int radius;
+        private Color fill;
+        private Color border;
+        RoundedPanel(int radius, Color fill, Color border) {
+            this.radius = radius;
+            this.fill = fill;
+            this.border = border;
+            setOpaque(false);
+        }
+        void setColors(Color fill, Color border) {
+            this.fill = fill;
+            this.border = border;
+            repaint();
+        }
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(fill);
+            g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, radius, radius);
+            if (border != null) {
+                g2.setColor(border);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, radius, radius);
+            }
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    private void styleDiscoverSegment(JToggleButton btn) {
+        btn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        btn.setFocusPainted(false);
+        btn.setForeground(DISC_TEXT_DIM);
+        btn.setBackground(new Color(38, 39, 52));
+        btn.setBorder(new EmptyBorder(7, 14, 7, 14));
+        btn.addChangeListener(e -> {
+            if (btn.isSelected()) {
+                btn.setForeground(Color.WHITE);
+                btn.setBackground(DISC_ACCENT);
+            } else {
+                btn.setForeground(DISC_TEXT_DIM);
+                btn.setBackground(new Color(38, 39, 52));
+            }
+        });
+    }
+
+    private void styleDiscoverPrimaryButton(JButton btn) {
+        btn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        btn.setFocusPainted(false);
+        btn.setForeground(Color.WHITE);
+        btn.setBackground(DISC_ACCENT);
+        btn.setBorder(new EmptyBorder(7, 18, 7, 18));
+    }
+
+    private void styleDiscoverGhostButton(JButton btn) {
+        btn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        btn.setFocusPainted(false);
+        btn.setForeground(DISC_TEXT);
+        btn.setBackground(new Color(38, 39, 52));
+        btn.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(DISC_BORDER, 1, true),
+                new EmptyBorder(6, 12, 6, 12)));
+    }
+
     private void refreshDiscoverInstances() {
         if (discoverInstanceBox == null) return;
         discoverInstanceBox.removeAllItems();
@@ -1060,7 +1278,7 @@ public class Main extends JFrame {
     }
 
     private JPanel buildDiscoverSkeletonCard() {
-        JPanel card = new JPanel(new BorderLayout(8, 6)) {
+        RoundedPanel card = new RoundedPanel(14, DISC_SURFACE, DISC_BORDER) {
             private float phase = 0f;
             {
                 // Subtle shimmer animation
@@ -1076,40 +1294,38 @@ public class Main extends JFrame {
                 super.paintComponent(g);
                 Graphics2D g2 = (Graphics2D) g.create();
                 int w = getWidth();
+                g2.setClip(new java.awt.geom.RoundRectangle2D.Float(0, 0, w, getHeight(), 14, 14));
                 // Shimmer overlay
                 float shimmerX = (phase - 1f) * w;
                 java.awt.GradientPaint gp = new java.awt.GradientPaint(
                         shimmerX, 0, new Color(255, 255, 255, 0),
-                        shimmerX + w * 0.4f, 0, new Color(255, 255, 255, 12));
+                        shimmerX + w * 0.4f, 0, new Color(255, 255, 255, 14));
                 g2.setPaint(gp);
                 g2.fillRect(0, 0, w, getHeight());
                 g2.dispose();
             }
         };
-        card.setPreferredSize(new Dimension(310, 160));
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(55, 55, 65), 1),
-                new EmptyBorder(10, 10, 10, 10)
-        ));
-        card.setBackground(new Color(30, 30, 40));
+        card.setLayout(new BorderLayout(10, 6));
+        card.setPreferredSize(new Dimension(300, 168));
+        card.setBorder(new EmptyBorder(12, 12, 12, 12));
 
         // Placeholder icon
-        JPanel iconPlaceholder = new JPanel();
+        JPanel iconPlaceholder = new RoundedPanel(10, new Color(45, 46, 60), null);
         iconPlaceholder.setPreferredSize(new Dimension(48, 48));
-        iconPlaceholder.setBackground(new Color(45, 45, 58));
         card.add(iconPlaceholder, BorderLayout.WEST);
 
         // Placeholder text lines
         JPanel textCol = new JPanel();
+        textCol.setOpaque(false);
         textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
-        textCol.setBackground(new Color(30, 30, 40));
         for (int i = 0; i < 3; i++) {
-            JPanel line = new JPanel();
-            line.setMaximumSize(new Dimension(i == 0 ? 160 : (i == 1 ? 200 : 80), 12));
-            line.setPreferredSize(new Dimension(i == 0 ? 160 : (i == 1 ? 200 : 80), 12));
-            line.setBackground(new Color(45, 45, 58));
+            JPanel line = new RoundedPanel(4, new Color(45, 46, 60), null);
+            int w = i == 0 ? 160 : (i == 1 ? 200 : 80);
+            line.setMaximumSize(new Dimension(w, 12));
+            line.setPreferredSize(new Dimension(w, 12));
+            line.setAlignmentX(Component.LEFT_ALIGNMENT);
             textCol.add(line);
-            textCol.add(Box.createVerticalStrut(6));
+            textCol.add(Box.createVerticalStrut(8));
         }
         card.add(textCol, BorderLayout.CENTER);
         return card;
@@ -1157,9 +1373,12 @@ public class Main extends JFrame {
                     discoverResultsPane.repaint();
 
                     updateDiscoverPagination();
-                    discoverStatusLabel.setText("Found " + discoverTotalHits + " result(s).");
+                    // Result counts go to the console/log instead of cluttering the
+                    // Discover UI itself.
+                    log("Discover search \"" + (query.isBlank() ? "(trending)" : query) + "\" — found "
+                            + discoverTotalHits + " result(s).");
+                    discoverStatusLabel.setText(hits.isEmpty() ? "No results found." : " ");
                     discoverSearchBtn.setEnabled(true);
-                    discoverRefreshBtn.setVisible(hits.isEmpty());
                 });
 
             } catch (Exception ex) {
@@ -1167,9 +1386,9 @@ public class Main extends JFrame {
                     discoverResultsPane.removeAll();
                     discoverResultsPane.revalidate();
                     discoverResultsPane.repaint();
-                    discoverStatusLabel.setText("Search failed: " + ex.getMessage());
+                    log("Discover search failed: " + ex.getMessage());
+                    discoverStatusLabel.setText("Search failed. See console for details.");
                     discoverSearchBtn.setEnabled(true);
-                    discoverRefreshBtn.setVisible(true);
                 });
             }
         }, "modrinth-search").start();
@@ -1186,26 +1405,18 @@ public class Main extends JFrame {
 
     // ── Rich Discover Card ──────────────────────────────────────────────────
     private JPanel buildDiscoverCard(JsonObject hit, String projectType, String loader, String gameVersion) {
-        JPanel card = new JPanel(new BorderLayout(8, 6));
-        card.setPreferredSize(new Dimension(310, 175));
-        Border defaultBorder = BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(55, 55, 65), 1),
-                new EmptyBorder(10, 10, 10, 10));
-        Border hoverBorder = BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(80, 80, 100), 1),
-                new EmptyBorder(10, 10, 10, 10));
-        card.setBorder(defaultBorder);
-        card.setBackground(new Color(28, 28, 38));
+        RoundedPanel card = new RoundedPanel(14, DISC_SURFACE, DISC_BORDER);
+        card.setLayout(new BorderLayout(10, 8));
+        card.setPreferredSize(new Dimension(300, 185));
+        card.setBorder(new EmptyBorder(12, 12, 12, 12));
 
         // Hover effect
         card.addMouseListener(new MouseAdapter() {
             @Override public void mouseEntered(MouseEvent e) {
-                card.setBorder(hoverBorder);
-                card.setBackground(new Color(32, 32, 44));
+                card.setColors(DISC_SURFACE_HOVER, DISC_BORDER_HOVER);
             }
             @Override public void mouseExited(MouseEvent e) {
-                card.setBorder(defaultBorder);
-                card.setBackground(new Color(28, 28, 38));
+                card.setColors(DISC_SURFACE, DISC_BORDER);
             }
         });
 
@@ -1252,7 +1463,7 @@ public class Main extends JFrame {
             if (cached != null) {
                 iconLabel.setIcon(cached);
             } else {
-                iconLabel.setIcon(defaultModIcon);
+                iconLabel.setIcon(defaultModIcon48);
                 new Thread(() -> {
                     try {
                         ImageIcon icon = new ImageIcon(new ImageIcon(new URI(fIconUrl).toURL())
@@ -1263,19 +1474,19 @@ public class Main extends JFrame {
                 }, "icon-load").start();
             }
         } else {
-            iconLabel.setIcon(defaultModIcon);
+            iconLabel.setIcon(defaultModIcon48);
         }
         card.add(iconLabel, BorderLayout.WEST);
 
         // ── Center: text info ───────────────────────────────────────────────
         JPanel textCol = new JPanel();
         textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
-        textCol.setBackground(card.getBackground());
+        textCol.setOpaque(false);
 
         // Title
         JLabel titleLbl = new JLabel("<html><b>" + escapeHtml(title) + "</b></html>");
-        titleLbl.setForeground(Color.WHITE);
-        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 13));
+        titleLbl.setForeground(DISC_TEXT);
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 14));
         titleLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
         textCol.add(titleLbl);
 
@@ -1289,7 +1500,7 @@ public class Main extends JFrame {
         if (!meta.isEmpty()) {
             JLabel metaLbl = new JLabel(meta);
             metaLbl.setFont(new Font("SansSerif", Font.PLAIN, 10));
-            metaLbl.setForeground(new Color(140, 140, 155));
+            metaLbl.setForeground(DISC_TEXT_DIM);
             metaLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
             textCol.add(metaLbl);
         }
@@ -1299,38 +1510,40 @@ public class Main extends JFrame {
             JLabel badge;
             if (compatible) {
                 badge = new JLabel("✓ Supports " + gameVersion);
-                badge.setForeground(new Color(80, 200, 120));
+                badge.setForeground(new Color(96, 210, 130));
             } else {
-                badge = new JLabel("⚠ Not your version");
+                badge = new JLabel("⚠ NotSupported " + gameVersion);
                 badge.setForeground(new Color(230, 170, 60));
             }
-            badge.setFont(new Font("SansSerif", Font.PLAIN, 10));
+            badge.setFont(new Font("SansSerif", Font.BOLD, 10));
             badge.setAlignmentX(Component.LEFT_ALIGNMENT);
+            badge.setBorder(new EmptyBorder(3, 0, 0, 0));
             textCol.add(badge);
         }
 
         // Description
-        JLabel descLbl = new JLabel("<html><body style='width: 180px;'>" + escapeHtml(desc) + "</body></html>");
+        JLabel descLbl = new JLabel("<html><body style='width: 175px;'>" + escapeHtml(desc) + "</body></html>");
         descLbl.setFont(new Font("SansSerif", Font.PLAIN, 10));
-        descLbl.setForeground(new Color(170, 170, 180));
+        descLbl.setForeground(DISC_TEXT_DIM);
         descLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
-        textCol.add(Box.createVerticalStrut(2));
+        textCol.add(Box.createVerticalStrut(4));
         textCol.add(descLbl);
 
         card.add(textCol, BorderLayout.CENTER);
 
         // ── Bottom: version picker + download button ────────────────────────
-        JPanel bottomRow = new JPanel(new BorderLayout(6, 0));
-        bottomRow.setBackground(card.getBackground());
+        JPanel bottomRow = new JPanel(new BorderLayout(8, 0));
+        bottomRow.setOpaque(false);
 
         JComboBox<VersionOption> versionPicker = new JComboBox<>();
         versionPicker.setPreferredSize(new Dimension(140, 28));
         versionPicker.setFont(new Font("SansSerif", Font.PLAIN, 10));
-        versionPicker.addItem(new VersionOption("Loading versions…", null, null));
+        versionPicker.addItem(new VersionOption("Loading versions…", null, null, false, false));
         versionPicker.setEnabled(false);
         bottomRow.add(versionPicker, BorderLayout.CENTER);
 
         JButton downloadBtn = new JButton("Download");
+        styleDiscoverPrimaryButton(downloadBtn);
         downloadBtn.setEnabled(false);
         bottomRow.add(downloadBtn, BorderLayout.EAST);
 
@@ -1342,63 +1555,31 @@ public class Main extends JFrame {
         return card;
     }
 
+    private static final int DISCOVER_VERSION_MAX_AUTO_RETRIES = 3;
+
     /** Asynchronously loads version list into a card's dropdown and wires the download button. */
     private void loadDiscoverCardVersions(String projectId, String projectType,
                                            String loader, String gameVersion,
                                            JComboBox<VersionOption> picker,
                                            JButton downloadBtn, String title) {
-        new Thread(() -> {
-            try {
-                JsonArray versions = discoverModService.listVersions(projectId, projectType, loader, gameVersion);
-                List<VersionOption> options = new ArrayList<>();
-                for (var el : versions) {
-                    JsonObject v = el.getAsJsonObject();
-                    String versionNumber = v.has("version_number") ? v.get("version_number").getAsString() : "?";
-                    String versionName = v.has("name") && !v.get("name").isJsonNull() ? v.get("name").getAsString() : versionNumber;
-
-                    // Check game version support for the label
-                    boolean supportsTarget = false;
-                    if (gameVersion != null && v.has("game_versions") && v.get("game_versions").isJsonArray()) {
-                        for (var gv : v.getAsJsonArray("game_versions")) {
-                            if (gameVersion.equals(gv.getAsString())) { supportsTarget = true; break; }
-                        }
-                    }
-
-                    String[] file = ModUpdateService.primaryFileOf(v);
-                    if (file == null) continue;
-
-                    String label = versionNumber;
-                    if (supportsTarget) label += "  ✓";
-                    if (versionName != null && !versionName.equals(versionNumber)) {
-                        // Truncate long names
-                        String displayName = versionName.length() > 25 ? versionName.substring(0, 22) + "…" : versionName;
-                        label += "  (" + displayName + ")";
-                    }
-                    options.add(new VersionOption(label, file[0], file[1]));
-                }
-
-                SwingUtilities.invokeLater(() -> {
-                    picker.removeAllItems();
-                    if (options.isEmpty()) {
-                        picker.addItem(new VersionOption("No versions available", null, null));
-                    } else {
-                        for (VersionOption opt : options) picker.addItem(opt);
-                        picker.setEnabled(true);
-                        downloadBtn.setEnabled(true);
-                    }
-                });
-            } catch (Exception ex) {
-                SwingUtilities.invokeLater(() -> {
-                    picker.removeAllItems();
-                    picker.addItem(new VersionOption("Failed to load", null, null));
-                });
-            }
-        }, "load-versions-" + projectId).start();
+        fetchDiscoverCardVersions(projectId, projectType, loader, gameVersion, picker, downloadBtn, title, 0);
 
         // Wire download action
         downloadBtn.addActionListener(e -> {
             VersionOption selected = (VersionOption) picker.getSelectedItem();
-            if (selected == null || selected.url() == null) return;
+            if (selected == null || selected.url() == null) {
+                // Selecting the "Failed to load" sentinel re-triggers a fresh attempt
+                // instead of silently doing nothing.
+                if (selected != null && selected.failed()) {
+                    picker.removeAllItems();
+                    picker.addItem(new VersionOption("Loading versions…", null, null, false, false));
+                    picker.setEnabled(false);
+                    downloadBtn.setText("Download");
+                    downloadBtn.setEnabled(false);
+                    fetchDiscoverCardVersions(projectId, projectType, loader, gameVersion, picker, downloadBtn, title, 0);
+                }
+                return;
+            }
             Instance target = (Instance) discoverInstanceBox.getSelectedItem();
             if (target == null) {
                 notifications.error("No target", "Select a target instance first.");
@@ -1432,6 +1613,89 @@ public class Main extends JFrame {
         });
     }
 
+    /**
+     * Performs the actual Modrinth version fetch for a Discover card, with automatic
+     * retries (with backoff) on failure. After {@link #DISCOVER_VERSION_MAX_AUTO_RETRIES}
+     * failed attempts it gives up and shows a "Failed to load" entry that the user can
+     * click to trigger a fresh manual retry (wired in {@link #loadDiscoverCardVersions}).
+     */
+    private void fetchDiscoverCardVersions(String projectId, String projectType,
+                                            String loader, String gameVersion,
+                                            JComboBox<VersionOption> picker,
+                                            JButton downloadBtn, String title, int attempt) {
+        new Thread(() -> {
+            try {
+                JsonArray versions = discoverModService.listVersions(projectId, projectType, loader, gameVersion);
+                List<VersionOption> options = new ArrayList<>();
+                for (var el : versions) {
+                    JsonObject v = el.getAsJsonObject();
+                    String versionNumber = v.has("version_number") ? v.get("version_number").getAsString() : "?";
+                    String versionName = v.has("name") && !v.get("name").isJsonNull() ? v.get("name").getAsString() : versionNumber;
+
+                    // Check game version support for the label
+                    boolean supportsTarget = false;
+                    if (gameVersion != null && v.has("game_versions") && v.get("game_versions").isJsonArray()) {
+                        for (var gv : v.getAsJsonArray("game_versions")) {
+                            if (gameVersion.equals(gv.getAsString())) { supportsTarget = true; break; }
+                        }
+                    }
+
+                    String[] file = ModUpdateService.primaryFileOf(v);
+                    if (file == null) continue;
+
+                    String label = versionNumber;
+                    if (supportsTarget) label += "  ✓";
+                    if (versionName != null && !versionName.equals(versionNumber)) {
+                        // Truncate long names
+                        String displayName = versionName.length() > 25 ? versionName.substring(0, 22) + "…" : versionName;
+                        label += "  (" + displayName + ")";
+                    }
+                    options.add(new VersionOption(label, file[0], file[1], supportsTarget, false));
+                }
+
+                SwingUtilities.invokeLater(() -> {
+                    picker.removeAllItems();
+                    if (options.isEmpty()) {
+                        picker.addItem(new VersionOption("No versions available", null, null, false, false));
+                    } else {
+                        for (VersionOption opt : options) picker.addItem(opt);
+                        picker.setEnabled(true);
+                        downloadBtn.setEnabled(true);
+                        // Auto-select the version that matches the target instance's game
+                        // version/loader, so the user isn't stuck with an incompatible
+                        // default (usually just the newest release) selected by mistake.
+                        options.stream()
+                                .filter(VersionOption::matchesTarget)
+                                .findFirst()
+                                .ifPresent(picker::setSelectedItem);
+                    }
+                });
+            } catch (Exception ex) {
+                if (attempt < DISCOVER_VERSION_MAX_AUTO_RETRIES) {
+                    // Automatically reload with a short, increasing backoff before giving up.
+                    long delayMs = 1000L * (attempt + 1);
+                    log("Failed to load versions for \"" + title + "\" (attempt " + (attempt + 1)
+                            + "/" + DISCOVER_VERSION_MAX_AUTO_RETRIES + "): " + ex.getMessage()
+                            + " — retrying in " + (delayMs / 1000) + "s…");
+                    try { Thread.sleep(delayMs); } catch (InterruptedException ignored) { return; }
+                    fetchDiscoverCardVersions(projectId, projectType, loader, gameVersion, picker, downloadBtn, title, attempt + 1);
+                    return;
+                }
+                log("Giving up loading versions for \"" + title + "\" after "
+                        + DISCOVER_VERSION_MAX_AUTO_RETRIES + " attempts: " + ex.getMessage());
+                SwingUtilities.invokeLater(() -> {
+                    picker.removeAllItems();
+                    picker.addItem(new VersionOption("⟳ Failed to load — click to retry", null, null, false, true));
+                    picker.setEnabled(true);
+                    // Re-enable the button (re-labeled) so the user has an obvious way to
+                    // retry manually instead of it staying permanently greyed out.
+                    downloadBtn.setText("Retry");
+                    downloadBtn.setEnabled(true);
+                });
+            }
+        }, "load-versions-" + projectId + "-attempt" + attempt).start();
+    }
+
     /** Formats a download count into a compact human-readable string (1.2K, 3.4M). */
     private static String formatCount(int count) {
         if (count >= 1_000_000) return String.format("%.1fM", count / 1_000_000.0);
@@ -1451,6 +1715,7 @@ public class Main extends JFrame {
     private JPanel createCard(String title) {
         JPanel card = new JPanel();
         card.setLayout(new GridBagLayout());
+        card.putClientProperty("settingsCardTitle", title);
         card.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(new Color(60, 60, 70), 1, true),
@@ -1458,11 +1723,11 @@ public class Main extends JFrame {
                 TitledBorder.LEFT,
                 TitledBorder.TOP,
                 new Font("SansSerif", Font.BOLD, 13),
-                new Color(16, 185, 129)
+                hexToColor(com.launcher.manager.SettingsManager.getInstance().getSettings().accentColor, new Color(16, 185, 129))
             ),
             BorderFactory.createEmptyBorder(10, 12, 10, 12)
         ));
-        card.setBackground(new Color(19, 19, 26));
+        card.setBackground(hexToColor(com.launcher.manager.SettingsManager.getInstance().getSettings().panelBgColor, new Color(19, 19, 26)));
         return card;
     }
 
@@ -1582,9 +1847,18 @@ public class Main extends JFrame {
         mainPanel.add(behaviorCard);
         mainPanel.add(Box.createVerticalStrut(12));
 
-        // ── 3. WINDOW SIZE CARD ───────────────────────────────────────────────
-        JPanel sizeCard = createCard("Window Size");
+        // ── 3. WINDOW CARD ────────────────────────────────────────────────────
+        JPanel sizeCard = createCard("Window");
         gbc = createGbc();
+
+        JCheckBox customTitleBarCb = new JCheckBox("Use custom in-app title bar (hide the OS window frame)");
+        customTitleBarCb.setSelected(s.useCustomTitleBar);
+        customTitleBarCb.addActionListener(e -> {
+            s.useCustomTitleBar = customTitleBarCb.isSelected();
+            mgr.save();
+            promptRestartForTitleBarChange();
+        });
+        addSettingsRow(sizeCard, "", customTitleBarCb, gbc);
 
         int savedW = (s.launcherWidth >= 820) ? s.launcherWidth : 960;
         int savedH = (s.launcherHeight >= 560) ? s.launcherHeight : 660;
@@ -1604,6 +1878,7 @@ public class Main extends JFrame {
             if ((getExtendedState() & JFrame.MAXIMIZED_BOTH) == 0) {
                 setSize(s.launcherWidth >= 820 ? s.launcherWidth : 960, s.launcherHeight >= 560 ? s.launcherHeight : 660);
                 setLocationRelativeTo(null);
+                log("Applied window size " + s.launcherWidth + "x" + s.launcherHeight + ".");
             }
         });
         addSettingsRow(sizeCard, "", applySizeBtn, gbc);
@@ -1617,7 +1892,7 @@ public class Main extends JFrame {
 
         SpinnerModel ramModel = new SpinnerNumberModel(s.defaultRamGb > 0 ? s.defaultRamGb : 3, 1, 64, 1);
         JSpinner ramSpinner = new JSpinner(ramModel);
-        ramSpinner.addChangeListener(e -> { s.defaultRamGb = (int) ramSpinner.getValue(); mgr.save(); });
+        ramSpinner.addChangeListener(e -> { s.defaultRamGb = (int) ramSpinner.getValue(); mgr.save(); log("Default RAM set to " + s.defaultRamGb + " GB."); });
         addSettingsRow(performanceCard, "Default RAM (GB)", ramSpinner, gbc);
 
         JTextField extraJvmField = new JTextField(s.extraJvmArgs != null ? s.extraJvmArgs : "");
@@ -1648,7 +1923,13 @@ public class Main extends JFrame {
 
         JCheckBox redactPathsCb = new JCheckBox("Redact OS username from log paths");
         redactPathsCb.setSelected(s.redactPaths);
-        redactPathsCb.addActionListener(e -> { s.redactPaths = redactPathsCb.isSelected(); mgr.save(); refreshInstances(); });
+        redactPathsCb.addActionListener(e -> {
+            s.redactPaths = redactPathsCb.isSelected();
+            mgr.save();
+            Instance keepSelected = instanceList.getSelectedValue();
+            refreshInstances();
+            if (keepSelected != null) instanceList.setSelectedValue(keepSelected, true);
+        });
         addSettingsRow(privacyCard, "", redactPathsCb, gbc);
 
         JCheckBox redactTokensCb = new JCheckBox("Redact Minecraft session tokens in logs");
@@ -1752,12 +2033,7 @@ public class Main extends JFrame {
         killButton.setEnabled(false);
         killButton.setBackground(new Color(239, 68, 68));
         killButton.setForeground(Color.WHITE);
-        killButton.addActionListener(e -> {
-            if (activeProcess != null && activeProcess.isAlive()) {
-                activeProcess.destroyForcibly();
-                notifications.warning("Game terminated", "Minecraft process killed.");
-            }
-        });
+        killButton.addActionListener(e -> killActiveGame());
 
         controls.add(statusLabel);
         controls.add(clearBtn);
@@ -1916,6 +2192,10 @@ public class Main extends JFrame {
                 SwingUtilities.invokeLater(() -> instanceList.repaint());
 
                 log("Launching Minecraft in separate window…");
+                log("Instance: " + instance.name + " | MC " + instance.mcVersion + " | Loader: " + instance.modLoader
+                        + (instance.modLoaderVersion != null ? " " + instance.modLoaderVersion : "")
+                        + " | RAM: " + instance.ramMb + " MB"
+                        + " | Account: " + account.username);
                 SwingUtilities.invokeLater(() -> setStatus("Running " + instance.name));
 
                 GameLauncher launcher = new GameLauncher();
@@ -1924,6 +2204,7 @@ public class Main extends JFrame {
 
                 SwingUtilities.invokeLater(() -> {
                     killButton.setEnabled(true);
+                    killInstanceButton.setEnabled(true);
                     com.launcher.model.LauncherSettings cs = com.launcher.manager.SettingsManager.getInstance().getSettings();
                     if (cs.minimizeOnLaunch) {
                         setExtendedState(JFrame.ICONIFIED);
@@ -1963,6 +2244,7 @@ public class Main extends JFrame {
                 SwingUtilities.invokeLater(() -> {
                     playButton.setEnabled(true);
                     killButton.setEnabled(false);
+                    killInstanceButton.setEnabled(false);
                     setExtendedState(JFrame.NORMAL);
                     toFront();
                 });
@@ -1980,26 +2262,72 @@ public class Main extends JFrame {
     private void applyTheme() {
         com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
         Color bg = hexToColor(settings.bgColor, new Color(10, 10, 15));
-        
+        Color panelBg = hexToColor(settings.panelBgColor, new Color(19, 19, 26));
+        Color text = hexToColor(settings.textColor, new Color(226, 226, 234));
+        Color logBg = hexToColor(settings.logBgColor, new Color(6, 6, 8));
+        Color accent = hexToColor(settings.accentColor, new Color(16, 185, 129));
+
         if (settings.enableBlurEffect) {
             double alpha = blurAlpha(settings);
             Color translucentBg = new Color(bg.getRed(), bg.getGreen(), bg.getBlue(), (int) (alpha * 255));
             getContentPane().setBackground(translucentBg);
-            
-            // Set window opacity for the decorated frame if supported
-            try {
-                setOpacity((float) Math.min(1.0f, Math.max(0.60f, alpha)));
-            } catch (Exception ignored) {}
+            // NOTE: per-pixel window opacity (setOpacity) only works on an
+            // *undecorated* frame — calling it on this normal, decorated
+            // window always throws and silently does nothing, so it's
+            // intentionally not attempted here. The translucent content-pane
+            // background above plus making child panels non-opaque is what
+            // actually produces the "see-through" effect.
         } else {
             getContentPane().setBackground(bg);
-            try {
-                setOpacity(1.0f);
-            } catch (Exception ignored) {}
         }
-        
+
         // Ensure child components are non-opaque if transparent is on, so background shows through
         setComponentTranslucent(getContentPane(), settings.enableBlurEffect);
+
+        // Re-style the custom title bar, if in use, to match the theme.
+        if (customTitleBar != null) {
+            customTitleBar.applyColors(panelBg, text);
+        }
+
+        // Re-style the console log area with the configured colors.
+        if (logArea != null) {
+            logArea.setBackground(logBg);
+            logArea.setForeground(text);
+            logArea.setCaretColor(text);
+        }
+
+        // Re-style settings/behavior "cards" and their accent-colored titles.
+        restyleCards(getContentPane(), panelBg, accent);
+
+        // Give the primary action buttons the configured accent color.
+        if (playButton != null) playButton.setBackground(accent);
+        if (playButton != null) playButton.setForeground(Color.WHITE);
+
         repaint();
+    }
+
+    /** Recursively re-applies the panel background and titled-border accent color to all "cards" built by createCard(). */
+    private void restyleCards(Component comp, Color panelBg, Color accent) {
+        if (comp instanceof JPanel panel && panel.getClientProperty("settingsCardTitle") != null) {
+            panel.setBackground(panelBg);
+            String title = (String) panel.getClientProperty("settingsCardTitle");
+            panel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createTitledBorder(
+                            BorderFactory.createLineBorder(new Color(60, 60, 70), 1, true),
+                            title,
+                            TitledBorder.LEFT,
+                            TitledBorder.TOP,
+                            new Font("SansSerif", Font.BOLD, 13),
+                            accent
+                    ),
+                    BorderFactory.createEmptyBorder(10, 12, 10, 12)
+            ));
+        }
+        if (comp instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                restyleCards(child, panelBg, accent);
+            }
+        }
     }
 
     private void setComponentTranslucent(Component comp, boolean transparent) {
@@ -2021,14 +2349,54 @@ public class Main extends JFrame {
         }
     }
 
+    /** Switching between the custom title bar and the OS one requires an undecorated-state change, which Swing only allows on a non-displayable frame — so this offers to restart the window immediately. */
+    private void promptRestartForTitleBarChange() {
+        int choice = JOptionPane.showConfirmDialog(this,
+                "Changing the title bar style requires restarting the launcher window.\nRestart now?",
+                "Restart Required", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+        if (choice == JOptionPane.YES_OPTION) {
+            restartLauncherWindow();
+        } else {
+            notifications.info("Restart later", "The new title bar style will apply the next time you restart Zero Launcher.");
+        }
+    }
+
+    /** Recreates the main window in place, e.g. after toggling the custom-title-bar setting. Any running game keeps running, since it's a separate process. */
+    private void restartLauncherWindow() {
+        Point loc = getLocation();
+        Dimension size = getSize();
+        int extendedState = getExtendedState();
+        dispose();
+        SwingUtilities.invokeLater(() -> {
+            Main next = new Main();
+            if ((extendedState & JFrame.MAXIMIZED_BOTH) == 0) {
+                next.setLocation(loc);
+                next.setSize(size);
+            }
+            next.setVisible(true);
+        });
+    }
+
     private void setStatus(String msg) {
         SwingUtilities.invokeLater(() -> {
             if (statusLabel != null) statusLabel.setText(msg);
         });
     }
 
+    /** Kills the currently running game process, if any, and logs/notifies about it. */
+    private void killActiveGame() {
+        if (activeProcess != null && activeProcess.isAlive()) {
+            log("Kill requested by user — terminating Minecraft process (pid " + activeProcess.pid() + ")…");
+            activeProcess.destroyForcibly();
+            notifications.warning("Game terminated", "Minecraft process killed.");
+        } else {
+            log("Kill requested but no game process is currently running.");
+        }
+    }
+
     private void log(String msg) {
-        logQueue.add(sanitizePrivacy(msg));
+        String time = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+        logQueue.add("[" + time + "] " + sanitizePrivacy(msg));
         scheduleLogFlush();
     }
 
@@ -2063,7 +2431,12 @@ public class Main extends JFrame {
     private String sanitizePrivacy(String message) {
         if (message == null) return "";
         com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
-        return s.redactPaths ? message.replace(System.getProperty("user.name"), "unnamed_user") : message;
+        if (!s.redactPaths) return message;
+        String user = System.getProperty("user.name");
+        if (user == null || user.isBlank()) return message;
+        // Case-insensitive replace so Windows paths (which don't always match the
+        // OS-reported username's exact casing) are redacted too, not just an exact match.
+        return message.replaceAll("(?i)" + java.util.regex.Pattern.quote(user), "******");
     }
 
     public static Color hexToColor(String hex, Color fallback) {

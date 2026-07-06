@@ -36,6 +36,8 @@ public class LauncherSettings {
     // Window size (0 = use defaults 960×660)
     public int launcherWidth            = 0;
     public int launcherHeight           = 0;
+    /** Use a custom in-app title bar (frameless window) instead of the OS window decorations. */
+    public boolean useCustomTitleBar    = true;
 
     // Privacy & Security
     public boolean hideUsername         = false;

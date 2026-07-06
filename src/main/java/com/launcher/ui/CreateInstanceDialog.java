@@ -299,7 +299,7 @@ public class CreateInstanceDialog extends JDialog {
         modpackBrowseBtn.addActionListener(e -> {
             JFileChooser fc = new JFileChooser();
             fc.setDialogTitle("Select Modpack File");
-            fc.setFileFilter(new FileNameExtensionFilter("Modpack files", "mrpack", "zip"));
+            fc.setFileFilter(new FileNameExtensionFilter("Modpack files", "mrpack"));
             int res = fc.showOpenDialog(this);
             if (res == JFileChooser.APPROVE_OPTION) {
                 File chosen = fc.getSelectedFile();
@@ -380,7 +380,7 @@ public class CreateInstanceDialog extends JDialog {
         modpackFileBox.add(detectedInfoLabel);
 
         mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 1; mgbc.weightx = 0;
-        modpackPanel.add(fieldLabel("File (.mrpack / .zip)", textColor), mgbc);
+        modpackPanel.add(fieldLabel("File (.mrpack only)", textColor), mgbc);
         mgbc.gridx = 1; mgbc.gridwidth = 1; mgbc.weightx = 1.0;
         modpackPanel.add(modpackFileBox, mgbc);
         mrow++;
@@ -415,7 +415,7 @@ public class CreateInstanceDialog extends JDialog {
         modpackPanel.add(installPathRow, mgbc);
         mrow++;
 
-        JLabel modpackInfoLabel = new JLabel("<html>Supported formats: .mrpack (Modrinth) and .zip modpacks.<br>The modpack will be extracted into the install path when you create the instance.</html>");
+        JLabel modpackInfoLabel = new JLabel("<html>Supported formats: .mrpack (Modrinth) and modpacks.<br>The modpack will be extracted into the install path when you create the instance.</html>");
         modpackInfoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
         modpackInfoLabel.setForeground(new Color(150, 150, 160));
         mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 2; mgbc.weightx = 1.0;

@@ -34,28 +34,53 @@ public class ModUpdateService {
      * Scans a mods directory and returns a list of ModEntry objects for each .jar file.
      */
     public List<ModEntry> scanModsDir(Path modsDir) throws IOException {
-        List<ModEntry> entries = new ArrayList<>();
         if (!Files.exists(modsDir) || !Files.isDirectory(modsDir)) {
-            return entries;
+            return new ArrayList<>();
         }
+
+        List<Path> jarFiles;
         try (Stream<Path> files = Files.list(modsDir)) {
-            files.filter(p -> p.getFileName().toString().toLowerCase().endsWith(".jar"))
-                 .sorted()
-                 .forEach(p -> {
-                     try {
-                         ModEntry entry = new ModEntry(
-                                 p.getFileName().toString(),
-                                 p.toAbsolutePath().toString(),
-                                 Files.size(p)
-                         );
-                         entry.sha1Hash = computeSha1(p);
-                         entries.add(entry);
-                     } catch (Exception e) {
-                         // Skip files we can't read
-                     }
-                 });
+            jarFiles = files.filter(p -> p.getFileName().toString().toLowerCase().endsWith(".jar"))
+                    .sorted()
+                    .toList();
         }
-        return entries;
+        if (jarFiles.isEmpty()) return new ArrayList<>();
+
+        // Hashing every jar is the slow part of a scan (each file is read fully to
+        // compute SHA-1). Doing this sequentially made scans take seconds per mod on
+        // large modpacks. Hash in parallel across a bounded pool instead.
+        int threads = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors()));
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        try {
+            List<java.util.concurrent.Future<ModEntry>> futures = new ArrayList<>(jarFiles.size());
+            for (Path p : jarFiles) {
+                futures.add(pool.submit(() -> {
+                    try {
+                        ModEntry entry = new ModEntry(
+                                p.getFileName().toString(),
+                                p.toAbsolutePath().toString(),
+                                Files.size(p)
+                        );
+                        entry.sha1Hash = computeSha1(p);
+                        return entry;
+                    } catch (Exception e) {
+                        return null; // Skip files we can't read
+                    }
+                }));
+            }
+            List<ModEntry> entries = new ArrayList<>(jarFiles.size());
+            for (java.util.concurrent.Future<ModEntry> f : futures) {
+                try {
+                    ModEntry e = f.get();
+                    if (e != null) entries.add(e);
+                } catch (Exception ignored) {
+                    // individual file failure already handled above
+                }
+            }
+            return entries;
+        } finally {
+            pool.shutdown();
+        }
     }
 
     /**

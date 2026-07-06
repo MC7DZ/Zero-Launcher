@@ -26,14 +26,20 @@ public final class HttpUtil {
     }
 
     // --- Standard HTTP Requests ---
+    // Default per-request timeout. Without this, a slow/unresponsive server (or a
+    // network hiccup) can make requests hang far longer than a user will wait,
+    // which is the main cause of "scanning" spinners that never finish.
+    private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(10);
+
     public static String getString(String url) throws IOException, InterruptedException {
-        HttpRequest req = baseRequestBuilder(url).GET().build();
+        HttpRequest req = baseRequestBuilder(url).timeout(DEFAULT_REQUEST_TIMEOUT).GET().build();
         return sendAndValidate(req, HttpResponse.BodyHandlers.ofString());
     }
 
     public static String getStringAuthorized(String url, String bearerToken) throws IOException, InterruptedException {
         HttpRequest req = baseRequestBuilder(url)
                 .header("Authorization", "Bearer " + bearerToken)
+                .timeout(DEFAULT_REQUEST_TIMEOUT)
                 .GET().build();
         return sendAndValidate(req, HttpResponse.BodyHandlers.ofString());
     }
@@ -42,6 +48,7 @@ public final class HttpUtil {
         HttpRequest req = baseRequestBuilder(url)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
+                .timeout(DEFAULT_REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
         return sendAndValidate(req, HttpResponse.BodyHandlers.ofString());

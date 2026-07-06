@@ -4,7 +4,16 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="" />
+    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="change from javafx to java-swing">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModUpdateService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModUpdateService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstanceDialog.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstanceDialog.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/WrapLayout.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/WrapLayout.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/util/HttpUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/util/HttpUtil.java" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -13,39 +22,45 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
-  "lastFilter": {
-    "state": "OPEN",
-    "assignee": "MC7DZ"
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;MC7DZ&quot;
   }
-}]]></component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/MC7DZ/Zero-Launcher.git",
-    "accountId": "3fc1bedb-ee5d-49e1-9eb5-a4dc9ffb4f1a"
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/MC7DZ/Zero-Launcher.git&quot;,
+    &quot;accountId&quot;: &quot;3fc1bedb-ee5d-49e1-9eb5-a4dc9ffb4f1a&quot;
   }
-}]]></component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "customColor": "",
-  "associatedIndex": 5
-}]]></component>
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 5
+}</component>
   <component name="ProjectId" id="3G3Rw9rT2629Hnc4P3BhCysuYZk" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "<unknown>",
-    "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "/home/monib/.minecraft/resourcepacks"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/monib/.minecraft/resourcepacks&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;
   }
-}]]></component>
+}</component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -62,9 +77,22 @@
       <option name="presentableId" value="Default" />
       <updated>1783198502538</updated>
     </task>
+    <task id="LOCAL-00001" summary="change from javafx to java-swing">
+      <option name="closed" value="true" />
+      <created>1783198930377</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1783198930377</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="change from javafx to java-swing" />
+    <option name="LAST_COMMIT_MESSAGE" value="change from javafx to java-swing" />
   </component>
 </project>
