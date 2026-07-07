@@ -1,99 +1,163 @@
 package com.launcher.minecraft;
 
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.launcher.util.HttpUtil;
-import com.launcher.util.JsonUtil;
+import com.google.gson.JsonParser;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.Enumeration;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.*;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * Extracts modpack archives (.mrpack and .zip) into a target directory.
+ * Extracts Modrinth modpack archives (.mrpack) into a target directory.
  * <p>
- * <b>.mrpack (Modrinth)</b>: parses {@code modrinth.index.json}, extracts
- * {@code overrides/} and {@code client-overrides/} directories, and downloads
- * any mods listed in the index with download URLs.
+ * Handles:
+ * <ul>
+ *   <li>Parsing {@code modrinth.index.json}</li>
+ *   <li>Extracting {@code overrides/} and {@code client-overrides/}</li>
+ *   <li>Downloading all indexed files with optional hash verification (SHA1)</li>
+ *   <li>Parallel downloads with configurable concurrency and retries</li>
+ * </ul>
  * <p>
- * <b>.zip (generic)</b>: extracts the full archive contents into the target directory.
+ * Improved version with:
+ * <ul>
+ *   <li>Built‑in HTTP client with timeouts and retries</li>
+ *   <li>Atomic counters for thread‑safe progress</li>
+ *   <li>Optional hash verification (SHA1)</li>
+ *   <li>Configurable concurrency, retries, and timeouts</li>
+ *   <li>Better error handling and logging</li>
+ *   <li>Clean resource management</li>
+ * </ul>
  */
 public class ModpackExtractor {
 
-    /**
-     * Extracts a modpack file into the given install directory.
-     *
-     * @param modpackFile absolute path to the .mrpack or .zip file
-     * @param installDir  directory to extract into (will be created if needed)
-     * @param log         progress/error callback
-     */
-    public void extract(Path modpackFile, Path installDir, Consumer<String> log) throws IOException {
-        Files.createDirectories(installDir);
+    private static final Logger LOGGER = Logger.getLogger(ModpackExtractor.class.getName());
 
-        String fileName = modpackFile.getFileName().toString().toLowerCase();
-        if (fileName.endsWith(".mrpack")) {
-            extractMrpack(modpackFile, installDir, log);
-        } else if (fileName.endsWith(".zip")) {
-            extractZip(modpackFile, installDir, log);
-        } else {
-            throw new IOException("Unsupported modpack format: " + fileName
-                    + " (expected .mrpack or .zip)");
-        }
+    private final HttpClient httpClient;
+    private final int maxConcurrentDownloads;
+    private final int maxRetries;
+    private final Duration retryBaseDelay;
+    private final Duration downloadTimeout;
+    private final boolean verifyHashes;
+
+    /**
+     * Creates a new extractor with default settings:
+     * <ul>
+     *   <li>Max concurrent downloads: 6</li>
+     *   <li>Max retries: 3</li>
+     *   <li>Retry base delay: 1 second</li>
+     *   <li>Download timeout: 30 seconds</li>
+     *   <li>Hash verification: enabled</li>
+     * </ul>
+     */
+    public ModpackExtractor() {
+        this(6, 3, Duration.ofSeconds(1), Duration.ofSeconds(30), true);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    //  .mrpack (Modrinth modpack)
-    // ═══════════════════════════════════════════════════════════════════════════
+    /**
+     * Full constructor for complete customisation.
+     *
+     * @param maxConcurrentDownloads maximum number of parallel downloads
+     * @param maxRetries             number of retries on download failure
+     * @param retryBaseDelay         initial delay between retries (exponential backoff)
+     * @param downloadTimeout        timeout for each download request
+     * @param verifyHashes           whether to verify SHA1 hashes (if present in index)
+     */
+    public ModpackExtractor(int maxConcurrentDownloads, int maxRetries,
+                            Duration retryBaseDelay, Duration downloadTimeout,
+                            boolean verifyHashes) {
+        this.maxConcurrentDownloads = maxConcurrentDownloads;
+        this.maxRetries = maxRetries;
+        this.retryBaseDelay = Objects.requireNonNull(retryBaseDelay);
+        this.downloadTimeout = Objects.requireNonNull(downloadTimeout);
+        this.verifyHashes = verifyHashes;
+
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+    }
+
+    // ------------------------------------------------------------------------
+    // Public API
+    // ------------------------------------------------------------------------
+
+    /**
+     * Extracts a Modrinth modpack (.mrpack) into the given install directory.
+     *
+     * @param modpackFile absolute path to the .mrpack file
+     * @param installDir  directory to extract into (will be created if needed)
+     * @param log         progress/error callback (may be null)
+     * @throws IOException if extraction fails
+     */
+    public void extract(Path modpackFile, Path installDir, Consumer<String> log) throws IOException {
+        if (modpackFile == null || installDir == null) {
+            throw new IllegalArgumentException("modpackFile and installDir must not be null");
+        }
+        String fileName = modpackFile.getFileName().toString().toLowerCase();
+        if (!fileName.endsWith(".mrpack")) {
+            throw new IOException("Unsupported format: " + fileName + " (only .mrpack is supported)");
+        }
+
+        Files.createDirectories(installDir);
+        logIf(log, "Extracting Modrinth modpack: " + modpackFile.getFileName());
+        extractMrpack(modpackFile, installDir, log);
+        logIf(log, "Modrinth modpack extraction complete.");
+    }
+
+    // ------------------------------------------------------------------------
+    // .mrpack processing
+    // ------------------------------------------------------------------------
 
     private void extractMrpack(Path mrpackFile, Path installDir, Consumer<String> log) throws IOException {
-        log.accept("Extracting Modrinth modpack: " + mrpackFile.getFileName());
-
         try (ZipFile zip = new ZipFile(mrpackFile.toFile())) {
             // 1. Read and parse modrinth.index.json
-            ZipEntry indexEntry = zip.getEntry("modrinth.index.json");
-            JsonObject index = null;
-            if (indexEntry != null) {
-                try (InputStream is = zip.getInputStream(indexEntry)) {
-                    String json = new String(is.readAllBytes());
-                    index = JsonUtil.parse(json).getAsJsonObject();
-                }
-                log.accept("Parsed modrinth.index.json");
-            } else {
-                log.accept("WARNING: No modrinth.index.json found — extracting as plain zip");
-                extractZipContents(zip, installDir, log);
-                return;
+            JsonObject index = readIndexJson(zip, log);
+            if (index == null) {
+                throw new IOException("modrinth.index.json not found in the archive");
             }
 
-            // 2. Extract overrides/ → installDir
+            // 2. Extract overrides/ and client-overrides/
             extractOverridesDir(zip, "overrides/", installDir, log);
-
-            // 3. Extract client-overrides/ → installDir (client-side files)
             extractOverridesDir(zip, "client-overrides/", installDir, log);
 
-            // 4. Download files listed in the index
+            // 3. Download files listed in the index
             if (index.has("files")) {
                 downloadIndexedFiles(index.getAsJsonArray("files"), installDir, log);
             }
         }
+    }
 
-        log.accept("Modrinth modpack extraction complete.");
+    private JsonObject readIndexJson(ZipFile zip, Consumer<String> log) throws IOException {
+        ZipEntry indexEntry = zip.getEntry("modrinth.index.json");
+        if (indexEntry == null) {
+            logIf(log, "WARNING: No modrinth.index.json found");
+            return null;
+        }
+        try (InputStream is = zip.getInputStream(indexEntry)) {
+            String json = new String(is.readAllBytes());
+            logIf(log, "Parsed modrinth.index.json");
+            return JsonParser.parseString(json).getAsJsonObject();
+        }
     }
 
     /**
-     * Extracts entries under a given prefix directory (e.g. "overrides/") from
-     * the zip into the install dir, stripping the prefix from the path.
+     * Extracts entries under a given prefix directory from the zip into the install dir,
+     * stripping the prefix from the path.
      */
     private void extractOverridesDir(ZipFile zip, String prefix, Path installDir, Consumer<String> log) throws IOException {
         int count = 0;
@@ -107,7 +171,10 @@ public class ModpackExtractor {
             Path target = installDir.resolve(relativePath).normalize();
 
             // Zip-slip protection
-            if (!target.startsWith(installDir)) continue;
+            if (!target.startsWith(installDir)) {
+                LOGGER.warning("Skipping potential zip-slip: " + name);
+                continue;
+            }
 
             if (entry.isDirectory()) {
                 Files.createDirectories(target);
@@ -120,127 +187,233 @@ public class ModpackExtractor {
             }
         }
         if (count > 0) {
-            log.accept("Extracted " + count + " files from " + prefix);
+            logIf(log, "Extracted " + count + " files from " + prefix);
         }
     }
 
-    /**
-     * Downloads files listed in the modrinth.index.json "files" array.
-     * Each entry has: path, hashes, downloads[], fileSize.
-     */
+    // ------------------------------------------------------------------------
+    // Parallel download of indexed files
+    // ------------------------------------------------------------------------
+
     private void downloadIndexedFiles(JsonArray files, Path installDir, Consumer<String> log) {
-        if (files == null || files.isEmpty()) return;
+        if (files == null || files.isEmpty()) {
+            logIf(log, "No files to download.");
+            return;
+        }
 
-        int total = files.size();
-        log.accept("Downloading " + total + " modpack files…");
-
-        List<Runnable> tasks = new ArrayList<>();
-        int[] done = {0};
-        int[] failed = {0};
-
-        for (JsonElement el : files) {
+        List<DownloadTask> tasks = new ArrayList<>();
+        for (var el : files) {
             JsonObject fileObj = el.getAsJsonObject();
             String path = fileObj.get("path").getAsString();
             Path dest = installDir.resolve(path).normalize();
+            if (!dest.startsWith(installDir)) {
+                LOGGER.warning("Skipping file outside install dir: " + path);
+                continue;
+            }
 
-            // Zip-slip protection
-            if (!dest.startsWith(installDir)) continue;
-
-            // Get download URL (first available)
+            // Get download URLs (use first one)
             JsonArray downloads = fileObj.has("downloads") ? fileObj.getAsJsonArray("downloads") : null;
             if (downloads == null || downloads.isEmpty()) {
-                log.accept("WARNING: No download URL for " + path + " — skipping");
+                logIf(log, "WARNING: No download URL for " + path + " — skipping");
                 continue;
             }
             String url = downloads.get(0).getAsString();
 
-            // Get expected file size for verification
+            // Expected size and hash
             long expectedSize = fileObj.has("fileSize") ? fileObj.get("fileSize").getAsLong() : -1;
+            String expectedSha1 = fileObj.has("hash") ? fileObj.get("hash").getAsString() : null;
 
-            tasks.add(() -> {
+            tasks.add(new DownloadTask(url, dest, expectedSize, expectedSha1));
+        }
+
+        if (tasks.isEmpty()) {
+            logIf(log, "No downloadable files.");
+            return;
+        }
+
+        logIf(log, "Downloading " + tasks.size() + " modpack files…");
+
+        AtomicInteger done = new AtomicInteger(0);
+        AtomicInteger failed = new AtomicInteger(0);
+        ExecutorService pool = Executors.newFixedThreadPool(
+                Math.min(maxConcurrentDownloads, tasks.size()));
+
+        for (DownloadTask task : tasks) {
+            pool.submit(() -> {
                 try {
-                    // Skip if already downloaded and size matches
-                    if (Files.exists(dest) && expectedSize > 0 && Files.size(dest) == expectedSize) {
-                        synchronized (done) {
-                            done[0]++;
-                        }
-                        return;
-                    }
-
-                    Files.createDirectories(dest.getParent());
-                    HttpUtil.downloadToFile(url, dest);
-
-                    synchronized (done) {
-                        done[0]++;
-                        if (done[0] % 10 == 0 || done[0] == total) {
-                            log.accept("Downloaded " + done[0] + "/" + total + " files");
-                        }
+                    downloadWithRetries(task);
+                    int completed = done.incrementAndGet();
+                    if (completed % 10 == 0 || completed == tasks.size()) {
+                        logIf(log, "Downloaded " + completed + "/" + tasks.size() + " files");
                     }
                 } catch (Exception e) {
-                    synchronized (failed) {
-                        failed[0]++;
-                    }
-                    log.accept("Failed to download " + path + ": " + e.getMessage());
+                    failed.incrementAndGet();
+                    logIf(log, "Failed to download " + task.dest.getFileName() + ": " + e.getMessage());
                 }
             });
         }
 
-        // Parallel downloads with modest thread pool
-        ExecutorService pool = Executors.newFixedThreadPool(6);
-        for (Runnable task : tasks) pool.submit(task);
         pool.shutdown();
         try {
-            pool.awaitTermination(1, TimeUnit.HOURS);
-        } catch (InterruptedException ignored) {
+            if (!pool.awaitTermination(1, TimeUnit.HOURS)) {
+                pool.shutdownNow();
+                logIf(log, "Download pool did not finish in time.");
+            }
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            pool.shutdownNow();
+            logIf(log, "Download interrupted.");
         }
 
-        if (failed[0] > 0) {
-            log.accept("WARNING: " + failed[0] + " file(s) failed to download.");
+        if (failed.get() > 0) {
+            logIf(log, "WARNING: " + failed.get() + " file(s) failed to download.");
         }
-        log.accept("Mod downloads complete: " + done[0] + " succeeded, " + failed[0] + " failed.");
+        logIf(log, "Mod downloads complete: " + done.get() + " succeeded, " + failed.get() + " failed.");
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    //  .zip (generic modpack)
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ------------------------------------------------------------------------
+    // Download logic with retries and hash verification
+    // ------------------------------------------------------------------------
 
-    private void extractZip(Path zipFile, Path installDir, Consumer<String> log) throws IOException {
-        log.accept("Extracting ZIP modpack: " + zipFile.getFileName());
-        try (ZipFile zip = new ZipFile(zipFile.toFile())) {
-            extractZipContents(zip, installDir, log);
-        }
-        log.accept("ZIP modpack extraction complete.");
-    }
-
-    /**
-     * Extracts all entries from a ZipFile into the install directory.
-     */
-    private void extractZipContents(ZipFile zip, Path installDir, Consumer<String> log) throws IOException {
-        int count = 0;
-        Enumeration<? extends ZipEntry> entries = zip.entries();
-        while (entries.hasMoreElements()) {
-            ZipEntry entry = entries.nextElement();
-            String name = entry.getName();
-
-            // Skip metadata directories
-            if (name.startsWith("META-INF/") || name.startsWith("__MACOSX/")) continue;
-
-            Path target = installDir.resolve(name).normalize();
-
-            // Zip-slip protection
-            if (!target.startsWith(installDir)) continue;
-
-            if (entry.isDirectory()) {
-                Files.createDirectories(target);
-            } else {
-                Files.createDirectories(target.getParent());
-                try (InputStream is = zip.getInputStream(entry)) {
-                    Files.copy(is, target, StandardCopyOption.REPLACE_EXISTING);
+    private void downloadWithRetries(DownloadTask task) throws IOException, InterruptedException {
+        int attempt = 0;
+        while (true) {
+            try {
+                downloadFile(task);
+                return;
+            } catch (IOException | InterruptedException e) {
+                if (attempt >= maxRetries) {
+                    throw new IOException("Failed after " + (attempt + 1) + " attempts for " + task.url, e);
                 }
-                count++;
+                long delay = retryBaseDelay.toMillis() * (long) Math.pow(2, attempt);
+                LOGGER.log(Level.WARNING, "Download of {0} failed (attempt {1}), retrying in {2}ms",
+                        new Object[]{task.url, attempt + 1, delay});
+                Thread.sleep(delay);
+                attempt++;
             }
         }
-        log.accept("Extracted " + count + " files.");
+    }
+
+    private void downloadFile(DownloadTask task) throws IOException, InterruptedException {
+        Path dest = task.dest;
+        String url = task.url;
+
+        // Skip if file already exists and size matches (and optionally hash matches)
+        if (Files.exists(dest)) {
+            if (task.expectedSize > 0 && Files.size(dest) != task.expectedSize) {
+                // Size mismatch, delete and re-download
+                Files.delete(dest);
+            } else if (verifyHashes && task.expectedSha1 != null && !task.expectedSha1.isEmpty()) {
+                String actualSha1 = computeSha1(dest);
+                if (actualSha1.equalsIgnoreCase(task.expectedSha1)) {
+                    LOGGER.fine("File " + dest + " already exists with matching hash, skipping.");
+                    return;
+                } else {
+                    Files.delete(dest);
+                }
+            } else {
+                // No verification, assume existing file is valid
+                LOGGER.fine("File " + dest + " already exists, skipping.");
+                return;
+            }
+        }
+
+        // Ensure parent directory exists
+        Files.createDirectories(dest.getParent());
+
+        // Download
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(downloadTimeout)
+                .header("Accept", "application/octet-stream")
+                .GET()
+                .build();
+
+        HttpResponse<Path> response = httpClient.send(request,
+                HttpResponse.BodyHandlers.ofFile(dest, StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING));
+
+        int status = response.statusCode();
+        if (status < 200 || status >= 300) {
+            Files.deleteIfExists(dest);
+            throw new IOException("HTTP " + status + " for " + url);
+        }
+
+        // Verify size
+        if (task.expectedSize > 0 && Files.size(dest) != task.expectedSize) {
+            Files.deleteIfExists(dest);
+            throw new IOException("Size mismatch: expected " + task.expectedSize +
+                    ", got " + Files.size(dest) + " for " + url);
+        }
+
+        // Verify SHA1 hash if requested
+        if (verifyHashes && task.expectedSha1 != null && !task.expectedSha1.isEmpty()) {
+            String actualSha1 = computeSha1(dest);
+            if (!actualSha1.equalsIgnoreCase(task.expectedSha1)) {
+                Files.deleteIfExists(dest);
+                throw new IOException("SHA1 mismatch for " + url + ": expected " +
+                        task.expectedSha1 + ", got " + actualSha1);
+            }
+        }
+
+        LOGGER.fine("Downloaded " + url + " to " + dest);
+    }
+
+    private String computeSha1(Path path) throws IOException {
+        try (InputStream is = Files.newInputStream(path)) {
+            MessageDigest md = MessageDigest.getInstance("SHA-1");
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = is.read(buffer)) != -1) {
+                md.update(buffer, 0, len);
+            }
+            return bytesToHex(md.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("SHA-1 algorithm not available", e);
+        }
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
+    // ------------------------------------------------------------------------
+    // Helper classes and methods
+    // ------------------------------------------------------------------------
+
+    private static class DownloadTask {
+        final String url;
+        final Path dest;
+        final long expectedSize;
+        final String expectedSha1;
+
+        DownloadTask(String url, Path dest, long expectedSize, String expectedSha1) {
+            this.url = url;
+            this.dest = dest;
+            this.expectedSize = expectedSize;
+            this.expectedSha1 = expectedSha1;
+        }
+    }
+
+    private void logIf(Consumer<String> log, String msg) {
+        if (log != null) {
+            log.accept(msg);
+        }
+        LOGGER.info(msg);
+    }
+
+    // ------------------------------------------------------------------------
+    // Example usage (optional)
+    // ------------------------------------------------------------------------
+
+    public static void main(String[] args) throws Exception {
+        ModpackExtractor extractor = new ModpackExtractor();
+        Path modpack = Path.of("my_modpack.mrpack");
+        Path install = Path.of("./instance");
+        extractor.extract(modpack, install, System.out::println);
     }
 }
