@@ -4956,6 +4956,9 @@ public class Main extends JFrame {
             }
             command.addAll(Arrays.asList(args));
 
+            // 🔔 Signal to the bootstrapper that we are about to relaunch.
+            System.err.println("ZEROLAUNCHER_RELAUNCHING");
+
             new ProcessBuilder(command)
                     .inheritIO()
                     .start();
