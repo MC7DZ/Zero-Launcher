@@ -4,20 +4,105 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="change from javafx to java-swing">
+    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="s">
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/AddAccountPanel.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstancePanel.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CustomTitleBar.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstancePanel.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationPanel.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/WindowResizer.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$1.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$10.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$11.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$12.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$13.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$14.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$15.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$16.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$2.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$3.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$4.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$5.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$6.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$7.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$8.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$9.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$InstanceServerOption.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$RoundedPanel.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main$VersionOption.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/Main.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/MainWrapper.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ZeroLauncherIcon.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/auth/OfflineAuthService.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/manager/AccountManager$1.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/manager/AccountManager$Store.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/manager/AccountManager.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/manager/DiscordRpcManager$1.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/manager/DiscordRpcManager$PresenceKind.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/manager/DiscordRpcManager.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/manager/InstanceManager$1.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/manager/InstanceManager.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/manager/LauncherPaths.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/manager/SettingsManager.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/FabricInstaller.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/ForgeInstaller.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/GameInstaller.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/GameLauncher.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/ModUpdateService.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/ModpackExtractor.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/NeoForgeInstaller.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/QuiltInstaller.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/ResolvedVersion.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/ServerListReader$ServerEntry.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/ServerListReader.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft/VersionManifestService.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/minecraft_image.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/model/Account.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/model/AccountType.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/model/Instance.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/model/LauncherSettings.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/model/ModEntry.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/model/ModLoaderType.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/styles.css" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/CreateInstanceDialog$ModpackMeta.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/CreateInstanceDialog.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/CustomTitleBar$1.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/CustomTitleBar$Glyph.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/CustomTitleBar$TitleBarButton$1.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/CustomTitleBar$TitleBarButton.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/CustomTitleBar.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/EditInstanceDialog.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/LoginDialog.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/NotificationCenter$1.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/NotificationCenter.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/WindowResizer$1.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/WindowResizer$Edge.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/WindowResizer.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/WrapLayout$ScrollableWrapPanel.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/ui/WrapLayout.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/util/HttpUtil.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/launcher/util/JsonUtil.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/maven-archiver/pom.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/original-zero-launcher-1.0.0.jar" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/zero-launcher-1.0.0.jar" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModUpdateService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModUpdateService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/LauncherPaths.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/manager/LauncherPaths.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/SettingsManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/manager/SettingsManager.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstanceDialog.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstanceDialog.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/WrapLayout.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/WrapLayout.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationCenter.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationCenter.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/util/HttpUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/util/HttpUtil.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="53" />
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -34,6 +119,69 @@
     &quot;accountId&quot;: &quot;3fc1bedb-ee5d-49e1-9eb5-a4dc9ffb4f1a&quot;
   }
 }</component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="2.134764795660649" />
+      <entry key="MS500" value="2.7933024322935465" />
+      <entry key="S2" value="6.3586494307441175" />
+      <entry key="S5" value="16.254094718699623" />
+      <entry key="S10" value="28.174386010215347" />
+      <entry key="S30" value="45.824376578026246" />
+      <entry key="S60" value="52.67462217052409" />
+      <entry key="M2" value="56.631837670986876" />
+      <entry key="M5" value="59.20042512425001" />
+      <entry key="M10" value="60.09123094300364" />
+      <entry key="M15" value="60.39213803560915" />
+      <entry key="M30" value="60.69505600190228" />
+      <entry key="H1" value="60.84727379486822" />
+      <entry key="H2" value="60.92357322648466" />
+      <entry key="H4" value="60.961770680550295" />
+      <entry key="D1" value="60.993626232613984" />
+      <entry key="W1" value="60.99908940756153" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="0.0" />
+      <entry key="S30" value="0.0" />
+      <entry key="S60" value="0.0" />
+      <entry key="M2" value="0.0" />
+      <entry key="M5" value="0.0" />
+      <entry key="M10" value="0.0" />
+      <entry key="M15" value="0.0" />
+      <entry key="M30" value="0.0" />
+      <entry key="H1" value="0.0" />
+      <entry key="H2" value="0.0" />
+      <entry key="H4" value="0.0" />
+      <entry key="D1" value="0.0" />
+      <entry key="W1" value="0.0" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.8354191280937122" />
+      <entry key="MS500" value="2.710491137566988" />
+      <entry key="S2" value="6.324225655632387" />
+      <entry key="S5" value="16.219371604017304" />
+      <entry key="S10" value="28.13647607441549" />
+      <entry key="S30" value="45.798167100096336" />
+      <entry key="S60" value="52.6585259940056" />
+      <entry key="M2" value="56.6228911833918" />
+      <entry key="M5" value="59.19660844981134" />
+      <entry key="M10" value="60.08928090330707" />
+      <entry key="M15" value="60.390828586395735" />
+      <entry key="M30" value="60.69439652647174" />
+      <entry key="H1" value="60.846942861996475" />
+      <entry key="H2" value="60.92340746032366" />
+      <entry key="H4" value="60.96168772242119" />
+      <entry key="D1" value="60.99361239582572" />
+      <entry key="W1" value="60.999087430621834" />
+    </decayedShown>
+  </component>
   <component name="ProjectColorInfo">{
   &quot;customColor&quot;: &quot;&quot;,
   &quot;associatedIndex&quot;: 5
@@ -46,6 +194,7 @@
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
@@ -85,7 +234,15 @@
       <option name="project" value="LOCAL" />
       <updated>1783198930377</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="s">
+      <option name="closed" value="true" />
+      <created>1783355950339</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1783355950339</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -93,6 +250,7 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="change from javafx to java-swing" />
-    <option name="LAST_COMMIT_MESSAGE" value="change from javafx to java-swing" />
+    <MESSAGE value="s" />
+    <option name="LAST_COMMIT_MESSAGE" value="s" />
   </component>
 </project>

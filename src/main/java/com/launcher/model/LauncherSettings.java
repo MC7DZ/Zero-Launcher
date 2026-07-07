@@ -7,11 +7,24 @@ public class LauncherSettings {
     public String panelBgColor     = "#13131a";   // slightly lighter panel
     public String textColor        = "#e2e2ea";   // off-white text
     public String logBgColor       = "#060608";   // very dark console bg
-    public String fontFamily       = "Inter";
+    public String fontFamily       = "SansSerif";
+    /** Absolute paths to user-added custom font files (.ttf/.otf), comma-separated.
+     *  Registered at startup and appended to the Font Family choices so they persist
+     *  across restarts. */
+    public String customFontPaths  = "";
+    /** Which preset gradient backdrop to paint behind the UI. One of: Default, Midnight,
+     *  Sunset, Forest, Ocean, Monochrome, Accent Glow. */
+    public String backgroundStyle  = "Default";
     public boolean useBackgroundImage   = false;
     public String backgroundImagePath   = "";
+    /** Fake "frosted glass" transparency: blends panels with the background behind them.
+     *  Independent of blur — you can have one without the other. */
+    public boolean enableTransparency   = true;
+    public int transparencyStrength     = 20;     // 1–100, higher = more see-through
+    /** Softens/blurs the painted background (gradient glow, or the background image if one
+     *  is set). Independent of transparency. */
     public boolean enableBlurEffect     = false;
-    public int blurStrength             = 10;     // GaussianBlur radius (1–40)
+    public int blurStrength             = 10;     // blur radius, 1–40
 
     // Behavior
     /** Minimize the launcher while Minecraft is running — game opens in its own OS window. */
@@ -20,14 +33,26 @@ public class LauncherSettings {
     public boolean closeAfterLaunch     = false;
     /** Keep the log console visible while Minecraft is running. */
     public boolean showConsoleOnLaunch  = true;
+    /** Whether the log console panel is currently shown or collapsed (toggled from the top bar). */
+    public boolean logConsoleVisible    = true;
     public boolean scanOnStartup        = true;
     public boolean showHiddenInstances  = false;
     /** Automatically check every instance's mods for available updates when the launcher starts. */
     public boolean checkModUpdatesOnStartup = true;
+    /** Automatically refresh the Discover tab (trending mods/resource packs) when the launcher starts. */
+    public boolean refreshDiscoverOnLaunch = true;
+    /** If a game launch fails because its version data couldn't be loaded, automatically re-scan
+     *  that instance's mods and resource packs, in case stale/corrupt files were the cause. */
+    public boolean autoRefreshModsOnVersionLoadFail = true;
 
     // Performance
     /** Default RAM in GB for new instances. */
     public int defaultRamGb             = 3;
+    /** Max RAM (in MB) the launcher application itself (not the game) is allowed to use. Requires a restart to take effect. */
+    public int launcherMaxRamMb         = 500;
+    /** Whether the Max RAM for Launcher limit above is actually enforced. When off, the
+     *  launcher JVM runs with no explicit -Xmx cap regardless of launcherMaxRamMb's value. */
+    public boolean enableLauncherMaxRam = true;
     /** Extra JVM arguments appended to every launch command. */
     public String extraJvmArgs          = "";
     public String javaPath              = "";
@@ -38,10 +63,12 @@ public class LauncherSettings {
     public int launcherHeight           = 0;
     /** Use a custom in-app title bar (frameless window) instead of the OS window decorations. */
     public boolean useCustomTitleBar    = true;
+    /** Always launch the launcher window maximized instead of at the saved/default size. */
+    public boolean startMaximized       = true;
 
     // Privacy & Security
     public boolean hideUsername         = false;
-    public boolean redactPaths          = false;
+    public boolean redactPaths          = true;
     public boolean redactTokens         = true;
     public boolean clearSessionOnExit   = false;
 
@@ -101,5 +128,25 @@ public class LauncherSettings {
             if (!trimmed.isEmpty()) out.add(trimmed);
         }
         return out;
+    }
+
+    /** Returns the user-added custom font file paths as a clean, trimmed list. */
+    public java.util.List<String> customFontPathList() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (customFontPaths == null || customFontPaths.isBlank()) return out;
+        for (String entry : customFontPaths.split(",")) {
+            String trimmed = entry.trim();
+            if (!trimmed.isEmpty()) out.add(trimmed);
+        }
+        return out;
+    }
+
+    /** Adds a custom font file path to the list, if not already present. */
+    public void addCustomFontPath(String path) {
+        if (path == null || path.isBlank()) return;
+        java.util.List<String> list = customFontPathList();
+        if (list.contains(path)) return;
+        list.add(path);
+        customFontPaths = String.join(",", list);
     }
 }

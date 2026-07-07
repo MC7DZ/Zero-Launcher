@@ -30,6 +30,18 @@
       <artifactId>DiscordIPC</artifactId>
       <version>0.11.3</version>
     </dependency>
+    <!-- Adds WebP decoding support to ImageIO (javax.imageio.ImageIO.read), since stock Java
+         can't decode WebP and many Modrinth icons are served in that format. -->
+    <dependency>
+      <groupId>com.twelvemonkeys.imageio</groupId>
+      <artifactId>imageio-webp</artifactId>
+      <version>3.10.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.twelvemonkeys.imageio</groupId>
+      <artifactId>imageio-core</artifactId>
+      <version>3.10.1</version>
+    </dependency>
   </dependencies>
 
   <build>
@@ -66,6 +78,10 @@
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                   <mainClass>com.launcher.MainWrapper</mainClass>
                 </transformer>
+                <!-- ImageIO plugins (like the WebP reader) register themselves via
+                     META-INF/services files. Without merging these, Shade keeps only one jar's
+                     copy and the WebP plugin silently never gets discovered at runtime. -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
               </transformers>
               <filters>
                 <filter>

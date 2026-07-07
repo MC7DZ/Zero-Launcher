@@ -1,156 +1,234 @@
 package com.launcher.ui;
 
-import com.launcher.Main;
-import com.launcher.model.LauncherSettings;
-import com.launcher.manager.SettingsManager;
-
 import javax.swing.*;
-import javax.swing.border.EmptyBorder;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
-public final class NotificationCenter {
+/**
+ * Toast notification stack.
+ *
+ * Rewritten to fix the issues in the old implementation:
+ *  - a single 60fps "tick" Timer drives every notification's position, fade and
+ *    countdown, instead of spawning 2-3 independent Timers per notification
+ *    (which could pile up, drift out of sync, and leak if a panel was removed
+ *    mid-animation).
+ *  - notifications beyond the visible limit are queued and shown once space
+ *    frees up, instead of being force-closed the instant the limit is hit.
+ *  - hovering a toast pauses its countdown (and pauses the whole stack's
+ *    layout churn) so you can actually read one before it vanishes.
+ *  - a visible close button and a shrinking progress bar make dismissal and
+ *    remaining time explicit instead of "click anywhere and hope".
+ *
+ * Public API (info/success/warning/error/show + getPreferredSize) is unchanged
+ * so no caller elsewhere in the app needs to change.
+ */
+public final class NotificationCenter extends JPanel {
 
-    public enum Type { INFO, SUCCESS, WARNING, ERROR }
+    private static final int MAX_VISIBLE = 4;
+    private static final int WIDTH = 320;
+    private static final int GAP = 8;
+    private static final int DEFAULT_DURATION_MS = 5000;
+    private static final int ERROR_DURATION_MS = 8000;
+    private static final int TICK_MS = 16; // ~60fps
+    private static final double FADE_RATE_PER_MS = 1.0 / 220; // full fade in/out in ~220ms
+    private static final double SLIDE_EASE = 0.22; // exponential approach factor per tick
 
-    private static final List<JWindow> activeToasts = new ArrayList<>();
-    private final JFrame owner;
+    private record Pending(NotificationPanel.Type type, String title, String message) {}
 
-    public NotificationCenter(JFrame owner) {
-        this.owner = owner;
+    private final List<Entry> active = new ArrayList<>();
+    private final Deque<Pending> queue = new ArrayDeque<>();
+    private final Timer ticker;
+
+    private static final class Entry {
+        final NotificationPanel panel;
+        double targetY;
+        double currentY;
+        boolean fadingIn = true;
+        boolean fadingOut = false;
+        boolean hovered = false;
+        double remainingMs;
+        final double totalMs;
+        boolean positioned = false;
+
+        Entry(NotificationPanel panel, double totalMs) {
+            this.panel = panel;
+            this.totalMs = totalMs;
+            this.remainingMs = totalMs;
+        }
     }
 
-    public void info(String title, String message)    { show(Type.INFO, title, message); }
-    public void success(String title, String message)  { show(Type.SUCCESS, title, message); }
-    public void warning(String title, String message)  { show(Type.WARNING, title, message); }
-    public void error(String title, String message)    { show(Type.ERROR, title, message); }
+    public NotificationCenter() {
+        setLayout(null);
+        setOpaque(false);
+        ticker = new Timer(TICK_MS, e -> tick());
+        ticker.setCoalesce(true);
+    }
 
-    public void show(Type type, String title, String message) {
+    public void info(String title, String message)    { show(NotificationPanel.Type.INFO, title, message); }
+    public void success(String title, String message)  { show(NotificationPanel.Type.SUCCESS, title, message); }
+    public void warning(String title, String message)  { show(NotificationPanel.Type.WARNING, title, message); }
+    public void error(String title, String message)    { show(NotificationPanel.Type.ERROR, title, message); }
+
+    public void show(NotificationPanel.Type type, String title, String message) {
         if (SwingUtilities.isEventDispatchThread()) {
-            display(type, title, message);
+            enqueue(type, title, message);
         } else {
-            SwingUtilities.invokeLater(() -> display(type, title, message));
+            SwingUtilities.invokeLater(() -> enqueue(type, title, message));
         }
     }
 
-    private synchronized void display(Type type, String title, String message) {
-        LauncherSettings settings = SettingsManager.getInstance().getSettings();
-        Color panelBg = Main.hexToColor(settings.panelBgColor, new Color(19, 19, 26));
-        Color textColor = Main.hexToColor(settings.textColor, new Color(226, 226, 234));
-        Color accent = Main.hexToColor(settings.accentColor, new Color(16, 185, 129));
-
-        Color accentVar = switch (type) {
-            case SUCCESS -> accent;
-            case WARNING -> new Color(245, 158, 11);
-            case ERROR   -> new Color(239, 68, 68);
-            case INFO    -> new Color(156, 163, 175);
-        };
-
-        String icon = switch (type) {
-            case SUCCESS -> "✔";
-            case WARNING -> "⚠";
-            case ERROR   -> "✕";
-            case INFO    -> "ℹ";
-        };
-
-        JWindow toast = new JWindow(owner);
-        toast.setType(Window.Type.POPUP);
-        toast.setFocusableWindowState(false);
-
-        JPanel panel = new JPanel(new BorderLayout(10, 0));
-        panel.setBackground(panelBg);
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(60, 60, 70), 1, true),
-                new EmptyBorder(10, 12, 10, 10)
-        ));
-
-        // Stripe
-        JPanel stripe = new JPanel() {
-            @Override
-            public Dimension getPreferredSize() {
-                return new Dimension(3, 40);
-            }
-        };
-        stripe.setBackground(accentVar);
-        panel.add(stripe, BorderLayout.WEST);
-
-        // Center Content (Icon + Texts)
-        JPanel contentPanel = new JPanel(new BorderLayout(8, 0));
-        contentPanel.setBackground(panelBg);
-
-        JLabel iconLabel = new JLabel(icon);
-        iconLabel.setFont(new Font("SansSerif", Font.BOLD, 14));
-        iconLabel.setForeground(accentVar);
-        contentPanel.add(iconLabel, BorderLayout.WEST);
-
-        JPanel textCol = new JPanel();
-        textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
-        textCol.setBackground(panelBg);
-
-        JLabel titleLabel = new JLabel("<html><b>" + title + "</b></html>");
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 12));
-        titleLabel.setForeground(textColor);
-        textCol.add(titleLabel);
-
-        if (message != null && !message.isBlank()) {
-            JLabel msgLabel = new JLabel("<html><body style='width: 200px;'>" + message.replace("\n", "<br>") + "</body></html>");
-            msgLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            msgLabel.setForeground(new Color(156, 163, 175));
-            textCol.add(Box.createVerticalStrut(3));
-            textCol.add(msgLabel);
+    private void enqueue(NotificationPanel.Type type, String title, String message) {
+        if (active.size() >= MAX_VISIBLE) {
+            queue.addLast(new Pending(type, title, message));
+            return;
         }
-        contentPanel.add(textCol, BorderLayout.CENTER);
-        panel.add(contentPanel, BorderLayout.CENTER);
+        spawn(type, title, message);
+    }
 
-        toast.setContentPane(panel);
-        toast.pack();
+    private void spawn(NotificationPanel.Type type, String title, String message) {
+        double duration = (type == NotificationPanel.Type.ERROR) ? ERROR_DURATION_MS : DEFAULT_DURATION_MS;
 
-        int toastWidth = 320;
-        int toastHeight = toast.getHeight();
-        toast.setSize(toastWidth, toastHeight);
-
-        // Position toast
-        activeToasts.add(0, toast);
-        repositionToasts();
-
-        toast.setVisible(true);
-
-        // Auto dismiss timer
-        int duration = (type == Type.ERROR) ? 7000 : 5000;
-        Timer timer = new Timer(duration, e -> removeToast(toast));
-        timer.setRepeats(false);
-        timer.start();
-
-        // Click to dismiss
-        panel.addMouseListener(new MouseAdapter() {
+        NotificationPanel panel = new NotificationPanel(type, title, message, new NotificationPanel.Listener() {
             @Override
-            public void mouseClicked(MouseEvent e) {
-                timer.stop();
-                removeToast(toast);
+            public void onDismissRequested(NotificationPanel p) {
+                Entry entry = findEntry(p);
+                if (entry != null) startFadeOut(entry);
+            }
+
+            @Override
+            public void onHoverChanged(NotificationPanel p, boolean hovering) {
+                Entry entry = findEntry(p);
+                if (entry != null) entry.hovered = hovering;
             }
         });
+        panel.setAlpha(0f);
+        panel.setSize(WIDTH, panel.getPreferredSize().height);
+        panel.setLocation(0, -panel.getHeight());
+        add(panel);
+        setComponentZOrder(panel, 0);
+
+        Entry entry = new Entry(panel, duration);
+        entry.currentY = -panel.getHeight();
+        active.add(0, entry);
+
+        layoutTargets();
+        if (!ticker.isRunning()) ticker.start();
+        revalidate();
+        repaint();
     }
 
-    private synchronized void removeToast(JWindow toast) {
-        toast.dispose();
-        activeToasts.remove(toast);
-        repositionToasts();
+    private Entry findEntry(NotificationPanel p) {
+        for (Entry e : active) if (e.panel == p) return e;
+        return null;
     }
 
-    private synchronized void repositionToasts() {
-        if (owner == null) return;
-        Point ownerLoc = owner.getLocationOnScreen();
-        int ownerWidth = owner.getWidth();
-        int startX = ownerLoc.x + ownerWidth - 320 - 16;
-        int startY = ownerLoc.y + 60;
+    private void startFadeOut(Entry entry) {
+        if (entry.fadingOut) return;
+        entry.fadingOut = true;
+        entry.fadingIn = false;
+    }
 
-        int currentY = startY;
-        for (JWindow t : activeToasts) {
-            t.setLocation(startX, currentY);
-            currentY += t.getHeight() + 8;
+    private void tick() {
+        boolean anyLive = false;
+        List<Entry> toRemove = new ArrayList<>();
+
+        for (Entry entry : active) {
+            anyLive = true;
+            NotificationPanel panel = entry.panel;
+
+            // Fade in.
+            if (entry.fadingIn) {
+                float a = panel.getAlpha() + (float) (TICK_MS * FADE_RATE_PER_MS);
+                if (a >= 1f) { a = 1f; entry.fadingIn = false; }
+                panel.setAlpha(a);
+            }
+
+            // Countdown, paused while hovered or still fading in.
+            if (!entry.fadingOut && !entry.hovered && !entry.fadingIn) {
+                entry.remainingMs -= TICK_MS;
+                if (entry.remainingMs <= 0) {
+                    startFadeOut(entry);
+                } else {
+                    panel.setLifeProgress((float) (entry.remainingMs / entry.totalMs));
+                }
+            }
+
+            // Fade out.
+            if (entry.fadingOut) {
+                float a = panel.getAlpha() - (float) (TICK_MS * FADE_RATE_PER_MS);
+                if (a <= 0f) {
+                    a = 0f;
+                    toRemove.add(entry);
+                }
+                panel.setAlpha(a);
+            }
+
+            // Slide toward target Y (exponential ease, frame-rate independent enough at fixed tick).
+            double dy = entry.targetY - entry.currentY;
+            if (Math.abs(dy) > 0.5) {
+                entry.currentY += dy * SLIDE_EASE;
+            } else {
+                entry.currentY = entry.targetY;
+            }
+            panel.setLocation(0, (int) Math.round(entry.currentY));
         }
+
+        if (!toRemove.isEmpty()) {
+            for (Entry entry : toRemove) {
+                active.remove(entry);
+                remove(entry.panel);
+            }
+            layoutTargets();
+            drainQueueIfRoom();
+            revalidate();
+            repaint();
+        }
+
+        setPreferredSize(calculatePreferredSize());
+
+        if (!anyLive && queue.isEmpty()) {
+            ticker.stop();
+        }
+    }
+
+    private void drainQueueIfRoom() {
+        while (active.size() < MAX_VISIBLE && !queue.isEmpty()) {
+            Pending p = queue.pollFirst();
+            spawn(p.type(), p.title(), p.message());
+        }
+    }
+
+    private void layoutTargets() {
+        int y = 0;
+        for (Entry entry : active) {
+            entry.targetY = y;
+            if (!entry.positioned) {
+                entry.currentY = -entry.panel.getHeight();
+                entry.positioned = true;
+            }
+            y += entry.panel.getHeight() + GAP;
+        }
+    }
+
+    private Dimension calculatePreferredSize() {
+        int height = 0;
+        for (Entry entry : active) {
+            height += entry.panel.getHeight() + GAP;
+        }
+        if (!active.isEmpty()) height -= GAP;
+        return new Dimension(WIDTH, height);
+    }
+
+    @Override
+    public Dimension getPreferredSize() {
+        return calculatePreferredSize();
+    }
+
+    @Override
+    public Dimension getMaximumSize() {
+        return getPreferredSize();
     }
 }

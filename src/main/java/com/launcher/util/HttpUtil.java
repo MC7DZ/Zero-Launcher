@@ -33,7 +33,7 @@ public final class HttpUtil {
 
     public static String getString(String url) throws IOException, InterruptedException {
         HttpRequest req = baseRequestBuilder(url).timeout(DEFAULT_REQUEST_TIMEOUT).GET().build();
-        return sendAndValidate(req, HttpResponse.BodyHandlers.ofString());
+        return sendAndValidateWithRetries(req, HttpResponse.BodyHandlers.ofString());
     }
 
     public static String getStringAuthorized(String url, String bearerToken) throws IOException, InterruptedException {
@@ -41,7 +41,15 @@ public final class HttpUtil {
                 .header("Authorization", "Bearer " + bearerToken)
                 .timeout(DEFAULT_REQUEST_TIMEOUT)
                 .GET().build();
-        return sendAndValidate(req, HttpResponse.BodyHandlers.ofString());
+        return sendAndValidateWithRetries(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Downloads raw bytes (e.g. an icon image) with our normal User-Agent/timeout/redirect
+     *  handling, instead of opening a bare URLConnection that some CDNs may reject or that never
+     *  times out. */
+    public static byte[] getBytes(String url) throws IOException, InterruptedException {
+        HttpRequest req = baseRequestBuilder(url).timeout(DEFAULT_REQUEST_TIMEOUT).GET().build();
+        return sendAndValidate(req, HttpResponse.BodyHandlers.ofByteArray());
     }
 
     public static String postJson(String url, String jsonBody) throws IOException, InterruptedException {
@@ -51,7 +59,7 @@ public final class HttpUtil {
                 .timeout(DEFAULT_REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
-        return sendAndValidate(req, HttpResponse.BodyHandlers.ofString());
+        return sendAndValidateWithRetries(req, HttpResponse.BodyHandlers.ofString());
     }
 
     public static String postFormRaw(String url, String formBody) throws IOException, InterruptedException {
@@ -69,6 +77,24 @@ public final class HttpUtil {
             throw new IOException("Request to " + req.uri() + " failed with HTTP " + resp.statusCode());
         }
         return resp.body();
+    }
+
+    /** Same as {@link #sendAndValidate}, but retries a couple of times (with a short backoff) on
+     *  transient network failures like connect timeouts, instead of failing the whole operation
+     *  (e.g. a game launch) on the first hiccup. */
+    private static <T> T sendAndValidateWithRetries(HttpRequest req, HttpResponse.BodyHandler<T> handler) throws IOException, InterruptedException {
+        final int maxAttempts = 3;
+        IOException lastError = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return sendAndValidate(req, handler);
+            } catch (IOException e) {
+                lastError = e;
+                if (attempt == maxAttempts) break;
+                Thread.sleep(750L * attempt);
+            }
+        }
+        throw lastError;
     }
 
     // --- File Downloads ---

@@ -30,11 +30,22 @@ public class LauncherPaths {
         return launcherRoot().resolve("accounts.json");
     }
 
-    public static Path instancesFile() {
-        return launcherRoot().resolve("instances.json");
+    /** Lock file used to detect whether another instance of the launcher is already running. */
+    public static Path instanceLockFile() {
+        return launcherRoot().resolve(".launcher.lock");
     }
 
-    /** Shared cache for downloaded libraries/assets/version jars across ALL instances (saves disk + bandwidth). */
+    /** File the running instance writes its focus-server port to, for a second launch to read. */
+    public static Path instancePortFile() {
+        return launcherRoot().resolve(".launcher.port");
+    }
+
+    /** Instances list now lives inside .minecraft, same as the official launcher's launcher_profiles/instances data. */
+    public static Path instancesFile() {
+        return getDefaultMinecraftPath().resolve("instances.json");
+    }
+
+    /** Shared cache for downloaded libraries/assets across ALL instances (saves disk + bandwidth). */
     public static Path sharedCache() {
         return launcherRoot().resolve("cache");
     }
@@ -47,8 +58,9 @@ public class LauncherPaths {
         return getDefaultMinecraftPath().resolve("assets");
     }
 
+    /** Version jars/jsons now go into .minecraft/versions, same location the official launcher uses. */
     public static Path versionsDir() {
-        return sharedCache().resolve("versions");
+        return getDefaultMinecraftPath().resolve("versions");
     }
 
     /** Default per-instance game directory (used unless the user picks a custom directory for that instance). */

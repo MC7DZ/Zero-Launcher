@@ -47,4 +47,10 @@ public class SettingsManager {
     public LauncherSettings getSettings() {
         return settings;
     }
+
+    /** Resets all settings back to their defaults and persists them. */
+    public void resetToDefaults() {
+        settings = new LauncherSettings();
+        save();
+    }
 }
