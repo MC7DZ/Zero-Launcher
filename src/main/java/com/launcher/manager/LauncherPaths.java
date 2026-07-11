@@ -63,9 +63,9 @@ public class LauncherPaths {
         return getDefaultMinecraftPath().resolve("versions");
     }
 
-    /** Default per-instance game directory (used unless the user picks a custom directory for that instance). */
-    public static Path defaultInstanceDir(String instanceId) {
-        return launcherRoot().resolve("instances").resolve(instanceId);
+    public static Path defaultInstanceDir(String instanceName) {
+        String safeName = instanceName.replaceAll("[\\\\/:*?\"<>|]", "_");
+        return getDefaultMinecraftPath().resolve("instances").resolve(safeName);
     }
 
     public static Path getDefaultMinecraftPath() {
@@ -92,16 +92,27 @@ public class LauncherPaths {
      * Searches for a local version JSON file in standard locations.
      */
     public static Path findLocalVersionJson(String versionId, Path gameDir) {
+        if (gameDir != null) {
+            Path defaultMcDir = getDefaultMinecraftPath().toAbsolutePath().normalize();
+            Path gameDirAbs = gameDir.toAbsolutePath().normalize();
+
+            // If gameDir is not .minecraft, look for the self-contained profile
+            if (!gameDirAbs.equals(defaultMcDir)) {
+                String dirName = gameDir.getFileName().toString();
+                Path direct = gameDir.resolve(dirName + ".json");
+                if (Files.exists(direct)) return direct;
+            }
+
+            Path custom = gameDir.resolve("versions").resolve(versionId).resolve(versionId + ".json");
+            if (Files.exists(custom)) return custom;
+        }
+
         Path p1 = versionsDir().resolve(versionId).resolve(versionId + ".json");
         if (Files.exists(p1)) return p1;
 
         Path p2 = getDefaultMinecraftPath().resolve("versions").resolve(versionId).resolve(versionId + ".json");
         if (Files.exists(p2)) return p2;
 
-        if (gameDir != null) {
-            Path p3 = gameDir.resolve("versions").resolve(versionId).resolve(versionId + ".json");
-            if (Files.exists(p3)) return p3;
-        }
         return null;
     }
 }

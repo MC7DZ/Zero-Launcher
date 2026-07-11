@@ -93,12 +93,11 @@ public class InstanceManager {
         return instances.stream().filter(i -> i.id.equals(id)).findFirst();
     }
 
-    /** Resolves the actual game directory on disk, honoring the per-instance default/custom choice. */
     public Path resolveGameDir(Instance instance) {
         if (instance.useCustomDirectory && instance.customDirectoryPath != null && !instance.customDirectoryPath.isBlank()) {
             return Path.of(instance.customDirectoryPath);
         }
-        return LauncherPaths.defaultInstanceDir(instance.id);
+        return LauncherPaths.defaultInstanceDir(instance.name);
     }
 
     private void scanMinecraftFolder() {
@@ -122,11 +121,23 @@ public class InstanceManager {
                                 String mcVersion = versionJson.has("id") ? versionJson.get("id").getAsString() : versionId;
 
                                 // Check if an instance for this version and path already exists
-                                boolean exists = instances.stream().anyMatch(
-                                        inst -> inst.mcVersion.equals(mcVersion) &&
-                                                inst.useCustomDirectory &&
-                                                Path.of(inst.customDirectoryPath).equals(minecraftPath)
-                                );
+                                boolean exists = instances.stream().anyMatch(inst -> {
+                                    String safeName = inst.name.replaceAll("[\\\\/:*?\"<>|]", "_");
+                                    if (versionId.equals(safeName)) return true;
+                                    
+                                    if (mcVersion.equals(inst.mcVersion)) return true;
+                                    
+                                    if (inst.modLoader == ModLoaderType.FABRIC) {
+                                        return mcVersion.equals("fabric-loader-" + inst.modLoaderVersion + "-" + inst.mcVersion);
+                                    } else if (inst.modLoader == ModLoaderType.QUILT) {
+                                        return mcVersion.equals("quilt-loader-" + inst.modLoaderVersion + "-" + inst.mcVersion);
+                                    } else if (inst.modLoader == ModLoaderType.FORGE) {
+                                        return mcVersion.contains("forge") && mcVersion.contains(inst.mcVersion);
+                                    } else if (inst.modLoader == ModLoaderType.NEOFORGE) {
+                                        return mcVersion.contains("neoforge") && mcVersion.contains(inst.mcVersion);
+                                    }
+                                    return false;
+                                });
 
                                 if (!exists) {
                                     Instance scannedInstance = new Instance(

@@ -101,17 +101,6 @@
 }
 
 /* Kill  */
-#killButton {
-    -fx-border-color: -fx-danger;
-    -fx-text-fill: -fx-danger;
-    -fx-background-color: -fx-danger-dim;
-}
-#killButton:hover {
-    -fx-background-color: -fx-danger;
-    -fx-text-fill: #ffffff;
-    -fx-border-color: -fx-danger;
-}
-#killButton:pressed { -fx-background-color: #dc2626; }
 
 /* Danger secondary (delete) */
 .btn-danger {

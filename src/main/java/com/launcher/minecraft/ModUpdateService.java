@@ -447,8 +447,10 @@ public class ModUpdateService {
         if ("mod".equals(projectType) && loader != null && !loader.isBlank()) {
             url.append("loaders=").append(java.net.URLEncoder.encode("[\"" + loader.toLowerCase() + "\"]", "UTF-8"));
         }
-        // Game version is no longer used as a hard filter here — see searchProjectsPage for why.
-        // This just fetches every version so the UI can pick from (and flag) the full list.
+        if (gameVersion != null && !gameVersion.isBlank()) {
+            if (url.charAt(url.length() - 1) != '?') url.append("&");
+            url.append("game_versions=").append(java.net.URLEncoder.encode("[\"" + gameVersion + "\"]", "UTF-8"));
+        }
 
         String response = HttpUtil.getString(url.toString());
         JsonArray versions = JsonUtil.parse(response).getAsJsonArray();

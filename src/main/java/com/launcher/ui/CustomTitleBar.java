@@ -61,6 +61,12 @@ public final class CustomTitleBar extends JPanel {
         TitleBarButton closeBtn = new TitleBarButton(Glyph.CLOSE);
         closeBtn.setToolTipText("Close");
         closeBtn.addActionListener(e -> {
+            if (frame instanceof com.launcher.Main mainFrame) {
+                if (mainFrame.isAnyGameRunning()) {
+                    mainFrame.setVisible(false);
+                    return;
+                }
+            }
             // Dispatch WINDOW_CLOSING so any registered WindowListener (e.g. Main's session
             // cleanup) gets to run first...
             frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));
@@ -236,12 +242,7 @@ public final class CustomTitleBar extends JPanel {
 
             switch (glyph) {
                 case MINIMIZE -> g2.drawLine(cx - s, cy, cx + s, cy);
-                case MAXIMIZE -> g2.drawRect(cx - s, cy - s, s * 2, s * 2);
-                case RESTORE -> {
-                    int off = 2;
-                    g2.drawRect(cx - s + off, cy - s - off, s * 2 - off, s * 2 - off);
-                    g2.drawRect(cx - s, cy - s + off, s * 2 - off, s * 2 - off);
-                }
+                case MAXIMIZE, RESTORE -> g2.drawRect(cx - s, cy - s, s * 2, s * 2);
                 case CLOSE -> {
                     g2.drawLine(cx - s, cy - s, cx + s, cy + s);
                     g2.drawLine(cx - s, cy + s, cx + s, cy - s);

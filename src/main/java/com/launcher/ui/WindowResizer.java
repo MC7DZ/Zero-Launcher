@@ -57,6 +57,12 @@ public final class WindowResizer {
                 activeEdge = Edge.NONE;
                 if (wasResizing && frame instanceof com.launcher.Main m) {
                     m.endWindowAdjust();
+                    // Undecorated frames get no OS-level help repainting the newly
+                    // exposed area while the native window is being resized, so a
+                    // stale/black frame from mid-drag can otherwise persist until some
+                    // unrelated event happens to trigger a repaint. Force one now that
+                    // the drag has actually stopped.
+                    forceSyncRepaint();
                 }
             }
         };
@@ -137,5 +143,28 @@ public final class WindowResizer {
         }
 
         frame.setBounds(x, y, w, h);
+
+        // Undecorated windows don't get the native window-manager repaint that
+        // decorated frames receive while resizing: the OS grows/shrinks the real
+        // window instantly, but Swing's normal repaint is asynchronous and gets
+        // coalesced, so the newly exposed region is left showing black (growing)
+        // or stale content from before the resize ("ghosting", shrinking) for a
+        // visible stretch of the drag. Forcing a synchronous repaint on every
+        // step closes that gap.
+        forceSyncRepaint();
+    }
+
+    /** Synchronously repaints the frame's content right now, instead of letting Swing's
+     *  normal asynchronous/coalesced repaint queue decide when to get to it. Needed
+     *  because this is an undecorated window: there's no native window-manager repaint
+     *  to paper over the gap between a native resize and Swing's next scheduled repaint. */
+    private void forceSyncRepaint() {
+        frame.validate();
+        JRootPane root = frame.getRootPane();
+        root.paintImmediately(0, 0, root.getWidth(), root.getHeight());
+        // Flushes any buffered native drawing calls to the screen right away instead of
+        // waiting for the toolkit's own batching — matters most on Linux/X11, harmless
+        // elsewhere.
+        Toolkit.getDefaultToolkit().sync();
     }
 }

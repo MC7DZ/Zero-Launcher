@@ -15,6 +15,10 @@ public class LauncherSettings {
     /** Which preset gradient backdrop to paint behind the UI. One of: Default, Midnight,
      *  Sunset, Forest, Ocean, Monochrome, Accent Glow. */
     public String backgroundStyle  = "Default";
+    public String headerBgColor         = "#111116";
+    public String searchBgColor         = "#1a1a24";
+    public String notificationBgColor   = "#13131A";
+    public String notificationStyle     = "Frosted Glass";
     public boolean useBackgroundImage   = false;
     public String backgroundImagePath   = "";
     /** Fake "frosted glass" transparency: blends panels with the background behind them.
@@ -28,13 +32,17 @@ public class LauncherSettings {
 
     // Behavior
     /** Minimize the launcher while Minecraft is running — game opens in its own OS window. */
-    public boolean minimizeOnLaunch     = true;
+    public boolean minimizeOnLaunch     = false;
+    /** Restore the launcher window automatically when the Minecraft instance closes. */
+    public boolean restoreLauncherOnGameClose = true;
+    /** Show an icon in the system tray. */
+    public boolean enableSystemTray     = true;
     /** Close the launcher entirely after Minecraft launches (saves RAM). */
     public boolean closeAfterLaunch     = false;
     /** Keep the log console visible while Minecraft is running. */
     public boolean showConsoleOnLaunch  = true;
     /** Whether the log console panel is currently shown or collapsed (toggled from the top bar). */
-    public boolean logConsoleVisible    = true;
+    public boolean logConsoleVisible    = false;
     public boolean scanOnStartup        = true;
     public boolean showHiddenInstances  = false;
     /** Automatically check every instance's mods for available updates when the launcher starts. */

@@ -28,7 +28,7 @@ import java.util.List;
 public final class NotificationCenter extends JPanel {
 
     private static final int MAX_VISIBLE = 4;
-    private static final int WIDTH = 320;
+    private static final int WIDTH = 450;
     private static final int GAP = 8;
     private static final int DEFAULT_DURATION_MS = 5000;
     private static final int ERROR_DURATION_MS = 8000;
@@ -105,8 +105,13 @@ public final class NotificationCenter extends JPanel {
             }
         });
         panel.setAlpha(0f);
-        panel.setSize(WIDTH, panel.getPreferredSize().height);
-        panel.setLocation(0, -panel.getHeight());
+        panel.doLayout();
+        int prefWidth = panel.getPreferredSize().width;
+        int maxW = Math.min(prefWidth, WIDTH);
+        int prefHeight = panel.getPreferredSize().height;
+        
+        panel.setSize(maxW, prefHeight);
+        panel.setLocation(WIDTH - maxW, -panel.getHeight());
         add(panel);
         setComponentZOrder(panel, 0);
 
@@ -173,7 +178,7 @@ public final class NotificationCenter extends JPanel {
             } else {
                 entry.currentY = entry.targetY;
             }
-            panel.setLocation(0, (int) Math.round(entry.currentY));
+            panel.setLocation(WIDTH - panel.getWidth(), (int) Math.round(entry.currentY));
         }
 
         if (!toRemove.isEmpty()) {

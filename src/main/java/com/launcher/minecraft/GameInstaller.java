@@ -52,8 +52,16 @@ public class GameInstaller {
                 throw new IOException("Could not find parent version '" + parentId + "' in Mojang's version manifest or local files");
             }
             parent = manifest.fetchVersionJson(parentUrl);
+            
+            try {
+                Path savePath = LauncherPaths.getDefaultMinecraftPath().resolve("versions").resolve(parentId).resolve(parentId + ".json");
+                Files.createDirectories(savePath.getParent());
+                Files.writeString(savePath, JsonUtil.GSON.toJson(parent), java.nio.charset.StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                log.accept("Failed to save parent version JSON locally: " + e.getMessage());
+            }
         }
-
+        
         parent = resolveInheritance(parent, log); // parent might itself inherit (rare, but be safe)
         return merge(parent, versionJson);
     }
