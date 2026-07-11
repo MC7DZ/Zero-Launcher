@@ -4,9 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="something idk">
+    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="add notifications styles &#10;fix the windowing system &#10;add system tray&#10;add multi instances">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/WindowResizer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/WindowResizer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationCenter.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationCenter.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationPanel.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -14,7 +17,7 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="56" />
+    <option name="cachedIndexableFilesCount" value="58" />
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -37,61 +40,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="0.0036711775973482215" />
-      <entry key="MS500" value="0.4098223200036323" />
-      <entry key="S2" value="1.8661794311461557" />
-      <entry key="S5" value="3.5885411160707017" />
-      <entry key="S10" value="8.026629769735711" />
-      <entry key="S30" value="32.042537015411376" />
-      <entry key="S60" value="54.108036284018674" />
-      <entry key="M2" value="72.22144391179576" />
-      <entry key="M5" value="86.57226411679767" />
-      <entry key="M10" value="92.08064182479356" />
-      <entry key="M15" value="94.00653041198987" />
-      <entry key="M30" value="95.97924512673173" />
-      <entry key="H1" value="96.98354040150465" />
-      <entry key="H2" value="97.4902399051729" />
-      <entry key="H4" value="97.74473615220818" />
-      <entry key="D1" value="97.95740261532876" />
-      <entry key="W1" value="97.9939133499677" />
+      <entry key="MS100" value="1.003312432873471" />
+      <entry key="MS500" value="1.4644147137404517" />
+      <entry key="S2" value="3.868917763164209" />
+      <entry key="S5" value="7.503683001365886" />
+      <entry key="S10" value="11.856710552160912" />
+      <entry key="S30" value="30.96779208110171" />
+      <entry key="S60" value="55.11940056828678" />
+      <entry key="M2" value="79.40178129241936" />
+      <entry key="M5" value="101.1789521087939" />
+      <entry key="M10" value="110.09274286451233" />
+      <entry key="M15" value="113.27922010030876" />
+      <entry key="M30" value="116.58018198387329" />
+      <entry key="H1" value="118.27495410266094" />
+      <entry key="H2" value="119.13365724988806" />
+      <entry key="H4" value="119.56586918945018" />
+      <entry key="D1" value="119.92751122752821" />
+      <entry key="W1" value="119.98964118332427" />
     </decayedCancelled>
     <decayedSelected>
-      <entry key="MS100" value="1.0" />
-      <entry key="MS500" value="1.0" />
-      <entry key="S2" value="1.0" />
-      <entry key="S5" value="1.0" />
-      <entry key="S10" value="1.0" />
-      <entry key="S30" value="1.0" />
-      <entry key="S60" value="1.0" />
-      <entry key="M2" value="1.0" />
-      <entry key="M5" value="1.0" />
-      <entry key="M10" value="1.0" />
-      <entry key="M15" value="1.0" />
-      <entry key="M30" value="1.0" />
-      <entry key="H1" value="1.0" />
-      <entry key="H2" value="1.0" />
-      <entry key="H4" value="1.0" />
-      <entry key="D1" value="1.0" />
-      <entry key="W1" value="1.0" />
+      <entry key="MS100" value="2.504249069496699E-106" />
+      <entry key="MS500" value="7.581157236946085E-22" />
+      <entry key="S2" value="5.24727561241052E-6" />
+      <entry key="S5" value="0.007726335284226034" />
+      <entry key="S10" value="0.08789957499456999" />
+      <entry key="S30" value="0.4446267543064148" />
+      <entry key="S60" value="0.6668033850442082" />
+      <entry key="M2" value="0.8165802992016209" />
+      <entry key="M5" value="0.9221457291089091" />
+      <entry key="M10" value="0.960284191845784" />
+      <entry key="M15" value="0.9733443667295154" />
+      <entry key="M30" value="0.986582164206061" />
+      <entry key="H1" value="0.993268425052393" />
+      <entry key="H2" value="0.9966285291182432" />
+      <entry key="H4" value="0.9983128413068934" />
+      <entry key="D1" value="0.9997186090065081" />
+      <entry key="W1" value="0.9999597964379905" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.0070951181213518896" />
-      <entry key="MS500" value="0.7269879802049232" />
-      <entry key="S2" value="2.6070809884689616" />
-      <entry key="S5" value="4.4629289757874995" />
-      <entry key="S10" value="8.932289236482934" />
-      <entry key="S30" value="32.96903725166358" />
-      <entry key="S60" value="55.05607839198267" />
-      <entry key="M2" value="73.18973982730205" />
-      <entry key="M5" value="87.5578445636239" />
-      <entry key="M10" value="93.07310514037364" />
-      <entry key="M15" value="95.00143025483422" />
-      <entry key="M30" value="96.97665640297771" />
-      <entry key="H1" value="97.98223622630033" />
-      <entry key="H2" value="98.48958534496568" />
-      <entry key="H4" value="98.74440825152713" />
-      <entry key="D1" value="98.95734787881723" />
-      <entry key="W1" value="98.99390552834748" />
+      <entry key="MS100" value="0.02320911012727405" />
+      <entry key="MS500" value="0.9165818540146016" />
+      <entry key="S2" value="3.6709865901675203" />
+      <entry key="S5" value="7.403225507290361" />
+      <entry key="S10" value="11.852880298338732" />
+      <entry key="S30" value="31.324851918002242" />
+      <entry key="S60" value="55.716942130546244" />
+      <entry key="M2" value="80.17286372146204" />
+      <entry key="M5" value="102.07932515106792" />
+      <entry key="M10" value="111.04143905358083" />
+      <entry key="M15" value="114.24467419281213" />
+      <entry key="M30" value="117.56273416196073" />
+      <entry key="H1" value="119.26618586386142" />
+      <entry key="H2" value="120.12926197095345" />
+      <entry key="H4" value="120.56366875032474" />
+      <entry key="D1" value="120.92714409799936" />
+      <entry key="W1" value="120.9895887266948" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -178,7 +181,15 @@
       <option name="project" value="LOCAL" />
       <updated>1783449597904</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="add notifications styles &#10;fix the windowing system &#10;add system tray&#10;add multi instances">
+      <option name="closed" value="true" />
+      <created>1783730620389</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1783730620389</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -201,6 +212,7 @@
     <MESSAGE value="fully ui rework add some stuff in the settings add downloads manager" />
     <MESSAGE value="improve the instances installers" />
     <MESSAGE value="something idk" />
-    <option name="LAST_COMMIT_MESSAGE" value="something idk" />
+    <MESSAGE value="add notifications styles &#10;fix the windowing system &#10;add system tray&#10;add multi instances" />
+    <option name="LAST_COMMIT_MESSAGE" value="add notifications styles &#10;fix the windowing system &#10;add system tray&#10;add multi instances" />
   </component>
 </project>

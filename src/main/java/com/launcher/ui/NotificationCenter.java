@@ -137,18 +137,21 @@ public final class NotificationCenter extends JPanel {
     }
 
     private void tick() {
-        boolean anyLive = false;
+        if (active.isEmpty()) {
+            if (queue.isEmpty()) ticker.stop();
+            return;
+        }
+
         List<Entry> toRemove = new ArrayList<>();
 
         for (Entry entry : active) {
-            anyLive = true;
             NotificationPanel panel = entry.panel;
 
             // Fade in.
             if (entry.fadingIn) {
-                float a = panel.getAlpha() + (float) (TICK_MS * FADE_RATE_PER_MS);
-                if (a >= 1f) { a = 1f; entry.fadingIn = false; }
-                panel.setAlpha(a);
+                float a = Math.min(1f, panel.getAlpha() + (float) (TICK_MS * FADE_RATE_PER_MS));
+                panel.setAlphaQuiet(a);
+                if (a >= 1f) entry.fadingIn = false;
             }
 
             // Countdown, paused while hovered or still fading in.
@@ -157,23 +160,20 @@ public final class NotificationCenter extends JPanel {
                 if (entry.remainingMs <= 0) {
                     startFadeOut(entry);
                 } else {
-                    panel.setLifeProgress((float) (entry.remainingMs / entry.totalMs));
+                    panel.setLifeProgressQuiet((float) (entry.remainingMs / entry.totalMs));
                 }
             }
 
             // Fade out.
             if (entry.fadingOut) {
-                float a = panel.getAlpha() - (float) (TICK_MS * FADE_RATE_PER_MS);
-                if (a <= 0f) {
-                    a = 0f;
-                    toRemove.add(entry);
-                }
-                panel.setAlpha(a);
+                float a = Math.max(0f, panel.getAlpha() - (float) (TICK_MS * FADE_RATE_PER_MS));
+                panel.setAlphaQuiet(a);
+                if (a <= 0f) toRemove.add(entry);
             }
 
-            // Slide toward target Y (exponential ease, frame-rate independent enough at fixed tick).
+            // Slide toward target Y.
             double dy = entry.targetY - entry.currentY;
-            if (Math.abs(dy) > 0.5) {
+            if (Math.abs(dy) > 0.3) {
                 entry.currentY += dy * SLIDE_EASE;
             } else {
                 entry.currentY = entry.targetY;
@@ -188,13 +188,13 @@ public final class NotificationCenter extends JPanel {
             }
             layoutTargets();
             drainQueueIfRoom();
-            revalidate();
-            repaint();
         }
 
         setPreferredSize(calculatePreferredSize());
+        // Single repaint per tick covers ALL notifications at once.
+        repaint();
 
-        if (!anyLive && queue.isEmpty()) {
+        if (active.isEmpty() && queue.isEmpty()) {
             ticker.stop();
         }
     }

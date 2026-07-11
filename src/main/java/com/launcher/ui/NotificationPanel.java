@@ -151,10 +151,18 @@ public class NotificationPanel extends JPanel {
         this.alpha = Math.max(0f, Math.min(1f, alpha));
         repaint();
     }
+    /** Sets alpha without triggering a repaint; the parent NotificationCenter batches the repaint. */
+    public void setAlphaQuiet(float alpha) {
+        this.alpha = Math.max(0f, Math.min(1f, alpha));
+    }
 
     public void setLifeProgress(float p) {
         this.lifeProgress = Math.max(0f, Math.min(1f, p));
         repaint();
+    }
+    /** Sets progress without triggering a repaint; the parent NotificationCenter batches the repaint. */
+    public void setLifeProgressQuiet(float p) {
+        this.lifeProgress = Math.max(0f, Math.min(1f, p));
     }
 
     public void setShowProgress(boolean show) {
@@ -253,8 +261,11 @@ public class NotificationPanel extends JPanel {
         }
         g2.draw(roundedShape);
 
+        Shape oldClipGlobal = g2.getClip();
+        g2.clip(roundedShape);
+
         if (!isOutline) {
-            // Left accent stripe, clipped to the rounded shape.
+            // Left accent stripe
             g2.setColor(accent);
             g2.fillRoundRect(0, 0, 4, h - 1, 16, 16);
             g2.fillRect(3, 0, 2, h - 1);
@@ -266,6 +277,7 @@ public class NotificationPanel extends JPanel {
             g2.fillRoundRect(0, h - 3, barWidth, 3, 3, 3);
         }
 
+        g2.setClip(oldClipGlobal);
         g2.dispose();
         super.paintComponent(g);
     }

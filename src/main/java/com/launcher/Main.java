@@ -282,28 +282,24 @@ public class Main extends JFrame {
             } catch (Exception ignored) {
             }
             if (systemTray != null && trayUrl != null) {
-            try {
-                systemTray.setImage(trayUrl);
-                systemTray.setTooltip("Zero Launcher");
+                try {
+                    systemTray.setImage(trayUrl);
+                    systemTray.setTooltip("Zero Launcher");
 
-                systemTray.getMenu().add(new dorkbox.systemTray.MenuItem("Show Launcher", e -> {
-                    SwingUtilities.invokeLater(() -> {
-                        setVisible(true);
-                        setExtendedState(JFrame.NORMAL);
-                        toFront();
-                    });
-                }));
+                    systemTray.getMenu().add(new dorkbox.systemTray.MenuItem("Show Launcher", e -> {
+                        SwingUtilities.invokeLater(this::restoreFromTray);
+                    }));
 
-                systemTray.getMenu().add(new dorkbox.systemTray.Separator());
+                    systemTray.getMenu().add(new dorkbox.systemTray.Separator());
 
-                systemTray.getMenu().add(new dorkbox.systemTray.MenuItem("Exit", e -> {
-                    com.launcher.manager.DiscordRpcManager.getInstance().shutdown();
-                    System.exit(0);
-                }));
-            } catch (Exception e) {
-                System.err.println("Could not add tray icon: " + e.getMessage());
+                    systemTray.getMenu().add(new dorkbox.systemTray.MenuItem("Exit", e -> {
+                        com.launcher.manager.DiscordRpcManager.getInstance().shutdown();
+                        System.exit(0);
+                    }));
+                } catch (Exception e) {
+                    System.err.println("Could not add tray icon: " + e.getMessage());
+                }
             }
-        }
         }
 
         // Load default mod icon (scaled down — the source asset is 1024x1024 and must
@@ -395,7 +391,7 @@ public class Main extends JFrame {
                     refreshInstances();
                     notifications.success("Instance created", "Created: " + inst.name);
                     cardLayout.show(cardPanel, MAIN_VIEW); // Switch back to main view
-                    
+
                     Account activeAccount = (Account) accountBox.getSelectedItem();
                     if (activeAccount != null) {
                         launchGame(inst, activeAccount, true);
@@ -489,6 +485,51 @@ public class Main extends JFrame {
         });
         downloadsRefreshTimer.start();
 
+        // Loading overlay — shown immediately, dismissed once data is ready.
+        JPanel loadingOverlay = new JPanel(new GridBagLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(new Color(28, 28, 35));
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        loadingOverlay.setOpaque(true);
+
+        JPanel loadingCard = new JPanel(new BorderLayout(0, 14));
+        loadingCard.setOpaque(false);
+
+        JLabel loadingIcon = new JLabel();
+        loadingIcon.setHorizontalAlignment(SwingConstants.CENTER);
+        try {
+            URL loadIconUrl = getClass().getResource("/com/launcher/ZeroLauncherIcon.png");
+            if (loadIconUrl != null) {
+                java.awt.image.BufferedImage rawImg = ImageIO.read(loadIconUrl);
+                Image scaledImg = rawImg.getScaledInstance(100, 100, Image.SCALE_SMOOTH);
+                loadingIcon.setIcon(new ImageIcon(scaledImg));
+            }
+        } catch (Exception ignored) {
+        }
+
+        JLabel loadingTitle = new JLabel("Zero Launcher", SwingConstants.CENTER);
+        loadingTitle.setFont(new Font("SansSerif", Font.BOLD, 26));
+        loadingTitle.setForeground(Color.WHITE);
+
+        JLabel loadingStatus = new JLabel("Loading...", SwingConstants.CENTER);
+        loadingStatus.setFont(new Font("SansSerif", Font.PLAIN, 14));
+        loadingStatus.setForeground(new Color(156, 163, 175));
+
+        loadingCard.add(loadingIcon, BorderLayout.NORTH);
+        loadingCard.add(loadingTitle, BorderLayout.CENTER);
+        loadingCard.add(loadingStatus, BorderLayout.SOUTH);
+
+        loadingOverlay.add(loadingCard);
+        layeredPane.add(loadingOverlay, JLayeredPane.POPUP_LAYER);
+        loadingOverlay.setBounds(0, 0, initW, initH);
+
         // Set the layeredPane as the content pane
         setContentPane(layeredPane);
 
@@ -513,6 +554,10 @@ public class Main extends JFrame {
                 repositionDownloadsToggle();
                 positionDownloadsPopover();
                 positionKillInstancesPopover();
+                // Keep loading overlay filling the whole window.
+                if (loadingOverlay.isDisplayable()) {
+                    loadingOverlay.setBounds(0, 0, layeredPane.getWidth(), layeredPane.getHeight());
+                }
             }
         });
 
@@ -537,7 +582,13 @@ public class Main extends JFrame {
 
         addWindowListener(new WindowAdapter() {
             public void windowClosing(WindowEvent e) {
-                com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
+                if (!runningInstances.isEmpty()) {
+                    hideToTray();
+                    return;
+                }
+
+                com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance()
+                        .getSettings();
                 boolean isMax = (getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
                 if (s.startMaximized != isMax) {
                     s.startMaximized = isMax;
@@ -592,8 +643,29 @@ public class Main extends JFrame {
 
         checkNetworkAndShowOfflineButton();
 
-        // frezzing screen - Workaround for UI freeze after resizing/maximizing the
-        // window
+        // Dismiss the loading overlay with a short fade-out after all data is ready.
+        // We schedule this in two invokeLater calls so the window is fully painted
+        // first (at least one frame visible) before we start the timer.
+        SwingUtilities.invokeLater(() -> {
+            // Animate alpha from 1→0 over ~300ms then remove overlay.
+            final float[] fadeAlpha = { 1.0f };
+            javax.swing.Timer fadeTimer = new javax.swing.Timer(16, null);
+            fadeTimer.addActionListener(ev -> {
+                fadeAlpha[0] -= 0.06f;
+                if (fadeAlpha[0] <= 0f) {
+                    fadeTimer.stop();
+                    layeredPane.remove(loadingOverlay);
+                    layeredPane.repaint();
+                } else {
+                    loadingOverlay.putClientProperty("alpha", fadeAlpha[0]);
+                    // repaint the overlay with current alpha
+                    loadingOverlay.repaint();
+                }
+            });
+            fadeTimer.start();
+        });
+
+        // Workaround for UI freeze after resizing/maximizing the window
         javax.swing.Timer uiRefreshTimer = new javax.swing.Timer(50, e -> {
             if (!userAdjustingWindow && !isMinimized) {
                 revalidate();
@@ -601,6 +673,21 @@ public class Main extends JFrame {
             }
         });
         uiRefreshTimer.start();
+    }
+
+    public void hideToTray() {
+        setVisible(false);
+        dispose(); // Releases native window resources
+        isMinimized = true;
+        System.gc(); // Force GC to clean up RAM completely
+    }
+
+    public void restoreFromTray() {
+        setVisible(true);
+        setExtendedState(JFrame.NORMAL);
+        toFront();
+        requestFocus();
+        isMinimized = false;
     }
 
     private void checkNetworkAndShowOfflineButton() {
@@ -969,12 +1056,13 @@ public class Main extends JFrame {
         dawnButtonsRow.setOpaque(false);
         installDawnButton = new JButton("Install Dawn Client");
         deleteDawnButton = new JButton("Uninstall");
-        
-        JLabel dawnNote = new JLabel("dawn client disabled offline mode players for no resoun + fix that problem when playing");
+
+        JLabel dawnNote = new JLabel(
+                "dawn client disabled offline mode players for no resoun + fix that problem when playing");
         dawnNote.setFont(new Font("SansSerif", Font.PLAIN, 10));
         dawnNote.setForeground(new Color(255, 255, 255, 150));
         dawnButtonsRow.add(dawnNote);
-        
+
         for (JButton b : new JButton[] { installDawnButton, deleteDawnButton }) {
             b.setFont(new Font("SansSerif", Font.BOLD, 13));
             b.setFocusPainted(false);
@@ -984,12 +1072,12 @@ public class Main extends JFrame {
             b.putClientProperty("JButton.borderColor", new Color(0xFF, 0xC1, 0x5E, 160));
             b.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
         }
-        
+
         // Gray out Dawn Install Button
         installDawnButton.setBackground(new Color(150, 150, 150, 130));
         installDawnButton.putClientProperty("JButton.borderColor", new Color(150, 150, 150, 160));
         installDawnButton.setEnabled(false);
-        
+
         dawnButtonsRow.add(installDawnButton);
         dawnButtonsRow.add(deleteDawnButton);
         dawnCard.add(dawnButtonsRow, BorderLayout.EAST);
@@ -1679,7 +1767,8 @@ public class Main extends JFrame {
                         } else {
                             String names = String.join(", ", missing.values());
                             notifications.success("Dependencies installed",
-                                    "Installed " + finalInstalled + " of " + missing.size() + " dependencies:\n" + names);
+                                    "Installed " + finalInstalled + " of " + missing.size() + " dependencies:\n"
+                                            + names);
                         }
                     });
                 } catch (Exception ex) {
@@ -1841,8 +1930,6 @@ public class Main extends JFrame {
         filters.setLayout(new FlowLayout(FlowLayout.CENTER, 10, 10));
         filters.setBorder(new EmptyBorder(4, 12, 4, 12));
         discoverFiltersPanel = filters;
-
-
 
         // Segmented toggle for Mods / Resource Packs
         discoverModsToggle = new JToggleButton("Mods", true);
@@ -2773,7 +2860,8 @@ public class Main extends JFrame {
     private final java.util.List<RoundedPanel> frostedGlassPanels = new ArrayList<>();
 
     private void refreshDiscoverInstances() {
-        // No longer using discoverInstanceBox. We use instanceList.getSelectedValue() instead.
+        // No longer using discoverInstanceBox. We use instanceList.getSelectedValue()
+        // instead.
     }
 
     // ── Skeleton loading placeholders ────────────────────────────────────────
@@ -3302,11 +3390,12 @@ public class Main extends JFrame {
                 (val) -> s.notificationBgColor = val, saveAndApply, "#13131A"), gbc);
 
         gbc.gridy++;
-        JComboBox<String> notifStyleCombo = new JComboBox<>(new String[]{ "Frosted Glass", "Solid Dark", "Minimal Outline" });
+        JComboBox<String> notifStyleCombo = new JComboBox<>(
+                new String[] { "Frosted Glass", "Solid Dark", "Minimal Outline" });
         notifStyleCombo.setSelectedItem(s.notificationStyle);
         notifStyleCombo.addActionListener(e -> {
             s.notificationStyle = (String) notifStyleCombo.getSelectedItem();
-            saveAndApply.run();
+            saveAndApply.accept("");
         });
         addSettingsRow(appearanceCard, "Notification Style", notifStyleCombo, gbc);
         gbc.gridy++;
@@ -4892,22 +4981,24 @@ public class Main extends JFrame {
                         String vid = fi.installClient(instance.mcVersion, fv, gameDir, this::log);
                         versionJson = fi.loadGeneratedVersionJson(gameDir, vid);
                     }
-                    
-                    if (instance.modLoader == ModLoaderType.VANILLA || instance.modLoader == ModLoaderType.FABRIC || instance.modLoader == ModLoaderType.QUILT) {
+
+                    if (instance.modLoader == ModLoaderType.VANILLA || instance.modLoader == ModLoaderType.FABRIC
+                            || instance.modLoader == ModLoaderType.QUILT) {
                         String vid = instance.mcVersion;
                         if (instance.modLoader == ModLoaderType.FABRIC)
                             vid = "fabric-loader-" + instance.modLoaderVersion + "-" + instance.mcVersion;
                         else if (instance.modLoader == ModLoaderType.QUILT)
                             vid = "quilt-loader-" + instance.modLoaderVersion + "-" + instance.mcVersion;
-                        
+
                         if (versionJson.has("id")) {
                             vid = versionJson.get("id").getAsString();
                         } else {
                             versionJson.addProperty("id", vid);
                         }
-                        
+
                         try {
-                            Path defaultMcDir = com.launcher.manager.LauncherPaths.getDefaultMinecraftPath().toAbsolutePath().normalize();
+                            Path defaultMcDir = com.launcher.manager.LauncherPaths.getDefaultMinecraftPath()
+                                    .toAbsolutePath().normalize();
                             Path gameDirAbs = gameDir.toAbsolutePath().normalize();
                             Path savePath;
 
@@ -4922,7 +5013,8 @@ public class Main extends JFrame {
                             }
 
                             Files.createDirectories(savePath.getParent());
-                            Files.writeString(savePath, com.launcher.util.JsonUtil.GSON.toJson(versionJson), java.nio.charset.StandardCharsets.UTF_8);
+                            Files.writeString(savePath, com.launcher.util.JsonUtil.GSON.toJson(versionJson),
+                                    java.nio.charset.StandardCharsets.UTF_8);
                         } catch (Exception e) {
                             log("Failed to save version JSON locally: " + e.getMessage());
                         }
@@ -4982,7 +5074,7 @@ public class Main extends JFrame {
                     com.launcher.model.LauncherSettings cs = com.launcher.manager.SettingsManager.getInstance()
                             .getSettings();
                     if (cs.minimizeOnLaunch) {
-                        setExtendedState(JFrame.ICONIFIED);
+                        hideToTray();
                     }
                     if (com.launcher.manager.SettingsManager.getInstance().getSettings().closeAfterLaunch) {
                         System.exit(0);
@@ -5043,9 +5135,7 @@ public class Main extends JFrame {
                     }
                     playButton.setEnabled(true);
                     if (com.launcher.manager.SettingsManager.getInstance().getSettings().restoreLauncherOnGameClose) {
-                        setVisible(true);
-                        setExtendedState(JFrame.NORMAL);
-                        toFront();
+                        restoreFromTray();
                     }
                 });
                 System.gc();
@@ -5124,7 +5214,7 @@ public class Main extends JFrame {
                     com.launcher.model.LauncherSettings cs = com.launcher.manager.SettingsManager.getInstance()
                             .getSettings();
                     if (cs.minimizeOnLaunch)
-                        setExtendedState(JFrame.ICONIFIED);
+                        hideToTray();
                     if (cs.closeAfterLaunch)
                         System.exit(0);
                 });
@@ -5156,9 +5246,7 @@ public class Main extends JFrame {
                     offlinePlayButton.setEnabled(true);
                     playButton.setEnabled(true);
                     if (com.launcher.manager.SettingsManager.getInstance().getSettings().restoreLauncherOnGameClose) {
-                        setVisible(true);
-                        setExtendedState(JFrame.NORMAL);
-                        toFront();
+                        restoreFromTray();
                     }
                 });
                 System.gc();
@@ -5618,7 +5706,8 @@ public class Main extends JFrame {
     }
 
     private void positionKillInstancesPopover() {
-        if (killInstancesPopover == null) return;
+        if (killInstancesPopover == null)
+            return;
         int width = 440, height = 520;
         int x = layeredPane.getWidth() - width - 16;
         int y = 60; // Fixed top-right, just below any window controls
@@ -5626,7 +5715,8 @@ public class Main extends JFrame {
     }
 
     private void toggleKillInstancesPopover() {
-        if (killInstancesPopover == null) return;
+        if (killInstancesPopover == null)
+            return;
         if (killInstancesPopover.isVisible()) {
             animateKillInstancesPopoverHide();
         } else {
@@ -5636,7 +5726,8 @@ public class Main extends JFrame {
     }
 
     private void animateKillInstancesPopoverShow() {
-        if (killInstancesPopover == null) return;
+        if (killInstancesPopover == null)
+            return;
         positionKillInstancesPopover();
         Rectangle target = killInstancesPopover.getBounds();
         int slide = 14;
@@ -5662,7 +5753,8 @@ public class Main extends JFrame {
     }
 
     private void animateKillInstancesPopoverHide() {
-        if (killInstancesPopover == null || !killInstancesPopover.isVisible()) return;
+        if (killInstancesPopover == null || !killInstancesPopover.isVisible())
+            return;
         Rectangle from = killInstancesPopover.getBounds();
         float startAlpha = killInstancesPopover.getAlpha();
         int slide = 10;
@@ -5684,7 +5776,8 @@ public class Main extends JFrame {
     }
 
     private void refreshKillInstancesDialogContent() {
-        if (killInstancesListPanel == null) return;
+        if (killInstancesListPanel == null)
+            return;
         com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
         Color text = hexToColor(settings.textColor, new Color(226, 226, 234));
 
@@ -5746,9 +5839,11 @@ public class Main extends JFrame {
                 item.process().destroyForcibly();
                 notifications.warning("Game terminated", "Killed: " + item.label());
             }
-            // After killing, refresh the list. It might take a moment for the process to actually die 
+            // After killing, refresh the list. It might take a moment for the process to
+            // actually die
             // and be removed from the runningInstances list by the launch thread.
-            // For immediate UI feedback, we could also just hide the popover if it was the last one.
+            // For immediate UI feedback, we could also just hide the popover if it was the
+            // last one.
             SwingUtilities.invokeLater(() -> {
                 refreshKillInstancesDialogContent();
                 if (runningInstances.size() <= 1) {
@@ -5990,7 +6085,8 @@ public class Main extends JFrame {
         com.launcher.util.SingleInstanceGuard.startFocusServer(Main::bringRunningInstanceToFront);
 
         SwingUtilities.invokeLater(() -> {
-            new Main().setVisible(true);
+            Main mainFrame = new Main();
+            mainFrame.setVisible(true);
         });
     }
 

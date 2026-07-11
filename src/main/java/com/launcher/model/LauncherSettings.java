@@ -18,7 +18,7 @@ public class LauncherSettings {
     public String headerBgColor         = "#111116";
     public String searchBgColor         = "#1a1a24";
     public String notificationBgColor   = "#13131A";
-    public String notificationStyle     = "Frosted Glass";
+    public String notificationStyle     = "Minimal Outline";
     public boolean useBackgroundImage   = false;
     public String backgroundImagePath   = "";
     /** Fake "frosted glass" transparency: blends panels with the background behind them.
