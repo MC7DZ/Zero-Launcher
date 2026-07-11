@@ -164,6 +164,12 @@ public class Main extends JFrame {
     private JButton installDependenciesBtn;
     private List<ModEntry> currentModEntries = new ArrayList<>();
 
+    // ─── Export / Import Mods ─────────────────────────────────────────────────
+    private JButton exportModsBtn;
+    private JButton importModsBtn;
+    private RoundedPanel exportOverlay;
+    private RoundedPanel importOverlay;
+
     private final Map<String, ImageIcon> modIconCache = new ConcurrentHashMap<>();
     private ImageIcon defaultModIcon;
     private ImageIcon defaultModIcon24;
@@ -486,24 +492,42 @@ public class Main extends JFrame {
         downloadsRefreshTimer.start();
 
         // Loading overlay — shown immediately, dismissed once data is ready.
+        // Supports fade-in / fade-out via an "overlayAlpha" client property that
+        // controls the AlphaComposite used to paint the entire panel.
         JPanel loadingOverlay = new JPanel(new GridBagLayout()) {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                // Apply overall alpha for fade-in / fade-out
+                Object alphaObj = getClientProperty("overlayAlpha");
+                float alpha = (alphaObj instanceof Number) ? ((Number) alphaObj).floatValue() : 1.0f;
+                g2.setComposite(AlphaComposite.SrcOver.derive(Math.max(0f, Math.min(1f, alpha))));
                 g2.setColor(new Color(28, 28, 35));
                 g2.fillRect(0, 0, getWidth(), getHeight());
                 g2.dispose();
                 super.paintComponent(g);
             }
-        };
-        loadingOverlay.setOpaque(true);
 
-        JPanel loadingCard = new JPanel(new BorderLayout(0, 14));
+            @Override
+            public void paint(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                Object alphaObj = getClientProperty("overlayAlpha");
+                float alpha = (alphaObj instanceof Number) ? ((Number) alphaObj).floatValue() : 1.0f;
+                g2.setComposite(AlphaComposite.SrcOver.derive(Math.max(0f, Math.min(1f, alpha))));
+                super.paint(g2);
+                g2.dispose();
+            }
+        };
+        loadingOverlay.setOpaque(false);
+
+        JPanel loadingCard = new JPanel();
+        loadingCard.setLayout(new BoxLayout(loadingCard, BoxLayout.Y_AXIS));
         loadingCard.setOpaque(false);
 
         JLabel loadingIcon = new JLabel();
         loadingIcon.setHorizontalAlignment(SwingConstants.CENTER);
+        loadingIcon.setAlignmentX(Component.CENTER_ALIGNMENT);
         try {
             URL loadIconUrl = getClass().getResource("/com/launcher/ZeroLauncherIcon.png");
             if (loadIconUrl != null) {
@@ -517,18 +541,94 @@ public class Main extends JFrame {
         JLabel loadingTitle = new JLabel("Zero Launcher", SwingConstants.CENTER);
         loadingTitle.setFont(new Font("SansSerif", Font.BOLD, 26));
         loadingTitle.setForeground(Color.WHITE);
+        loadingTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JLabel loadingStatus = new JLabel("Loading...", SwingConstants.CENTER);
         loadingStatus.setFont(new Font("SansSerif", Font.PLAIN, 14));
         loadingStatus.setForeground(new Color(156, 163, 175));
+        loadingStatus.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        loadingCard.add(loadingIcon, BorderLayout.NORTH);
-        loadingCard.add(loadingTitle, BorderLayout.CENTER);
-        loadingCard.add(loadingStatus, BorderLayout.SOUTH);
+        // Spinning arc indicator — draws a rotating gradient arc below the status text.
+        JComponent spinner = new JComponent() {
+            private float angle = 0f;
+
+            {
+                setPreferredSize(new Dimension(48, 48));
+                setMaximumSize(new Dimension(48, 48));
+                setMinimumSize(new Dimension(48, 48));
+                javax.swing.Timer spinTimer = new javax.swing.Timer(16, e -> {
+                    angle += 6f;
+                    if (angle >= 360f) angle -= 360f;
+                    repaint();
+                });
+                spinTimer.start();
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                int size = Math.min(getWidth(), getHeight());
+                int pad = 4;
+                g2.setStroke(new BasicStroke(3.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                // Draw a faint track circle
+                g2.setColor(new Color(255, 255, 255, 25));
+                g2.drawArc(pad, pad, size - pad * 2, size - pad * 2, 0, 360);
+                // Draw the spinning arc with accent color gradient
+                g2.setColor(new Color(16, 185, 129)); // accent green
+                g2.drawArc(pad, pad, size - pad * 2, size - pad * 2, (int) angle, 90);
+                // Draw a smaller secondary arc for visual interest
+                g2.setColor(new Color(16, 185, 129, 90));
+                g2.drawArc(pad, pad, size - pad * 2, size - pad * 2, (int) angle + 180, 60);
+                g2.dispose();
+            }
+        };
+        spinner.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        loadingCard.add(loadingIcon);
+        loadingCard.add(Box.createVerticalStrut(14));
+        loadingCard.add(loadingTitle);
+        loadingCard.add(Box.createVerticalStrut(8));
+        loadingCard.add(loadingStatus);
+        loadingCard.add(Box.createVerticalStrut(18));
+        loadingCard.add(spinner);
 
         loadingOverlay.add(loadingCard);
+
+        // Start with alpha=0 for fade-in effect
+        loadingOverlay.putClientProperty("overlayAlpha", 0.0f);
         layeredPane.add(loadingOverlay, JLayeredPane.POPUP_LAYER);
         loadingOverlay.setBounds(0, 0, initW, initH);
+
+        // Fade-in animation: 0 → 1 over ~300ms
+        {
+            final long fadeInStart = System.currentTimeMillis();
+            final int fadeInDuration = 300;
+            javax.swing.Timer fadeInTimer = new javax.swing.Timer(16, null);
+            fadeInTimer.addActionListener(ev -> {
+                float progress = Math.min(1f, (System.currentTimeMillis() - fadeInStart) / (float) fadeInDuration);
+                // Ease-out curve for smooth appearance
+                float eased = 1f - (1f - progress) * (1f - progress);
+                loadingOverlay.putClientProperty("overlayAlpha", eased);
+                loadingOverlay.repaint();
+                if (progress >= 1f) fadeInTimer.stop();
+            });
+            fadeInTimer.start();
+        }
+
+        // Pulsing "Loading..." text opacity animation
+        {
+            final long pulseStart = System.currentTimeMillis();
+            javax.swing.Timer pulseTimer = new javax.swing.Timer(40, ev -> {
+                float t = ((System.currentTimeMillis() - pulseStart) % 2000) / 2000f;
+                // Sine wave pulse between 0.45 and 1.0 opacity
+                float opacity = 0.45f + 0.55f * (0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI));
+                loadingStatus.setForeground(new Color(156, 163, 175, (int) (opacity * 255)));
+            });
+            pulseTimer.start();
+            // Store for cleanup when overlay is removed
+            loadingOverlay.putClientProperty("pulseTimer", pulseTimer);
+        }
 
         // Set the layeredPane as the content pane
         setContentPane(layeredPane);
@@ -647,18 +747,24 @@ public class Main extends JFrame {
         // We schedule this in two invokeLater calls so the window is fully painted
         // first (at least one frame visible) before we start the timer.
         SwingUtilities.invokeLater(() -> {
-            // Animate alpha from 1→0 over ~300ms then remove overlay.
-            final float[] fadeAlpha = { 1.0f };
+            // Animate alpha from 1→0 over ~400ms then remove overlay.
+            final long fadeOutStart = System.currentTimeMillis();
+            final int fadeOutDuration = 400;
             javax.swing.Timer fadeTimer = new javax.swing.Timer(16, null);
             fadeTimer.addActionListener(ev -> {
-                fadeAlpha[0] -= 0.06f;
-                if (fadeAlpha[0] <= 0f) {
+                float progress = Math.min(1f, (System.currentTimeMillis() - fadeOutStart) / (float) fadeOutDuration);
+                // Ease-in curve for smooth disappearance
+                float eased = progress * progress;
+                float alpha = 1f - eased;
+                if (progress >= 1f) {
                     fadeTimer.stop();
+                    // Stop the pulsing text timer
+                    Object pt = loadingOverlay.getClientProperty("pulseTimer");
+                    if (pt instanceof javax.swing.Timer) ((javax.swing.Timer) pt).stop();
                     layeredPane.remove(loadingOverlay);
                     layeredPane.repaint();
                 } else {
-                    loadingOverlay.putClientProperty("alpha", fadeAlpha[0]);
-                    // repaint the overlay with current alpha
+                    loadingOverlay.putClientProperty("overlayAlpha", alpha);
                     loadingOverlay.repaint();
                 }
             });
@@ -969,7 +1075,8 @@ public class Main extends JFrame {
         newInstanceBtn.setForeground(Color.WHITE);
         newInstanceBtn.setBackground(new Color(16, 185, 129));
         newInstanceBtn.setFocusPainted(false);
-        newInstanceBtn.setBorder(new EmptyBorder(10, 10, 10, 10));
+        newInstanceBtn.setMargin(new Insets(10, 10, 10, 10));
+        newInstanceBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
         newInstanceBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
         newInstanceBtn.addActionListener(e -> {
             cardLayout.show(cardPanel, CREATE_INSTANCE_VIEW); // Switch to CreateInstancePanel
@@ -1379,6 +1486,26 @@ public class Main extends JFrame {
             b.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
             actionsRow.add(b);
         }
+
+        // ── Export / Import Mods buttons (distinct colors, right side) ────────
+        exportModsBtn = new JButton("📤  Export Mods");
+        exportModsBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        exportModsBtn.setFocusPainted(false);
+        exportModsBtn.setForeground(Color.WHITE);
+        exportModsBtn.setBackground(new Color(6, 182, 212));  // cyan #06b6d4
+        exportModsBtn.setMargin(new Insets(8, 16, 8, 16));
+        exportModsBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        actionsRow.add(exportModsBtn);
+
+        importModsBtn = new JButton("📥  Import Mods");
+        importModsBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        importModsBtn.setFocusPainted(false);
+        importModsBtn.setForeground(Color.WHITE);
+        importModsBtn.setBackground(new Color(245, 158, 11)); // amber #f59e0b
+        importModsBtn.setMargin(new Insets(8, 16, 8, 16));
+        importModsBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        actionsRow.add(importModsBtn);
+
         toolbar.add(actionsRow);
 
         JPanel topSection = new JPanel(new BorderLayout());
@@ -1780,6 +1907,45 @@ public class Main extends JFrame {
             }, "install-deps").start();
         });
 
+        // ══════════════════════════════════════════════════════════════════════
+        // EXPORT MODS — in-launcher overlay with mod selection + save location
+        // ══════════════════════════════════════════════════════════════════════
+        exportModsBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null) {
+                notifications.error("No instance", "Select an instance first.");
+                return;
+            }
+            if (currentModEntries.isEmpty()) {
+                notifications.info("No mods", "This instance has no mods to export.");
+                return;
+            }
+            showExportOverlay(sel);
+        });
+
+        // ══════════════════════════════════════════════════════════════════════
+        // IMPORT MODS — file chooser + in-launcher overlay with mod selection
+        // ══════════════════════════════════════════════════════════════════════
+        importModsBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null) {
+                notifications.error("No instance", "Select a target instance first.");
+                return;
+            }
+            JFileChooser chooser = new JFileChooser();
+            chooser.setDialogTitle("Select Mod List JSON");
+            chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("JSON Files (*.json)", "json"));
+            if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+            File jsonFile = chooser.getSelectedFile();
+            try {
+                String content = Files.readString(jsonFile.toPath());
+                JsonObject root = JsonUtil.parse(content).getAsJsonObject();
+                showImportOverlay(sel, root, jsonFile.getName());
+            } catch (Exception ex) {
+                notifications.error("Invalid file", "Could not parse mod list: " + ex.getMessage());
+            }
+        });
+
         return p;
     }
 
@@ -1873,6 +2039,512 @@ public class Main extends JFrame {
             }
         }
         modsCountLabel.setText(count + " mod" + (count != 1 ? "s" : "") + " shown");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // EXPORT MODS OVERLAY
+    // ══════════════════════════════════════════════════════════════════════════
+    private void showExportOverlay(Instance inst) {
+        // Remove any existing overlay
+        if (exportOverlay != null) {
+            layeredPane.remove(exportOverlay);
+            layeredPane.repaint();
+        }
+
+        exportOverlay = new RoundedPanel(18, new Color(20, 20, 26, 250), new Color(255, 255, 255, 34));
+        exportOverlay.putClientProperty("keepCustomBg", Boolean.TRUE);
+        exportOverlay.setLayout(new BorderLayout());
+        exportOverlay.setFrostedGlass(layeredPane, 8, new Color(12, 12, 16, 150));
+
+        // ── Header ──
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(14, 18, 10, 12));
+
+        JLabel title = new JLabel("📤  Export Mods — " + inst.name);
+        title.setFont(new Font("SansSerif", Font.BOLD, 17));
+        title.setForeground(new Color(6, 182, 212)); // cyan accent
+        header.add(title, BorderLayout.CENTER);
+
+        JButton closeBtn = new JButton("✕");
+        closeBtn.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
+        closeBtn.setFocusPainted(false);
+        closeBtn.setContentAreaFilled(false);
+        closeBtn.setBorderPainted(false);
+        closeBtn.setOpaque(false);
+        closeBtn.setMargin(new Insets(4, 10, 4, 10));
+        closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeBtn.addActionListener(ev -> animateOverlayHide(exportOverlay));
+        header.add(closeBtn, BorderLayout.EAST);
+
+        exportOverlay.add(header, BorderLayout.NORTH);
+
+        // ── Info bar ──
+        JPanel infoBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
+        infoBar.setOpaque(false);
+        infoBar.setBorder(new EmptyBorder(0, 18, 6, 18));
+        JLabel versionLbl = new JLabel("MC " + inst.mcVersion);
+        versionLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        versionLbl.setForeground(new Color(156, 163, 175));
+        infoBar.add(versionLbl);
+        JLabel loaderLbl = new JLabel("│  " + (inst.modLoader != null ? inst.modLoader.name() : "VANILLA")
+                + (inst.modLoaderVersion != null ? " " + inst.modLoaderVersion : ""));
+        loaderLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        loaderLbl.setForeground(new Color(156, 163, 175));
+        infoBar.add(loaderLbl);
+
+        // ── Mod checkboxes list ──
+        JPanel listPanel = new JPanel();
+        listPanel.setOpaque(false);
+        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
+        listPanel.setBorder(new EmptyBorder(4, 18, 4, 18));
+
+        List<JCheckBox> checkboxes = new ArrayList<>();
+        for (ModEntry mod : currentModEntries) {
+            JCheckBox cb = new JCheckBox(mod.displayName(), true);
+            cb.setOpaque(false);
+            cb.setForeground(Color.WHITE);
+            cb.setFont(new Font("SansSerif", Font.PLAIN, 13));
+            cb.putClientProperty("modEntry", mod);
+            if (mod.modrinthId != null) {
+                cb.setToolTipText("Modrinth: https://modrinth.com/mod/" + mod.modrinthId);
+            } else {
+                cb.setToolTipText("No Modrinth link (will be skipped during import)");
+                cb.setForeground(new Color(180, 180, 190));
+            }
+            checkboxes.add(cb);
+            JPanel row = new JPanel(new BorderLayout());
+            row.setOpaque(false);
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+            row.add(cb, BorderLayout.WEST);
+            if (mod.modrinthId != null) {
+                JLabel link = new JLabel("modrinth.com/mod/" + mod.modrinthId);
+                link.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                link.setForeground(new Color(6, 182, 212, 160));
+                row.add(link, BorderLayout.EAST);
+            }
+            listPanel.add(row);
+            listPanel.add(Box.createVerticalStrut(2));
+        }
+
+        JScrollPane scroll = new JScrollPane(listPanel,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.setOpaque(false);
+        centerPanel.add(infoBar, BorderLayout.NORTH);
+        centerPanel.add(scroll, BorderLayout.CENTER);
+        exportOverlay.add(centerPanel, BorderLayout.CENTER);
+
+        // ── Bottom bar: Select All/None, Choose Location, Export ──
+        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        bottomBar.setOpaque(false);
+        bottomBar.setBorder(new EmptyBorder(6, 18, 14, 18));
+
+        JButton selectAll = new JButton("Select All");
+        selectAll.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectAll.setMargin(new Insets(6, 14, 6, 14));
+        selectAll.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectAll.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(true)));
+        bottomBar.add(selectAll);
+
+        JButton selectNone = new JButton("Select None");
+        selectNone.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectNone.setMargin(new Insets(6, 14, 6, 14));
+        selectNone.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectNone.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(false)));
+        bottomBar.add(selectNone);
+
+        // Save location path holder
+        final Path[] savePath = { null };
+        JLabel savePathLbl = new JLabel("No location chosen");
+        savePathLbl.setFont(new Font("SansSerif", Font.ITALIC, 11));
+        savePathLbl.setForeground(new Color(156, 163, 175));
+
+        JButton chooseLocBtn = new JButton("📂  Choose Save Location");
+        chooseLocBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        chooseLocBtn.setMargin(new Insets(6, 14, 6, 14));
+        chooseLocBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        chooseLocBtn.addActionListener(ev -> {
+            JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle("Save Mod List As");
+            String safeName = inst.name.replaceAll("[\\\\/:*?\"<>|]", "_");
+            fc.setSelectedFile(new File(safeName + "_mods.json"));
+            fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("JSON Files (*.json)", "json"));
+            if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                File f = fc.getSelectedFile();
+                if (!f.getName().endsWith(".json")) f = new File(f.getAbsolutePath() + ".json");
+                savePath[0] = f.toPath();
+                savePathLbl.setText(f.getAbsolutePath());
+            }
+        });
+        bottomBar.add(chooseLocBtn);
+
+        JButton exportBtn = new JButton("✔  Export");
+        exportBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        exportBtn.setForeground(Color.WHITE);
+        exportBtn.setBackground(new Color(6, 182, 212));
+        exportBtn.setMargin(new Insets(8, 20, 8, 20));
+        exportBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        exportBtn.addActionListener(ev -> {
+            if (savePath[0] == null) {
+                notifications.warning("No save location", "Please choose where to save the file first.");
+                return;
+            }
+            List<ModEntry> selected = new ArrayList<>();
+            for (JCheckBox cb : checkboxes) {
+                if (cb.isSelected()) {
+                    selected.add((ModEntry) cb.getClientProperty("modEntry"));
+                }
+            }
+            if (selected.isEmpty()) {
+                notifications.warning("Nothing selected", "Select at least one mod to export.");
+                return;
+            }
+            // Build JSON
+            JsonObject root = new JsonObject();
+            root.addProperty("launcherVersion", "Zero Launcher");
+            root.addProperty("instanceName", inst.name);
+            root.addProperty("mcVersion", inst.mcVersion);
+            root.addProperty("modLoader", inst.modLoader != null ? inst.modLoader.name() : "VANILLA");
+            if (inst.modLoaderVersion != null) root.addProperty("modLoaderVersion", inst.modLoaderVersion);
+            JsonArray modsArr = new JsonArray();
+            for (ModEntry m : selected) {
+                JsonObject mObj = new JsonObject();
+                mObj.addProperty("name", m.displayName());
+                mObj.addProperty("fileName", m.fileName);
+                if (m.modrinthId != null) {
+                    mObj.addProperty("modrinthId", m.modrinthId);
+                    mObj.addProperty("modrinthUrl", "https://modrinth.com/mod/" + m.modrinthId);
+                }
+                modsArr.add(mObj);
+            }
+            root.add("mods", modsArr);
+
+            try {
+                Files.writeString(savePath[0], JsonUtil.GSON.toJson(root));
+                notifications.success("Mods exported",
+                        "Exported " + selected.size() + " mod(s) to " + savePath[0].getFileName());
+                animateOverlayHide(exportOverlay);
+            } catch (Exception ex) {
+                notifications.error("Export failed", ex.getMessage());
+            }
+        });
+        bottomBar.add(exportBtn);
+
+        JPanel bottomWrap = new JPanel(new BorderLayout());
+        bottomWrap.setOpaque(false);
+        bottomWrap.add(savePathLbl, BorderLayout.WEST);
+        bottomWrap.add(bottomBar, BorderLayout.EAST);
+        bottomWrap.setBorder(new EmptyBorder(0, 18, 0, 0));
+        exportOverlay.add(bottomWrap, BorderLayout.SOUTH);
+
+        // Position and animate
+        positionModOverlay(exportOverlay);
+        animateOverlayShow(exportOverlay);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // IMPORT MODS OVERLAY
+    // ══════════════════════════════════════════════════════════════════════════
+    private void showImportOverlay(Instance targetInst, JsonObject root, String fileName) {
+        // Remove any existing overlay
+        if (importOverlay != null) {
+            layeredPane.remove(importOverlay);
+            layeredPane.repaint();
+        }
+
+        importOverlay = new RoundedPanel(18, new Color(20, 20, 26, 250), new Color(255, 255, 255, 34));
+        importOverlay.putClientProperty("keepCustomBg", Boolean.TRUE);
+        importOverlay.setLayout(new BorderLayout());
+        importOverlay.setFrostedGlass(layeredPane, 8, new Color(12, 12, 16, 150));
+
+        // ── Header ──
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(14, 18, 10, 12));
+
+        JLabel title = new JLabel("📥  Import Mods — " + fileName);
+        title.setFont(new Font("SansSerif", Font.BOLD, 17));
+        title.setForeground(new Color(245, 158, 11)); // amber accent
+        header.add(title, BorderLayout.CENTER);
+
+        JButton closeBtn = new JButton("✕");
+        closeBtn.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
+        closeBtn.setFocusPainted(false);
+        closeBtn.setContentAreaFilled(false);
+        closeBtn.setBorderPainted(false);
+        closeBtn.setOpaque(false);
+        closeBtn.setMargin(new Insets(4, 10, 4, 10));
+        closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeBtn.addActionListener(ev -> animateOverlayHide(importOverlay));
+        header.add(closeBtn, BorderLayout.EAST);
+
+        importOverlay.add(header, BorderLayout.NORTH);
+
+        // ── Source info bar ──
+        JPanel infoBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
+        infoBar.setOpaque(false);
+        infoBar.setBorder(new EmptyBorder(0, 18, 4, 18));
+
+        String srcInstance = root.has("instanceName") ? root.get("instanceName").getAsString() : "Unknown";
+        String srcVersion = root.has("mcVersion") ? root.get("mcVersion").getAsString() : "?";
+        String srcLoader = root.has("modLoader") ? root.get("modLoader").getAsString() : "VANILLA";
+        String srcLoaderVer = root.has("modLoaderVersion") ? root.get("modLoaderVersion").getAsString() : "";
+
+        JLabel srcLbl = new JLabel("Source: " + srcInstance + "  │  MC " + srcVersion + "  │  " + srcLoader + " " + srcLoaderVer);
+        srcLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        srcLbl.setForeground(new Color(156, 163, 175));
+        infoBar.add(srcLbl);
+
+        JLabel targetLbl = new JLabel("→  Target: " + targetInst.name + "  (MC " + targetInst.mcVersion + ", "
+                + (targetInst.modLoader != null ? targetInst.modLoader.name() : "VANILLA") + ")");
+        targetLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
+        targetLbl.setForeground(new Color(16, 185, 129));
+        infoBar.add(targetLbl);
+
+        // ── Mod checkboxes list ──
+        JsonArray modsArr = root.has("mods") ? root.getAsJsonArray("mods") : new JsonArray();
+        JPanel listPanel = new JPanel();
+        listPanel.setOpaque(false);
+        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
+        listPanel.setBorder(new EmptyBorder(4, 18, 4, 18));
+
+        List<JCheckBox> checkboxes = new ArrayList<>();
+        for (int i = 0; i < modsArr.size(); i++) {
+            JsonObject mObj = modsArr.get(i).getAsJsonObject();
+            String name = mObj.has("name") ? mObj.get("name").getAsString() : "Unknown mod";
+            String modrinthId = mObj.has("modrinthId") ? mObj.get("modrinthId").getAsString() : null;
+            String modrinthUrl = mObj.has("modrinthUrl") ? mObj.get("modrinthUrl").getAsString() : null;
+
+            JCheckBox cb = new JCheckBox(name, true);
+            cb.setOpaque(false);
+            cb.setFont(new Font("SansSerif", Font.PLAIN, 13));
+            cb.putClientProperty("modrinthId", modrinthId);
+            cb.putClientProperty("modName", name);
+
+            if (modrinthId != null) {
+                cb.setForeground(Color.WHITE);
+                cb.setToolTipText(modrinthUrl != null ? modrinthUrl : "Modrinth ID: " + modrinthId);
+            } else {
+                cb.setForeground(new Color(255, 160, 80));
+                cb.setToolTipText("⚠ No Modrinth ID — cannot download automatically");
+                cb.setSelected(false);
+                cb.setEnabled(false);
+            }
+            checkboxes.add(cb);
+
+            JPanel row = new JPanel(new BorderLayout());
+            row.setOpaque(false);
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+            row.add(cb, BorderLayout.WEST);
+            if (modrinthUrl != null) {
+                JLabel link = new JLabel(modrinthUrl.replace("https://", ""));
+                link.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                link.setForeground(new Color(245, 158, 11, 160));
+                row.add(link, BorderLayout.EAST);
+            }
+            listPanel.add(row);
+            listPanel.add(Box.createVerticalStrut(2));
+        }
+
+        JScrollPane scroll = new JScrollPane(listPanel,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.setOpaque(false);
+        centerPanel.add(infoBar, BorderLayout.NORTH);
+        centerPanel.add(scroll, BorderLayout.CENTER);
+        importOverlay.add(centerPanel, BorderLayout.CENTER);
+
+        // ── Bottom bar: Select All/None, Import Selected ──
+        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        bottomBar.setOpaque(false);
+        bottomBar.setBorder(new EmptyBorder(6, 18, 14, 18));
+
+        JButton selectAll = new JButton("Select All");
+        selectAll.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectAll.setMargin(new Insets(6, 14, 6, 14));
+        selectAll.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectAll.addActionListener(ev -> checkboxes.forEach(cb -> { if (cb.isEnabled()) cb.setSelected(true); }));
+        bottomBar.add(selectAll);
+
+        JButton selectNone = new JButton("Select None");
+        selectNone.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectNone.setMargin(new Insets(6, 14, 6, 14));
+        selectNone.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectNone.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(false)));
+        bottomBar.add(selectNone);
+
+        JLabel progressLbl = new JLabel(" ");
+        progressLbl.setFont(new Font("SansSerif", Font.ITALIC, 11));
+        progressLbl.setForeground(new Color(156, 163, 175));
+
+        JButton importBtn = new JButton("⬇  Import Selected");
+        importBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        importBtn.setForeground(Color.WHITE);
+        importBtn.setBackground(new Color(245, 158, 11));
+        importBtn.setMargin(new Insets(8, 20, 8, 20));
+        importBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        importBtn.addActionListener(ev -> {
+            // Gather selected mods with Modrinth IDs
+            List<String[]> toDownload = new ArrayList<>(); // [modrinthId, name]
+            List<String> skipped = new ArrayList<>();
+            for (JCheckBox cb : checkboxes) {
+                if (!cb.isSelected()) continue;
+                String mid = (String) cb.getClientProperty("modrinthId");
+                String mName = (String) cb.getClientProperty("modName");
+                if (mid != null && !mid.isBlank()) {
+                    toDownload.add(new String[]{ mid, mName });
+                } else {
+                    skipped.add(mName);
+                }
+            }
+            if (toDownload.isEmpty()) {
+                notifications.warning("Nothing to import", "No downloadable mods selected.");
+                return;
+            }
+            importBtn.setEnabled(false);
+            importBtn.setText("⏳  Importing...");
+
+            // Download in background thread
+            new Thread(() -> {
+                Path modsDir = instanceManager.resolveGameDir(targetInst).resolve("mods");
+                try { Files.createDirectories(modsDir); } catch (Exception ignored) {}
+
+                String loader = targetInst.modLoader != null && targetInst.modLoader != ModLoaderType.VANILLA
+                        ? targetInst.modLoader.name().toLowerCase() : null;
+                ModUpdateService service = new ModUpdateService();
+                int success = 0;
+                List<String> failed = new ArrayList<>();
+
+                for (int i = 0; i < toDownload.size(); i++) {
+                    String[] entry = toDownload.get(i);
+                    String mid = entry[0];
+                    String mName = entry[1];
+                    final int idx = i + 1;
+                    SwingUtilities.invokeLater(() -> {
+                        progressLbl.setText("Downloading " + idx + "/" + toDownload.size() + ": " + mName);
+                        setStatus("Importing mod " + idx + "/" + toDownload.size() + ": " + mName);
+                    });
+                    try {
+                        String url = service.getDownloadUrlForProject(mid, "mod", loader, targetInst.mcVersion);
+                        if (url == null) {
+                            failed.add(mName + " (no compatible version)");
+                            continue;
+                        }
+                        String dlFileName = url.substring(url.lastIndexOf('/') + 1);
+                        com.launcher.util.HttpUtil.downloadToFile(url, modsDir.resolve(dlFileName));
+                        success++;
+                    } catch (Exception ex) {
+                        failed.add(mName + " (" + ex.getMessage() + ")");
+                    }
+                }
+
+                final int finalSuccess = success;
+                final List<String> finalFailed = failed;
+                SwingUtilities.invokeLater(() -> {
+                    importBtn.setEnabled(true);
+                    importBtn.setText("⬇  Import Selected");
+                    progressLbl.setText(" ");
+                    setStatus("Import complete");
+                    refreshModsView(targetInst);
+
+                    StringBuilder msg = new StringBuilder();
+                    msg.append("Installed ").append(finalSuccess).append(" of ").append(toDownload.size()).append(" mod(s).");
+                    if (!skipped.isEmpty()) {
+                        msg.append("\nSkipped (no Modrinth ID): ").append(String.join(", ", skipped));
+                    }
+                    if (!finalFailed.isEmpty()) {
+                        msg.append("\nFailed: ").append(String.join(", ", finalFailed));
+                    }
+                    if (finalFailed.isEmpty() && skipped.isEmpty()) {
+                        notifications.success("Import complete", msg.toString());
+                    } else {
+                        notifications.warning("Import finished with issues", msg.toString());
+                    }
+                    animateOverlayHide(importOverlay);
+                });
+            }, "mod-import").start();
+        });
+        bottomBar.add(importBtn);
+
+        JPanel bottomWrap = new JPanel(new BorderLayout());
+        bottomWrap.setOpaque(false);
+        bottomWrap.add(progressLbl, BorderLayout.WEST);
+        bottomWrap.add(bottomBar, BorderLayout.EAST);
+        bottomWrap.setBorder(new EmptyBorder(0, 18, 0, 0));
+        importOverlay.add(bottomWrap, BorderLayout.SOUTH);
+
+        // Position and animate
+        positionModOverlay(importOverlay);
+        animateOverlayShow(importOverlay);
+    }
+
+    // ── Overlay positioning + show/hide animation helpers ────────────────────
+    private void positionModOverlay(RoundedPanel overlay) {
+        int width = Math.min(620, layeredPane.getWidth() - 80);
+        int height = Math.min(560, layeredPane.getHeight() - 80);
+        int x = (layeredPane.getWidth() - width) / 2;
+        int y = (layeredPane.getHeight() - height) / 2;
+        overlay.setBounds(x, y, width, height);
+    }
+
+    private void animateOverlayShow(RoundedPanel overlay) {
+        Rectangle target = overlay.getBounds();
+        int slide = 18;
+        overlay.setBounds(target.x, target.y + slide, target.width, target.height);
+        overlay.setAlpha(0f);
+        layeredPane.setLayer(overlay, JLayeredPane.MODAL_LAYER);
+        layeredPane.add(overlay);
+        overlay.setVisible(true);
+        long start = System.currentTimeMillis();
+        int duration = 220;
+        javax.swing.Timer[] holder = new javax.swing.Timer[1];
+        holder[0] = new javax.swing.Timer(15, e -> {
+            float p = Math.min(1f, (System.currentTimeMillis() - start) / (float) duration);
+            float eased = 1 - (1 - p) * (1 - p);
+            overlay.setAlpha(eased);
+            int y = target.y + Math.round(slide * (1 - eased));
+            overlay.setBounds(target.x, y, target.width, target.height);
+            if (p >= 1f) {
+                overlay.setBounds(target);
+                overlay.setAlpha(1f);
+                holder[0].stop();
+            }
+        });
+        holder[0].start();
+    }
+
+    private void animateOverlayHide(RoundedPanel overlay) {
+        if (overlay == null || !overlay.isVisible()) return;
+        Rectangle target = overlay.getBounds();
+        int slide = 14;
+        long start = System.currentTimeMillis();
+        int duration = 180;
+        javax.swing.Timer[] holder = new javax.swing.Timer[1];
+        holder[0] = new javax.swing.Timer(15, e -> {
+            float p = Math.min(1f, (System.currentTimeMillis() - start) / (float) duration);
+            float eased = p * p;
+            overlay.setAlpha(1f - eased);
+            int y = target.y + Math.round(slide * eased);
+            overlay.setBounds(target.x, y, target.width, target.height);
+            if (p >= 1f) {
+                overlay.setVisible(false);
+                layeredPane.remove(overlay);
+                layeredPane.repaint();
+                holder[0].stop();
+            }
+        });
+        holder[0].start();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -3386,6 +4058,7 @@ public class Main extends JFrame {
         appearanceCard.add(createColorInputRow("Panel Background (Hex)", () -> s.panelBgColor,
                 (val) -> s.panelBgColor = val, saveAndApply, "#13131a"), gbc);
 
+        gbc.gridy++;
         appearanceCard.add(createColorInputRow("Notification Background (Hex)", () -> s.notificationBgColor,
                 (val) -> s.notificationBgColor = val, saveAndApply, "#13131A"), gbc);
 
