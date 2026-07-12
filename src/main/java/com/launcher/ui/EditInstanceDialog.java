@@ -144,7 +144,7 @@ public class EditInstanceDialog extends JDialog {
 
         JComboBox<String> versionBox = new JComboBox<>();
         versionBox.setEnabled(false);
-        JCheckBox snapshotsCb = new JCheckBox("Include snapshots");
+        CustomToggle snapshotsCb = new CustomToggle("Include snapshots");
         snapshotsCb.setBackground(panelBg);
         snapshotsCb.setForeground(textColor);
 
@@ -259,7 +259,7 @@ public class EditInstanceDialog extends JDialog {
         row++;
 
         addSectionHeader(generalPanel, "Visibility", row++, gbc, textColor);
-        JCheckBox hiddenCb = new JCheckBox("Hide this instance");
+        CustomToggle hiddenCb = new CustomToggle("Hide this instance");
         hiddenCb.setBackground(panelBg);
         hiddenCb.setForeground(textColor);
         hiddenCb.setSelected(inst.hidden);
@@ -271,6 +271,7 @@ public class EditInstanceDialog extends JDialog {
         row++;
 
         JScrollPane generalScroll = new JScrollPane(generalPanel);
+        com.launcher.ui.SmoothScroll.install(generalScroll);
         generalScroll.setBorder(null);
         tabs.addTab("General", generalScroll);
 
@@ -375,6 +376,7 @@ public class EditInstanceDialog extends JDialog {
         modpackPanel.add(modpackInfoLabel, mgbc);
 
         JScrollPane modpackScroll = new JScrollPane(modpackPanel);
+        com.launcher.ui.SmoothScroll.install(modpackScroll);
         modpackScroll.setBorder(null);
         tabs.addTab("Modpack", modpackScroll);
 

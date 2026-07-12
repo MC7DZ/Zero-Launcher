@@ -45,6 +45,8 @@ public class LauncherSettings {
     public boolean logConsoleVisible    = false;
     public boolean scanOnStartup        = true;
     public boolean showHiddenInstances  = false;
+    /** Animate mouse-wheel scrolling instead of jumping instantly. */
+    public boolean smoothScrolling      = true;
     /** Automatically check every instance's mods for available updates when the launcher starts. */
     public boolean checkModUpdatesOnStartup = true;
     /** Automatically refresh the Discover tab (trending mods/resource packs) when the launcher starts. */

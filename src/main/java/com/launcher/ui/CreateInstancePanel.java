@@ -163,7 +163,7 @@ public class CreateInstancePanel extends JPanel {
         versionBox.setBackground(bg); // Dynamic background
         versionBox.setForeground(textColor); // Dynamic text
         versionBox.setEnabled(false);
-        JCheckBox snapshotsCb = new JCheckBox("Include snapshots");
+        CustomToggle snapshotsCb = new CustomToggle("Include snapshots");
         snapshotsCb.setBackground(panelBg);
         snapshotsCb.setForeground(textColor);
 
@@ -280,6 +280,7 @@ public class CreateInstancePanel extends JPanel {
         row++;
 
         JScrollPane generalScroll = new JScrollPane(generalPanel);
+        com.launcher.ui.SmoothScroll.install(generalScroll);
         generalScroll.setBorder(null);
         tabs.addTab("General", generalScroll);
 
@@ -447,6 +448,7 @@ public class CreateInstancePanel extends JPanel {
         modpackPanel.add(modpackInfoLabel, mgbc);
 
         JScrollPane modpackScroll = new JScrollPane(modpackPanel);
+        com.launcher.ui.SmoothScroll.install(modpackScroll);
         modpackScroll.setBorder(null);
         tabs.addTab("Modpack", modpackScroll);
 

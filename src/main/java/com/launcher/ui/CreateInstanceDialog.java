@@ -156,7 +156,7 @@ public class CreateInstanceDialog extends JDialog {
 
         JComboBox<String> versionBox = new JComboBox<>();
         versionBox.setEnabled(false);
-        JCheckBox snapshotsCb = new JCheckBox("Include snapshots");
+        CustomToggle snapshotsCb = new CustomToggle("Include snapshots");
         snapshotsCb.setBackground(panelBg);
         snapshotsCb.setForeground(textColor);
 
@@ -263,6 +263,7 @@ public class CreateInstanceDialog extends JDialog {
         row++;
 
         JScrollPane generalScroll = new JScrollPane(generalPanel);
+        com.launcher.ui.SmoothScroll.install(generalScroll);
         generalScroll.setBorder(null);
         tabs.addTab("General", generalScroll);
 
@@ -422,6 +423,7 @@ public class CreateInstanceDialog extends JDialog {
         modpackPanel.add(modpackInfoLabel, mgbc);
 
         JScrollPane modpackScroll = new JScrollPane(modpackPanel);
+        com.launcher.ui.SmoothScroll.install(modpackScroll);
         modpackScroll.setBorder(null);
         tabs.addTab("Modpack", modpackScroll);
 

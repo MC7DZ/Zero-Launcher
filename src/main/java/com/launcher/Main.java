@@ -9,9 +9,11 @@ import com.launcher.model.Account;
 import com.launcher.model.Instance;
 import com.launcher.model.ModEntry;
 import com.launcher.model.ModLoaderType;
+import com.launcher.ui.CustomSpinner;
+import com.launcher.ui.CustomTextField;
+import com.launcher.ui.CustomToggle;
 import com.launcher.ui.NotificationCenter;
 import com.launcher.ui.WrapLayout;
-import com.launcher.ui.AddAccountPanel;
 import com.launcher.ui.CreateInstancePanel;
 import com.launcher.ui.EditInstancePanel;
 import com.launcher.util.JsonUtil;
@@ -71,6 +73,7 @@ public class Main extends JFrame {
     private final ConcurrentLinkedQueue<String> logQueue = new ConcurrentLinkedQueue<>();
     private volatile boolean logFlushScheduled = false;
     private volatile boolean isMinimized = false;
+    private volatile boolean wasMaximizedBeforeHide = false;
     /**
      * Last known bounds while the window was in plain NORMAL state (not
      * maximized/minimized).
@@ -92,6 +95,11 @@ public class Main extends JFrame {
     private static final int ROUNDED_BUTTON_ARC = 999;
 
     private JComboBox<Account> accountBox;
+    private JButton accountBtn;
+    private RoundedPanel accountDropdown;
+    private RoundedPanel createAccountPopover;
+    private CustomTextField createAccountUsernameField;
+    private JLabel createAccountErrorLabel;
     private JList<Instance> instanceList;
     private DefaultListModel<Instance> instanceListModel;
     private JTextPane logArea;
@@ -133,7 +141,6 @@ public class Main extends JFrame {
     private CardLayout cardLayout;
     private JPanel cardPanel;
     private static final String MAIN_VIEW = "MainView";
-    private static final String ADD_ACCOUNT_VIEW = "AddAccountView";
     private static final String CREATE_INSTANCE_VIEW = "CreateInstanceView";
     private static final String EDIT_INSTANCE_VIEW = "EditInstanceView";
 
@@ -162,6 +169,8 @@ public class Main extends JFrame {
     private JButton deleteModBtn;
     private JButton dedupeModsBtn;
     private JButton installDependenciesBtn;
+    private JButton fixModsBtn;
+    private RoundedPanel fixModsDropdown;
     private List<ModEntry> currentModEntries = new ArrayList<>();
 
     // ─── Export / Import Mods ─────────────────────────────────────────────────
@@ -181,6 +190,7 @@ public class Main extends JFrame {
     private JToggleButton discoverModsToggle;
     private JToggleButton discoverPacksToggle;
     private JTextField discoverSearchField;
+    private RoundedPanel discoverSearchWrapPanel;
     private JButton discoverSearchBtn;
     private JPanel discoverResultsPane;
     private final Map<String, ImageIcon> discoverIconCache = new ConcurrentHashMap<>();
@@ -374,20 +384,6 @@ public class Main extends JFrame {
             mainContentPanel = rootPanel; // Assign rootPanel to mainContentPanel
         }
         cardPanel.add(mainContentPanel, MAIN_VIEW); // Add the main content to the cardPanel
-
-        // Add AddAccountPanel to cardPanel
-        AddAccountPanel addAccountPanel = new AddAccountPanel(
-                acc -> { // On success
-                    accountManager.addOrUpdate(acc);
-                    accountManager.setActiveAccount(acc);
-                    refreshAccounts();
-                    notifications.success("Account added", "Added offline account: " + acc.username);
-                    cardLayout.show(cardPanel, MAIN_VIEW); // Switch back to main view
-                },
-                () -> { // On cancel
-                    cardLayout.show(cardPanel, MAIN_VIEW); // Switch back to main view
-                });
-        cardPanel.add(addAccountPanel, ADD_ACCOUNT_VIEW);
 
         // Add CreateInstancePanel to cardPanel
         CreateInstancePanel createInstancePanel = new CreateInstancePanel(
@@ -782,6 +778,10 @@ public class Main extends JFrame {
     }
 
     public void hideToTray() {
+        // Remember whether the window was maximized so restoreFromTray() can
+        // bring it back the same way, instead of always snapping to a normal
+        // (unmaximized) window.
+        wasMaximizedBeforeHide = (getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
         setVisible(false);
         dispose(); // Releases native window resources
         isMinimized = true;
@@ -790,7 +790,7 @@ public class Main extends JFrame {
 
     public void restoreFromTray() {
         setVisible(true);
-        setExtendedState(JFrame.NORMAL);
+        setExtendedState(wasMaximizedBeforeHide ? JFrame.MAXIMIZED_BOTH : JFrame.NORMAL);
         toFront();
         requestFocus();
         isMinimized = false;
@@ -900,83 +900,47 @@ public class Main extends JFrame {
         brand.add(logoSub);
         bar.add(brand, BorderLayout.WEST);
 
-        // Account box panel
+        // Account box panel — accountBox itself is never added to the visible UI; it
+        // just stays around as the existing selected-account data model that the rest
+        // of the app (launch actions, refreshAccounts, etc.) already reads from.
         JPanel accPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         accPanel.setOpaque(false);
         accPanel.putClientProperty("keepCustomBg", Boolean.TRUE);
         accountBox = new JComboBox<>();
-        accountBox.setPreferredSize(new Dimension(220, 34));
-        // Rounded pill shape for the dropdown itself, matching the new search
-        // bar/buttons.
-        accountBox.putClientProperty("JComboBox.arc", 24);
-        accountBox.putClientProperty("Component.arc", 24);
-        accountBox.setRenderer(new DefaultListCellRenderer() {
-            @Override
-            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected,
-                    boolean cellHasFocus) {
-                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                setBorder(new EmptyBorder(6, 10, 6, 6));
-                setIconTextGap(8);
-                if (value instanceof Account a) {
-                    com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance()
-                            .getSettings();
-                    String label = s.hideUsername ? "●●●●●" : a.username;
-                    setText(label + "   ·   Offline");
-                    setIcon(accountAvatarIcon(label));
-                } else {
-                    setText("No account selected");
-                    setIcon(null);
-                }
-                return this;
-            }
-        });
         accountBox.addActionListener(e -> {
             Account a = (Account) accountBox.getSelectedItem();
             if (a != null) {
                 accountManager.setActiveAccount(a);
             }
         });
-        // Frosted-glass pill instead of a flat gray combo box: blurred crop of the
-        // app's own
-        // background behind it, with a soft outline.
-        RoundedPanel accountWrap = wrapInFrostedGlass(accountBox, 24, new Color(255, 255, 255, 45));
-        accountWrap.setPreferredSize(new Dimension(220, 34));
 
-        JButton addAccBtn = new JButton("+");
-        addAccBtn.setPreferredSize(new Dimension(34, 34));
-        addAccBtn.setToolTipText("Add Account");
-        addAccBtn.setFont(new Font("SansSerif", Font.BOLD, 15));
-        addAccBtn.setFocusPainted(false);
-        addAccBtn.putClientProperty("JButton.arc", 34);
-        addAccBtn.setForeground(new Color(16, 185, 129));
-        addAccBtn.setBackground(new Color(16, 185, 129, 35));
-        addAccBtn.addActionListener(e -> {
-            cardLayout.show(cardPanel, ADD_ACCOUNT_VIEW); // Switch to AddAccountPanel
-        });
-
-        JButton rmAccBtn = new JButton("✕");
-        rmAccBtn.setPreferredSize(new Dimension(34, 34));
-        rmAccBtn.setToolTipText("Remove Account");
-        rmAccBtn.setFont(new Font("SansSerif", Font.BOLD, 13));
-        rmAccBtn.setFocusPainted(false);
-        rmAccBtn.putClientProperty("JButton.arc", 34);
-        rmAccBtn.setForeground(new Color(239, 68, 68));
-        rmAccBtn.setBackground(new Color(239, 68, 68, 35));
-        rmAccBtn.addActionListener(e -> {
-            Account selected = (Account) accountBox.getSelectedItem();
-            if (selected != null) {
-                accountManager.remove(selected);
-                refreshAccounts();
-                notifications.warning("Account removed", "Removed account " + selected.username);
+        // ── Account dropdown button (styled like the "Fix Mods" dropdown button) ──
+        accountBtn = new JButton(accountButtonLabel());
+        accountBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        accountBtn.setFocusPainted(false);
+        accountBtn.setForeground(Color.WHITE);
+        accountBtn.setBackground(new Color(255, 255, 255, 30));
+        accountBtn.setMargin(new Insets(8, 16, 8, 16));
+        accountBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        accountBtn.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                toggleAccountDropdown();
             }
         });
 
-        accPanel.add(accountWrap);
-        accPanel.add(addAccBtn);
-        accPanel.add(rmAccBtn);
+        accPanel.add(accountBtn);
         bar.add(accPanel, BorderLayout.EAST);
 
         return bar;
+    }
+
+    /** Label shown on the account dropdown button — current account, or a prompt if none. */
+    private String accountButtonLabel() {
+        com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        return accountManager.getActiveAccount()
+                .map(a -> "👤  " + (s.hideUsername ? "●●●●●" : a.username) + "  |  ▾")
+                .orElse("👤  No account  |  ▾");
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -1056,6 +1020,7 @@ public class Main extends JFrame {
         });
 
         JScrollPane listScroll = new JScrollPane(instanceList);
+        com.launcher.ui.SmoothScroll.install(listScroll);
         listScroll.setBorder(BorderFactory.createEmptyBorder());
         listScroll.setOpaque(false);
         listScroll.getViewport().setOpaque(false);
@@ -1460,32 +1425,62 @@ public class Main extends JFrame {
         searchRow.add(searchWrap, BorderLayout.WEST);
         toolbar.add(searchRow);
 
-        JPanel actionsRow = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 6));
-        actionsRow.setOpaque(false);
-        actionsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JPanel actionsWrapper = new JPanel(new BorderLayout());
+        actionsWrapper.setOpaque(false);
+        actionsWrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel leftActions = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 6));
+        leftActions.setOpaque(false);
+
+        JPanel rightActions = new JPanel(new WrapLayout(FlowLayout.RIGHT, 8, 6));
+        rightActions.setOpaque(false);
 
         refreshModsBtn = new JButton("↻  Refresh");
         checkUpdatesBtn = new JButton("⟳  Check Updates");
+        deleteModBtn = new JButton("🗑  Delete");
+
+        // These are still used internally by the Fix Mods popup actions, but no
+        // longer placed directly on the toolbar.
         updateAllBtn = new JButton("⬆  Update All");
         updateSelectedBtn = new JButton("⬆  Update Selected");
         installDependenciesBtn = new JButton("🔗  Install Deps");
         dedupeModsBtn = new JButton("🧹  Deduplicate");
-        deleteModBtn = new JButton("🗑  Delete");
 
-        JButton[] btns = { refreshModsBtn, checkUpdatesBtn, updateAllBtn, updateSelectedBtn,
-                installDependenciesBtn, dedupeModsBtn, deleteModBtn };
+        // Toolbar buttons (only Refresh, Check Updates, Delete shown directly)
+        JButton[] btns = { refreshModsBtn, checkUpdatesBtn, deleteModBtn };
         for (JButton b : btns) {
             b.setFont(new Font("SansSerif", Font.BOLD, 11));
             b.setFocusPainted(false);
-            // setBorder(new EmptyBorder(...)) would replace FlatLaf's own border object —
-            // which is what actually paints the rounded/arc shape — leaving a flat square
-            // button despite JButton.arc being set. setMargin() adds the same padding
-            // without touching FlatLaf's border, so the pill shape below actually renders.
             b.setMargin(new Insets(8, 16, 8, 16));
-            // Fully rounded, capsule-shaped corners.
             b.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
-            actionsRow.add(b);
+            leftActions.add(b);
         }
+
+        // ── Fix Mods dropdown button ─────────────────────────────────────────
+        fixModsBtn = new JButton("🔧  Fix Mods  |  ▾");
+        fixModsBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        fixModsBtn.setFocusPainted(false);
+        fixModsBtn.setForeground(Color.WHITE);
+        com.launcher.model.LauncherSettings fixModsSettings = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        Color accentColor = hexToColor(fixModsSettings.accentColor, new Color(16, 185, 129));
+        fixModsBtn.setBackground(accentColor);
+        fixModsBtn.setMargin(new Insets(8, 16, 8, 16));
+        fixModsBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        fixModsBtn.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                // If clicked on the right side (the arrow), toggle dropdown
+                if (e.getX() >= fixModsBtn.getWidth() - 32) {
+                    toggleFixModsDropdown();
+                } else {
+                    // Clicked on the left side: execute all 3 actions
+                    updateAllBtn.doClick();
+                    installDependenciesBtn.doClick();
+                    dedupeModsBtn.doClick();
+                }
+            }
+        });
+        leftActions.add(fixModsBtn);
 
         // ── Export / Import Mods buttons (distinct colors, right side) ────────
         exportModsBtn = new JButton("📤  Export Mods");
@@ -1495,7 +1490,7 @@ public class Main extends JFrame {
         exportModsBtn.setBackground(new Color(6, 182, 212));  // cyan #06b6d4
         exportModsBtn.setMargin(new Insets(8, 16, 8, 16));
         exportModsBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
-        actionsRow.add(exportModsBtn);
+        rightActions.add(exportModsBtn);
 
         importModsBtn = new JButton("📥  Import Mods");
         importModsBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
@@ -1504,9 +1499,11 @@ public class Main extends JFrame {
         importModsBtn.setBackground(new Color(245, 158, 11)); // amber #f59e0b
         importModsBtn.setMargin(new Insets(8, 16, 8, 16));
         importModsBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
-        actionsRow.add(importModsBtn);
+        rightActions.add(importModsBtn);
 
-        toolbar.add(actionsRow);
+        actionsWrapper.add(leftActions, BorderLayout.WEST);
+        actionsWrapper.add(rightActions, BorderLayout.EAST);
+        toolbar.add(actionsWrapper);
 
         JPanel topSection = new JPanel(new BorderLayout());
         topSection.add(header, BorderLayout.NORTH);
@@ -1653,8 +1650,22 @@ public class Main extends JFrame {
                         statusLbl.setBackground(new Color(255, 255, 255, 10));
                     }
                 }
-                JPanel statusWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 12));
+                JPanel statusWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 8));
                 statusWrap.setOpaque(false);
+
+                // Add an "Update" button label for mods with available updates
+                if ("Update available".equals(mod.status) && mod.updateUrl != null) {
+                    JLabel updateBtnLbl = new JLabel("⬆ Update");
+                    updateBtnLbl.setFont(new Font("SansSerif", Font.BOLD, 10));
+                    updateBtnLbl.setForeground(Color.WHITE);
+                    updateBtnLbl.setOpaque(true);
+                    updateBtnLbl.setBackground(new Color(245, 158, 11));
+                    updateBtnLbl.setBorder(new EmptyBorder(4, 10, 4, 10));
+                    updateBtnLbl.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+                    updateBtnLbl.setName("updateBtn"); // marker for mouse listener
+                    statusWrap.add(updateBtnLbl);
+                }
+
                 statusWrap.add(statusLbl);
                 card.add(statusWrap, BorderLayout.EAST);
 
@@ -1662,7 +1673,46 @@ public class Main extends JFrame {
             }
         });
 
+        // Mouse listener to handle clicks on the per-mod "Update" button label
+        modsList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int idx = modsList.locationToIndex(e.getPoint());
+                if (idx < 0) return;
+                ModEntry mod = modsListModel.getElementAt(idx);
+                if (!"Update available".equals(mod.status) || mod.updateUrl == null) return;
+
+                // Check if the click was in the right-hand area (status/update region)
+                Rectangle cellBounds = modsList.getCellBounds(idx, idx);
+                if (cellBounds == null) return;
+                int relativeX = e.getX() - cellBounds.x;
+                // The update button is roughly in the right 180px of the cell
+                if (relativeX < cellBounds.width - 180) return;
+
+                Instance sel = instanceList.getSelectedValue();
+                if (sel == null) return;
+
+                // Update this single mod
+                notifications.info("Updating", "Updating " + mod.displayName() + "…");
+                new Thread(() -> {
+                    ModUpdateService service = new ModUpdateService();
+                    Path modsDir = instanceManager.resolveGameDir(sel).resolve("mods");
+                    boolean ok = service.downloadUpdate(mod, modsDir,
+                            msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                    SwingUtilities.invokeLater(() -> {
+                        if (ok) {
+                            notifications.success("Updated", mod.displayName() + " updated successfully.");
+                            refreshModsView(sel);
+                        } else {
+                            notifications.error("Update failed", "Failed to update " + mod.displayName());
+                        }
+                    });
+                }, "update-single-" + mod.fileName).start();
+            }
+        });
+
         JScrollPane scroll = new JScrollPane(modsList);
+        com.launcher.ui.SmoothScroll.install(scroll);
         scroll.setBorder(null);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
@@ -2129,6 +2179,7 @@ public class Main extends JFrame {
 
         JScrollPane scroll = new JScrollPane(listPanel,
                 JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        com.launcher.ui.SmoothScroll.install(scroll);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
@@ -2354,6 +2405,7 @@ public class Main extends JFrame {
 
         JScrollPane scroll = new JScrollPane(listPanel,
                 JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        com.launcher.ui.SmoothScroll.install(scroll);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
@@ -2548,6 +2600,693 @@ public class Main extends JFrame {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // FIX MODS — Custom themed dropdown
+    // ══════════════════════════════════════════════════════════════════════════
+    private void buildFixModsDropdown() {
+        // Read theme colors live from settings
+        com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        Color panelBg = hexToColor(s.panelBgColor, new Color(19, 19, 26));
+        Color textColor = hexToColor(s.textColor, new Color(226, 226, 234));
+        Color accent = hexToColor(s.accentColor, new Color(16, 185, 129));
+
+        fixModsDropdown = new RoundedPanel(14, new Color(panelBg.getRed(), panelBg.getGreen(), panelBg.getBlue(), 245),
+                new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 80)); // accent border tint
+        fixModsDropdown.putClientProperty("keepCustomBg", Boolean.TRUE);
+        fixModsDropdown.setLayout(new BoxLayout(fixModsDropdown, BoxLayout.Y_AXIS));
+        fixModsDropdown.setBorder(new EmptyBorder(8, 0, 8, 0));
+        fixModsDropdown.setFrostedGlass(layeredPane, 6, new Color(panelBg.getRed(), panelBg.getGreen(), panelBg.getBlue(), 160));
+
+        // ── Title ──
+        JLabel titleLbl = new JLabel("  🔧  Fix Mods");
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 13));
+        titleLbl.setForeground(accent); // accent color
+        titleLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        titleLbl.setBorder(new EmptyBorder(4, 14, 8, 14));
+        fixModsDropdown.add(titleLbl);
+
+        // Separator
+        JSeparator sep = new JSeparator();
+        sep.setForeground(new Color(255, 255, 255, 20));
+        sep.setBackground(new Color(0, 0, 0, 0));
+        sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        fixModsDropdown.add(sep);
+        fixModsDropdown.add(Box.createVerticalStrut(4));
+
+        // ── Dropdown items ──
+        String[][] items = {
+            {"⬆  Update All Mods", "Update all mods to their latest versions"},
+            {"🔗  Install Dependencies", "Find and install missing required dependencies"},
+            {"🧹  Deduplicate Mods", "Remove duplicate mod files (keeps newest)"}
+        };
+        Runnable[] actions = {
+            () -> updateAllBtn.doClick(),
+            () -> installDependenciesBtn.doClick(),
+            () -> dedupeModsBtn.doClick()
+        };
+        Color hoverBg = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 30); // accent hover tint
+
+        for (int i = 0; i < items.length; i++) {
+            final int idx = i;
+            JPanel row = new JPanel(new BorderLayout()) {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    if (Boolean.TRUE.equals(getClientProperty("hovered"))) {
+                        Graphics2D g2 = (Graphics2D) g.create();
+                        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                        g2.setColor(hoverBg);
+                        g2.fillRoundRect(4, 0, getWidth() - 8, getHeight(), 10, 10);
+                        g2.dispose();
+                    }
+                    super.paintComponent(g);
+                }
+            };
+            row.setOpaque(false);
+            row.setBorder(new EmptyBorder(8, 14, 8, 14));
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
+            row.setAlignmentX(Component.LEFT_ALIGNMENT);
+            row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+            JLabel nameLbl = new JLabel(items[i][0]);
+            nameLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
+            nameLbl.setForeground(textColor);
+
+            JLabel descLbl = new JLabel(items[i][1]);
+            descLbl.setFont(new Font("SansSerif", Font.PLAIN, 10));
+            descLbl.setForeground(tint(textColor, -60));
+
+            JPanel textPanel = new JPanel();
+            textPanel.setOpaque(false);
+            textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+            textPanel.add(nameLbl);
+            textPanel.add(descLbl);
+            row.add(textPanel, BorderLayout.CENTER);
+
+            // Hover effect
+            row.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    row.putClientProperty("hovered", Boolean.TRUE);
+                    nameLbl.setForeground(accent);
+                    row.repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    row.putClientProperty("hovered", Boolean.FALSE);
+                    com.launcher.model.LauncherSettings ls = com.launcher.manager.SettingsManager.getInstance().getSettings();
+                    nameLbl.setForeground(hexToColor(ls.textColor, new Color(226, 226, 234)));
+                    row.repaint();
+                }
+
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    hideFixModsDropdown();
+                    // Slight delay so animation starts before action
+                    javax.swing.Timer t = new javax.swing.Timer(100, ev -> {
+                        ((javax.swing.Timer) ev.getSource()).stop();
+                        actions[idx].run();
+                    });
+                    t.setRepeats(false);
+                    t.start();
+                }
+            });
+
+            fixModsDropdown.add(row);
+        }
+
+        fixModsDropdown.setVisible(false);
+        layeredPane.add(fixModsDropdown, JLayeredPane.MODAL_LAYER);
+
+        // Auto-dismiss when clicking outside the dropdown
+        layeredPane.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (fixModsDropdown != null && fixModsDropdown.isVisible()) {
+                    Point p = e.getPoint();
+                    if (!fixModsDropdown.getBounds().contains(p)) {
+                        hideFixModsDropdown();
+                    }
+                }
+            }
+        });
+    }
+
+    private void positionFixModsDropdown() {
+        if (fixModsDropdown == null || fixModsBtn == null) return;
+        // Position below the Fix Mods button
+        Point btnLoc = SwingUtilities.convertPoint(fixModsBtn, 0, fixModsBtn.getHeight(), layeredPane);
+        int dropW = 280;
+        int dropH = 210;
+        int x = Math.max(8, Math.min(btnLoc.x, layeredPane.getWidth() - dropW - 8));
+        int y = btnLoc.y + 4;
+        // If it would go off the bottom, show above the button instead
+        if (y + dropH > layeredPane.getHeight() - 8) {
+            y = btnLoc.y - fixModsBtn.getHeight() - dropH - 4;
+        }
+        fixModsDropdown.setBounds(x, y, dropW, dropH);
+    }
+
+    private void toggleFixModsDropdown() {
+        // Lazy-build on first use (layeredPane isn't ready during buildModsArea)
+        if (fixModsDropdown == null) buildFixModsDropdown();
+        if (fixModsDropdown == null) return;
+        if (fixModsDropdown.isVisible()) {
+            hideFixModsDropdown();
+        } else {
+            showFixModsDropdown();
+        }
+    }
+
+    private void showFixModsDropdown() {
+        if (fixModsDropdown == null) return;
+        positionFixModsDropdown();
+        Rectangle target = fixModsDropdown.getBounds();
+        int slide = 10;
+        fixModsDropdown.setBounds(target.x, target.y - slide, target.width, target.height);
+        fixModsDropdown.setAlpha(0f);
+        layeredPane.setLayer(fixModsDropdown, JLayeredPane.MODAL_LAYER);
+        fixModsDropdown.setVisible(true);
+        long start = System.currentTimeMillis();
+        int duration = 160;
+        javax.swing.Timer[] holder = new javax.swing.Timer[1];
+        holder[0] = new javax.swing.Timer(15, e -> {
+            float p = Math.min(1f, (System.currentTimeMillis() - start) / (float) duration);
+            float eased = 1 - (1 - p) * (1 - p); // ease-out
+            fixModsDropdown.setAlpha(eased);
+            int y = target.y - Math.round(slide * (1 - eased));
+            fixModsDropdown.setBounds(target.x, y, target.width, target.height);
+            if (p >= 1f) {
+                fixModsDropdown.setBounds(target);
+                fixModsDropdown.setAlpha(1f);
+                holder[0].stop();
+            }
+        });
+        holder[0].start();
+    }
+
+    private void hideFixModsDropdown() {
+        if (fixModsDropdown == null || !fixModsDropdown.isVisible()) return;
+        Rectangle from = fixModsDropdown.getBounds();
+        float startAlpha = fixModsDropdown.getAlpha();
+        int slide = 8;
+        long start = System.currentTimeMillis();
+        int duration = 130;
+        javax.swing.Timer[] holder = new javax.swing.Timer[1];
+        holder[0] = new javax.swing.Timer(15, e -> {
+            float p = Math.min(1f, (System.currentTimeMillis() - start) / (float) duration);
+            fixModsDropdown.setAlpha(startAlpha * (1 - p));
+            fixModsDropdown.setBounds(from.x, from.y - Math.round(slide * p), from.width, from.height);
+            if (p >= 1f) {
+                holder[0].stop();
+                fixModsDropdown.setVisible(false);
+                fixModsDropdown.setAlpha(1f);
+                fixModsDropdown.setBounds(from);
+            }
+        });
+        holder[0].start();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ACCOUNTS — Custom themed dropdown (mirrors the Fix Mods dropdown above):
+    // lists every saved offline account with an "✕" to delete it, plus a row to
+    // create a new offline account.
+    // ══════════════════════════════════════════════════════════════════════════
+    private boolean accountDropdownClickAwayAdded = false;
+
+    private void buildAccountDropdown() {
+        com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        Color panelBg = hexToColor(s.panelBgColor, new Color(19, 19, 26));
+        Color textColor = hexToColor(s.textColor, new Color(226, 226, 234));
+        Color accent = hexToColor(s.accentColor, new Color(16, 185, 129));
+
+        accountDropdown = new RoundedPanel(14, new Color(panelBg.getRed(), panelBg.getGreen(), panelBg.getBlue(), 245),
+                new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 80));
+        accountDropdown.putClientProperty("keepCustomBg", Boolean.TRUE);
+        accountDropdown.setLayout(new BoxLayout(accountDropdown, BoxLayout.Y_AXIS));
+        accountDropdown.setBorder(new EmptyBorder(8, 0, 8, 0));
+        accountDropdown.setFrostedGlass(layeredPane, 6, new Color(panelBg.getRed(), panelBg.getGreen(), panelBg.getBlue(), 160));
+
+        JLabel titleLbl = new JLabel("  👤  Accounts");
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 13));
+        titleLbl.setForeground(accent);
+        titleLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        titleLbl.setBorder(new EmptyBorder(4, 14, 8, 14));
+        accountDropdown.add(titleLbl);
+
+        JSeparator sep = new JSeparator();
+        sep.setForeground(new Color(255, 255, 255, 20));
+        sep.setBackground(new Color(0, 0, 0, 0));
+        sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        accountDropdown.add(sep);
+        accountDropdown.add(Box.createVerticalStrut(4));
+
+        Color hoverBg = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 30);
+        java.util.List<Account> accounts = accountManager.getAccounts();
+        Account active = accountManager.getActiveAccount().orElse(null);
+
+        if (accounts.isEmpty()) {
+            JLabel emptyLbl = new JLabel("  No accounts yet");
+            emptyLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            emptyLbl.setForeground(tint(textColor, -60));
+            emptyLbl.setBorder(new EmptyBorder(6, 14, 10, 14));
+            emptyLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+            accountDropdown.add(emptyLbl);
+        }
+
+        for (Account acc : accounts) {
+            JPanel row = new JPanel(new BorderLayout()) {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    if (Boolean.TRUE.equals(getClientProperty("hovered"))) {
+                        Graphics2D g2 = (Graphics2D) g.create();
+                        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                        g2.setColor(hoverBg);
+                        g2.fillRoundRect(4, 0, getWidth() - 8, getHeight(), 10, 10);
+                        g2.dispose();
+                    }
+                    super.paintComponent(g);
+                }
+            };
+            row.setOpaque(false);
+            row.setBorder(new EmptyBorder(6, 14, 6, 10));
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
+            row.setAlignmentX(Component.LEFT_ALIGNMENT);
+            row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+            boolean isActive = active != null && active.equals(acc);
+            String label = s.hideUsername ? "●●●●●" : acc.username;
+            JLabel nameLbl = new JLabel(label, accountAvatarIcon(label), SwingConstants.LEFT);
+            nameLbl.setIconTextGap(8);
+            nameLbl.setFont(new Font("SansSerif", isActive ? Font.BOLD : Font.PLAIN, 12));
+            nameLbl.setForeground(isActive ? accent : textColor);
+            row.add(nameLbl, BorderLayout.CENTER);
+
+            JButton delBtn = new JButton("✕");
+            delBtn.setFont(new Font("SansSerif", Font.BOLD, 10));
+            delBtn.setFocusPainted(false);
+            delBtn.setForeground(new Color(239, 68, 68));
+            delBtn.setBackground(new Color(239, 68, 68, 35));
+            delBtn.setPreferredSize(new Dimension(22, 22));
+            delBtn.putClientProperty("JButton.arc", 22);
+            delBtn.setToolTipText("Delete account");
+            delBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            delBtn.addActionListener(e -> {
+                accountManager.remove(acc);
+                refreshAccounts();
+                notifications.warning("Account removed", "Removed account " + acc.username);
+                hideAccountDropdown();
+            });
+            JPanel delWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+            delWrap.setOpaque(false);
+            delWrap.add(delBtn);
+            row.add(delWrap, BorderLayout.EAST);
+
+            row.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    row.putClientProperty("hovered", Boolean.TRUE);
+                    row.repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    row.putClientProperty("hovered", Boolean.FALSE);
+                    row.repaint();
+                }
+
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    accountBox.setSelectedItem(acc);
+                    accountManager.setActiveAccount(acc);
+                    if (accountBtn != null) {
+                        accountBtn.setText(accountButtonLabel());
+                    }
+                    hideAccountDropdown();
+                }
+            });
+
+            accountDropdown.add(row);
+        }
+
+        accountDropdown.add(Box.createVerticalStrut(4));
+        JSeparator sep2 = new JSeparator();
+        sep2.setForeground(new Color(255, 255, 255, 20));
+        sep2.setBackground(new Color(0, 0, 0, 0));
+        sep2.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        accountDropdown.add(sep2);
+        accountDropdown.add(Box.createVerticalStrut(4));
+
+        JPanel createRow = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                if (Boolean.TRUE.equals(getClientProperty("hovered"))) {
+                    Graphics2D g2 = (Graphics2D) g.create();
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2.setColor(hoverBg);
+                    g2.fillRoundRect(4, 0, getWidth() - 8, getHeight(), 10, 10);
+                    g2.dispose();
+                }
+                super.paintComponent(g);
+            }
+        };
+        createRow.setOpaque(false);
+        createRow.setBorder(new EmptyBorder(8, 14, 8, 14));
+        createRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        createRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        createRow.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        JLabel createLbl = new JLabel("＋  Create new offline account");
+        createLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
+        createLbl.setForeground(accent);
+        createRow.add(createLbl, BorderLayout.CENTER);
+
+        createRow.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                createRow.putClientProperty("hovered", Boolean.TRUE);
+                createRow.repaint();
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                createRow.putClientProperty("hovered", Boolean.FALSE);
+                createRow.repaint();
+            }
+
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                hideAccountDropdown();
+                javax.swing.Timer t = new javax.swing.Timer(100, ev -> {
+                    ((javax.swing.Timer) ev.getSource()).stop();
+                    promptCreateOfflineAccount();
+                });
+                t.setRepeats(false);
+                t.start();
+            }
+        });
+
+        accountDropdown.add(createRow);
+
+        accountDropdown.setVisible(false);
+        layeredPane.add(accountDropdown, JLayeredPane.MODAL_LAYER);
+
+        // Only ever register this click-away listener once — buildAccountDropdown()
+        // is re-run every time the dropdown opens (so it reflects any accounts
+        // added/removed since), but the outside-click handler itself only needs to
+        // exist a single time.
+        if (!accountDropdownClickAwayAdded) {
+            accountDropdownClickAwayAdded = true;
+            layeredPane.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    if (accountDropdown != null && accountDropdown.isVisible()) {
+                        Point p = e.getPoint();
+                        if (!accountDropdown.getBounds().contains(p)) {
+                            hideAccountDropdown();
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    private void positionAccountDropdown() {
+        if (accountDropdown == null || accountBtn == null) return;
+        Point btnLoc = SwingUtilities.convertPoint(accountBtn, 0, accountBtn.getHeight(), layeredPane);
+        int dropW = 260;
+        int dropH = Math.max(120, Math.min(400, accountDropdown.getPreferredSize().height));
+        int x = Math.max(8, Math.min(btnLoc.x + accountBtn.getWidth() - dropW, layeredPane.getWidth() - dropW - 8));
+        int y = btnLoc.y + 4;
+        if (y + dropH > layeredPane.getHeight() - 8) {
+            y = btnLoc.y - accountBtn.getHeight() - dropH - 4;
+        }
+        accountDropdown.setBounds(x, y, dropW, dropH);
+    }
+
+    private void toggleAccountDropdown() {
+        if (accountDropdown != null && accountDropdown.isVisible()) {
+            hideAccountDropdown();
+            return;
+        }
+        // Rebuild every time so newly added/removed accounts are always reflected.
+        if (accountDropdown != null) {
+            layeredPane.remove(accountDropdown);
+            accountDropdown = null;
+        }
+        buildAccountDropdown();
+        if (accountDropdown == null) return;
+        showAccountDropdown();
+    }
+
+    private void showAccountDropdown() {
+        if (accountDropdown == null) return;
+        positionAccountDropdown();
+        Rectangle target = accountDropdown.getBounds();
+        int slide = 10;
+        accountDropdown.setBounds(target.x, target.y - slide, target.width, target.height);
+        accountDropdown.setAlpha(0f);
+        layeredPane.setLayer(accountDropdown, JLayeredPane.MODAL_LAYER);
+        accountDropdown.setVisible(true);
+        long start = System.currentTimeMillis();
+        int duration = 160;
+        javax.swing.Timer[] holder = new javax.swing.Timer[1];
+        holder[0] = new javax.swing.Timer(15, e -> {
+            float p = Math.min(1f, (System.currentTimeMillis() - start) / (float) duration);
+            float eased = 1 - (1 - p) * (1 - p);
+            accountDropdown.setAlpha(eased);
+            int y = target.y - Math.round(slide * (1 - eased));
+            accountDropdown.setBounds(target.x, y, target.width, target.height);
+            if (p >= 1f) {
+                accountDropdown.setBounds(target);
+                accountDropdown.setAlpha(1f);
+                holder[0].stop();
+            }
+        });
+        holder[0].start();
+    }
+
+    private void hideAccountDropdown() {
+        if (accountDropdown == null || !accountDropdown.isVisible()) return;
+        Rectangle from = accountDropdown.getBounds();
+        float startAlpha = accountDropdown.getAlpha();
+        int slide = 8;
+        long start = System.currentTimeMillis();
+        int duration = 130;
+        javax.swing.Timer[] holder = new javax.swing.Timer[1];
+        holder[0] = new javax.swing.Timer(15, e -> {
+            float p = Math.min(1f, (System.currentTimeMillis() - start) / (float) duration);
+            accountDropdown.setAlpha(startAlpha * (1 - p));
+            accountDropdown.setBounds(from.x, from.y - Math.round(slide * p), from.width, from.height);
+            if (p >= 1f) {
+                holder[0].stop();
+                accountDropdown.setVisible(false);
+                accountDropdown.setAlpha(1f);
+                accountDropdown.setBounds(from);
+            }
+        });
+        holder[0].start();
+    }
+
+    /**
+     * Builds the "Create Offline Account" popover — styled the same way as the
+     * Downloads window (buildDownloadsPopover): a frosted-glass RoundedPanel with
+     * a header (title + close ✕) and content below, instead of a plain OS dialog.
+     */
+    private RoundedPanel buildCreateAccountPopover() {
+        com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        Color textColor = hexToColor(settings.textColor, new Color(226, 226, 234));
+        Color mutedTextColor = hexToColor("#9696a0", new Color(150, 150, 160));
+        Color accent = hexToColor(settings.accentColor, new Color(16, 185, 129));
+        Color errorColor = hexToColor("#ef4444", Color.RED);
+
+        RoundedPanel popover = new RoundedPanel(18, new Color(20, 20, 26, 250), new Color(255, 255, 255, 34));
+        popover.putClientProperty("keepCustomBg", Boolean.TRUE);
+        popover.setLayout(new BorderLayout());
+        popover.setFrostedGlass(layeredPane, 8, new Color(12, 12, 16, 150));
+
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(16, 20, 10, 14));
+
+        JLabel title = new JLabel("Create Offline Account");
+        title.setFont(new Font("SansSerif", Font.BOLD, 18));
+        title.setForeground(textColor);
+        header.add(title, BorderLayout.WEST);
+
+        JButton closeBtn = new JButton("\u2715");
+        closeBtn.setToolTipText("Close");
+        closeBtn.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+        closeBtn.setFocusPainted(false);
+        closeBtn.setContentAreaFilled(false);
+        closeBtn.setBorderPainted(false);
+        closeBtn.setOpaque(false);
+        closeBtn.setForeground(textColor);
+        closeBtn.setMargin(new Insets(4, 10, 4, 10));
+        closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeBtn.addActionListener(e -> hideCreateAccountPopover());
+        header.add(closeBtn, BorderLayout.EAST);
+
+        popover.add(header, BorderLayout.NORTH);
+
+        JPanel body = new JPanel();
+        body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setBorder(new EmptyBorder(4, 20, 20, 20));
+
+        JLabel sub = new JLabel("<html>Offline accounts work for singleplayer and offline-mode servers.</html>");
+        sub.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        sub.setForeground(mutedTextColor);
+        sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(sub);
+        body.add(Box.createVerticalStrut(18));
+
+        JLabel userLabel = new JLabel("Username");
+        userLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
+        userLabel.setForeground(textColor);
+        userLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(userLabel);
+        body.add(Box.createVerticalStrut(8));
+
+        createAccountUsernameField = new CustomTextField();
+        createAccountUsernameField.putClientProperty("JTextField.placeholderText", "Enter a username...");
+        createAccountUsernameField.setFont(new Font("SansSerif", Font.PLAIN, 14));
+        createAccountUsernameField.setAlignmentX(Component.LEFT_ALIGNMENT);
+        createAccountUsernameField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+        createAccountUsernameField.setPreferredSize(new Dimension(100, 42));
+        body.add(createAccountUsernameField);
+        body.add(Box.createVerticalStrut(12));
+
+        JLabel note = new JLabel("<html><body style='width: 380px;'>⚠  Microsoft authentication is not supported. Use the in-game account switcher if you need it.</body></html>");
+        note.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        note.setForeground(mutedTextColor);
+        note.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(note);
+
+        createAccountErrorLabel = new JLabel(" ");
+        createAccountErrorLabel.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        createAccountErrorLabel.setForeground(errorColor);
+        createAccountErrorLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(createAccountErrorLabel);
+        body.add(Box.createVerticalStrut(14));
+
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        btnRow.setOpaque(false);
+        btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        btnRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+
+        JButton cancelBtn = new JButton("Cancel");
+        cancelBtn.setForeground(textColor);
+        cancelBtn.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        cancelBtn.setPreferredSize(new Dimension(100, 36));
+        cancelBtn.setFocusPainted(false);
+        cancelBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        cancelBtn.addActionListener(e -> hideCreateAccountPopover());
+        btnRow.add(cancelBtn);
+
+        JButton createBtn = new JButton("Create Account");
+        createBtn.setFont(new Font("SansSerif", Font.BOLD, 13));
+        createBtn.setPreferredSize(new Dimension(170, 36));
+        createBtn.setForeground(Color.WHITE);
+        createBtn.setBackground(accent);
+        createBtn.setFocusPainted(false);
+        createBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        createBtn.addActionListener(e -> submitCreateOfflineAccount());
+        btnRow.add(createBtn);
+
+        body.add(btnRow);
+        popover.add(body, BorderLayout.CENTER);
+
+        createAccountUsernameField.addActionListener(e -> createBtn.doClick());
+
+        return popover;
+    }
+
+    /** Centers the create-account popover over the launcher window, like a modal. */
+    private void positionCreateAccountPopover() {
+        if (createAccountPopover == null) return;
+        int width = 460;
+        int height = createAccountPopover.getPreferredSize().height;
+        height = Math.max(300, Math.min(height, layeredPane.getHeight() - 32));
+        int x = (layeredPane.getWidth() - width) / 2;
+        int y = (layeredPane.getHeight() - height) / 3;
+        createAccountPopover.setBounds(Math.max(8, x), Math.max(8, y), width, height);
+    }
+
+    /** Opens the themed "Create Offline Account" popover (replaces the old OS input dialog). */
+    private void promptCreateOfflineAccount() {
+        if (createAccountPopover != null) {
+            layeredPane.remove(createAccountPopover);
+            createAccountPopover = null;
+        }
+        createAccountPopover = buildCreateAccountPopover();
+        layeredPane.add(createAccountPopover, JLayeredPane.MODAL_LAYER);
+        positionCreateAccountPopover();
+        Rectangle target = createAccountPopover.getBounds();
+        int slide = 14;
+        createAccountPopover.setBounds(target.x, target.y - slide, target.width, target.height);
+        createAccountPopover.setAlpha(0f);
+        createAccountPopover.setVisible(true);
+        long start = System.currentTimeMillis();
+        int duration = 190;
+        javax.swing.Timer[] holder = new javax.swing.Timer[1];
+        holder[0] = new javax.swing.Timer(15, e -> {
+            float p = Math.min(1f, (System.currentTimeMillis() - start) / (float) duration);
+            float eased = 1 - (1 - p) * (1 - p);
+            createAccountPopover.setAlpha(eased);
+            int y = target.y - Math.round(slide * (1 - eased));
+            createAccountPopover.setBounds(target.x, y, target.width, target.height);
+            if (p >= 1f) {
+                createAccountPopover.setBounds(target);
+                createAccountPopover.setAlpha(1f);
+                holder[0].stop();
+                createAccountUsernameField.requestFocusInWindow();
+            }
+        });
+        holder[0].start();
+    }
+
+    /** Fades + slides the create-account popover out, then hides it. */
+    private void hideCreateAccountPopover() {
+        if (createAccountPopover == null || !createAccountPopover.isVisible()) return;
+        Rectangle from = createAccountPopover.getBounds();
+        float startAlpha = createAccountPopover.getAlpha();
+        int slide = 10;
+        long start = System.currentTimeMillis();
+        int duration = 150;
+        javax.swing.Timer[] holder = new javax.swing.Timer[1];
+        holder[0] = new javax.swing.Timer(15, e -> {
+            float p = Math.min(1f, (System.currentTimeMillis() - start) / (float) duration);
+            createAccountPopover.setAlpha(startAlpha * (1 - p));
+            createAccountPopover.setBounds(from.x, from.y - Math.round(slide * p), from.width, from.height);
+            if (p >= 1f) {
+                holder[0].stop();
+                createAccountPopover.setVisible(false);
+            }
+        });
+        holder[0].start();
+    }
+
+    /** Validates the username field and creates the offline account. */
+    private void submitCreateOfflineAccount() {
+        if (createAccountUsernameField == null) return;
+        String u = createAccountUsernameField.getText().trim();
+        if (u.isEmpty()) {
+            if (createAccountErrorLabel != null) createAccountErrorLabel.setText("Username cannot be empty.");
+            return;
+        }
+        try {
+            Account acc = new com.launcher.auth.OfflineAuthService().login(u);
+            accountManager.addOrUpdate(acc);
+            accountManager.setActiveAccount(acc);
+            refreshAccounts();
+            notifications.success("Account added", "Added offline account: " + acc.username);
+            hideCreateAccountPopover();
+        } catch (Exception ex) {
+            if (createAccountErrorLabel != null) createAccountErrorLabel.setText(ex.getMessage());
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // DISCOVER TAB (Modrinth)
     // ══════════════════════════════════════════════════════════════════════════
     // Discover tab palette — a slightly bluer, more saturated dark theme than the
@@ -2578,70 +3317,114 @@ public class Main extends JFrame {
         p.setBorder(new EmptyBorder(18, 20, 16, 20));
         discoverRootPanel = p;
 
-        // ── Header row ──────────────────────────────────────────────────────
-        JPanel header = new JPanel(new BorderLayout());
-        header.setOpaque(false);
-        JPanel headerLeft = new JPanel();
-        headerLeft.setOpaque(false);
-        headerLeft.setLayout(new BoxLayout(headerLeft, BoxLayout.Y_AXIS));
+        // ── Top panel (rebuilt from scratch) ────────────────────────────────
+        // Three stacked rows inside one rounded glass card:
+        //   1. Title + subtitle
+        //   2. Mods/Resource Packs toggle (left) and Search/Refresh buttons (right)
+        //   3. The Modrinth search text field, full width
+        // Built with GridBagLayout instead of nested BorderLayouts so every row
+        // is guaranteed a real, non-zero width/height regardless of its
+        // neighbors' content.
+        RoundedPanel topCard = new RoundedPanel(22, new Color(255, 255, 255, 9), new Color(255, 255, 255, 16));
+        topCard.putClientProperty("keepCustomBg", Boolean.TRUE);
+        topCard.setLayout(new GridBagLayout());
+        topCard.setBorder(new EmptyBorder(16, 18, 16, 18));
+        discoverFiltersPanel = topCard;
+
+        GridBagConstraints rowGbc = new GridBagConstraints();
+        rowGbc.gridx = 0;
+        rowGbc.fill = GridBagConstraints.HORIZONTAL;
+        rowGbc.weightx = 1;
+
+        // Row 1: icon + title/subtitle.
+        JPanel titleRow = new JPanel(new BorderLayout());
+        titleRow.setOpaque(false);
+        JLabel iconLbl = new JLabel("\uD83E\uDDED");
+        iconLbl.setFont(new Font("SansSerif", Font.PLAIN, 22));
+        iconLbl.setBorder(new EmptyBorder(0, 0, 0, 10));
+        JPanel titleStack = new JPanel();
+        titleStack.setOpaque(false);
+        titleStack.setLayout(new BoxLayout(titleStack, BoxLayout.Y_AXIS));
         JLabel titleLbl = new JLabel("Discover");
-        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 26));
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 22));
         titleLbl.setForeground(DISC_TEXT);
         discoverTitleLbl = titleLbl;
         JLabel subtitleLbl = new JLabel("Browse mods & resource packs on Modrinth");
         subtitleLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
         subtitleLbl.setForeground(DISC_TEXT_DIM);
         discoverSubtitleLbl = subtitleLbl;
-        subtitleLbl.setBorder(new EmptyBorder(3, 1, 0, 0));
-        headerLeft.add(titleLbl);
-        headerLeft.add(subtitleLbl);
-        header.add(headerLeft, BorderLayout.WEST);
+        subtitleLbl.setBorder(new EmptyBorder(2, 1, 0, 0));
+        titleStack.add(titleLbl);
+        titleStack.add(subtitleLbl);
+        titleRow.add(iconLbl, BorderLayout.WEST);
+        titleRow.add(titleStack, BorderLayout.CENTER);
 
-        // ── Filter toolbar (rounded surface) ────────────────────────────────
-        RoundedPanel filters = new RoundedPanel(16, DISC_SURFACE, DISC_BORDER);
-        filters.setLayout(new FlowLayout(FlowLayout.CENTER, 10, 10));
-        filters.setBorder(new EmptyBorder(4, 12, 4, 12));
-        discoverFiltersPanel = filters;
+        rowGbc.gridy = 0;
+        rowGbc.insets = new Insets(0, 0, 14, 0);
+        topCard.add(titleRow, rowGbc);
 
-        // Segmented toggle for Mods / Resource Packs
-        discoverModsToggle = new JToggleButton("Mods", true);
-        discoverPacksToggle = new JToggleButton("Resource Packs", false);
+        // Row 2: Mods/Resource Packs toggle on the left, Search/Refresh buttons
+        // on the right — both styled as the same kind of segmented pill row.
+        discoverModsToggle = new DiscRoundToggleButton("Mods", true, DISC_BUTTON_ARC);
+        discoverPacksToggle = new DiscRoundToggleButton("Resource Packs", false, DISC_BUTTON_ARC);
         styleDiscoverSegment(discoverModsToggle);
         styleDiscoverSegment(discoverPacksToggle);
         ButtonGroup discoverGroup = new ButtonGroup();
         discoverGroup.add(discoverModsToggle);
         discoverGroup.add(discoverPacksToggle);
-        JPanel segment = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        segment.setOpaque(false);
-        segment.add(discoverModsToggle);
-        segment.add(discoverPacksToggle);
-        filters.add(segment);
+        JPanel typeSegment = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 4));
+        typeSegment.setOpaque(false);
+        typeSegment.add(discoverModsToggle);
+        typeSegment.add(discoverPacksToggle);
 
+        discoverSearchBtn = new DiscRoundButton("Search", DISC_BUTTON_ARC);
+        styleDiscoverPrimaryButton(discoverSearchBtn);
+        discoverRefreshBtn = new DiscRoundButton("↻ Refresh", DISC_BUTTON_ARC);
+        styleDiscoverGhostButton(discoverRefreshBtn);
+        JPanel actionSegment = new JPanel(new WrapLayout(FlowLayout.RIGHT, 4, 4));
+        actionSegment.setOpaque(false);
+        actionSegment.add(discoverSearchBtn);
+        actionSegment.add(discoverRefreshBtn);
+
+        JPanel controlsRow = new JPanel(new BorderLayout());
+        controlsRow.setOpaque(false);
+        controlsRow.add(typeSegment, BorderLayout.WEST);
+        controlsRow.add(actionSegment, BorderLayout.EAST);
+
+        rowGbc.gridy = 1;
+        rowGbc.insets = new Insets(0, 0, 12, 0);
+        topCard.add(controlsRow, rowGbc);
+
+        // Row 3: the actual Modrinth search text field, full width. Kept as a
+        // plain (non-frosted-glass) rounded pill — a live frosted-glass backdrop
+        // here previously let the scrolling result cards bleed/ghost through the
+        // pill — but with a solid-enough fill/border so it's always clearly
+        // visible instead of nearly-invisible at very low alpha.
         discoverSearchField = new JTextField();
-        discoverSearchField.putClientProperty("JTextField.placeholderText", "Search on Modrinth...");
-        discoverSearchField.setPreferredSize(new Dimension(260, 32));
-        discoverSearchField.setBackground(new Color(38, 39, 52));
+        discoverSearchField.putClientProperty("JTextField.placeholderText", "🔍  Search on Modrinth…");
+        discoverSearchField.setFont(new Font("SansSerif", Font.PLAIN, 13));
         discoverSearchField.setForeground(DISC_TEXT);
         discoverSearchField.setCaretColor(DISC_TEXT);
-        discoverSearchField.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(DISC_BORDER, 1, true),
-                new EmptyBorder(4, 10, 4, 10)));
-        filters.add(discoverSearchField);
+        discoverSearchField.setOpaque(false);
+        discoverSearchField.setBorder(new EmptyBorder(6, 4, 6, 4));
 
-        discoverSearchBtn = new JButton("Search");
-        styleDiscoverPrimaryButton(discoverSearchBtn);
-        filters.add(discoverSearchBtn);
+        RoundedPanel discoverSearchWrap = new RoundedPanel(18, new Color(255, 255, 255, 24), new Color(255, 255, 255, 60));
+        discoverSearchWrap.putClientProperty("keepCustomBg", Boolean.TRUE);
+        discoverSearchWrap.setLayout(new BorderLayout());
+        discoverSearchWrap.setBorder(new EmptyBorder(4, 14, 4, 14));
+        discoverSearchWrap.add(discoverSearchField, BorderLayout.CENTER);
+        discoverSearchWrap.setPreferredSize(new Dimension(400, 38));
+        discoverSearchWrap.setMinimumSize(new Dimension(120, 38));
+        this.discoverSearchWrapPanel = discoverSearchWrap;
 
-        // Sits right next to Search, at the same y-position, and is always visible
-        // (not just when results happen to be empty).
-        discoverRefreshBtn = new JButton("↻ Refresh");
-        styleDiscoverGhostButton(discoverRefreshBtn);
-        filters.add(discoverRefreshBtn);
+        rowGbc.gridy = 2;
+        rowGbc.insets = new Insets(0, 0, 0, 0);
+        topCard.add(discoverSearchWrap, rowGbc);
 
-        JPanel topSection = new JPanel(new BorderLayout(0, 14));
+        JPanel topSection = new JPanel(new BorderLayout());
         topSection.setOpaque(false);
-        topSection.add(header, BorderLayout.NORTH);
-        topSection.add(filters, BorderLayout.SOUTH);
+        topSection.setBorder(new EmptyBorder(0, 0, 14, 0));
+        topSection.add(topCard, BorderLayout.CENTER);
         p.add(topSection, BorderLayout.NORTH);
 
         // ── Results pane (WrapLayout inside JScrollPane) ────────────────────
@@ -2650,7 +3433,13 @@ public class Main extends JFrame {
         // gets crammed onto one clipped row instead of wrapping.
         discoverResultsPane = WrapLayout.wrapScrollablePanel(FlowLayout.CENTER, 14, 14);
         discoverResultsPane.setOpaque(false);
+        // Small top/bottom breathing room so the first/last row of cards never
+        // renders flush against the filter toolbar (NORTH) or pagination bar
+        // (SOUTH) — without this, rounded cards right at the scroll edge can look
+        // like they're overlapping/tucked under those bars.
+        discoverResultsPane.setBorder(new EmptyBorder(6, 0, 6, 0));
         JScrollPane scroll = new JScrollPane(discoverResultsPane);
+        com.launcher.ui.SmoothScroll.install(scroll);
         discoverScrollPane = scroll;
         scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
@@ -2658,6 +3447,25 @@ public class Main extends JFrame {
         scroll.getViewport().setOpaque(false);
         scroll.setOpaque(false);
         scroll.setBorder(null);
+        // Fixes a real Swing z-order/ghosting bug: JViewport's default
+        // BLIT_SCROLL_MODE copies (blits) the previously painted pixels and only
+        // repaints the newly-exposed strip when scrolling, which assumes fully
+        // opaque content. With translucent/custom-painted RoundedPanel cards over
+        // a non-opaque viewport, that blit can leave stale card pixels smeared
+        // into the region under the (translucent) filter toolbar or over the
+        // pagination bar. SIMPLE_SCROLL_MODE always fully repaints the viewport
+        // from scratch on every scroll, which is a little more work but removes
+        // the layering/ghosting artifacts entirely.
+        scroll.getViewport().setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
+        // Belt-and-braces fix for the same class of bug: explicitly repaint the
+        // top card on every scroll tick. Cards scrolling up pass directly beneath
+        // the (translucent) top card's screen region; without this, a stray
+        // partially-loaded icon/image can visibly show through for a frame before
+        // the next full repaint catches up. Forcing the top card to redraw itself
+        // on scroll guarantees anything now "underneath" it is immediately hidden.
+        scroll.getVerticalScrollBar().addAdjustmentListener(e -> {
+            topCard.repaint();
+        });
         // Re-layout on resize so WrapLayout recalculates row heights
         scroll.addComponentListener(new ComponentAdapter() {
             @Override
@@ -2684,10 +3492,10 @@ public class Main extends JFrame {
         bottomRow.setOpaque(false);
         bottomRow.setBorder(new EmptyBorder(6, 2, 0, 2));
 
-        JPanel pag = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 0));
+        JPanel pag = new JPanel(new WrapLayout(FlowLayout.CENTER, 6, 4));
         pag.setOpaque(false);
-        discoverPrevPageBtn = new JButton("‹ Prev");
-        discoverNextPageBtn = new JButton("Next ›");
+        discoverPrevPageBtn = new DiscRoundButton("‹ Prev", DISC_BUTTON_ARC);
+        discoverNextPageBtn = new DiscRoundButton("Next ›", DISC_BUTTON_ARC);
         styleDiscoverNavButton(discoverPrevPageBtn);
         styleDiscoverNavButton(discoverNextPageBtn);
         discoverPageLabel = new JLabel("Page 1");
@@ -2708,6 +3516,27 @@ public class Main extends JFrame {
         bc.anchor = GridBagConstraints.CENTER;
         bottomRow.add(pag, bc);
         p.add(bottomRow, BorderLayout.SOUTH);
+
+        // The filter toolbar and pagination bar both use WrapLayout now (see
+        // 'segment'/'centerGroup'/'pag' above) so they can wrap onto a 2nd line at
+        // narrow widths instead of getting clipped — but a WrapLayout child only
+        // reports its correct (wrapped) preferred height once it has actually been
+        // laid out at its real width. Forcing an explicit revalidate of both bars
+        // whenever the whole Discover panel resizes makes sure the root
+        // BorderLayout always reserves the correct NORTH/SOUTH space for them;
+        // otherwise, right after a resize that causes wrapping, the scroll area's
+        // cards can render into space that visually overlaps the search toolbar
+        // above or the Prev/Next bar below.
+        p.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                topCard.revalidate();
+                topCard.repaint();
+                bottomRow.revalidate();
+                bottomRow.repaint();
+                p.revalidate();
+            }
+        });
 
         // ── Action listeners ────────────────────────────────────────────────
         Runnable doSearch = () -> {
@@ -2755,7 +3584,7 @@ public class Main extends JFrame {
      * from looking
      * like a plain, dated gray box.
      */
-    private static final class GradientBackgroundPane extends JLayeredPane {
+    public static final class GradientBackgroundPane extends JLayeredPane {
         private Color topColor = new Color(16, 16, 22);
         private Color bottomColor = new Color(8, 8, 12);
         private Color glowColor = new Color(16, 185, 129, 24);
@@ -3032,6 +3861,16 @@ public class Main extends JFrame {
         private final java.util.List<JButton> buttons = new java.util.ArrayList<>();
         private int selectedIndex = -1;
 
+        // ── Section-switch crossfade ────────────────────────────────────────
+        // `cards` sits inside a plain null-layout container so we can drop a
+        // fading snapshot of the outgoing section on top of it: the incoming
+        // section is swapped in immediately underneath, and the snapshot
+        // fades out over it, giving a smooth crossfade instead of an
+        // instant hard cut.
+        private final JPanel transitionContainer;
+        private JComponent fadeOverlay;
+        private javax.swing.Timer fadeTimer;
+
         PillTabbedPane() {
             super(new BorderLayout(0, 12));
             setOpaque(false);
@@ -3046,8 +3885,19 @@ public class Main extends JFrame {
             cards = new JPanel(cl);
             cards.setOpaque(false);
 
+            transitionContainer = new JPanel(null) {
+                @Override
+                public void doLayout() {
+                    for (Component c : getComponents()) {
+                        c.setBounds(0, 0, getWidth(), getHeight());
+                    }
+                }
+            };
+            transitionContainer.setOpaque(false);
+            transitionContainer.add(cards);
+
             add(tabBarWrap, BorderLayout.NORTH);
-            add(cards, BorderLayout.CENTER);
+            add(transitionContainer, BorderLayout.CENTER);
         }
 
         void addTab(String title, Component comp) {
@@ -3120,6 +3970,9 @@ public class Main extends JFrame {
         }
 
         void setSelectedIndex(int index) {
+            boolean sectionChanged = selectedIndex != -1 && selectedIndex != index;
+            BufferedImage outgoingSnapshot = sectionChanged ? captureCardsSnapshot() : null;
+
             selectedIndex = index;
             cl.show(cards, "pill" + index);
             for (int i = 0; i < buttons.size(); i++) {
@@ -3132,6 +3985,79 @@ public class Main extends JFrame {
                         : new Color(textColor.getRed(), textColor.getGreen(), textColor.getBlue(), 160));
                 b.repaint();
             }
+
+            if (outgoingSnapshot != null) {
+                crossfadeFrom(outgoingSnapshot);
+            }
+        }
+
+        /** Grabs a pixel snapshot of whatever section is currently painted. */
+        private BufferedImage captureCardsSnapshot() {
+            int w = cards.getWidth(), h = cards.getHeight();
+            if (w <= 0 || h <= 0) {
+                return null;
+            }
+            BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g2 = img.createGraphics();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            cards.paint(g2);
+            g2.dispose();
+            return img;
+        }
+
+        /**
+         * Lays the outgoing section's snapshot on top of the (already-switched)
+         * new section and fades it out over ~220ms, producing a smooth
+         * crossfade transition instead of an instant cut.
+         */
+        private void crossfadeFrom(BufferedImage outgoingSnapshot) {
+            if (fadeTimer != null && fadeTimer.isRunning()) {
+                fadeTimer.stop();
+            }
+            if (fadeOverlay != null) {
+                transitionContainer.remove(fadeOverlay);
+                fadeOverlay = null;
+            }
+
+            fadeOverlay = new JComponent() {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    Object alphaProp = getClientProperty("fadeAlpha");
+                    float alpha = alphaProp instanceof Float ? (Float) alphaProp : 1f;
+                    Graphics2D g2 = (Graphics2D) g.create();
+                    g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                            RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                    g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, alpha))));
+                    g2.drawImage(outgoingSnapshot, 0, 0, getWidth(), getHeight(), null);
+                    g2.dispose();
+                }
+            };
+            fadeOverlay.setOpaque(false);
+            fadeOverlay.putClientProperty("fadeAlpha", 1f);
+            transitionContainer.add(fadeOverlay);
+            transitionContainer.setComponentZOrder(fadeOverlay, 0);
+            transitionContainer.revalidate();
+            transitionContainer.repaint();
+
+            final long start = System.currentTimeMillis();
+            final int durationMs = 220;
+            fadeTimer = new javax.swing.Timer(12, null);
+            fadeTimer.addActionListener(ev -> {
+                float t = Math.min(1f, (System.currentTimeMillis() - start) / (float) durationMs);
+                // Ease-out curve so the fade decelerates smoothly.
+                float eased = 1f - (1f - t) * (1f - t);
+                fadeOverlay.putClientProperty("fadeAlpha", 1f - eased);
+                fadeOverlay.repaint();
+                if (t >= 1f) {
+                    fadeTimer.stop();
+                    if (fadeOverlay != null) {
+                        transitionContainer.remove(fadeOverlay);
+                        fadeOverlay = null;
+                        transitionContainer.repaint();
+                    }
+                }
+            });
+            fadeTimer.start();
         }
 
         /** Re-tints every pill so the glow follows a new accent color. */
@@ -3142,7 +4068,7 @@ public class Main extends JFrame {
         }
     }
 
-    private static class RoundedPanel extends JPanel {
+    public static class RoundedPanel extends JPanel {
         private final int radius;
         private Color fill;
         private Color border;
@@ -3167,7 +4093,7 @@ public class Main extends JFrame {
         // toggle.
         private float alpha = 1f;
 
-        RoundedPanel(int radius, Color fill, Color border) {
+        public RoundedPanel(int radius, Color fill, Color border) {
             this.radius = radius;
             this.fill = fill;
             this.border = border;
@@ -3179,12 +4105,12 @@ public class Main extends JFrame {
          * painted
          * inside it) in or out; see the animateShow/animateHide helpers on Main.
          */
-        void setAlpha(float alpha) {
+        public void setAlpha(float alpha) {
             this.alpha = Math.max(0f, Math.min(1f, alpha));
             repaint();
         }
 
-        float getAlpha() {
+        public float getAlpha() {
             return alpha;
         }
 
@@ -3228,7 +4154,7 @@ public class Main extends JFrame {
          * alpha
          * to keep the card's own accent color visible even through the frosted effect.
          */
-        void setFrostedGlass(GradientBackgroundPane backdrop, int blurDivisor, Color tint) {
+        public void setFrostedGlass(GradientBackgroundPane backdrop, int blurDivisor, Color tint) {
             this.frostedBackdrop = backdrop;
             this.frostedBlurDivisor = Math.max(2, blurDivisor);
             this.frostedTint = tint;
@@ -3329,26 +4255,108 @@ public class Main extends JFrame {
         }
     }
 
+    // Moderate "kinda rounded" corner radius for the Discover toolbar buttons
+    // (segment toggle, Search, Refresh, Prev/Next).
+    private static final int DISC_BUTTON_ARC = 20;
+
+    /**
+     * A plain JButton whose background is hand-painted as a rounded rectangle,
+     * instead of relying on the look-and-feel's own "JButton.arc" client
+     * property. This guarantees the rounding is always visible no matter what
+     * L&F/theme is active, since the shape is drawn directly rather than
+     * delegated to FlatLaf's button UI.
+     */
+    private static class DiscRoundButton extends JButton {
+        private final int arc;
+
+        DiscRoundButton(String text, int arc) {
+            super(text);
+            this.arc = arc;
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setRolloverEnabled(true);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Color fill = getBackground();
+            if (getModel().isPressed()) {
+                fill = fill.darker();
+            } else if (getModel().isRollover()) {
+                fill = new Color(
+                        Math.min(255, fill.getRed() + 12),
+                        Math.min(255, fill.getGreen() + 12),
+                        Math.min(255, fill.getBlue() + 12),
+                        fill.getAlpha());
+            }
+            g2.setColor(fill);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), arc, arc);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    /**
+     * Same rounded-rectangle self-painting approach as {@link DiscRoundButton},
+     * but for the Mods/Resource Packs segmented toggle.
+     */
+    private static class DiscRoundToggleButton extends JToggleButton {
+        private final int arc;
+
+        DiscRoundToggleButton(String text, boolean selected, int arc) {
+            super(text, selected);
+            this.arc = arc;
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setRolloverEnabled(true);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Color fill = getBackground();
+            if (getModel().isPressed()) {
+                fill = fill.darker();
+            } else if (getModel().isRollover() && !isSelected()) {
+                fill = new Color(
+                        Math.min(255, fill.getRed() + 12),
+                        Math.min(255, fill.getGreen() + 12),
+                        Math.min(255, fill.getBlue() + 12),
+                        fill.getAlpha());
+            }
+            g2.setColor(fill);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), arc, arc);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
     private void styleDiscoverSegment(JToggleButton btn) {
         btn.setFont(new Font("SansSerif", Font.BOLD, 11));
-        btn.setFocusPainted(false);
         btn.setForeground(DISC_TEXT_DIM);
-        btn.setBackground(new Color(38, 39, 52));
-        btn.setBorder(new EmptyBorder(7, 14, 7, 14));
+        btn.setBackground(new Color(255, 255, 255, 14));
+        btn.setBorder(new EmptyBorder(7, 16, 7, 16));
         btn.addChangeListener(e -> {
             if (btn.isSelected()) {
                 btn.setForeground(Color.WHITE);
                 btn.setBackground(DISC_ACCENT);
             } else {
                 btn.setForeground(DISC_TEXT_DIM);
-                btn.setBackground(new Color(38, 39, 52));
+                btn.setBackground(new Color(255, 255, 255, 14));
             }
+            btn.repaint();
         });
     }
 
     private void styleDiscoverPrimaryButton(JButton btn) {
         btn.setFont(new Font("SansSerif", Font.BOLD, 12));
-        btn.setFocusPainted(false);
         btn.setForeground(Color.WHITE);
         btn.setBackground(DISC_ACCENT);
         btn.setBorder(new EmptyBorder(7, 18, 7, 18));
@@ -3356,25 +4364,20 @@ public class Main extends JFrame {
 
     private void styleDiscoverGhostButton(JButton btn) {
         btn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        btn.setFocusPainted(false);
         btn.setForeground(DISC_TEXT);
-        btn.setBackground(new Color(38, 39, 52));
-        btn.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(DISC_BORDER, 1, true),
-                new EmptyBorder(6, 12, 6, 12)));
+        btn.setBackground(new Color(255, 255, 255, 14));
+        btn.setBorder(new EmptyBorder(6, 14, 6, 14));
     }
 
     /**
-     * Prev/Next pagination buttons — no fill at all (fully transparent), just text
-     * that lights up on hover/press via FlatLaf's built-in hover overlay.
+     * Prev/Next pagination buttons — a subtle filled rounded-rect, styled the
+     * same way as the rest of the toolbar so they read as buttons in their own
+     * right instead of plain text.
      */
     private void styleDiscoverNavButton(JButton btn) {
         btn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        btn.setFocusPainted(false);
         btn.setForeground(DISC_TEXT);
-        btn.setContentAreaFilled(false);
-        btn.setOpaque(false);
-        btn.setBackground(new Color(0, 0, 0, 0));
+        btn.setBackground(new Color(255, 255, 255, 10));
         btn.setBorder(new EmptyBorder(6, 12, 6, 12));
     }
 
@@ -3397,9 +4400,12 @@ public class Main extends JFrame {
         Color accent = hexToColor(settings.accentColor, new Color(16, 185, 129));
 
         DISC_BG = bg;
-        DISC_SURFACE = tint(panelBg, 10);
-        DISC_SURFACE_HOVER = tint(panelBg, 20);
-        DISC_BORDER = tint(panelBg, 30);
+        // Cards/surfaces now use the same soft translucent-white-over-background
+        // look as the launcher's (Instances tab) RoundedPanels, rather than a
+        // separate flat "store" palette, so Discover reads as part of the same UI.
+        DISC_SURFACE = new Color(255, 255, 255, 10);
+        DISC_SURFACE_HOVER = new Color(255, 255, 255, 20);
+        DISC_BORDER = new Color(255, 255, 255, 18);
         DISC_BORDER_HOVER = accent;
         DISC_ACCENT = accent;
         DISC_TEXT = text;
@@ -3415,13 +4421,16 @@ public class Main extends JFrame {
         if (discoverFiltersPanel != null)
             discoverFiltersPanel.setColors(DISC_SURFACE, DISC_BORDER);
 
+        // discoverSearchField itself is now hosted inside a wrapInFrostedGlass
+        // RoundedPanel (the same "launcher" search bar used on the Mods tab), which
+        // re-themes itself via wireFrostedGlassBackdrops/its own outline color, so
+        // only the text/caret colors need to be kept in sync with the palette here.
         if (discoverSearchField != null) {
-            discoverSearchField.setBackground(tint(DISC_SURFACE, 8));
             discoverSearchField.setForeground(DISC_TEXT);
             discoverSearchField.setCaretColor(DISC_TEXT);
-            discoverSearchField.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(DISC_BORDER, 1, true),
-                    new EmptyBorder(4, 10, 4, 10)));
+        }
+        if (discoverSearchWrapPanel != null) {
+            discoverSearchWrapPanel.setColors(new Color(255, 255, 255, 16), new Color(255, 255, 255, 45));
         }
         if (discoverSearchBtn != null)
             styleDiscoverPrimaryButton(discoverSearchBtn);
@@ -3454,12 +4463,13 @@ public class Main extends JFrame {
      * which otherwise fall back to FlatLaf's plain gray combo box look.
      */
     private static void styleDiscoverComboBox(JComboBox<?> box) {
-        box.setBackground(tint(DISC_SURFACE, 8));
+        box.setBackground(new Color(255, 255, 255, 18));
         box.setForeground(DISC_TEXT);
         box.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(DISC_BORDER, 1, true),
-                new EmptyBorder(2, 6, 2, 6)));
+                new EmptyBorder(2, 8, 2, 8)));
         box.putClientProperty("JComboBox.buttonStyle", "none");
+        box.putClientProperty("JComponent.arc", 14);
     }
 
     /**
@@ -3539,7 +4549,11 @@ public class Main extends JFrame {
     // ── Skeleton loading placeholders ────────────────────────────────────────
     private void showDiscoverSkeletons() {
         discoverResultsPane.removeAll();
-        for (int i = 0; i < 6; i++) {
+        // Fill enough skeleton cards to cover a full viewport (and then some) so
+        // the loading state doesn't look sparse compared to a real results page —
+        // scale roughly to the page size instead of a fixed small handful.
+        int count = Math.max(12, ModUpdateService.DISCOVER_PAGE_SIZE);
+        for (int i = 0; i < count; i++) {
             discoverResultsPane.add(buildDiscoverSkeletonCard());
         }
         discoverResultsPane.revalidate();
@@ -3547,7 +4561,7 @@ public class Main extends JFrame {
     }
 
     private JPanel buildDiscoverSkeletonCard() {
-        RoundedPanel card = new RoundedPanel(14, DISC_SURFACE, DISC_BORDER) {
+        RoundedPanel card = new RoundedPanel(20, DISC_SURFACE, DISC_BORDER) {
             private float phase = 0f;
             {
                 // Subtle shimmer animation
@@ -3565,7 +4579,12 @@ public class Main extends JFrame {
                 super.paintComponent(g);
                 Graphics2D g2 = (Graphics2D) g.create();
                 int w = getWidth();
-                g2.setClip(new java.awt.geom.RoundRectangle2D.Float(0, 0, w, getHeight(), 14, 14));
+                // Intersect with (not replace) whatever clip Swing already
+                // established for this paint pass — if the card is half-scrolled
+                // out of the visible viewport, the incoming clip already reflects
+                // that, and replacing it here would make the shimmer ignore that
+                // and paint into the hidden half anyway.
+                g2.clip(new java.awt.geom.RoundRectangle2D.Float(0, 0, w, getHeight(), 20, 20));
                 // Shimmer overlay
                 float shimmerX = (phase - 1f) * w;
                 java.awt.GradientPaint gp = new java.awt.GradientPaint(
@@ -3576,12 +4595,13 @@ public class Main extends JFrame {
                 g2.dispose();
             }
         };
-        card.setLayout(new BorderLayout(10, 6));
-        card.setPreferredSize(new Dimension(300, 168));
-        card.setBorder(new EmptyBorder(12, 12, 12, 12));
+        card.putClientProperty("keepCustomBg", Boolean.TRUE);
+        card.setLayout(new BorderLayout(12, 8));
+        card.setPreferredSize(new Dimension(310, 200));
+        card.setBorder(new EmptyBorder(14, 14, 14, 14));
 
         // Placeholder icon
-        JPanel iconPlaceholder = new RoundedPanel(10, new Color(45, 46, 60), null);
+        JPanel iconPlaceholder = new RoundedPanel(14, new Color(255, 255, 255, 16), null);
         iconPlaceholder.setPreferredSize(new Dimension(48, 48));
         card.add(iconPlaceholder, BorderLayout.WEST);
 
@@ -3590,7 +4610,7 @@ public class Main extends JFrame {
         textCol.setOpaque(false);
         textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
         for (int i = 0; i < 3; i++) {
-            JPanel line = new RoundedPanel(4, new Color(45, 46, 60), null);
+            JPanel line = new RoundedPanel(4, new Color(255, 255, 255, 16), null);
             int w = i == 0 ? 160 : (i == 1 ? 200 : 80);
             line.setMaximumSize(new Dimension(w, 12));
             line.setPreferredSize(new Dimension(w, 12));
@@ -3668,10 +4688,15 @@ public class Main extends JFrame {
 
     // ── Rich Discover Card ──────────────────────────────────────────────────
     private JPanel buildDiscoverCard(JsonObject hit, String projectType, String loader, String gameVersion) {
-        RoundedPanel card = new RoundedPanel(14, DISC_SURFACE, DISC_BORDER);
-        card.setLayout(new BorderLayout(10, 8));
-        card.setPreferredSize(new Dimension(300, 185));
-        card.setBorder(new EmptyBorder(12, 12, 12, 12));
+        // Same rounded, softly translucent "glass" card treatment used by the
+        // launcher's Instances tab (headerCard/infoCard/instance-list rows) — bigger
+        // corner radius, white-alpha fill/border, accent border on hover — instead of
+        // the old flat purple "store" card.
+        RoundedPanel card = new RoundedPanel(20, DISC_SURFACE, DISC_BORDER);
+        card.putClientProperty("keepCustomBg", Boolean.TRUE);
+        card.setLayout(new BorderLayout(12, 10));
+        card.setPreferredSize(new Dimension(310, 200));
+        card.setBorder(new EmptyBorder(14, 14, 14, 14));
 
         // Hover effect
         card.addMouseListener(new MouseAdapter() {
@@ -3716,7 +4741,15 @@ public class Main extends JFrame {
                     Graphics2D g2 = (Graphics2D) g.create();
                     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                     int s = Math.min(getWidth(), getHeight());
-                    g2.setClip(new java.awt.geom.RoundRectangle2D.Float(0, 0, s, s, 12, 12));
+                    // Intersect with (not replace) the incoming clip. Swing already
+                    // sets this to the visible portion when the card is partially
+                    // scrolled out of the viewport — replacing it here would make
+                    // the icon ignore that and paint fully regardless, effectively
+                    // decoupling the image from the card's own hidden/visible
+                    // state. Intersecting keeps the image clipped in lockstep with
+                    // whatever part of the card is actually on-screen, in addition
+                    // to giving it its own rounded corners.
+                    g2.clip(new java.awt.geom.RoundRectangle2D.Float(0, 0, s, s, 14, 14));
                     ic.paintIcon(this, g2, 0, 0);
                     g2.dispose();
                 } else {
@@ -4062,15 +5095,14 @@ public class Main extends JFrame {
         appearanceCard.add(createColorInputRow("Notification Background (Hex)", () -> s.notificationBgColor,
                 (val) -> s.notificationBgColor = val, saveAndApply, "#13131A"), gbc);
 
-        gbc.gridy++;
         JComboBox<String> notifStyleCombo = new JComboBox<>(
                 new String[] { "Frosted Glass", "Solid Dark", "Minimal Outline" });
         notifStyleCombo.setSelectedItem(s.notificationStyle);
+        styleComboBox(notifStyleCombo);
         notifStyleCombo.addActionListener(e -> {
             s.notificationStyle = (String) notifStyleCombo.getSelectedItem();
             saveAndApply.accept("");
         });
-        addSettingsRow(appearanceCard, "Notification Style", notifStyleCombo, gbc);
         gbc.gridy++;
         appearanceCard.add(createColorInputRow("Text Color (Hex)", () -> s.textColor, (val) -> s.textColor = val,
                 saveAndApply, "#e2e2ea"), gbc);
@@ -4080,7 +5112,7 @@ public class Main extends JFrame {
         gbc.gridy++;
 
         // ── Transparency (independent of Blur) ──────────────────────────────
-        JCheckBox enableTransparencyCb = new JCheckBox("Enable transparency (Recommended)");
+        CustomToggle enableTransparencyCb = new CustomToggle("Enable transparency (Recommended)");
         enableTransparencyCb.setSelected(s.enableTransparency);
 
         JSlider transparencySlider = new JSlider(1, 100, s.transparencyStrength > 0 ? s.transparencyStrength : 20);
@@ -4109,7 +5141,7 @@ public class Main extends JFrame {
         addSettingsRow(appearanceCard, "Transparency Strength", transparencySliderPane, gbc);
 
         // ── Blur (independent of Transparency) ──────────────────────────────
-        JCheckBox enableBlurCb = new JCheckBox("Enable blur effect");
+        CustomToggle enableBlurCb = new CustomToggle("Enable blur effect");
         enableBlurCb.setSelected(s.enableBlurEffect);
 
         JSlider blurSlider = new JSlider(1, 40, s.blurStrength > 0 ? s.blurStrength : 10);
@@ -4139,7 +5171,7 @@ public class Main extends JFrame {
         addSettingsRow(appearanceCard, "Blur Strength", sliderPane, gbc);
 
         // ── Background image ─────────────────────────────────────────────────
-        JCheckBox useBackgroundImageCb = new JCheckBox("Use background image");
+        CustomToggle useBackgroundImageCb = new CustomToggle("Use background image");
         useBackgroundImageCb.setSelected(s.useBackgroundImage);
 
         JLabel backgroundImagePathLbl = new JLabel(
@@ -4202,12 +5234,14 @@ public class Main extends JFrame {
         });
         bgStyleBox.setSelectedItem(
                 s.backgroundStyle == null || s.backgroundStyle.isBlank() ? "Default" : s.backgroundStyle);
+        styleComboBox(bgStyleBox);
         bgStyleBox.addActionListener(e -> {
             s.backgroundStyle = (String) bgStyleBox.getSelectedItem();
             mgr.save();
             applyTheme();
         });
         addSettingsRow(appearanceCard, "Background Style", bgStyleBox, gbc);
+        addSettingsRow(appearanceCard, "Notification Style", notifStyleCombo, gbc);
 
         // ── Font family ───────────────────────────────────────────────────────
         // Only sans-serif fonts, the bundled Minecraft font, and any user-added custom
@@ -4216,6 +5250,7 @@ public class Main extends JFrame {
                 com.launcher.manager.FontManager.buildFontChoices(s).toArray(new String[0]));
         fontBox.setSelectedItem(s.fontFamily == null || s.fontFamily.isBlank() ? "SansSerif" : s.fontFamily);
         fontBox.setMaximumRowCount(12);
+        styleComboBox(fontBox);
         fontBox.addActionListener(e -> {
             s.fontFamily = (String) fontBox.getSelectedItem();
             mgr.save();
@@ -4261,7 +5296,7 @@ public class Main extends JFrame {
         JPanel behaviorCard = createCard("Behavior");
         gbc = createGbc();
 
-        JCheckBox minimizeCb = new JCheckBox("Minimize launcher when the game opens");
+        CustomToggle minimizeCb = new CustomToggle("Minimize launcher when the game opens");
         minimizeCb.setSelected(s.minimizeOnLaunch);
         minimizeCb.addActionListener(e -> {
             s.minimizeOnLaunch = minimizeCb.isSelected();
@@ -4269,7 +5304,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(behaviorCard, "", minimizeCb, gbc);
 
-        JCheckBox restoreCb = new JCheckBox("Show launcher when the game closes");
+        CustomToggle restoreCb = new CustomToggle("Show launcher when the game closes");
         restoreCb.setSelected(s.restoreLauncherOnGameClose);
         restoreCb.addActionListener(e -> {
             s.restoreLauncherOnGameClose = restoreCb.isSelected();
@@ -4277,7 +5312,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(behaviorCard, "", restoreCb, gbc);
 
-        JCheckBox trayCb = new JCheckBox("Enable system tray icon (requires restart)");
+        CustomToggle trayCb = new CustomToggle("Enable system tray icon (requires restart)");
         trayCb.setSelected(s.enableSystemTray);
         trayCb.addActionListener(e -> {
             s.enableSystemTray = trayCb.isSelected();
@@ -4285,7 +5320,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(behaviorCard, "", trayCb, gbc);
 
-        JCheckBox closeCb = new JCheckBox("Close launcher after game starts");
+        CustomToggle closeCb = new CustomToggle("Close launcher after game starts");
         closeCb.setSelected(s.closeAfterLaunch);
         closeCb.addActionListener(e -> {
             s.closeAfterLaunch = closeCb.isSelected();
@@ -4293,7 +5328,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(behaviorCard, "", closeCb, gbc);
 
-        JCheckBox showConsoleCb = new JCheckBox("Keep console visible while game is running");
+        CustomToggle showConsoleCb = new CustomToggle("Keep console visible while game is running");
         showConsoleCb.setSelected(s.showConsoleOnLaunch);
         showConsoleCb.addActionListener(e -> {
             s.showConsoleOnLaunch = showConsoleCb.isSelected();
@@ -4301,7 +5336,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(behaviorCard, "", showConsoleCb, gbc);
 
-        JCheckBox scanCb = new JCheckBox("Scan .minecraft folder for installed versions on startup");
+        CustomToggle scanCb = new CustomToggle("Scan .minecraft folder for installed versions on startup");
         scanCb.setSelected(s.scanOnStartup);
         scanCb.addActionListener(e -> {
             s.scanOnStartup = scanCb.isSelected();
@@ -4309,7 +5344,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(behaviorCard, "", scanCb, gbc);
 
-        JCheckBox showHiddenCb = new JCheckBox("Show hidden instances");
+        CustomToggle showHiddenCb = new CustomToggle("Show hidden instances");
         showHiddenCb.setSelected(s.showHiddenInstances);
         showHiddenCb.addActionListener(e -> {
             s.showHiddenInstances = showHiddenCb.isSelected();
@@ -4318,7 +5353,15 @@ public class Main extends JFrame {
         });
         addSettingsRow(behaviorCard, "", showHiddenCb, gbc);
 
-        JCheckBox checkModUpdatesCb = new JCheckBox("Check for mod updates when launcher starts");
+        CustomToggle smoothScrollCb = new CustomToggle("Enable smooth scrolling");
+        smoothScrollCb.setSelected(s.smoothScrolling);
+        smoothScrollCb.addActionListener(e -> {
+            s.smoothScrolling = smoothScrollCb.isSelected();
+            mgr.save();
+        });
+        addSettingsRow(behaviorCard, "", smoothScrollCb, gbc);
+
+        CustomToggle checkModUpdatesCb = new CustomToggle("Check for mod updates when launcher starts");
         checkModUpdatesCb.setSelected(s.checkModUpdatesOnStartup);
         checkModUpdatesCb.addActionListener(e -> {
             s.checkModUpdatesOnStartup = checkModUpdatesCb.isSelected();
@@ -4326,7 +5369,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(behaviorCard, "", checkModUpdatesCb, gbc);
 
-        JCheckBox refreshDiscoverCb = new JCheckBox("Refresh Discover (trending mods/packs) when launcher starts");
+        CustomToggle refreshDiscoverCb = new CustomToggle("Refresh Discover (trending mods/packs) when launcher starts");
         refreshDiscoverCb.setSelected(s.refreshDiscoverOnLaunch);
         refreshDiscoverCb.addActionListener(e -> {
             s.refreshDiscoverOnLaunch = refreshDiscoverCb.isSelected();
@@ -4334,7 +5377,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(behaviorCard, "", refreshDiscoverCb, gbc);
 
-        JCheckBox autoRefreshOnFailCb = new JCheckBox("Auto-refresh mods & resource packs if a version fails to load");
+        CustomToggle autoRefreshOnFailCb = new CustomToggle("Auto-refresh mods & resource packs if a version fails to load");
         autoRefreshOnFailCb.setSelected(s.autoRefreshModsOnVersionLoadFail);
         autoRefreshOnFailCb.addActionListener(e -> {
             s.autoRefreshModsOnVersionLoadFail = autoRefreshOnFailCb.isSelected();
@@ -4349,7 +5392,7 @@ public class Main extends JFrame {
         JPanel sizeCard = createCard("Window");
         gbc = createGbc();
 
-        JCheckBox customTitleBarCb = new JCheckBox("Use custom in-app title bar (hide the OS window frame)");
+        CustomToggle customTitleBarCb = new CustomToggle("Use custom in-app title bar (hide the OS window frame)");
         customTitleBarCb.setSelected(s.useCustomTitleBar);
         customTitleBarCb.addActionListener(e -> {
             s.useCustomTitleBar = customTitleBarCb.isSelected();
@@ -4358,7 +5401,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(sizeCard, "", customTitleBarCb, gbc);
 
-        JCheckBox startMaximizedCb = new JCheckBox("Always launch maximized");
+        CustomToggle startMaximizedCb = new CustomToggle("Always launch maximized");
         startMaximizedCb.setSelected(s.startMaximized);
         startMaximizedCb.addActionListener(e -> {
             s.startMaximized = startMaximizedCb.isSelected();
@@ -4373,7 +5416,7 @@ public class Main extends JFrame {
         int savedH = (s.launcherHeight >= 560) ? s.launcherHeight : 660;
 
         SpinnerModel widthModel = new SpinnerNumberModel(savedW, 820, 3840, 10);
-        JSpinner widthSpinner = new JSpinner(widthModel);
+        CustomSpinner widthSpinner = new CustomSpinner(widthModel);
         widthSpinner.addChangeListener(e -> {
             s.launcherWidth = (int) widthSpinner.getValue();
             mgr.save();
@@ -4381,7 +5424,7 @@ public class Main extends JFrame {
         addSettingsRow(sizeCard, "Width (px)", widthSpinner, gbc);
 
         SpinnerModel heightModel = new SpinnerNumberModel(savedH, 560, 2160, 10);
-        JSpinner heightSpinner = new JSpinner(heightModel);
+        CustomSpinner heightSpinner = new CustomSpinner(heightModel);
         heightSpinner.addChangeListener(e -> {
             s.launcherHeight = (int) heightSpinner.getValue();
             mgr.save();
@@ -4408,7 +5451,7 @@ public class Main extends JFrame {
         gbc = createGbc();
 
         SpinnerModel ramModel = new SpinnerNumberModel(s.defaultRamGb > 0 ? s.defaultRamGb : 3, 1, 64, 1);
-        JSpinner ramSpinner = new JSpinner(ramModel);
+        CustomSpinner ramSpinner = new CustomSpinner(ramModel);
         ramSpinner.addChangeListener(e -> {
             s.defaultRamGb = (int) ramSpinner.getValue();
             mgr.save();
@@ -4416,7 +5459,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(performanceCard, "Default RAM (GB)", ramSpinner, gbc);
 
-        JTextField extraJvmField = new JTextField(s.extraJvmArgs != null ? s.extraJvmArgs : "");
+        CustomTextField extraJvmField = new CustomTextField(s.extraJvmArgs != null ? s.extraJvmArgs : "");
         extraJvmField.addActionListener(e -> {
             s.extraJvmArgs = extraJvmField.getText().trim();
             s.jvmArgs = s.extraJvmArgs;
@@ -4432,7 +5475,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(performanceCard, "Extra JVM Arguments", extraJvmField, gbc);
 
-        JTextField javaPathField = new JTextField(s.javaPath != null ? s.javaPath : "");
+        CustomTextField javaPathField = new CustomTextField(s.javaPath != null ? s.javaPath : "");
         javaPathField.addActionListener(e -> {
             s.javaPath = javaPathField.getText().trim();
             mgr.save();
@@ -4446,12 +5489,12 @@ public class Main extends JFrame {
         });
         addSettingsRow(performanceCard, "Java Executable Path", javaPathField, gbc);
 
-        JCheckBox enableLauncherRamCb = new JCheckBox("Enable Max Launcher RAM");
+        CustomToggle enableLauncherRamCb = new CustomToggle("Enable Max Launcher RAM");
         enableLauncherRamCb.setSelected(s.enableLauncherMaxRam);
 
         SpinnerModel launcherRamModel = new SpinnerNumberModel(s.launcherMaxRamMb > 0 ? s.launcherMaxRamMb : 500, 128,
                 8192, 64);
-        JSpinner launcherRamSpinner = new JSpinner(launcherRamModel);
+        CustomSpinner launcherRamSpinner = new CustomSpinner(launcherRamModel);
         launcherRamSpinner.setEnabled(s.enableLauncherMaxRam);
         launcherRamSpinner.addChangeListener(e -> {
             s.launcherMaxRamMb = (int) launcherRamSpinner.getValue();
@@ -4478,7 +5521,7 @@ public class Main extends JFrame {
         JPanel privacyCard = createCard("Privacy & Security");
         gbc = createGbc();
 
-        JCheckBox hideUserCb = new JCheckBox("Hide username in launcher UI");
+        CustomToggle hideUserCb = new CustomToggle("Hide username in launcher UI");
         hideUserCb.setSelected(s.hideUsername);
         hideUserCb.addActionListener(e -> {
             s.hideUsername = hideUserCb.isSelected();
@@ -4487,7 +5530,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(privacyCard, "", hideUserCb, gbc);
 
-        JCheckBox redactPathsCb = new JCheckBox("Redact OS username from log paths");
+        CustomToggle redactPathsCb = new CustomToggle("Redact OS username from log paths");
         redactPathsCb.setSelected(s.redactPaths);
         redactPathsCb.addActionListener(e -> {
             s.redactPaths = redactPathsCb.isSelected();
@@ -4499,7 +5542,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(privacyCard, "", redactPathsCb, gbc);
 
-        JCheckBox redactTokensCb = new JCheckBox("Redact Minecraft session tokens in logs");
+        CustomToggle redactTokensCb = new CustomToggle("Redact Minecraft session tokens in logs");
         redactTokensCb.setSelected(s.redactTokens);
         redactTokensCb.addActionListener(e -> {
             s.redactTokens = redactTokensCb.isSelected();
@@ -4507,7 +5550,7 @@ public class Main extends JFrame {
         });
         addSettingsRow(privacyCard, "", redactTokensCb, gbc);
 
-        JCheckBox clearSessionCb = new JCheckBox("Clear account sessions when the launcher closes");
+        CustomToggle clearSessionCb = new CustomToggle("Clear account sessions when the launcher closes");
         clearSessionCb.setSelected(s.clearSessionOnExit);
         clearSessionCb.addActionListener(e -> {
             s.clearSessionOnExit = clearSessionCb.isSelected();
@@ -4522,17 +5565,17 @@ public class Main extends JFrame {
         JPanel discordCard = createCard("Discord RPC (Forced Off)");
         gbc = createGbc();
 
-        JCheckBox enableRpcCb = new JCheckBox("Enable Discord Rich Presence");
+        CustomToggle enableRpcCb = new CustomToggle("Enable Discord Rich Presence");
         enableRpcCb.setSelected(false);
         enableRpcCb.setEnabled(false);
         addSettingsRow(discordCard, "", enableRpcCb, gbc);
 
-        JCheckBox showServerCb = new JCheckBox("Show connected server IP in Discord status");
+        CustomToggle showServerCb = new CustomToggle("Show connected server IP in Discord status");
         showServerCb.setSelected(false);
         showServerCb.setEnabled(false);
         addSettingsRow(discordCard, "", showServerCb, gbc);
 
-        JTextField rpcNameField = new JTextField(
+        CustomTextField rpcNameField = new CustomTextField(
                 s.customDiscordRpcName != null ? s.customDiscordRpcName : "Zero Launcher");
         rpcNameField.setEnabled(false);
         addSettingsRow(discordCard, "Custom RPC Name", rpcNameField, gbc);
@@ -4597,6 +5640,7 @@ public class Main extends JFrame {
         mainPanel.add(resetCard);
 
         JScrollPane scroll = new JScrollPane(mainPanel);
+        com.launcher.ui.SmoothScroll.install(scroll);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         return scroll;
@@ -4651,7 +5695,7 @@ public class Main extends JFrame {
         JPanel rowPanel = new JPanel(new BorderLayout(8, 0));
         rowPanel.setOpaque(false); // Inherit background from parent
 
-        JTextField hexField = new JTextField(getter.get());
+        CustomTextField hexField = new CustomTextField(getter.get());
         hexField.setPreferredSize(new Dimension(80, 22));
         hexField.addActionListener(e -> {
             String newHex = hexField.getText().trim();
@@ -4713,6 +5757,71 @@ public class Main extends JFrame {
         rowPanel.add(inputPanel, BorderLayout.CENTER);
 
         return rowPanel;
+    }
+
+    /**
+     * Restyles a JComboBox to match the app's rounded, themed pill chrome
+     * (same look as {@link com.launcher.ui.CustomTextField}), instead of the
+     * default OS combo box appearance. Works with any item type/model, so it
+     * can be applied to existing combo boxes without changing their logic.
+     */
+    private void styleComboBox(JComboBox<?> combo) {
+        com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        Color panelBg = hexToColor(s.panelBgColor, new Color(19, 19, 26));
+        Color fill = new Color(
+                Math.min(255, panelBg.getRed() + 12),
+                Math.min(255, panelBg.getGreen() + 12),
+                Math.min(255, panelBg.getBlue() + 12));
+        Color textColor = hexToColor(s.textColor, new Color(226, 226, 234));
+        Color accent = hexToColor(s.accentColor, new Color(16, 185, 129));
+
+        combo.setOpaque(false);
+        combo.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        combo.setForeground(textColor);
+        combo.setBackground(fill);
+        combo.setBorder(new EmptyBorder(2, 8, 2, 4));
+        combo.setFocusable(true);
+
+        combo.setUI(new javax.swing.plaf.basic.BasicComboBoxUI() {
+            @Override
+            protected JButton createArrowButton() {
+                JButton arrow = new JButton("▾");
+                arrow.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                arrow.setForeground(new Color(255, 255, 255, 140));
+                arrow.setContentAreaFilled(false);
+                arrow.setBorderPainted(false);
+                arrow.setFocusPainted(false);
+                arrow.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                return arrow;
+            }
+
+            @Override
+            public void paintCurrentValueBackground(Graphics g, Rectangle bounds, boolean hasFocus) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(fill);
+                g2.fillRoundRect(0, 0, comboBox.getWidth() - 1, comboBox.getHeight() - 1, 10, 10);
+                g2.setStroke(new BasicStroke(hasFocus ? 1.4f : 1f));
+                g2.setColor(hasFocus ? accent : new Color(255, 255, 255, 35));
+                g2.drawRoundRect(0, 0, comboBox.getWidth() - 1, comboBox.getHeight() - 1, 10, 10);
+                g2.dispose();
+            }
+        });
+
+        combo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                    boolean isSelected, boolean cellHasFocus) {
+                Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                c.setForeground(isSelected ? Color.WHITE : textColor);
+                c.setBackground(isSelected ? accent : fill);
+                if (c instanceof JComponent jc) {
+                    jc.setBorder(new EmptyBorder(4, 8, 4, 8));
+                    jc.setOpaque(true);
+                }
+                return c;
+            }
+        });
     }
 
     private JLabel fieldLabel(String text, Color color) {
@@ -5059,6 +6168,7 @@ public class Main extends JFrame {
 
         JScrollPane scroll = new JScrollPane(downloadsListPanel,
                 JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        com.launcher.ui.SmoothScroll.install(scroll);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
@@ -5456,6 +6566,7 @@ public class Main extends JFrame {
         buildLogStyles(text, accent);
 
         JScrollPane scroll = new JScrollPane(logArea);
+        com.launcher.ui.SmoothScroll.install(scroll);
         scroll.setBorder(BorderFactory.createLineBorder(new Color(255, 255, 255, 18), 1, true));
         scroll.getViewport().setBackground(logBg);
         scroll.setOpaque(false);
@@ -5507,6 +6618,17 @@ public class Main extends JFrame {
         // Re-add listeners
         for (java.awt.event.ActionListener l : listeners) {
             accountBox.addActionListener(l);
+        }
+
+        if (accountBtn != null) {
+            accountBtn.setText(accountButtonLabel());
+        }
+        if (accountDropdown != null && accountDropdown.isVisible()) {
+            // Rebuild in place so an open dropdown reflects the change immediately.
+            layeredPane.remove(accountDropdown);
+            accountDropdown = null;
+            buildAccountDropdown();
+            showAccountDropdown();
         }
     }
 
@@ -6369,6 +7491,7 @@ public class Main extends JFrame {
 
         JScrollPane scroll = new JScrollPane(killInstancesListPanel,
                 JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        com.launcher.ui.SmoothScroll.install(scroll);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);

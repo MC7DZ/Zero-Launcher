@@ -162,7 +162,7 @@ public class EditInstancePanel extends JPanel {
         versionBox.setBackground(bg); // Dynamic background
         versionBox.setForeground(textColor); // Dynamic text
         versionBox.setEnabled(false);
-        JCheckBox snapshotsCb = new JCheckBox("Include snapshots");
+        CustomToggle snapshotsCb = new CustomToggle("Include snapshots");
         snapshotsCb.setBackground(panelBg);
         snapshotsCb.setForeground(textColor);
 
@@ -287,7 +287,7 @@ public class EditInstancePanel extends JPanel {
         row++;
 
         addSectionHeader(generalPanel, "Visibility", row++, gbc, textColor);
-        JCheckBox hiddenCb = new JCheckBox("Hide this instance");
+        CustomToggle hiddenCb = new CustomToggle("Hide this instance");
         hiddenCb.setBackground(panelBg);
         hiddenCb.setForeground(textColor);
         hiddenCb.setSelected(instanceToEdit.hidden);
@@ -299,6 +299,7 @@ public class EditInstancePanel extends JPanel {
         row++;
 
         JScrollPane generalScroll = new JScrollPane(generalPanel);
+        com.launcher.ui.SmoothScroll.install(generalScroll);
         generalScroll.setBorder(null);
         tabs.addTab("General", generalScroll);
 
@@ -411,6 +412,7 @@ public class EditInstancePanel extends JPanel {
         modpackPanel.add(modpackInfoLabel, mgbc);
 
         JScrollPane modpackScroll = new JScrollPane(modpackPanel);
+        com.launcher.ui.SmoothScroll.install(modpackScroll);
         modpackScroll.setBorder(null);
         tabs.addTab("Modpack", modpackScroll);
 
