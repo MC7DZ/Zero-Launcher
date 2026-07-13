@@ -1,8 +1,8 @@
 package com.launcher.ui;
 
 import com.launcher.minecraft.FabricInstaller;
-import com.launcher.minecraft.NeoForgeInstaller;
 import com.launcher.minecraft.QuiltInstaller;
+import com.launcher.minecraft.NeoForgeInstaller;
 import com.launcher.minecraft.VersionManifestService;
 import com.launcher.model.Instance;
 import com.launcher.model.ModLoaderType;
@@ -10,415 +10,324 @@ import com.launcher.Main;
 import com.launcher.manager.LauncherPaths;
 import com.launcher.model.LauncherSettings;
 import com.launcher.manager.SettingsManager;
-import com.launcher.util.HttpUtil;
-import com.launcher.util.JsonUtil;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
+import com.launcher.util.JavaInstallationFinder;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.InputStream;
-import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.function.Consumer;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
+/**
+ * The "Edit Instance" screen. Rebuilt to match the same card-based visual
+ * language as CreateInstancePanel (rounded "glass" cards, two balanced
+ * columns, single scrolling body) instead of the old JTabbedPane +
+ * GridBagLayout form. The modpack tab/fields from the old version have been
+ * removed entirely — editing an existing instance no longer offers a
+ * "reimport as modpack" path, just its core settings.
+ */
 public class EditInstancePanel extends JPanel {
 
-    private static final String DEFAULT_MODPACK_BASE = ".minecraft/ModPacks";
+    private static final int CARD_ARC = 16;
+    private static final int MAX_CONTENT_WIDTH = 1040;
 
-    private Instance instanceToEdit;
-    private Consumer<Instance> onSave;
-    private Runnable onCancel;
+    private final Instance instanceToEdit;
+    private final Consumer<Instance> onSave;
+    private final Runnable onCancel;
+    private final Runnable onDelete;
+
+    // Resolved once in initUI() and shared by every card-building helper below.
+    private Color bg, panelBg, textColor, textDim, accent, cardFill, cardBorder;
 
     public EditInstancePanel(Instance instanceToEdit, Consumer<Instance> onSave, Runnable onCancel) {
+        this(instanceToEdit, onSave, onCancel, null);
+    }
+
+    public EditInstancePanel(Instance instanceToEdit, Consumer<Instance> onSave, Runnable onCancel, Runnable onDelete) {
         this.instanceToEdit = instanceToEdit;
         this.onSave = onSave;
         this.onCancel = onCancel;
+        this.onDelete = onDelete;
         initUI();
     }
 
     private void initUI() {
         LauncherSettings settings = SettingsManager.getInstance().getSettings();
-        Color bg = Main.hexToColor(settings.bgColor, new Color(10, 10, 15));
-        Color panelBg = Main.hexToColor(settings.panelBgColor, new Color(19, 19, 26));
-        Color textColor = Main.hexToColor(settings.textColor, new Color(226, 226, 234));
-        Color accent = Main.hexToColor(settings.accentColor, new Color(16, 185, 129));
+        bg = Main.hexToColor(settings.bgColor, new Color(10, 10, 15));
+        panelBg = Main.hexToColor(settings.panelBgColor, new Color(19, 19, 26));
+        textColor = Main.hexToColor(settings.textColor, new Color(226, 226, 234));
+        accent = Main.hexToColor(settings.accentColor, new Color(16, 185, 129));
+        textDim = new Color(150, 150, 168);
+        cardFill = new Color(255, 255, 255, 10);
+        cardBorder = new Color(255, 255, 255, 18);
 
         setLayout(new BorderLayout());
+        boolean transparent = settings.enableTransparency;
+        setOpaque(!transparent);
         setBackground(panelBg);
 
-        // Header
-        JPanel headerPanel = new JPanel();
-        headerPanel.setLayout(new BoxLayout(headerPanel, BoxLayout.Y_AXIS));
-        headerPanel.setBackground(panelBg);
-        headerPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, Main.hexToColor("#282832", new Color(40, 40, 50))),
-                new EmptyBorder(16, 20, 16, 20)
-        ));
-        JLabel titleLbl = new JLabel("Edit Instance");
-        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 18));
-        titleLbl.setForeground(textColor);
-        JLabel subLbl = new JLabel("Editing: " + instanceToEdit.name);
-        subLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        subLbl.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
-        headerPanel.add(titleLbl);
-        headerPanel.add(Box.createVerticalStrut(4));
-        headerPanel.add(subLbl);
-        add(headerPanel, BorderLayout.NORTH);
+        add(buildHeader(), BorderLayout.NORTH);
 
-        JTabbedPane tabs = new JTabbedPane();
-        tabs.setBackground(panelBg); // Set tab background
-        tabs.setForeground(textColor); // Set tab text color
+        // ── Shared state used across cards + the footer's Save action ──────
+        final String[] chosenImagePath = { instanceToEdit.imagePath };
+        final ModLoaderType[] selectedLoader = { instanceToEdit.modLoader != null ? instanceToEdit.modLoader : ModLoaderType.VANILLA };
 
-        // ═════════════════════════════════════════════════════════════════════
-        //  TAB 1: General
-        // ═════════════════════════════════════════════════════════════════════
-        JPanel generalPanel = new JPanel(new GridBagLayout());
-        generalPanel.setBackground(panelBg);
-        generalPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(6, 6, 6, 6);
-
-        int row = 0;
-        addSectionHeader(generalPanel, "Appearance", row++, gbc, textColor);
-
-        final String[] chosenImagePath = {instanceToEdit.imagePath};
         JLabel iconView = new JLabel();
-        iconView.setPreferredSize(new Dimension(64, 64));
-        iconView.setBorder(BorderFactory.createLineBorder(Main.hexToColor("#3c3c46", new Color(60, 60, 70)), 1));
         loadIcon(iconView, instanceToEdit.imagePath);
 
-        JButton changeImageBtn = new JButton("Change Image…");
-        changeImageBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        changeImageBtn.setForeground(textColor); // Dynamic text color
-        JButton resetImageBtn = new JButton("Reset");
-        resetImageBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        resetImageBtn.setForeground(textColor); // Dynamic text color
-        resetImageBtn.setEnabled(instanceToEdit.imagePath != null);
+        CustomTextField nameField = new CustomTextField(instanceToEdit.name != null ? instanceToEdit.name : "");
+        nameField.setFont(new Font("SansSerif", Font.BOLD, 14));
+        nameField.setBorder(new EmptyBorder(4, 4, 4, 10));
 
-        changeImageBtn.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Choose Instance Image");
-            fc.setFileFilter(new FileNameExtensionFilter("Images", "png", "jpg", "jpeg", "gif", "bmp"));
-            int res = fc.showOpenDialog(this);
-            if (res == JFileChooser.APPROVE_OPTION) {
-                File chosen = fc.getSelectedFile();
-                try {
-                    ImageIcon img = new ImageIcon(chosen.getAbsolutePath());
-                    Image scaled = img.getImage().getScaledInstance(64, 64, Image.SCALE_SMOOTH);
-                    iconView.setIcon(new ImageIcon(scaled));
-                    chosenImagePath[0] = chosen.getAbsolutePath();
-                    resetImageBtn.setEnabled(true);
-                } catch (Exception ex) {}
-            }
-        });
-
-        resetImageBtn.addActionListener(e -> {
-            loadIcon(iconView, null);
-            chosenImagePath[0] = null;
-            resetImageBtn.setEnabled(false);
-        });
-
-        JPanel imgBtnCol = new JPanel();
-        imgBtnCol.setLayout(new BoxLayout(imgBtnCol, BoxLayout.Y_AXIS));
-        imgBtnCol.setBackground(panelBg);
-        imgBtnCol.add(changeImageBtn);
-        imgBtnCol.add(Box.createVerticalStrut(4));
-        imgBtnCol.add(resetImageBtn);
-
-        JPanel imageRowPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        imageRowPanel.setBackground(panelBg);
-        imageRowPanel.add(iconView);
-        imageRowPanel.add(imgBtnCol);
-
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Icon", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(imageRowPanel, gbc);
-        row++;
-
-        addSectionHeader(generalPanel, "General", row++, gbc, textColor);
-
-        JTextField nameField = new JTextField(instanceToEdit.name);
-        nameField.setBackground(bg); // Dynamic background
-        nameField.setForeground(textColor); // Dynamic text
-        nameField.setCaretColor(textColor); // Dynamic caret
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Name", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(nameField, gbc);
-        row++;
-
-        JComboBox<String> versionBox = new JComboBox<>();
-        versionBox.setBackground(bg); // Dynamic background
-        versionBox.setForeground(textColor); // Dynamic text
+        CustomComboBox<String> versionBox = new CustomComboBox<>();
         versionBox.setEnabled(false);
         CustomToggle snapshotsCb = new CustomToggle("Include snapshots");
-        snapshotsCb.setBackground(panelBg);
-        snapshotsCb.setForeground(textColor);
 
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("MC Version", textColor), gbc);
-        gbc.gridx = 1; gbc.weightx = 0.6;
-        generalPanel.add(versionBox, gbc);
-        gbc.gridx = 2; gbc.weightx = 0.4;
-        generalPanel.add(snapshotsCb, gbc);
-        row++;
-
-        JComboBox<ModLoaderType> loaderBox = new JComboBox<>(ModLoaderType.values());
-        loaderBox.setBackground(bg); // Dynamic background
-        loaderBox.setForeground(textColor); // Dynamic text
-        loaderBox.setSelectedItem(instanceToEdit.modLoader);
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Mod loader", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(loaderBox, gbc);
-        row++;
-
-        JComboBox<String> loaderVerBox = new JComboBox<>();
-        loaderVerBox.setBackground(bg); // Dynamic background
-        loaderVerBox.setForeground(textColor); // Dynamic text
+        CustomComboBox<String> loaderVerBox = new CustomComboBox<>();
         loaderVerBox.setEnabled(false);
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Loader version", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(loaderVerBox, gbc);
-        row++;
-
-        addSectionHeader(generalPanel, "Memory", row++, gbc, textColor);
+        JLabel loaderVerLabel = fieldLabel("Loader version");
+        boolean startsVanilla = selectedLoader[0] == ModLoaderType.VANILLA;
+        loaderVerBox.setVisible(!startsVanilla);
+        loaderVerLabel.setVisible(!startsVanilla);
 
         JSlider ramSlider = new JSlider(1024, 8192, instanceToEdit.ramMb > 0 ? instanceToEdit.ramMb : 3072);
         ramSlider.setMajorTickSpacing(1024);
         ramSlider.setSnapToTicks(true);
-        ramSlider.setBackground(panelBg);
-        ramSlider.setForeground(textColor); // Set slider tick/track color
-        JLabel ramLbl = new JLabel(String.format("%d MB  (%.1f GB)", ramSlider.getValue(), (double) ramSlider.getValue() / 1024));
-        ramLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        ramLbl.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
+        ramSlider.setOpaque(false);
+        ramSlider.setForeground(accent);
+        JLabel ramLbl = pill(String.format("%.1f GB", ramSlider.getValue() / 1024.0), accent);
         ramSlider.addChangeListener(e -> {
             int val = ramSlider.getValue();
-            ramLbl.setText(String.format("%d MB  (%.1f GB)", val, (double) val / 1024));
+            ramLbl.setText(String.format("%.1f GB", val / 1024.0));
         });
 
-        JPanel ramContainer = new JPanel(new BorderLayout());
-        ramContainer.setBackground(panelBg);
-        ramContainer.add(ramSlider, BorderLayout.CENTER);
-        ramContainer.add(ramLbl, BorderLayout.SOUTH);
+        CustomToggle hiddenCb = new CustomToggle("Hide this instance");
+        hiddenCb.setSelected(instanceToEdit.hidden);
 
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Allocated RAM", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(ramContainer, gbc);
-        row++;
+        // Advanced: JVM arguments + custom Java runtime. The runtime picker
+        // mirrors the "Java Executable Path" control in Settings: a dropdown
+        // populated by scanning the system for installed JVMs, plus a
+        // Browse/Rescan pair and a manual path field for a custom install.
+        CustomTextField jvmArgsField = new CustomTextField(
+                instanceToEdit.jvmArgs != null ? instanceToEdit.jvmArgs : "");
 
-        addSectionHeader(generalPanel, "Directory", row++, gbc, textColor);
+        CustomComboBox<String> javaInstallDropdown = new CustomComboBox<>();
+        javaInstallDropdown.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        javaInstallDropdown.addItem("Scanning for Java installations…");
+        javaInstallDropdown.setEnabled(false);
+        javaInstallDropdown.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JRadioButton defaultDirRadio = new JRadioButton("Standard .minecraft directory");
-        JRadioButton customDirRadio = new JRadioButton("Custom directory");
-        defaultDirRadio.setBackground(panelBg); defaultDirRadio.setForeground(textColor);
-        customDirRadio.setBackground(panelBg); customDirRadio.setForeground(textColor);
-        ButtonGroup dirGroup = new ButtonGroup();
-        dirGroup.add(defaultDirRadio);
-        dirGroup.add(customDirRadio);
+        CustomTextField javaPathField = new CustomTextField(
+                instanceToEdit.javaPath != null ? instanceToEdit.javaPath : "");
+        javaPathField.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JTextField customDirField = new JTextField(instanceToEdit.customDirectoryPath != null ? instanceToEdit.customDirectoryPath : "");
-        customDirField.setBackground(bg); // Dynamic background
-        customDirField.setForeground(textColor); // Dynamic text
-        customDirField.setCaretColor(textColor); // Dynamic caret
-        customDirField.setEnabled(false);
-        JButton browseBtn = new JButton("Browse…");
-        browseBtn.setForeground(textColor); // Dynamic text color
-        browseBtn.setEnabled(false);
+        GhostButton browseJavaBtn = new GhostButton("Browse…");
+        GhostButton rescanJavaBtn = new GhostButton("Rescan");
 
-        browseBtn.addActionListener(e -> {
+        final Map<String, String> detectedJavaPaths = new LinkedHashMap<>();
+        final String useDefaultLabel = "Use launcher default";
+        final String customPathLabel = "Custom path (set below)";
+
+        javaInstallDropdown.addActionListener(e -> {
+            if (!javaInstallDropdown.isEnabled()) return; // still scanning
+            Object selected = javaInstallDropdown.getSelectedItem();
+            if (selected == null) return;
+            String label = selected.toString();
+            if (label.equals(customPathLabel)) return; // leave javaPathField for manual editing
+            String resolvedPath = label.equals(useDefaultLabel) ? "" : detectedJavaPaths.get(label);
+            javaPathField.setText(resolvedPath != null ? resolvedPath : "");
+        });
+
+        Runnable doScanJava = () -> {
+            javaInstallDropdown.setEnabled(false);
+            javaInstallDropdown.removeAllItems();
+            javaInstallDropdown.addItem("Scanning for Java installations…");
+            new SwingWorker<List<JavaInstallationFinder.JavaInstallation>, Void>() {
+                @Override
+                protected List<JavaInstallationFinder.JavaInstallation> doInBackground() {
+                    try {
+                        return JavaInstallationFinder.findInstallations();
+                    } catch (Exception ex) {
+                        return java.util.Collections.emptyList();
+                    }
+                }
+
+                @Override
+                protected void done() {
+                    List<JavaInstallationFinder.JavaInstallation> installs;
+                    try {
+                        installs = get();
+                    } catch (Exception ex) {
+                        installs = java.util.Collections.emptyList();
+                    }
+
+                    javaInstallDropdown.removeAllItems();
+                    detectedJavaPaths.clear();
+                    javaInstallDropdown.addItem(useDefaultLabel);
+                    for (JavaInstallationFinder.JavaInstallation install : installs) {
+                        detectedJavaPaths.put(install.displayName, install.javaExecutablePath);
+                        javaInstallDropdown.addItem(install.displayName);
+                    }
+                    javaInstallDropdown.addItem(customPathLabel);
+
+                    String currentPath = javaPathField.getText().trim();
+                    if (currentPath.isEmpty()) {
+                        javaInstallDropdown.setSelectedItem(useDefaultLabel);
+                    } else {
+                        String matchLabel = null;
+                        for (Map.Entry<String, String> entry : detectedJavaPaths.entrySet()) {
+                            if (entry.getValue().equals(currentPath)) {
+                                matchLabel = entry.getKey();
+                                break;
+                            }
+                        }
+                        javaInstallDropdown.setSelectedItem(matchLabel != null ? matchLabel : customPathLabel);
+                    }
+                    javaInstallDropdown.setEnabled(true);
+                }
+            }.execute();
+        };
+        doScanJava.run();
+        rescanJavaBtn.addActionListener(e -> doScanJava.run());
+
+        browseJavaBtn.addActionListener(e -> {
+            JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle("Select Java Executable");
+            fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
+            String exeName = System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java";
+            fc.setSelectedFile(new File(exeName));
+            if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                String chosen = fc.getSelectedFile().getAbsolutePath();
+                javaPathField.setText(chosen);
+                javaInstallDropdown.setSelectedItem(customPathLabel);
+            }
+        });
+
+        // Directory mode segmented control
+        boolean usesCustomDir = instanceToEdit.useCustomDirectory && instanceToEdit.customDirectoryPath != null
+                && !instanceToEdit.customDirectoryPath.equals(
+                        LauncherPaths.getDefaultMinecraftPath().toAbsolutePath().toString());
+        JToggleButton defaultDirBtn = new SegButton("Default location", !usesCustomDir);
+        JToggleButton customDirBtn = new SegButton("Custom location", usesCustomDir);
+        group(defaultDirBtn, customDirBtn);
+        CustomTextField customDirField = new CustomTextField(
+                instanceToEdit.customDirectoryPath != null ? instanceToEdit.customDirectoryPath : "");
+        customDirField.setEnabled(usesCustomDir);
+        GhostButton browseDirBtn = new GhostButton("Browse…");
+        browseDirBtn.setEnabled(usesCustomDir);
+        browseDirBtn.addActionListener(e -> {
             JFileChooser dc = new JFileChooser();
             dc.setDialogTitle("Select Directory");
             dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            int d = dc.showOpenDialog(this);
-            if (d == JFileChooser.APPROVE_OPTION) {
+            if (dc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
                 customDirField.setText(dc.getSelectedFile().getAbsolutePath());
             }
         });
-
-        defaultDirRadio.addActionListener(e -> {
+        defaultDirBtn.addActionListener(e -> {
             customDirField.setEnabled(false);
-            browseBtn.setEnabled(false);
+            browseDirBtn.setEnabled(false);
         });
-        customDirRadio.addActionListener(e -> {
+        customDirBtn.addActionListener(e -> {
             customDirField.setEnabled(true);
-            browseBtn.setEnabled(true);
+            browseDirBtn.setEnabled(true);
         });
-
-        if (instanceToEdit.useCustomDirectory && instanceToEdit.customDirectoryPath != null &&
-                !Path.of(instanceToEdit.customDirectoryPath).equals(LauncherPaths.getDefaultMinecraftPath())) {
-            customDirRadio.setSelected(true);
-            customDirField.setEnabled(true);
-            browseBtn.setEnabled(true);
-        } else {
-            defaultDirRadio.setSelected(true);
-        }
 
         JPanel dirFieldRow = new JPanel(new BorderLayout(8, 0));
-        dirFieldRow.setBackground(panelBg);
+        dirFieldRow.setOpaque(false);
         dirFieldRow.add(customDirField, BorderLayout.CENTER);
-        dirFieldRow.add(browseBtn, BorderLayout.EAST);
+        dirFieldRow.add(browseDirBtn, BorderLayout.EAST);
 
-        JPanel dirGroupPanel = new JPanel();
-        dirGroupPanel.setLayout(new BoxLayout(dirGroupPanel, BoxLayout.Y_AXIS));
-        dirGroupPanel.setBackground(panelBg);
-        dirGroupPanel.add(defaultDirRadio);
-        dirGroupPanel.add(customDirRadio);
-        dirGroupPanel.add(Box.createVerticalStrut(4));
-        dirGroupPanel.add(dirFieldRow);
+        // ── Loader segmented control ─────────────────────────────────────
+        Runnable[] loadLoaderVersHolder = new Runnable[1];
+        JPanel loaderSeg = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        loaderSeg.setOpaque(false);
+        java.util.List<JToggleButton> loaderBtns = new java.util.ArrayList<>();
+        for (ModLoaderType type : ModLoaderType.values()) {
+            JToggleButton b = new SegButton(prettyLoaderName(type), type == selectedLoader[0]);
+            b.addActionListener(e -> {
+                selectedLoader[0] = type;
+                boolean vanilla = type == ModLoaderType.VANILLA;
+                loaderVerBox.setEnabled(!vanilla);
+                loaderVerLabel.setVisible(!vanilla);
+                loaderVerBox.setVisible(!vanilla);
+                if (loadLoaderVersHolder[0] != null) loadLoaderVersHolder[0].run();
+            });
+            loaderBtns.add(b);
+            loaderSeg.add(b);
+        }
+        group(loaderBtns.toArray(new JToggleButton[0]));
 
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Game directory", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(dirGroupPanel, gbc);
-        row++;
+        // ── Two balanced columns ──────────────────────────────────────────
+        // Left: Appearance & Name, then Performance (RAM + visibility).
+        // Right: Version & Loader, then Game Directory.
+        // Plain BoxLayout throughout (no GridBagLayout fill/weighty tricks,
+        // no frozen setPreferredSize snapshots) — see CreateInstancePanel for
+        // why that combination was avoided.
+        JPanel leftCol = new JPanel();
+        leftCol.setOpaque(false);
+        leftCol.setLayout(new BoxLayout(leftCol, BoxLayout.Y_AXIS));
+        leftCol.add(sectionCard("Appearance & Name", identityContent(iconView, nameField, chosenImagePath)));
+        leftCol.add(Box.createVerticalStrut(12));
+        leftCol.add(sectionCard("Performance", ramContent(ramSlider, ramLbl, hiddenCb)));
+        leftCol.add(Box.createVerticalStrut(12));
+        leftCol.add(sectionCard("Advanced (Java & JVM)",
+                advancedContent(javaInstallDropdown, javaPathField, browseJavaBtn, rescanJavaBtn, jvmArgsField)));
 
-        addSectionHeader(generalPanel, "Visibility", row++, gbc, textColor);
-        CustomToggle hiddenCb = new CustomToggle("Hide this instance");
-        hiddenCb.setBackground(panelBg);
-        hiddenCb.setForeground(textColor);
-        hiddenCb.setSelected(instanceToEdit.hidden);
+        JPanel rightCol = new JPanel();
+        rightCol.setOpaque(false);
+        rightCol.setLayout(new BoxLayout(rightCol, BoxLayout.Y_AXIS));
+        rightCol.add(sectionCard("Version & Loader", versionAndLoaderContent(
+                versionBox, snapshotsCb, loaderSeg, loaderVerLabel, loaderVerBox)));
+        rightCol.add(Box.createVerticalStrut(12));
+        rightCol.add(sectionCard("Game Directory", directoryContent(defaultDirBtn, customDirBtn, dirFieldRow)));
 
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Visibility", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(hiddenCb, gbc);
-        row++;
+        leftCol.setAlignmentY(Component.TOP_ALIGNMENT);
+        rightCol.setAlignmentY(Component.TOP_ALIGNMENT);
+        JPanel mainRow = new JPanel();
+        mainRow.setOpaque(false);
+        mainRow.setLayout(new BoxLayout(mainRow, BoxLayout.X_AXIS));
+        mainRow.add(leftCol);
+        mainRow.add(Box.createHorizontalStrut(14));
+        mainRow.add(rightCol);
+        mainRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JScrollPane generalScroll = new JScrollPane(generalPanel);
-        com.launcher.ui.SmoothScroll.install(generalScroll);
-        generalScroll.setBorder(null);
-        tabs.addTab("General", generalScroll);
+        JPanel column = new JPanel();
+        column.setOpaque(false);
+        column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));
+        column.setAlignmentX(Component.CENTER_ALIGNMENT);
+        column.setMaximumSize(new Dimension(MAX_CONTENT_WIDTH, Integer.MAX_VALUE));
+        column.add(mainRow);
 
-        // ═════════════════════════════════════════════════════════════════════
-        //  TAB 2: Modpack
-        // ═════════════════════════════════════════════════════════════════════
-        JPanel modpackPanel = new JPanel(new GridBagLayout());
-        modpackPanel.setBackground(panelBg);
-        modpackPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
-        GridBagConstraints mgbc = new GridBagConstraints();
-        mgbc.fill = GridBagConstraints.HORIZONTAL;
-        mgbc.insets = new Insets(6, 6, 6, 6);
+        JPanel centered = new JPanel();
+        centered.setOpaque(false);
+        centered.setLayout(new BoxLayout(centered, BoxLayout.X_AXIS));
+        centered.add(Box.createHorizontalGlue());
+        centered.add(column);
+        centered.add(Box.createHorizontalGlue());
 
-        int mrow = 0;
-        addSectionHeader(modpackPanel, "Modpack File", mrow++, mgbc, textColor);
+        JPanel scrollHost = new JPanel(new BorderLayout());
+        scrollHost.setOpaque(false);
+        scrollHost.setBorder(new EmptyBorder(16, 24, 16, 24));
+        scrollHost.add(centered, BorderLayout.NORTH);
 
-        final String[] chosenModpackPath = {instanceToEdit.modpackFilePath};
-        JLabel modpackFileHint = new JLabel(instanceToEdit.modpackFilePath != null ? new File(instanceToEdit.modpackFilePath).getName() : "No file selected");
-        modpackFileHint.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        modpackFileHint.setForeground(instanceToEdit.modpackFilePath != null ? textColor : Main.hexToColor("#9696a0", new Color(150, 150, 160)));
+        JScrollPane scroll = new JScrollPane(scrollHost);
+        SmoothScroll.install(scroll);
+        scroll.setBorder(null);
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        add(scroll, BorderLayout.CENTER);
 
-        JButton modpackBrowseBtn = new JButton("Browse…");
-        modpackBrowseBtn.setForeground(textColor); // Dynamic text color
-        JButton modpackClearBtn = new JButton("Clear");
-        modpackClearBtn.setForeground(textColor); // Dynamic text color
-        modpackClearBtn.setEnabled(instanceToEdit.modpackFilePath != null);
-
-        String defaultInstallPath = resolveDefaultModpackPath();
-        JTextField installPathField = new JTextField(instanceToEdit.modpackInstallPath != null ? instanceToEdit.modpackInstallPath : defaultInstallPath);
-        installPathField.setBackground(bg); // Dynamic background
-        installPathField.setForeground(textColor); // Dynamic text
-        installPathField.setCaretColor(textColor); // Dynamic caret
-
-        modpackBrowseBtn.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Select Modpack File");
-            fc.setFileFilter(new FileNameExtensionFilter("Modpack files", "mrpack", "zip"));
-            int res = fc.showOpenDialog(this);
-            if (res == JFileChooser.APPROVE_OPTION) {
-                File chosen = fc.getSelectedFile();
-                chosenModpackPath[0] = chosen.getAbsolutePath();
-                modpackFileHint.setText(chosen.getName());
-                modpackFileHint.setForeground(textColor);
-                modpackClearBtn.setEnabled(true);
-            }
-        });
-
-        modpackClearBtn.addActionListener(e -> {
-            chosenModpackPath[0] = null;
-            modpackFileHint.setText("No file selected");
-            modpackFileHint.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
-            modpackClearBtn.setEnabled(false);
-        });
-
-        JPanel modpackFileBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        modpackFileBtns.setBackground(panelBg);
-        modpackFileBtns.add(modpackBrowseBtn);
-        modpackFileBtns.add(modpackClearBtn);
-
-        JPanel modpackFileBox = new JPanel();
-        modpackFileBox.setLayout(new BoxLayout(modpackFileBox, BoxLayout.Y_AXIS));
-        modpackFileBox.setBackground(panelBg);
-        modpackFileBox.add(modpackFileHint);
-        modpackFileBox.add(Box.createVerticalStrut(4));
-        modpackFileBox.add(modpackFileBtns);
-
-        mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 1; mgbc.weightx = 0;
-        modpackPanel.add(fieldLabel("File (.mrpack / .zip)", textColor), mgbc);
-        mgbc.gridx = 1; mgbc.gridwidth = 1; mgbc.weightx = 1.0;
-        modpackPanel.add(modpackFileBox, mgbc);
-        mrow++;
-
-        addSectionHeader(modpackPanel, "Install Location", mrow++, mgbc, textColor);
-
-        JButton installPathBrowseBtn = new JButton("Browse…");
-        installPathBrowseBtn.setForeground(textColor); // Dynamic text color
-        installPathBrowseBtn.addActionListener(e -> {
-            JFileChooser dc = new JFileChooser();
-            dc.setDialogTitle("Select Directory");
-            dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            int chosenRes = dc.showOpenDialog(this);
-            if (chosenRes == JFileChooser.APPROVE_OPTION) {
-                installPathField.setText(dc.getSelectedFile().getAbsolutePath());
-            }
-        });
-
-        JButton resetInstallPathBtn = new JButton("Reset");
-        resetInstallPathBtn.setForeground(textColor); // Dynamic text color
-        resetInstallPathBtn.addActionListener(e -> installPathField.setText(defaultInstallPath));
-
-        JPanel installPathRow = new JPanel(new BorderLayout(8, 0));
-        installPathRow.setBackground(panelBg);
-        installPathRow.add(installPathField, BorderLayout.CENTER);
-        JPanel installPathBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-        installPathBtns.setBackground(panelBg);
-        installPathBtns.add(installPathBrowseBtn);
-        installPathBtns.add(resetInstallPathBtn);
-        installPathRow.add(installPathBtns, BorderLayout.EAST);
-
-        mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 1; mgbc.weightx = 0;
-        modpackPanel.add(fieldLabel("Install path", textColor), mgbc);
-        mgbc.gridx = 1; mgbc.gridwidth = 1; mgbc.weightx = 1.0;
-        modpackPanel.add(installPathRow, mgbc);
-        mrow++;
-
-        JLabel modpackInfoLabel = new JLabel("Supported formats: .mrpack (Modrinth) and .zip modpacks.");
-        modpackInfoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        modpackInfoLabel.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
-        mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 2; mgbc.weightx = 1.0;
-        modpackPanel.add(modpackInfoLabel, mgbc);
-
-        JScrollPane modpackScroll = new JScrollPane(modpackPanel);
-        com.launcher.ui.SmoothScroll.install(modpackScroll);
-        modpackScroll.setBorder(null);
-        tabs.addTab("Modpack", modpackScroll);
-
-        add(tabs, BorderLayout.CENTER);
-
-        // Loaders
+        // ── Loaders (network calls) ──────────────────────────────────────
         Runnable loadVersions = () -> {
             versionBox.setEnabled(false);
             new Thread(() -> {
@@ -444,7 +353,7 @@ public class EditInstancePanel extends JPanel {
 
         Runnable loadLoaderVers = () -> {
             loaderVerBox.removeAllItems();
-            ModLoaderType loader = (ModLoaderType) loaderBox.getSelectedItem();
+            ModLoaderType loader = selectedLoader[0];
             String mcVer = (String) versionBox.getSelectedItem();
             if (loader == ModLoaderType.VANILLA || mcVer == null) {
                 loaderVerBox.setEnabled(false);
@@ -454,26 +363,20 @@ public class EditInstancePanel extends JPanel {
                 loaderVerBox.setEnabled(true);
                 loaderVerBox.addItem("Recommended");
                 loaderVerBox.addItem("Latest");
-                loaderVerBox.setSelectedItem(instanceToEdit.modLoaderVersion != null ? instanceToEdit.modLoaderVersion : "Recommended");
+                loaderVerBox.setSelectedItem(instanceToEdit.modLoaderVersion != null
+                        ? instanceToEdit.modLoaderVersion : "Recommended");
                 return;
             }
             if (loader == ModLoaderType.NEOFORGE) {
                 loaderVerBox.setEnabled(false);
                 new Thread(() -> {
                     try {
-                        String body = HttpUtil.getString(
-                                "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge");
-                        JsonObject root = JsonUtil.parse(body).getAsJsonObject();
-                        JsonArray arr = root.getAsJsonArray("versions");
-                        java.util.List<String> vers = new java.util.ArrayList<>();
-                        String[] parts = mcVer.split("\\.");
-                        String prefix = parts.length >= 2 ? (Integer.parseInt(parts[1]) + ".") : "";
-                        for (var el : arr) { String v = el.getAsString(); if (v.startsWith(prefix)) vers.add(0, v); }
-                        if (vers.isEmpty()) for (var el : arr) vers.add(0, el.getAsString());
+                        List<String> vers = new NeoForgeInstaller().fetchVersions(mcVer);
                         SwingUtilities.invokeLater(() -> {
                             loaderVerBox.removeAllItems();
                             for (String v : vers) loaderVerBox.addItem(v);
-                            loaderVerBox.setSelectedItem(instanceToEdit.modLoaderVersion != null && vers.contains(instanceToEdit.modLoaderVersion)
+                            loaderVerBox.setSelectedItem(instanceToEdit.modLoaderVersion != null
+                                    && vers.contains(instanceToEdit.modLoaderVersion)
                                     ? instanceToEdit.modLoaderVersion : (vers.isEmpty() ? null : vers.get(0)));
                             loaderVerBox.setEnabled(true);
                         });
@@ -491,21 +394,13 @@ public class EditInstancePanel extends JPanel {
             final boolean isQuilt = loader == ModLoaderType.QUILT;
             new Thread(() -> {
                 try {
-                    List<String> vers;
-                    if (isQuilt) {
-                        String body = HttpUtil.getString("https://meta.quiltmc.org/v3/versions/loader/" + mcVer);
-                        JsonArray arr = JsonUtil.parse(body).getAsJsonArray();
-                        vers = new java.util.ArrayList<>();
-                        for (var el : arr) {
-                            vers.add(el.getAsJsonObject().getAsJsonObject("loader").get("version").getAsString());
-                        }
-                    } else {
-                        vers = new FabricInstaller().fetchLoaderVersions(mcVer);
-                    }
+                    List<String> vers = isQuilt ? new QuiltInstaller().fetchLoaderVersions(mcVer)
+                                                : new FabricInstaller().fetchLoaderVersions(mcVer);
                     SwingUtilities.invokeLater(() -> {
                         loaderVerBox.removeAllItems();
                         for (String v : vers) loaderVerBox.addItem(v);
-                        loaderVerBox.setSelectedItem(instanceToEdit.modLoaderVersion != null && vers.contains(instanceToEdit.modLoaderVersion)
+                        loaderVerBox.setSelectedItem(instanceToEdit.modLoaderVersion != null
+                                && vers.contains(instanceToEdit.modLoaderVersion)
                                 ? instanceToEdit.modLoaderVersion : (vers.isEmpty() ? null : vers.get(0)));
                         loaderVerBox.setEnabled(true);
                     });
@@ -518,74 +413,543 @@ public class EditInstancePanel extends JPanel {
                 }
             }, "fetch-loader-vers").start();
         };
+        loadLoaderVersHolder[0] = loadLoaderVers;
 
         versionBox.addActionListener(e -> loadLoaderVers.run());
-        loaderBox.addActionListener(e -> loadLoaderVers.run());
         snapshotsCb.addActionListener(e -> loadVersions.run());
-
         loadVersions.run();
 
-        // Footer buttons
-        JPanel footerPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
-        footerPanel.setBackground(panelBg);
-        footerPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Main.hexToColor("#282832", new Color(40, 40, 50))));
+        // ── Footer ────────────────────────────────────────────────────────
+        JPanel footerPanel = new JPanel(new BorderLayout());
+        footerPanel.setOpaque(false);
+        footerPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(255, 255, 255, 18)),
+                new EmptyBorder(14, 24, 14, 24)));
 
-        JButton cancelBtn = new JButton("Cancel");
+        GhostButton cancelBtn = new GhostButton("Cancel");
         cancelBtn.addActionListener(e -> onCancel.run());
-        cancelBtn.setForeground(textColor); // Dynamic text color
-        footerPanel.add(cancelBtn);
+        JPanel leftFooter = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        leftFooter.setOpaque(false);
+        leftFooter.add(cancelBtn);
+        if (onDelete != null) {
+            GhostButton deleteBtn = new GhostButton("Delete Instance");
+            deleteBtn.setForeground(new Color(240, 90, 90));
+            deleteBtn.addActionListener(e -> {
+                int res = JOptionPane.showConfirmDialog(this,
+                        "Are you sure you want to delete \"" + instanceToEdit.name + "\"? This cannot be undone.",
+                        "Delete Instance", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                if (res == JOptionPane.YES_OPTION) onDelete.run();
+            });
+            leftFooter.add(deleteBtn);
+        }
+        footerPanel.add(leftFooter, BorderLayout.WEST);
 
-        JButton saveBtn = new JButton("Save Changes");
-        saveBtn.setBackground(accent);
-        saveBtn.setForeground(Color.WHITE);
+        PrimaryButton saveBtn = new PrimaryButton("Save Changes");
         saveBtn.addActionListener(e -> {
             String name = nameField.getText().trim();
             String ver = (String) versionBox.getSelectedItem();
             if (name.isEmpty() || ver == null) {
-                JOptionPane.showMessageDialog(this, "Instance name and MC version are required.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Instance name and MC version are required.", "Error",
+                        JOptionPane.ERROR_MESSAGE);
                 return;
             }
             instanceToEdit.name = name;
             instanceToEdit.mcVersion = ver;
-            instanceToEdit.modLoader = (ModLoaderType) loaderBox.getSelectedItem();
-            instanceToEdit.modLoaderVersion = instanceToEdit.modLoader == ModLoaderType.VANILLA ? null : (String) loaderVerBox.getSelectedItem();
+            instanceToEdit.modLoader = selectedLoader[0];
+            instanceToEdit.modLoaderVersion = selectedLoader[0] == ModLoaderType.VANILLA
+                    ? null : (String) loaderVerBox.getSelectedItem();
             instanceToEdit.ramMb = ramSlider.getValue();
             instanceToEdit.hidden = hiddenCb.isSelected();
             instanceToEdit.imagePath = chosenImagePath[0];
-            instanceToEdit.modpackFilePath = chosenModpackPath[0];
+            String jvmArgs = jvmArgsField.getText().trim();
+            instanceToEdit.jvmArgs = jvmArgs.isEmpty() ? null : jvmArgs;
+            String javaPath = javaPathField.getText().trim();
+            instanceToEdit.javaPath = javaPath.isEmpty() ? null : javaPath;
 
-            if (chosenModpackPath[0] != null) {
-                String path = installPathField.getText().trim().isEmpty() ? defaultInstallPath : installPathField.getText().trim();
-                instanceToEdit.modpackInstallPath = path;
-                instanceToEdit.useCustomDirectory = true;
-                instanceToEdit.customDirectoryPath = path;
+            if (defaultDirBtn.isSelected()) {
+                instanceToEdit.useCustomDirectory = false;
+                instanceToEdit.customDirectoryPath = null;
             } else {
-                instanceToEdit.modpackInstallPath = null;
-                if (defaultDirRadio.isSelected()) {
-                    instanceToEdit.useCustomDirectory = false; // Changed to false for default .minecraft
-                    instanceToEdit.customDirectoryPath = null; // Clear custom path for default
-                } else if (customDirRadio.isSelected()) {
-                    instanceToEdit.useCustomDirectory = true;
-                    instanceToEdit.customDirectoryPath = customDirField.getText().trim();
-                } else {
-                    instanceToEdit.useCustomDirectory = false;
-                    instanceToEdit.customDirectoryPath = null;
-                }
+                instanceToEdit.useCustomDirectory = true;
+                instanceToEdit.customDirectoryPath = customDirField.getText().trim();
             }
             onSave.accept(instanceToEdit);
         });
-        footerPanel.add(saveBtn);
+        JPanel rightFooter = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        rightFooter.setOpaque(false);
+        rightFooter.add(saveBtn);
+        footerPanel.add(rightFooter, BorderLayout.EAST);
 
         add(footerPanel, BorderLayout.SOUTH);
+
+        // This panel is constructed on demand (when the user clicks Edit),
+        // which is always *after* the app's one-time startup theme pass has
+        // already run — so it never gets the transparency treatment applied
+        // to the rest of the UI unless it applies its own rule here.
+        applyLocalTranslucency(this, transparent);
     }
 
-    private static String resolveDefaultModpackPath() {
+    /**
+     * Mirrors Main's setComponentTranslucent(): flips setOpaque(false) on
+     * plain structural panels (BoxLayout/GridBagLayout/BorderLayout) when
+     * transparency is enabled, so the app's shared gradient/background shows
+     * through instead of a flat panel color — while leaving text fields,
+     * combo boxes, sliders, and custom-painted cards to manage their own
+     * opacity/painting untouched.
+     */
+    private void applyLocalTranslucency(Component comp, boolean transparent) {
+        if (comp instanceof Card) {
+            // Cards paint their own translucent fill regardless of setOpaque;
+            // leave them alone.
+        } else if (comp instanceof JPanel panel) {
+            if (panel.getClass() == JPanel.class || panel.getLayout() instanceof BoxLayout
+                    || panel.getLayout() instanceof GridBagLayout || panel.getLayout() instanceof BorderLayout) {
+                panel.setOpaque(!transparent);
+            }
+        } else if (comp instanceof JScrollPane scroll) {
+            scroll.setOpaque(!transparent);
+            scroll.getViewport().setOpaque(!transparent);
+        }
+        if (comp instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                applyLocalTranslucency(child, transparent);
+            }
+        }
+    }
+
+    // ── Header ─────────────────────────────────────────────────────────────
+    private JPanel buildHeader() {
+        JPanel headerPanel = new JPanel(new BorderLayout(12, 0));
+        headerPanel.setOpaque(false);
+        headerPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(255, 255, 255, 18)),
+                new EmptyBorder(18, 24, 18, 24)));
+
+        GhostButton backBtn = new GhostButton("←");
+        backBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
+        backBtn.addActionListener(e -> onCancel.run());
+        headerPanel.add(backBtn, BorderLayout.WEST);
+
+        JPanel titles = new JPanel();
+        titles.setOpaque(false);
+        titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
+        JLabel titleLbl = new JLabel("Edit Instance");
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 20));
+        titleLbl.setForeground(textColor);
+        JLabel subLbl = new JLabel("Editing: " + instanceToEdit.name + "  ·  " + statsSummary());
+        subLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        subLbl.setForeground(textDim);
+        titles.add(titleLbl);
+        titles.add(Box.createVerticalStrut(2));
+        titles.add(subLbl);
+        headerPanel.add(titles, BorderLayout.CENTER);
+
+        GhostButton openFolderBtn = new GhostButton("Open Folder");
+        openFolderBtn.addActionListener(e -> openInstanceFolder());
+        headerPanel.add(openFolderBtn, BorderLayout.EAST);
+
+        return headerPanel;
+    }
+
+    /** Small "3.2h played · created Jan 12, 2026 · Installed" style summary line. */
+    private String statsSummary() {
+        StringBuilder sb = new StringBuilder();
+        double hours = instanceToEdit.playTimeSeconds / 3600.0;
+        sb.append(hours >= 0.05 ? String.format("%.1fh played", hours) : "Never played");
+        if (instanceToEdit.createdAt > 0) {
+            sb.append("  ·  created ")
+              .append(new java.text.SimpleDateFormat("MMM d, yyyy").format(new java.util.Date(instanceToEdit.createdAt)));
+        }
+        sb.append("  ·  ").append(instanceToEdit.installed ? "Installed" : "Not installed yet");
+        return sb.toString();
+    }
+
+    /** Opens the instance's game directory in the OS file browser. */
+    private void openInstanceFolder() {
         try {
-            return Path.of(System.getProperty("user.home", "."))
-                       .resolve(".minecraft").resolve("ModPacks").toAbsolutePath().toString();
-        } catch (Exception e) { return DEFAULT_MODPACK_BASE; }
+            java.nio.file.Path dir = (instanceToEdit.useCustomDirectory
+                    && instanceToEdit.customDirectoryPath != null && !instanceToEdit.customDirectoryPath.isBlank())
+                    ? java.nio.file.Path.of(instanceToEdit.customDirectoryPath)
+                    : LauncherPaths.defaultInstanceDir(instanceToEdit.name);
+            File dirFile = dir.toFile();
+            if (!dirFile.exists()) dirFile.mkdirs();
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().open(dirFile);
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Couldn't open the instance folder: " + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
+    // ── Card content builders ────────────────────────────────────────────────
+    private JPanel identityContent(JLabel iconView, CustomTextField nameField, String[] chosenImagePath) {
+        iconView.setPreferredSize(new Dimension(64, 64));
+        iconView.setMinimumSize(new Dimension(64, 64));
+
+        GhostButton changeImageBtn = new GhostButton("Change Image…");
+        GhostButton resetImageBtn = new GhostButton("Reset");
+        resetImageBtn.setEnabled(chosenImagePath[0] != null);
+
+        changeImageBtn.addActionListener(e -> {
+            JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle("Choose Instance Image");
+            fc.setFileFilter(new FileNameExtensionFilter("Images", "png", "jpg", "jpeg", "gif", "bmp"));
+            if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                File chosen = fc.getSelectedFile();
+                try {
+                    ImageIcon img = new ImageIcon(chosen.getAbsolutePath());
+                    Image scaled = img.getImage().getScaledInstance(64, 64, Image.SCALE_SMOOTH);
+                    iconView.setIcon(new ImageIcon(scaled));
+                    chosenImagePath[0] = chosen.getAbsolutePath();
+                    resetImageBtn.setEnabled(true);
+                } catch (Exception ignored) {}
+            }
+        });
+        resetImageBtn.addActionListener(e -> {
+            loadIcon(iconView, null);
+            chosenImagePath[0] = null;
+            resetImageBtn.setEnabled(false);
+        });
+
+        JPanel imgBtnCol = new JPanel();
+        imgBtnCol.setLayout(new BoxLayout(imgBtnCol, BoxLayout.Y_AXIS));
+        imgBtnCol.setOpaque(false);
+        imgBtnCol.add(changeImageBtn);
+        imgBtnCol.add(Box.createVerticalStrut(6));
+        imgBtnCol.add(resetImageBtn);
+
+        JPanel iconRow = new JPanel(new BorderLayout(14, 0));
+        iconRow.setOpaque(false);
+        iconRow.add(new RoundImageWrapper(iconView), BorderLayout.WEST);
+        iconRow.add(imgBtnCol, BorderLayout.CENTER);
+
+        JPanel content = new JPanel();
+        content.setOpaque(false);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.add(iconRow);
+        content.add(Box.createVerticalStrut(14));
+        content.add(fieldLabel("Instance name"));
+        content.add(Box.createVerticalStrut(4));
+        nameField.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(nameField);
+        return content;
+    }
+
+    private JPanel versionAndLoaderContent(CustomComboBox<String> versionBox, CustomToggle snapshotsCb,
+            JPanel loaderSeg, JLabel loaderVerLabel, CustomComboBox<String> loaderVerBox) {
+        JPanel content = new JPanel();
+        content.setOpaque(false);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+
+        JPanel verRow = new JPanel(new BorderLayout(10, 0));
+        verRow.setOpaque(false);
+        verRow.add(versionBox, BorderLayout.CENTER);
+        snapshotsCb.setOpaque(false);
+        verRow.add(snapshotsCb, BorderLayout.EAST);
+        content.add(fieldLabel("Minecraft version"));
+        content.add(Box.createVerticalStrut(4));
+        content.add(verRow);
+        content.add(Box.createVerticalStrut(14));
+        content.add(fieldLabel("Mod loader"));
+        content.add(Box.createVerticalStrut(6));
+        content.add(loaderSeg);
+        content.add(Box.createVerticalStrut(10));
+        loaderVerLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(loaderVerLabel);
+        content.add(Box.createVerticalStrut(4));
+        loaderVerBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(loaderVerBox);
+        return content;
+    }
+
+    private JPanel ramContent(JSlider ramSlider, JLabel ramLbl, CustomToggle hiddenCb) {
+        JPanel content = new JPanel();
+        content.setOpaque(false);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+
+        JLabel ramTitle = fieldLabel("Allocated RAM");
+        JPanel labelRow = new JPanel(new BorderLayout(10, 0));
+        labelRow.setOpaque(false);
+        labelRow.add(ramTitle, BorderLayout.WEST);
+        labelRow.add(ramSlider, BorderLayout.CENTER);
+        labelRow.add(ramLbl, BorderLayout.EAST);
+        content.add(labelRow);
+
+        content.add(Box.createVerticalStrut(16));
+        hiddenCb.setOpaque(false);
+        hiddenCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(hiddenCb);
+        return content;
+    }
+
+    private JPanel directoryContent(JToggleButton defaultDirBtn, JToggleButton customDirBtn, JPanel dirFieldRow) {
+        JPanel content = new JPanel(new BorderLayout(10, 0));
+        content.setOpaque(false);
+        JPanel seg = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        seg.setOpaque(false);
+        seg.add(defaultDirBtn);
+        seg.add(customDirBtn);
+        content.add(seg, BorderLayout.WEST);
+        content.add(dirFieldRow, BorderLayout.CENTER);
+        return content;
+    }
+
+    private JPanel advancedContent(CustomComboBox<String> javaInstallDropdown, CustomTextField javaPathField,
+            JButton browseBtn, JButton rescanBtn, CustomTextField jvmArgsField) {
+        JPanel content = new JPanel();
+        content.setOpaque(false);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+
+        content.add(fieldLabel("Java runtime"));
+        content.add(Box.createVerticalStrut(4));
+        javaInstallDropdown.setAlignmentX(Component.LEFT_ALIGNMENT);
+        javaInstallDropdown.setMaximumSize(new Dimension(Integer.MAX_VALUE,
+                javaInstallDropdown.getPreferredSize().height));
+        content.add(javaInstallDropdown);
+        content.add(Box.createVerticalStrut(6));
+
+        JPanel javaRow = new JPanel(new BorderLayout(8, 0));
+        javaRow.setOpaque(false);
+        javaRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        javaPathField.setToolTipText("Full path to the java/java.exe binary — filled in automatically when you pick a detected runtime above");
+        javaRow.add(javaPathField, BorderLayout.CENTER);
+        JPanel javaBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        javaBtns.setOpaque(false);
+        javaBtns.add(browseBtn);
+        javaBtns.add(rescanBtn);
+        javaRow.add(javaBtns, BorderLayout.EAST);
+        content.add(javaRow);
+
+        content.add(Box.createVerticalStrut(14));
+        content.add(fieldLabel("JVM arguments"));
+        content.add(Box.createVerticalStrut(4));
+        jvmArgsField.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(jvmArgsField);
+        return content;
+    }
+
+    // ── Small styling helpers ────────────────────────────────────────────────
+    private static void group(JToggleButton... buttons) {
+        ButtonGroup g = new ButtonGroup();
+        for (JToggleButton b : buttons) g.add(b);
+    }
+
+    private static String prettyLoaderName(ModLoaderType type) {
+        return switch (type) {
+            case VANILLA -> "Vanilla";
+            case FABRIC -> "Fabric";
+            case QUILT -> "Quilt";
+            case FORGE -> "Forge";
+            case NEOFORGE -> "NeoForge";
+        };
+    }
+
+    private JLabel fieldLabel(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(new Font("SansSerif", Font.BOLD, 11));
+        l.setForeground(textDim);
+        l.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return l;
+    }
+
+    private JLabel pill(String text, Color accentColor) {
+        JLabel lbl = new JLabel(text) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        lbl.setOpaque(false);
+        lbl.setForeground(accentColor);
+        lbl.setBackground(new Color(accentColor.getRed(), accentColor.getGreen(), accentColor.getBlue(), 30));
+        lbl.setFont(new Font("SansSerif", Font.BOLD, 11));
+        lbl.setBorder(new EmptyBorder(3, 9, 3, 9));
+        return lbl;
+    }
+
+    /** Wraps a section's content in a titled, rounded "glass" card. */
+    private JPanel sectionCard(String title, JComponent content) {
+        Card card = new Card(CARD_ARC, cardFill, cardBorder);
+        card.setLayout(new BorderLayout());
+        card.setBorder(new EmptyBorder(14, 22, 14, 22));
+
+        JLabel titleLbl = new JLabel(title.toUpperCase());
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 11));
+        titleLbl.setForeground(textDim);
+        titleLbl.setBorder(new EmptyBorder(0, 0, 12, 0));
+        card.add(titleLbl, BorderLayout.NORTH);
+        card.add(content, BorderLayout.CENTER);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return card;
+    }
+
+    /** Rounded-rect background "glass" card, self-contained (no cross-package dependency on Main). */
+    private static class Card extends JPanel {
+        private final int radius;
+        private final Color fill;
+        private final Color border;
+
+        Card(int radius, Color fill, Color border) {
+            this.radius = radius;
+            this.fill = fill;
+            this.border = border;
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            RoundRectangle2D.Float shape = new RoundRectangle2D.Float(
+                    0.5f, 0.5f, getWidth() - 1f, getHeight() - 1f, radius, radius);
+            g2.setColor(fill);
+            g2.fill(shape);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    /** Clips a preview icon into a rounded square with a faint edge ring. */
+    private static class RoundImageWrapper extends JPanel {
+        private final JLabel inner;
+
+        RoundImageWrapper(JLabel inner) {
+            this.inner = inner;
+            setOpaque(false);
+            setLayout(null);
+            setPreferredSize(new Dimension(64, 64));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int s = Math.min(getWidth(), getHeight());
+            RoundRectangle2D.Float shape = new RoundRectangle2D.Float(0, 0, s, s, 14, 14);
+            Shape oldClip = g2.getClip();
+            g2.clip(shape);
+            if (inner.getIcon() != null) {
+                inner.getIcon().paintIcon(this, g2, 0, 0);
+            } else {
+                g2.setColor(new Color(255, 255, 255, 20));
+                g2.fill(shape);
+            }
+            g2.setClip(oldClip);
+            g2.setColor(new Color(255, 255, 255, 26));
+            g2.draw(shape);
+            g2.dispose();
+        }
+    }
+
+    /** Filled, accent-colored primary action button ("Save Changes"). */
+    private class PrimaryButton extends JButton {
+        PrimaryButton(String text) {
+            super(text);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setForeground(Color.WHITE);
+            setFont(new Font("SansSerif", Font.BOLD, 13));
+            setBorder(new EmptyBorder(10, 22, 10, 22));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Color fill = accent;
+            if (getModel().isPressed()) fill = fill.darker();
+            else if (getModel().isRollover()) {
+                fill = new Color(Math.min(255, fill.getRed() + 14), Math.min(255, fill.getGreen() + 14),
+                        Math.min(255, fill.getBlue() + 14));
+            }
+            g2.setColor(fill);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    /** Transparent, outlined secondary/utility button (Cancel, Browse…, etc.). */
+    private class GhostButton extends JButton {
+        private Color customFg = null;
+
+        GhostButton(String text) {
+            super(text);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setForeground(textColor);
+            setFont(new Font("SansSerif", Font.PLAIN, 12));
+            setBorder(new EmptyBorder(7, 14, 7, 14));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        }
+
+        @Override
+        public void setForeground(Color fg) {
+            super.setForeground(fg);
+            // Track any foreground explicitly set after construction (e.g. the
+            // red "Delete Instance" button) so paintComponent doesn't clobber it.
+            if (fg != null && !fg.equals(textColor) && !fg.equals(textDim)) {
+                customFg = fg;
+            }
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Color fill = isEnabled()
+                    ? (getModel().isRollover() ? new Color(255, 255, 255, 24) : new Color(255, 255, 255, 12))
+                    : new Color(255, 255, 255, 6);
+            g2.setColor(fill);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+            g2.setColor(new Color(255, 255, 255, 22));
+            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+            g2.dispose();
+            super.setForeground(isEnabled() ? (customFg != null ? customFg : textColor) : textDim);
+            super.paintComponent(g);
+        }
+    }
+
+    /** Pill-shaped segmented-control button (loader picker, dir choice). */
+    private class SegButton extends JToggleButton {
+        SegButton(String text, boolean selected) {
+            super(text, selected);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setFont(new Font("SansSerif", Font.BOLD, 11));
+            setBorder(new EmptyBorder(6, 12, 6, 12));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            boolean sel = isSelected();
+            Color fill = sel ? accent : (getModel().isRollover() ? new Color(255, 255, 255, 20)
+                    : new Color(255, 255, 255, 10));
+            g2.setColor(fill);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+            g2.dispose();
+            setForeground(sel ? Color.WHITE : textDim);
+            super.paintComponent(g);
+        }
+    }
+
+    // ── Filesystem helpers ────────────────────────────────────────────────
     private static void loadIcon(JLabel label, String imagePath) {
         if (imagePath != null && !imagePath.isBlank()) {
             try {
@@ -599,7 +963,7 @@ public class EditInstancePanel extends JPanel {
             } catch (Exception ignored) {}
         }
         try {
-            InputStream is = EditInstancePanel.class.getResourceAsStream("/com/launcher/minecraft_image.png");
+            InputStream is = EditInstancePanel.class.getResourceAsStream("/com/launcher/logos/loader.png");
             if (is != null) {
                 BufferedImage img = ImageIO.read(is);
                 Image scaled = img.getScaledInstance(64, 64, Image.SCALE_SMOOTH);
@@ -608,158 +972,5 @@ public class EditInstancePanel extends JPanel {
             }
         } catch (Exception ignored) {}
         label.setIcon(null);
-    }
-
-    private static void addSectionHeader(JPanel panel, String text, int row, GridBagConstraints gbc, Color textColor) {
-        gbc.gridx = 0; gbc.gridy = gbc.gridy + row; gbc.gridwidth = 3; gbc.weightx = 1.0; // Adjusted gbc.gridy
-        JPanel sepPanel = new JPanel(new GridBagLayout());
-        sepPanel.setBackground(panel.getBackground());
-        JLabel l = new JLabel(text.toUpperCase());
-        l.setFont(new Font("SansSerif", Font.BOLD, 10));
-        l.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
-        JSeparator sep = new JSeparator();
-        GridBagConstraints sgbc = new GridBagConstraints();
-        sgbc.fill = GridBagConstraints.HORIZONTAL;
-        sgbc.insets = new Insets(0, 8, 0, 0);
-        sgbc.weightx = 1.0;
-        sepPanel.add(l);
-        sepPanel.add(sep, sgbc);
-        panel.add(sepPanel, gbc);
-    }
-
-    private static JLabel fieldLabel(String text, Color textColor) {
-        JLabel l = new JLabel(text);
-        l.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        l.setForeground(textColor);
-        return l;
-    }
-
-    private static class ModpackMeta {
-        String name;
-        String mcVersion;
-        ModLoaderType loaderType;
-        String loaderVersion;
-    }
-
-    private static ModpackMeta parseModpackMetadata(File modpackFile) {
-        String fileName = modpackFile.getName().toLowerCase();
-        try {
-            if (fileName.endsWith(".mrpack")) {
-                return parseMrpackMeta(modpackFile);
-            } else if (fileName.endsWith(".zip")) {
-                return parseZipMeta(modpackFile);
-            }
-        } catch (Exception e) {}
-        return null;
-    }
-
-    private static ModpackMeta parseMrpackMeta(File file) throws Exception {
-        try (ZipFile zip = new ZipFile(file)) {
-            ZipEntry entry = zip.getEntry("modrinth.index.json");
-            if (entry == null) return null;
-            String json;
-            try (InputStream is = zip.getInputStream(entry)) {
-                json = new String(is.readAllBytes());
-            }
-            JsonObject root = JsonUtil.parse(json).getAsJsonObject();
-            ModpackMeta meta = new ModpackMeta();
-            if (root.has("name")) meta.name = root.get("name").getAsString();
-            if (root.has("dependencies")) {
-                JsonObject deps = root.getAsJsonObject("dependencies");
-                if (deps.has("minecraft")) meta.mcVersion = deps.get("minecraft").getAsString();
-                if (deps.has("fabric-loader")) {
-                    meta.loaderType = ModLoaderType.FABRIC;
-                    meta.loaderVersion = deps.get("fabric-loader").getAsString();
-                } else if (deps.has("quilt-loader")) {
-                    meta.loaderType = ModLoaderType.QUILT;
-                    meta.loaderVersion = deps.get("quilt").getAsString();
-                } else if (deps.has("forge")) {
-                    meta.loaderType = ModLoaderType.FORGE;
-                    meta.loaderVersion = deps.get("forge").getAsString();
-                } else if (deps.has("neoforge")) {
-                    meta.loaderType = ModLoaderType.NEOFORGE;
-                    meta.loaderVersion = deps.get("neoforge").getAsString();
-                }
-            }
-            return meta;
-        }
-    }
-
-    private static ModpackMeta parseZipMeta(File file) throws Exception {
-        try (ZipFile zip = new ZipFile(file)) {
-            ZipEntry manifestEntry = zip.getEntry("manifest.json");
-            if (manifestEntry != null) {
-                String json;
-                try (InputStream is = zip.getInputStream(manifestEntry)) {
-                    json = new String(is.readAllBytes());
-                }
-                JsonObject root = JsonUtil.parse(json).getAsJsonObject();
-                ModpackMeta meta = new ModpackMeta();
-                if (root.has("name")) meta.name = root.get("name").getAsString();
-                if (root.has("minecraft")) {
-                    JsonObject mc = root.getAsJsonObject("minecraft");
-                    if (mc.has("version")) meta.mcVersion = mc.get("version").getAsString();
-                    if (mc.has("modLoaders")) {
-                        JsonArray loaders = mc.getAsJsonArray("modLoaders");
-                        if (!loaders.isEmpty()) {
-                            JsonObject loader = loaders.get(0).getAsJsonObject();
-                            String loaderId = loader.has("id") ? loader.get("id").getAsString() : "";
-                            if (loaderId.startsWith("forge-")) {
-                                meta.loaderType = ModLoaderType.FORGE;
-                                meta.loaderVersion = loaderId.substring("forge-".length());
-                            } else if (loaderId.startsWith("fabric-")) {
-                                meta.loaderType = ModLoaderType.FABRIC;
-                                meta.loaderVersion = loaderId.substring("fabric-".length());
-                            } else if (loaderId.startsWith("neoforge-")) {
-                                meta.loaderType = ModLoaderType.NEOFORGE;
-                                meta.loaderVersion = loaderId.substring("neoforge-".length());
-                            } else if (loaderId.startsWith("quilt-")) {
-                                meta.loaderType = ModLoaderType.QUILT;
-                                meta.loaderVersion = loaderId.substring("quilt-".length());
-                            }
-                        }
-                    }
-                }
-                return meta;
-            }
-            ZipEntry mmcEntry = zip.getEntry("mmc-pack.json");
-            if (mmcEntry != null) {
-                String json;
-                try (InputStream is = zip.getInputStream(mmcEntry)) {
-                    json = new String(is.readAllBytes());
-                }
-                JsonObject root = JsonUtil.parse(json).getAsJsonObject();
-                ModpackMeta meta = new ModpackMeta();
-                if (root.has("components")) {
-                    JsonArray comps = root.getAsJsonArray("components");
-                    for (var el : comps) {
-                        JsonObject comp = el.getAsJsonObject();
-                        String uid = comp.has("uid") ? comp.get("uid").getAsString() : "";
-                        String ver = comp.has("version") ? comp.get("version").getAsString() : null;
-                        if ("net.minecraft".equals(uid)) {
-                            meta.mcVersion = ver;
-                        } else if ("net.fabricmc.fabric-loader".equals(uid)) {
-                            meta.loaderType = ModLoaderType.FABRIC;
-                            meta.loaderVersion = ver;
-                        } else if ("org.quiltmc.quilt-loader".equals(uid)) {
-                            meta.loaderType = ModLoaderType.QUILT;
-                            meta.loaderVersion = ver;
-                        } else if ("net.minecraftforge".equals(uid)) {
-                            meta.loaderType = ModLoaderType.FORGE;
-                            meta.loaderVersion = ver;
-                        } else if ("net.neoforged".equals(uid)) {
-                            meta.loaderType = ModLoaderType.NEOFORGE;
-                            meta.loaderVersion = ver;
-                        }
-                    }
-                }
-                return meta;
-            }
-            ZipEntry modrinthEntry = zip.getEntry("modrinth.index.json");
-            if (modrinthEntry != null) {
-                return parseMrpackMeta(file);
-            }
-        }
-        return null;
     }
 }

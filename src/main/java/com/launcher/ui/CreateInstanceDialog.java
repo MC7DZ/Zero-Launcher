@@ -44,7 +44,8 @@ public class CreateInstanceDialog extends JDialog {
     private CreateInstanceDialog(JFrame owner) {
         super(owner, "New Instance", true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        setSize(760, 600);
+        setSize(980, 760);
+        setMinimumSize(new Dimension(860, 680));
         setLocationRelativeTo(owner);
 
         LauncherSettings settings = SettingsManager.getInstance().getSettings();
@@ -154,7 +155,7 @@ public class CreateInstanceDialog extends JDialog {
         generalPanel.add(nameField, gbc);
         row++;
 
-        JComboBox<String> versionBox = new JComboBox<>();
+        CustomComboBox<String> versionBox = new CustomComboBox<>();
         versionBox.setEnabled(false);
         CustomToggle snapshotsCb = new CustomToggle("Include snapshots");
         snapshotsCb.setBackground(panelBg);
@@ -168,7 +169,7 @@ public class CreateInstanceDialog extends JDialog {
         generalPanel.add(snapshotsCb, gbc);
         row++;
 
-        JComboBox<ModLoaderType> loaderBox = new JComboBox<>(ModLoaderType.values());
+        CustomComboBox<ModLoaderType> loaderBox = new CustomComboBox<>(ModLoaderType.values());
         loaderBox.setSelectedItem(ModLoaderType.VANILLA);
         gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
         generalPanel.add(fieldLabel("Mod loader", textColor), gbc);
@@ -176,7 +177,7 @@ public class CreateInstanceDialog extends JDialog {
         generalPanel.add(loaderBox, gbc);
         row++;
 
-        JComboBox<String> loaderVerBox = new JComboBox<>();
+        CustomComboBox<String> loaderVerBox = new CustomComboBox<>();
         loaderVerBox.setEnabled(false);
         gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
         generalPanel.add(fieldLabel("Loader version", textColor), gbc);
@@ -574,7 +575,7 @@ public class CreateInstanceDialog extends JDialog {
 
     private static void loadDefaultIcon(JLabel label) {
         try {
-            InputStream is = CreateInstanceDialog.class.getResourceAsStream("/com/launcher/minecraft_image.png");
+            InputStream is = CreateInstanceDialog.class.getResourceAsStream("/com/launcher/logos/loader.png");
             if (is != null) {
                 BufferedImage img = ImageIO.read(is);
                 Image scaled = img.getScaledInstance(64, 64, Image.SCALE_SMOOTH);

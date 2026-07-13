@@ -1,8 +1,15 @@
 package com.launcher.model;
 
 public class LauncherSettings {
+    /** Bumped whenever one of the built-in default values below is changed in a launcher
+     *  update. SettingsManager compares this against CURRENT_DEFAULTS_VERSION on load: any
+     *  field whose saved value still matches its *old* default gets migrated to the *new*
+     *  default (a user who customized that field is left untouched, since their value won't
+     *  match the old default). Do not hand-edit this on existing settings.json files. */
+    public int defaultsVersion = 1;
+
     // Appearance
-    public String accentColor      = "#10b981";   // emerald green accent
+    public String accentColor      = "#00a9e0";   // Rem Color <3
     public String bgColor          = "#0a0a0f";   // near-black base
     public String panelBgColor     = "#13131a";   // slightly lighter panel
     public String textColor        = "#e2e2ea";   // off-white text
@@ -21,10 +28,13 @@ public class LauncherSettings {
     public String notificationStyle     = "Minimal Outline";
     public boolean useBackgroundImage   = false;
     public String backgroundImagePath   = "";
+    public String backgroundImageFit    = "Cover"; // Cover, Contain, Stretch, Center, Tile
+    public int backgroundImageDim       = 35;      // 0-100, darkening overlay strength
+    public boolean backgroundImageTint  = false;   // wash the dim overlay with the accent color
+    public boolean backgroundImageVignette = true; // subtle edge darkening for depth
     /** Fake "frosted glass" transparency: blends panels with the background behind them.
      *  Independent of blur — you can have one without the other. */
     public boolean enableTransparency   = true;
-    public int transparencyStrength     = 20;     // 1–100, higher = more see-through
     /** Softens/blurs the painted background (gradient glow, or the background image if one
      *  is set). Independent of transparency. */
     public boolean enableBlurEffect     = false;
@@ -45,6 +55,9 @@ public class LauncherSettings {
     public boolean logConsoleVisible    = false;
     public boolean scanOnStartup        = true;
     public boolean showHiddenInstances  = false;
+    /** ID of the instance that was selected the last time the launcher was open;
+     *  used to auto-select it again the next time the launcher starts. */
+    public String lastSelectedInstanceId = null;
     /** Animate mouse-wheel scrolling instead of jumping instantly. */
     public boolean smoothScrolling      = true;
     /** Automatically check every instance's mods for available updates when the launcher starts. */
@@ -89,6 +102,9 @@ public class LauncherSettings {
     // it's entirely client-side and works out of the box.
     public boolean enableDiscordRpc     = true;
     public boolean showServerOnRpc      = true;
+
+    // ── Developer ────────────────────────────────────────────────────────────
+    public boolean unlockDevStuff       = false;
     public String privateServersIps     = "";
     public String customDiscordRpcImage = "minecraft_image.png";
     /** Display name shown as the Rich Presence image tooltip / branding text. */

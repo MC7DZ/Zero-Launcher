@@ -16,27 +16,39 @@ import com.launcher.manager.SettingsManager;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
+import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+/**
+ * The "New Instance" screen, shown inline in the launcher's card-stack
+ * (swapped in via CardLayout — see Main#CREATE_INSTANCE_VIEW) rather than as
+ * a popup dialog. Laid out as a single scrolling column of rounded "glass"
+ * cards instead of the old JTabbedPane + GridBagLayout form, to match the
+ * visual language used by the Discover and Instances tabs elsewhere in the
+ * app.
+ */
 public class CreateInstancePanel extends JPanel {
 
     private static final String DEFAULT_MODPACK_BASE = ".minecraft/ModPacks";
+    private static final int CARD_ARC = 16;
+    private static final int MAX_CONTENT_WIDTH = 1040;
 
-    private Consumer<Instance> onCreate;
-    private Runnable onCancel;
+    private final Consumer<Instance> onCreate;
+    private final Runnable onCancel;
+
+    // Resolved once in initUI() and shared by every card-building helper below.
+    private Color bg, panelBg, textColor, textDim, accent, cardFill, cardBorder;
 
     public CreateInstancePanel(Consumer<Instance> onCreate, Runnable onCancel) {
         this.onCreate = onCreate;
@@ -46,415 +58,329 @@ public class CreateInstancePanel extends JPanel {
 
     private void initUI() {
         LauncherSettings settings = SettingsManager.getInstance().getSettings();
-        Color bg = Main.hexToColor(settings.bgColor, new Color(10, 10, 15));
-        Color panelBg = Main.hexToColor(settings.panelBgColor, new Color(19, 19, 26));
-        Color textColor = Main.hexToColor(settings.textColor, new Color(226, 226, 234));
-        Color accent = Main.hexToColor(settings.accentColor, new Color(16, 185, 129));
+        bg = Main.hexToColor(settings.bgColor, new Color(10, 10, 15));
+        panelBg = Main.hexToColor(settings.panelBgColor, new Color(19, 19, 26));
+        textColor = Main.hexToColor(settings.textColor, new Color(226, 226, 234));
+        accent = Main.hexToColor(settings.accentColor, new Color(16, 185, 129));
+        textDim = new Color(150, 150, 168);
+        cardFill = new Color(255, 255, 255, 10);
+        cardBorder = new Color(255, 255, 255, 18);
 
         setLayout(new BorderLayout());
+        setOpaque(true);
         setBackground(panelBg);
 
-        // Header
-        JPanel headerPanel = new JPanel();
-        headerPanel.setLayout(new BoxLayout(headerPanel, BoxLayout.Y_AXIS));
-        headerPanel.setBackground(panelBg);
-        headerPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, Main.hexToColor("#282832", new Color(40, 40, 50))),
-                new EmptyBorder(16, 20, 16, 20)
-        ));
-        JLabel titleLbl = new JLabel("New Instance");
-        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 18));
-        titleLbl.setForeground(textColor);
-        JLabel subLbl = new JLabel("Create a new Minecraft instance");
-        subLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        subLbl.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
-        headerPanel.add(titleLbl);
-        headerPanel.add(Box.createVerticalStrut(4));
-        headerPanel.add(subLbl);
-        add(headerPanel, BorderLayout.NORTH);
+        add(buildHeader(), BorderLayout.NORTH);
 
-        JTabbedPane tabs = new JTabbedPane();
-        tabs.setBackground(panelBg); // Set tab background
-        tabs.setForeground(textColor); // Set tab text color
+        // ── Shared state used across cards + the footer's Create action ────
+        final String[] chosenImagePath = { null };
+        final String[] chosenModpackPath = { null };
+        final ModLoaderType[] selectedLoader = { ModLoaderType.VANILLA };
+        final boolean[] modpackMode = { false };
 
-        // ═════════════════════════════════════════════════════════════════════
-        //  TAB 1: General
-        // ═════════════════════════════════════════════════════════════════════
-        JPanel generalPanel = new JPanel(new GridBagLayout());
-        generalPanel.setBackground(panelBg);
-        generalPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(6, 6, 6, 6);
-
-        // Appearance section
-        int row = 0;
-        addSectionHeader(generalPanel, "Appearance", row++, gbc, textColor);
-
-        // Icon picker row
-        final String[] chosenImagePath = {null};
         JLabel iconView = new JLabel();
-        iconView.setPreferredSize(new Dimension(64, 64));
-        iconView.setBorder(BorderFactory.createLineBorder(Main.hexToColor("#3c3c46", new Color(60, 60, 70)), 1));
         loadDefaultIcon(iconView);
 
-        JButton changeImageBtn = new JButton("Change Image…");
-        changeImageBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        changeImageBtn.setForeground(textColor); // Dynamic text color
-        JButton resetImageBtn = new JButton("Reset");
-        resetImageBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        resetImageBtn.setForeground(textColor); // Dynamic text color
-        resetImageBtn.setEnabled(false);
+        CustomTextField nameField = new CustomTextField("My Instance");
+        nameField.setFont(new Font("SansSerif", Font.BOLD, 14));
+        nameField.setBorder(new EmptyBorder(4, 4, 4, 10));
 
-        changeImageBtn.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Choose Instance Image");
-            fc.setFileFilter(new FileNameExtensionFilter("Images", "png", "jpg", "jpeg", "gif", "bmp"));
-            int res = fc.showOpenDialog(this); // Use 'this' as parent component
-            if (res == JFileChooser.APPROVE_OPTION) {
-                File chosen = fc.getSelectedFile();
-                try {
-                    ImageIcon img = new ImageIcon(chosen.getAbsolutePath());
-                    Image scaled = img.getImage().getScaledInstance(64, 64, Image.SCALE_SMOOTH);
-                    iconView.setIcon(new ImageIcon(scaled));
-                    chosenImagePath[0] = chosen.getAbsolutePath();
-                    resetImageBtn.setEnabled(true);
-                } catch (Exception ex) {}
-            }
-        });
-
-        resetImageBtn.addActionListener(e -> {
-            loadDefaultIcon(iconView);
-            chosenImagePath[0] = null;
-            resetImageBtn.setEnabled(false);
-        });
-
-        JPanel imgBtnCol = new JPanel();
-        imgBtnCol.setLayout(new BoxLayout(imgBtnCol, BoxLayout.Y_AXIS));
-        imgBtnCol.setBackground(panelBg);
-        imgBtnCol.add(changeImageBtn);
-        imgBtnCol.add(Box.createVerticalStrut(4));
-        imgBtnCol.add(resetImageBtn);
-
-        JPanel imageRowPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        imageRowPanel.setBackground(panelBg);
-        imageRowPanel.add(iconView);
-        imageRowPanel.add(imgBtnCol);
-
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Icon", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(imageRowPanel, gbc);
-        row++;
-
-        addSectionHeader(generalPanel, "General", row++, gbc, textColor);
-
-        JTextField nameField = new JTextField("My Instance");
-        nameField.setBackground(bg); // Dynamic background
-        nameField.setForeground(textColor); // Dynamic text
-        nameField.setCaretColor(textColor); // Dynamic caret
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Name", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(nameField, gbc);
-        row++;
-
-        JComboBox<String> versionBox = new JComboBox<>();
-        versionBox.setBackground(bg); // Dynamic background
-        versionBox.setForeground(textColor); // Dynamic text
+        CustomComboBox<String> versionBox = new CustomComboBox<>();
         versionBox.setEnabled(false);
         CustomToggle snapshotsCb = new CustomToggle("Include snapshots");
-        snapshotsCb.setBackground(panelBg);
-        snapshotsCb.setForeground(textColor);
 
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("MC Version", textColor), gbc);
-        gbc.gridx = 1; gbc.weightx = 0.6;
-        generalPanel.add(versionBox, gbc);
-        gbc.gridx = 2; gbc.weightx = 0.4;
-        generalPanel.add(snapshotsCb, gbc);
-        row++;
-
-        JComboBox<ModLoaderType> loaderBox = new JComboBox<>(ModLoaderType.values());
-        loaderBox.setBackground(bg); // Dynamic background
-        loaderBox.setForeground(textColor); // Dynamic text
-        loaderBox.setSelectedItem(ModLoaderType.VANILLA);
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Mod loader", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(loaderBox, gbc);
-        row++;
-
-        JComboBox<String> loaderVerBox = new JComboBox<>();
-        loaderVerBox.setBackground(bg); // Dynamic background
-        loaderVerBox.setForeground(textColor); // Dynamic text
+        CustomComboBox<String> loaderVerBox = new CustomComboBox<>();
         loaderVerBox.setEnabled(false);
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Loader version", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(loaderVerBox, gbc);
-        row++;
-
-        addSectionHeader(generalPanel, "Memory", row++, gbc, textColor);
+        JLabel loaderVerLabel = fieldLabel("Loader version");
 
         JSlider ramSlider = new JSlider(1024, 8192, 3072);
         ramSlider.setMajorTickSpacing(1024);
         ramSlider.setSnapToTicks(true);
-        ramSlider.setBackground(panelBg);
-        ramSlider.setForeground(textColor); // Set slider tick/track color
-        JLabel ramLbl = new JLabel("3072 MB  (3.0 GB)");
-        ramLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        ramLbl.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
+        ramSlider.setOpaque(false);
+        ramSlider.setForeground(accent);
+        JLabel ramLbl = pill("3.0 GB", accent);
         ramSlider.addChangeListener(e -> {
             int val = ramSlider.getValue();
-            ramLbl.setText(String.format("%d MB  (%.1f GB)", val, (double) val / 1024));
+            ramLbl.setText(String.format("%.1f GB", val / 1024.0));
         });
 
-        JPanel ramContainer = new JPanel(new BorderLayout());
-        ramContainer.setBackground(panelBg);
-        ramContainer.add(ramSlider, BorderLayout.CENTER);
-        ramContainer.add(ramLbl, BorderLayout.SOUTH);
-
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Allocated RAM", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(ramContainer, gbc);
-        row++;
-
-        addSectionHeader(generalPanel, "Directory", row++, gbc, textColor);
-
-        JRadioButton defaultDirRadio = new JRadioButton("Standard .minecraft directory");
-        JRadioButton customDirRadio = new JRadioButton("Custom directory");
-        defaultDirRadio.setBackground(panelBg); defaultDirRadio.setForeground(textColor);
-        customDirRadio.setBackground(panelBg); customDirRadio.setForeground(textColor);
-        ButtonGroup dirGroup = new ButtonGroup();
-        dirGroup.add(defaultDirRadio);
-        dirGroup.add(customDirRadio);
-        defaultDirRadio.setSelected(true);
-
-        JTextField customDirField = new JTextField();
-        customDirField.setBackground(bg); // Dynamic background
-        customDirField.setForeground(textColor); // Dynamic text
-        customDirField.setCaretColor(textColor); // Dynamic caret
+        // Directory mode segmented control
+        JToggleButton defaultDirBtn = new SegButton("Default location", true);
+        JToggleButton customDirBtn = new SegButton("Custom location", false);
+        group(defaultDirBtn, customDirBtn);
+        CustomTextField customDirField = new CustomTextField();
         customDirField.setEnabled(false);
-        JButton browseBtn = new JButton("Browse…");
-        browseBtn.setForeground(textColor); // Dynamic text color
-        browseBtn.setEnabled(false);
-
-        browseBtn.addActionListener(e -> {
+        GhostButton browseDirBtn = new GhostButton("Browse…");
+        browseDirBtn.setEnabled(false);
+        browseDirBtn.addActionListener(e -> {
             JFileChooser dc = new JFileChooser();
             dc.setDialogTitle("Select Directory");
             dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            int d = dc.showOpenDialog(this); // Use 'this' as parent component
-            if (d == JFileChooser.APPROVE_OPTION) {
+            if (dc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
                 customDirField.setText(dc.getSelectedFile().getAbsolutePath());
             }
         });
-
-        defaultDirRadio.addActionListener(e -> {
+        defaultDirBtn.addActionListener(e -> {
             customDirField.setEnabled(false);
-            browseBtn.setEnabled(false);
+            browseDirBtn.setEnabled(false);
         });
-        customDirRadio.addActionListener(e -> {
+        customDirBtn.addActionListener(e -> {
             customDirField.setEnabled(true);
-            browseBtn.setEnabled(true);
+            browseDirBtn.setEnabled(true);
         });
 
         JPanel dirFieldRow = new JPanel(new BorderLayout(8, 0));
-        dirFieldRow.setBackground(panelBg);
+        dirFieldRow.setOpaque(false);
         dirFieldRow.add(customDirField, BorderLayout.CENTER);
-        dirFieldRow.add(browseBtn, BorderLayout.EAST);
+        dirFieldRow.add(browseDirBtn, BorderLayout.EAST);
 
-        JPanel dirGroupPanel = new JPanel();
-        dirGroupPanel.setLayout(new BoxLayout(dirGroupPanel, BoxLayout.Y_AXIS));
-        dirGroupPanel.setBackground(panelBg);
-        dirGroupPanel.add(defaultDirRadio);
-        dirGroupPanel.add(customDirRadio);
-        dirGroupPanel.add(Box.createVerticalStrut(4));
-        dirGroupPanel.add(dirFieldRow);
+        // ── Loader segmented control ─────────────────────────────────────────
+        Runnable[] loadLoaderVersHolder = new Runnable[1];
+        JPanel loaderSeg = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        loaderSeg.setOpaque(false);
+        java.util.List<JToggleButton> loaderBtns = new java.util.ArrayList<>();
+        for (ModLoaderType type : ModLoaderType.values()) {
+            JToggleButton b = new SegButton(prettyLoaderName(type), type == ModLoaderType.VANILLA);
+            b.addActionListener(e -> {
+                selectedLoader[0] = type;
+                boolean vanilla = type == ModLoaderType.VANILLA;
+                loaderVerBox.setEnabled(!vanilla);
+                loaderVerLabel.setVisible(!vanilla);
+                loaderVerBox.setVisible(!vanilla);
+                if (loadLoaderVersHolder[0] != null) loadLoaderVersHolder[0].run();
+            });
+            loaderBtns.add(b);
+            loaderSeg.add(b);
+        }
+        group(loaderBtns.toArray(new JToggleButton[0]));
+        loaderVerBox.setVisible(false);
+        loaderVerLabel.setVisible(false);
 
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
-        generalPanel.add(fieldLabel("Game directory", textColor), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        generalPanel.add(dirGroupPanel, gbc);
-        row++;
-
-        JScrollPane generalScroll = new JScrollPane(generalPanel);
-        com.launcher.ui.SmoothScroll.install(generalScroll);
-        generalScroll.setBorder(null);
-        tabs.addTab("General", generalScroll);
-
-        // ═════════════════════════════════════════════════════════════════════
-        //  TAB 2: Modpack
-        // ═════════════════════════════════════════════════════════════════════
-        JPanel modpackPanel = new JPanel(new GridBagLayout());
-        modpackPanel.setBackground(panelBg);
-        modpackPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
-        GridBagConstraints mgbc = new GridBagConstraints();
-        mgbc.fill = GridBagConstraints.HORIZONTAL;
-        mgbc.insets = new Insets(6, 6, 6, 6);
-
-        int mrow = 0;
-        addSectionHeader(modpackPanel, "Modpack File", mrow++, mgbc, textColor);
-
-        final String[] chosenModpackPath = {null};
-        JLabel modpackFileHint = new JLabel("No file selected");
-        modpackFileHint.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        modpackFileHint.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
-
-        JButton modpackBrowseBtn = new JButton("Browse…");
-        modpackBrowseBtn.setForeground(textColor); // Dynamic text color
-        JButton modpackClearBtn = new JButton("Clear");
-        modpackClearBtn.setForeground(textColor); // Dynamic text color
-        modpackClearBtn.setEnabled(false);
-
+        // ── Modpack file card state ──────────────────────────────────────────
         String defaultInstallPath = resolveDefaultModpackPath();
-        JTextField installPathField = new JTextField(defaultInstallPath);
-        installPathField.setBackground(bg); // Dynamic background
-        installPathField.setForeground(textColor); // Dynamic text
-        installPathField.setCaretColor(textColor); // Dynamic caret
-
-        JLabel detectedInfoLabel = new JLabel(" ");
-        detectedInfoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        detectedInfoLabel.setForeground(accent);
+        JLabel modpackFileHint = new JLabel("No file selected");
+        modpackFileHint.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        modpackFileHint.setForeground(textDim);
+        GhostButton modpackBrowseBtn = new GhostButton("Browse…");
+        GhostButton modpackClearBtn = new GhostButton("Clear");
+        modpackClearBtn.setEnabled(false);
+        CustomTextField installPathField = new CustomTextField(defaultInstallPath);
+        JLabel detectedInfoLabel = pill(" ", accent);
         detectedInfoLabel.setVisible(false);
+        GhostButton installPathBrowseBtn = new GhostButton("Browse…");
+        GhostButton resetInstallPathBtn = new GhostButton("Reset");
 
         modpackBrowseBtn.addActionListener(e -> {
             JFileChooser fc = new JFileChooser();
             fc.setDialogTitle("Select Modpack File");
             fc.setFileFilter(new FileNameExtensionFilter("Modpack files", "mrpack"));
-            int res = fc.showOpenDialog(this); // Use 'this' as parent component
-            if (res == JFileChooser.APPROVE_OPTION) {
-                File chosen = fc.getSelectedFile();
-                chosenModpackPath[0] = chosen.getAbsolutePath();
-                modpackFileHint.setText(chosen.getName());
-                modpackFileHint.setForeground(textColor);
-                modpackClearBtn.setEnabled(true);
+            if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+            File chosen = fc.getSelectedFile();
+            chosenModpackPath[0] = chosen.getAbsolutePath();
+            modpackFileHint.setText(chosen.getName());
+            modpackFileHint.setForeground(textColor);
+            modpackClearBtn.setEnabled(true);
 
-                String fname = chosen.getName();
-                String suggested = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
-                suggested = suggested.replace('_', ' ').replace('-', ' ').trim();
-                if (!suggested.isEmpty()) nameField.setText(suggested);
+            String fname = chosen.getName();
+            String suggested = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
+            suggested = suggested.replace('_', ' ').replace('-', ' ').trim();
+            if (!suggested.isEmpty()) nameField.setText(suggested);
 
-                String folderName = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
-                installPathField.setText(resolveDefaultModpackPath() + File.separator + folderName);
+            String folderName = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
+            installPathField.setText(resolveDefaultModpackPath() + File.separator + folderName);
 
-                ModpackMeta meta = parseModpackMetadata(chosen);
-                if (meta != null) {
-                    if (meta.name != null && !meta.name.isEmpty()) nameField.setText(meta.name);
-                    if (meta.mcVersion != null) {
-                        DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) versionBox.getModel();
-                        if (model.getIndexOf(meta.mcVersion) == -1) {
-                            model.insertElementAt(meta.mcVersion, 0);
-                        }
-                        versionBox.setSelectedItem(meta.mcVersion);
-                        versionBox.setEnabled(false);
-                    }
-                    if (meta.loaderType != null) {
-                        loaderBox.setSelectedItem(meta.loaderType);
-                        loaderBox.setEnabled(false);
-                        if (meta.loaderVersion != null) {
-                            DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) loaderVerBox.getModel();
-                            if (model.getIndexOf(meta.loaderVersion) == -1) {
-                                model.insertElementAt(meta.loaderVersion, 0);
-                            }
-                            loaderVerBox.setSelectedItem(meta.loaderVersion);
-                            loaderVerBox.setEnabled(false);
-                        }
-                    }
-                    StringBuilder info = new StringBuilder("Detected from modpack: ");
-                    if (meta.mcVersion != null) info.append("MC ").append(meta.mcVersion);
-                    if (meta.loaderType != null) {
-                        info.append(" · ").append(meta.loaderType);
-                        if (meta.loaderVersion != null) info.append(" ").append(meta.loaderVersion);
-                    }
-                    detectedInfoLabel.setText(info.toString());
-                    detectedInfoLabel.setVisible(true);
-                } else {
-                    detectedInfoLabel.setVisible(false);
+            ModpackMeta meta = parseModpackMetadata(chosen);
+            if (meta != null) {
+                if (meta.name != null && !meta.name.isEmpty()) nameField.setText(meta.name);
+                if (meta.mcVersion != null) {
+                    DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) versionBox.getModel();
+                    if (model.getIndexOf(meta.mcVersion) == -1) model.insertElementAt(meta.mcVersion, 0);
+                    versionBox.setSelectedItem(meta.mcVersion);
+                    versionBox.setEnabled(false);
                 }
+                if (meta.loaderType != null) {
+                    for (JToggleButton b : loaderBtns) {
+                        if (prettyLoaderName(meta.loaderType).equals(b.getText())) b.setSelected(true);
+                    }
+                    selectedLoader[0] = meta.loaderType;
+                    for (JToggleButton b : loaderBtns) b.setEnabled(false);
+                    if (meta.loaderVersion != null) {
+                        DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) loaderVerBox.getModel();
+                        if (model.getIndexOf(meta.loaderVersion) == -1) model.insertElementAt(meta.loaderVersion, 0);
+                        loaderVerBox.setSelectedItem(meta.loaderVersion);
+                        loaderVerBox.setEnabled(false);
+                        loaderVerBox.setVisible(true);
+                        loaderVerLabel.setVisible(true);
+                    }
+                }
+                StringBuilder info = new StringBuilder("Detected: ");
+                if (meta.mcVersion != null) info.append("MC ").append(meta.mcVersion);
+                if (meta.loaderType != null) {
+                    info.append("  ·  ").append(prettyLoaderName(meta.loaderType));
+                    if (meta.loaderVersion != null) info.append(" ").append(meta.loaderVersion);
+                }
+                detectedInfoLabel.setText(info.toString());
+                detectedInfoLabel.setVisible(true);
+            } else {
+                detectedInfoLabel.setVisible(false);
             }
         });
 
         modpackClearBtn.addActionListener(e -> {
             chosenModpackPath[0] = null;
             modpackFileHint.setText("No file selected");
-            modpackFileHint.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
+            modpackFileHint.setForeground(textDim);
             modpackClearBtn.setEnabled(false);
             installPathField.setText(defaultInstallPath);
             versionBox.setEnabled(true);
-            loaderBox.setEnabled(true);
-            loaderVerBox.setEnabled(true);
+            for (JToggleButton b : loaderBtns) b.setEnabled(true);
             detectedInfoLabel.setVisible(false);
         });
 
-        JPanel modpackFileBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        modpackFileBtns.setBackground(panelBg);
-        modpackFileBtns.add(modpackBrowseBtn);
-        modpackFileBtns.add(modpackClearBtn);
-
-        JPanel modpackFileBox = new JPanel();
-        modpackFileBox.setLayout(new BoxLayout(modpackFileBox, BoxLayout.Y_AXIS));
-        modpackFileBox.setBackground(panelBg);
-        modpackFileBox.add(modpackFileHint);
-        modpackFileBox.add(Box.createVerticalStrut(4));
-        modpackFileBox.add(modpackFileBtns);
-        modpackFileBox.add(Box.createVerticalStrut(4));
-        modpackFileBox.add(detectedInfoLabel);
-
-        mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 1; mgbc.weightx = 0;
-        modpackPanel.add(fieldLabel("File (.mrpack only)", textColor), mgbc);
-        mgbc.gridx = 1; mgbc.gridwidth = 1; mgbc.weightx = 1.0;
-        modpackPanel.add(modpackFileBox, mgbc);
-        mrow++;
-
-        addSectionHeader(modpackPanel, "Install Location", mrow++, mgbc, textColor);
-
-        JButton installPathBrowseBtn = new JButton("Browse…");
-        installPathBrowseBtn.setForeground(textColor); // Dynamic text color
         installPathBrowseBtn.addActionListener(e -> {
             JFileChooser dc = new JFileChooser();
             dc.setDialogTitle("Select Directory");
             dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            int chosenRes = dc.showOpenDialog(this); // Use 'this' as parent component
-            if (chosenRes == JFileChooser.APPROVE_OPTION) {
+            if (dc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
                 installPathField.setText(dc.getSelectedFile().getAbsolutePath());
             }
         });
-
-        JButton resetInstallPathBtn = new JButton("Reset");
-        resetInstallPathBtn.setForeground(textColor); // Dynamic text color
         resetInstallPathBtn.addActionListener(e -> installPathField.setText(defaultInstallPath));
 
-        JPanel installPathRow = new JPanel(new BorderLayout(8, 0));
-        installPathRow.setBackground(panelBg);
-        installPathRow.add(installPathField, BorderLayout.CENTER);
-        JPanel installPathBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-        installPathBtns.setBackground(panelBg);
-        installPathBtns.add(installPathBrowseBtn);
-        installPathBtns.add(resetInstallPathBtn);
-        installPathRow.add(installPathBtns, BorderLayout.EAST);
+        // ── Assemble: mode switch (Fresh vs Modpack) ─────────────────────────
+        JPanel freshCards = new JPanel();
+        freshCards.setOpaque(false);
+        freshCards.setLayout(new BoxLayout(freshCards, BoxLayout.Y_AXIS));
+        freshCards.add(sectionCard("Version & Loader", versionAndLoaderContent(
+                versionBox, snapshotsCb, loaderSeg, loaderVerLabel, loaderVerBox)));
+        freshCards.add(Box.createVerticalStrut(14));
+        freshCards.add(sectionCard("Game Directory", directoryContent(
+                defaultDirBtn, customDirBtn, dirFieldRow)));
 
-        mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 1; mgbc.weightx = 0;
-        modpackPanel.add(fieldLabel("Install path", textColor), mgbc);
-        mgbc.gridx = 1; mgbc.gridwidth = 1; mgbc.weightx = 1.0;
-        modpackPanel.add(installPathRow, mgbc);
-        mrow++;
+        JPanel modpackCards = new JPanel();
+        modpackCards.setOpaque(false);
+        modpackCards.setLayout(new BoxLayout(modpackCards, BoxLayout.Y_AXIS));
+        modpackCards.add(sectionCard("Modpack File", modpackFileContent(
+                modpackFileHint, modpackBrowseBtn, modpackClearBtn, detectedInfoLabel)));
+        modpackCards.add(Box.createVerticalStrut(14));
+        modpackCards.add(sectionCard("Install Location", installLocationContent(
+                installPathField, installPathBrowseBtn, resetInstallPathBtn)));
 
-        JLabel modpackInfoLabel = new JLabel("<html>Supported formats: .mrpack (Modrinth) and modpacks.<br>The modpack will be extracted into the install path when you create the instance.</html>");
-        modpackInfoLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        modpackInfoLabel.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
-        mgbc.gridx = 0; mgbc.gridy = mrow; mgbc.gridwidth = 2; mgbc.weightx = 1.0;
-        modpackPanel.add(modpackInfoLabel, mgbc);
+        CardLayout modeLayout = new CardLayout();
+        JPanel modeSwitcher = new JPanel(modeLayout);
+        modeSwitcher.setOpaque(false);
+        modeSwitcher.add(freshCards, "FRESH");
+        modeSwitcher.add(modpackCards, "MODPACK");
 
-        JScrollPane modpackScroll = new JScrollPane(modpackPanel);
-        com.launcher.ui.SmoothScroll.install(modpackScroll);
-        modpackScroll.setBorder(null);
-        tabs.addTab("Modpack", modpackScroll);
+        JToggleButton freshModeBtn = new SegButton("Fresh Instance", true);
+        JToggleButton modpackModeBtn = new SegButton("Import Modpack", false);
+        Font sourceBtnFont = new Font("SansSerif", Font.BOLD, 13);
+        Border sourceBtnBorder = new EmptyBorder(11, 22, 11, 22);
+        freshModeBtn.setFont(sourceBtnFont);
+        freshModeBtn.setBorder(sourceBtnBorder);
+        modpackModeBtn.setFont(sourceBtnFont);
+        modpackModeBtn.setBorder(sourceBtnBorder);
+        group(freshModeBtn, modpackModeBtn);
+        freshModeBtn.addActionListener(e -> {
+            modpackMode[0] = false;
+            modeLayout.show(modeSwitcher, "FRESH");
+        });
+        modpackModeBtn.addActionListener(e -> {
+            modpackMode[0] = true;
+            modeLayout.show(modeSwitcher, "MODPACK");
+        });
+        JPanel modeSegRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        modeSegRow.setOpaque(false);
+        modeSegRow.add(freshModeBtn);
+        modeSegRow.add(modpackModeBtn);
 
-        add(tabs, BorderLayout.CENTER);
+        // ── Prominent Source card at the very top ────────────────────────────
+        // Built as its own horizontal banner (title + toggle row side-by-side)
+        // rather than reusing the vertical sectionCard layout, so it comes out
+        // wide and short instead of tall and content-width-sized.
+        JPanel sourceCard = sourceBanner(modeSegRow);
 
-        // ── Loaders ──────────────────────────────────────────────────────────
+        // ── Two balanced columns ──────────────────────────────────────────────
+        // Left: Appearance & Name, then Performance, stacked.
+        // Right: Version & Loader (or Modpack File), then Game Directory (or
+        // Install Location), stacked.
+        //
+        // Rebuilt with plain BoxLayout on both axes instead of GridBagLayout's
+        // fill/weighty machinery, and with NO manually-frozen preferredSize
+        // snapshots anywhere in this method. Freezing a container's preferred
+        // size (via setPreferredSize(getPreferredSize())) bakes in whatever
+        // height Swing happened to compute at that exact moment — before the
+        // component tree is displayable and fonts/metrics are fully resolved —
+        // which is what was silently truncating the Performance / Game
+        // Directory cards. Letting every container size itself naturally on
+        // each real layout pass avoids that class of bug entirely.
+        JPanel leftCol = new JPanel();
+        leftCol.setOpaque(false);
+        leftCol.setLayout(new BoxLayout(leftCol, BoxLayout.Y_AXIS));
+        leftCol.add(sectionCard("Appearance & Name", identityContent(iconView, nameField, chosenImagePath)));
+        leftCol.add(Box.createVerticalStrut(12));
+        leftCol.add(sectionCard("Performance", ramContent(ramSlider, ramLbl)));
+
+        JPanel rightCol = new JPanel();
+        rightCol.setOpaque(false);
+        rightCol.setLayout(new BoxLayout(rightCol, BoxLayout.Y_AXIS));
+        rightCol.add(modeSwitcher);
+
+        // Equal-width side-by-side columns via plain BoxLayout on the X axis.
+        // Both columns get the same maximum width so BoxLayout stretches them
+        // equally, and the taller of the two naturally sets the row's height —
+        // no fill/weighty GridBagLayout constraints needed.
+        leftCol.setAlignmentY(Component.TOP_ALIGNMENT);
+        rightCol.setAlignmentY(Component.TOP_ALIGNMENT);
+        JPanel mainRow = new JPanel();
+        mainRow.setOpaque(false);
+        mainRow.setLayout(new BoxLayout(mainRow, BoxLayout.X_AXIS));
+        mainRow.add(leftCol);
+        mainRow.add(Box.createHorizontalStrut(14));
+        mainRow.add(rightCol);
+
+        sourceCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+        mainRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        // ── Column of cards ───────────────────────────────────────────────────
+        // Source now leads as a single, full-width, prominent banner card;
+        // the two-column area beneath holds everything else. Width is capped
+        // via setMaximumSize only (never a frozen setPreferredSize), so height
+        // is always recomputed fresh from the actual current content.
+        JPanel column = new JPanel();
+        column.setOpaque(false);
+        column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));
+        column.setAlignmentX(Component.CENTER_ALIGNMENT);
+        column.setMaximumSize(new Dimension(MAX_CONTENT_WIDTH, Integer.MAX_VALUE));
+        column.add(sourceCard);
+        column.add(Box.createVerticalStrut(12));
+        column.add(mainRow);
+
+        // Center the (width-capped) column horizontally without GridBagLayout:
+        // a horizontal BoxLayout row with glue on both sides does the same job
+        // and keeps every container in this method on plain BoxLayout.
+        JPanel centered = new JPanel();
+        centered.setOpaque(false);
+        centered.setLayout(new BoxLayout(centered, BoxLayout.X_AXIS));
+        centered.add(Box.createHorizontalGlue());
+        centered.add(column);
+        centered.add(Box.createHorizontalGlue());
+
+        JPanel scrollHost = new JPanel(new BorderLayout());
+        scrollHost.setOpaque(false);
+        scrollHost.setBorder(new EmptyBorder(16, 24, 16, 24));
+        scrollHost.add(centered, BorderLayout.NORTH);
+
+        JScrollPane scroll = new JScrollPane(scrollHost);
+        SmoothScroll.install(scroll);
+        scroll.setBorder(null);
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        add(scroll, BorderLayout.CENTER);
+
+        // ── Loaders (network calls) ─────────────────────────────────────────
         Runnable loadVersions = () -> {
             versionBox.setEnabled(false);
             new Thread(() -> {
@@ -479,7 +405,7 @@ public class CreateInstancePanel extends JPanel {
 
         Runnable loadLoaderVers = () -> {
             loaderVerBox.removeAllItems();
-            ModLoaderType loader = (ModLoaderType) loaderBox.getSelectedItem();
+            ModLoaderType loader = selectedLoader[0];
             String mcVer = (String) versionBox.getSelectedItem();
             if (loader == ModLoaderType.VANILLA || mcVer == null) {
                 loaderVerBox.setEnabled(false);
@@ -532,34 +458,36 @@ public class CreateInstancePanel extends JPanel {
                 }
             }, "fetch-loader-vers").start();
         };
+        loadLoaderVersHolder[0] = loadLoaderVers;
 
         versionBox.addActionListener(e -> loadLoaderVers.run());
-        loaderBox.addActionListener(e -> loadLoaderVers.run());
         snapshotsCb.addActionListener(e -> loadVersions.run());
-
         loadVersions.run();
 
-        // Footer buttons
-        JPanel footerPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
-        footerPanel.setBackground(panelBg);
-        footerPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Main.hexToColor("#282832", new Color(40, 40, 50))));
+        // ── Footer ───────────────────────────────────────────────────────────
+        JPanel footerPanel = new JPanel(new BorderLayout());
+        footerPanel.setOpaque(false);
+        footerPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(255, 255, 255, 18)),
+                new EmptyBorder(14, 24, 14, 24)));
 
-        JButton cancelBtn = new JButton("Cancel");
+        GhostButton cancelBtn = new GhostButton("Cancel");
         cancelBtn.addActionListener(e -> onCancel.run());
-        cancelBtn.setForeground(textColor); // Dynamic text color
-        footerPanel.add(cancelBtn);
+        JPanel leftFooter = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        leftFooter.setOpaque(false);
+        leftFooter.add(cancelBtn);
+        footerPanel.add(leftFooter, BorderLayout.WEST);
 
-        JButton createBtn = new JButton("Create Instance");
-        createBtn.setBackground(accent);
-        createBtn.setForeground(Color.WHITE);
+        PrimaryButton createBtn = new PrimaryButton("Create Instance");
         createBtn.addActionListener(e -> {
             String name = nameField.getText().trim();
             String ver = (String) versionBox.getSelectedItem();
             if (name.isEmpty() || ver == null) {
-                JOptionPane.showMessageDialog(this, "Instance name and MC version are required.", "Error", JOptionPane.ERROR_MESSAGE); // Use 'this' as parent
+                JOptionPane.showMessageDialog(this, "Instance name and MC version are required.", "Error",
+                        JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            ModLoaderType lType = (ModLoaderType) loaderBox.getSelectedItem();
+            ModLoaderType lType = selectedLoader[0];
             String lVer = lType == ModLoaderType.VANILLA ? null : (String) loaderVerBox.getSelectedItem();
 
             Instance newInstance = new Instance(name, ver, lType, lVer);
@@ -567,27 +495,441 @@ public class CreateInstancePanel extends JPanel {
             newInstance.imagePath = chosenImagePath[0];
 
             if (chosenModpackPath[0] != null) {
-                String path = installPathField.getText().trim().isEmpty() ? defaultInstallPath : installPathField.getText().trim();
+                String path = installPathField.getText().trim().isEmpty() ? defaultInstallPath
+                        : installPathField.getText().trim();
                 newInstance.modpackFilePath = chosenModpackPath[0];
                 newInstance.modpackInstallPath = path;
                 newInstance.useCustomDirectory = true;
                 newInstance.customDirectoryPath = path;
             } else {
-                if (defaultDirRadio.isSelected()) {
+                if (defaultDirBtn.isSelected()) {
                     newInstance.useCustomDirectory = true;
-                    newInstance.customDirectoryPath = LauncherPaths.getDefaultMinecraftPath().toAbsolutePath().toString();
-                } else if (customDirRadio.isSelected()) {
+                    newInstance.customDirectoryPath = LauncherPaths.getDefaultMinecraftPath().toAbsolutePath()
+                            .toString();
+                } else {
                     newInstance.useCustomDirectory = true;
                     newInstance.customDirectoryPath = customDirField.getText().trim();
                 }
             }
             onCreate.accept(newInstance);
         });
-        footerPanel.add(createBtn);
+        JPanel rightFooter = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        rightFooter.setOpaque(false);
+        rightFooter.add(createBtn);
+        footerPanel.add(rightFooter, BorderLayout.EAST);
 
         add(footerPanel, BorderLayout.SOUTH);
     }
 
+    // ── Header ───────────────────────────────────────────────────────────────
+    private JPanel buildHeader() {
+        JPanel headerPanel = new JPanel(new BorderLayout(12, 0));
+        headerPanel.setOpaque(false);
+        headerPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(255, 255, 255, 18)),
+                new EmptyBorder(18, 24, 18, 24)));
+
+        GhostButton backBtn = new GhostButton("←");
+        backBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
+        backBtn.addActionListener(e -> onCancel.run());
+        headerPanel.add(backBtn, BorderLayout.WEST);
+
+        JPanel titles = new JPanel();
+        titles.setOpaque(false);
+        titles.setLayout(new BoxLayout(titles, BoxLayout.Y_AXIS));
+        JLabel titleLbl = new JLabel("New Instance");
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 20));
+        titleLbl.setForeground(textColor);
+        JLabel subLbl = new JLabel("Set up a new Minecraft instance");
+        subLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        subLbl.setForeground(textDim);
+        titles.add(titleLbl);
+        titles.add(Box.createVerticalStrut(2));
+        titles.add(subLbl);
+        headerPanel.add(titles, BorderLayout.CENTER);
+
+        return headerPanel;
+    }
+
+    // ── Card content builders ────────────────────────────────────────────────
+    private JPanel identityContent(JLabel iconView, CustomTextField nameField, String[] chosenImagePath) {
+        iconView.setPreferredSize(new Dimension(64, 64));
+        iconView.setMinimumSize(new Dimension(64, 64));
+
+        GhostButton changeImageBtn = new GhostButton("Change Image…");
+        GhostButton resetImageBtn = new GhostButton("Reset");
+        resetImageBtn.setEnabled(false);
+
+        changeImageBtn.addActionListener(e -> {
+            JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle("Choose Instance Image");
+            fc.setFileFilter(new FileNameExtensionFilter("Images", "png", "jpg", "jpeg", "gif", "bmp"));
+            if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                File chosen = fc.getSelectedFile();
+                try {
+                    ImageIcon img = new ImageIcon(chosen.getAbsolutePath());
+                    Image scaled = img.getImage().getScaledInstance(64, 64, Image.SCALE_SMOOTH);
+                    iconView.setIcon(new ImageIcon(scaled));
+                    chosenImagePath[0] = chosen.getAbsolutePath();
+                    resetImageBtn.setEnabled(true);
+                } catch (Exception ignored) {}
+            }
+        });
+        resetImageBtn.addActionListener(e -> {
+            loadDefaultIcon(iconView);
+            chosenImagePath[0] = null;
+            resetImageBtn.setEnabled(false);
+        });
+
+        JPanel imgBtnCol = new JPanel();
+        imgBtnCol.setLayout(new BoxLayout(imgBtnCol, BoxLayout.Y_AXIS));
+        imgBtnCol.setOpaque(false);
+        imgBtnCol.add(changeImageBtn);
+        imgBtnCol.add(Box.createVerticalStrut(6));
+        imgBtnCol.add(resetImageBtn);
+
+        JPanel iconRow = new JPanel(new BorderLayout(14, 0));
+        iconRow.setOpaque(false);
+        iconRow.add(new RoundImageWrapper(iconView), BorderLayout.WEST);
+        iconRow.add(imgBtnCol, BorderLayout.CENTER);
+
+        JPanel content = new JPanel();
+        content.setOpaque(false);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.add(iconRow);
+        content.add(Box.createVerticalStrut(14));
+        content.add(fieldLabel("Instance name"));
+        content.add(Box.createVerticalStrut(4));
+        nameField.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(nameField);
+        return content;
+    }
+
+    private JPanel versionAndLoaderContent(CustomComboBox<String> versionBox, CustomToggle snapshotsCb,
+            JPanel loaderSeg, JLabel loaderVerLabel, CustomComboBox<String> loaderVerBox) {
+        JPanel content = new JPanel();
+        content.setOpaque(false);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+
+        JPanel verRow = new JPanel(new BorderLayout(10, 0));
+        verRow.setOpaque(false);
+        verRow.add(versionBox, BorderLayout.CENTER);
+        snapshotsCb.setOpaque(false);
+        verRow.add(snapshotsCb, BorderLayout.EAST);
+        content.add(fieldLabel("Minecraft version"));
+        content.add(Box.createVerticalStrut(4));
+        content.add(verRow);
+        content.add(Box.createVerticalStrut(14));
+        content.add(fieldLabel("Mod loader"));
+        content.add(Box.createVerticalStrut(6));
+        content.add(loaderSeg);
+        content.add(Box.createVerticalStrut(10));
+        loaderVerLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(loaderVerLabel);
+        content.add(Box.createVerticalStrut(4));
+        loaderVerBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(loaderVerBox);
+        return content;
+    }
+
+    private JPanel ramContent(JSlider ramSlider, JLabel ramLbl) {
+        JPanel content = new JPanel(new BorderLayout(10, 0));
+        content.setOpaque(false);
+        JLabel ramTitle = fieldLabel("Allocated RAM");
+
+        // Title, slider, and value pill all share one row, with the slider
+        // taking up the middle space between the two labels.
+        JPanel labelRow = new JPanel(new BorderLayout(10, 0));
+        labelRow.setOpaque(false);
+        labelRow.add(ramTitle, BorderLayout.WEST);
+        labelRow.add(ramSlider, BorderLayout.CENTER);
+        labelRow.add(ramLbl, BorderLayout.EAST);
+
+        content.add(labelRow, BorderLayout.CENTER);
+        return content;
+    }
+
+    private JPanel directoryContent(JToggleButton defaultDirBtn, JToggleButton customDirBtn, JPanel dirFieldRow) {
+        JPanel content = new JPanel(new BorderLayout(10, 0));
+        content.setOpaque(false);
+        JPanel seg = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        seg.setOpaque(false);
+        seg.add(defaultDirBtn);
+        seg.add(customDirBtn);
+
+        // Field + Browse… sit to the right of the segmented control, on the
+        // same row, instead of dropping to a new line below it.
+        content.add(seg, BorderLayout.WEST);
+        content.add(dirFieldRow, BorderLayout.CENTER);
+        return content;
+    }
+
+    private JPanel modpackFileContent(JLabel modpackFileHint, JButton browseBtn, JButton clearBtn,
+            JLabel detectedInfoLabel) {
+        JPanel content = new JPanel();
+        content.setOpaque(false);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+
+        JLabel hint = new JLabel("Supports .mrpack (Modrinth) and CurseForge/MultiMC-style zip modpacks.");
+        hint.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        hint.setForeground(textDim);
+        content.add(hint);
+        content.add(Box.createVerticalStrut(10));
+
+        JPanel fileRow = new JPanel(new BorderLayout(10, 0));
+        fileRow.setOpaque(false);
+        modpackFileHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        fileRow.add(modpackFileHint, BorderLayout.CENTER);
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        btns.setOpaque(false);
+        btns.add(browseBtn);
+        btns.add(clearBtn);
+        fileRow.add(btns, BorderLayout.EAST);
+        content.add(fileRow);
+        content.add(Box.createVerticalStrut(8));
+        detectedInfoLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(detectedInfoLabel);
+        return content;
+    }
+
+    private JPanel installLocationContent(CustomTextField installPathField, JButton browseBtn, JButton resetBtn) {
+        JPanel content = new JPanel();
+        content.setOpaque(false);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.add(fieldLabel("Install path"));
+        content.add(Box.createVerticalStrut(6));
+        JPanel row = new JPanel(new BorderLayout(8, 0));
+        row.setOpaque(false);
+        row.add(installPathField, BorderLayout.CENTER);
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        btns.setOpaque(false);
+        btns.add(browseBtn);
+        btns.add(resetBtn);
+        row.add(btns, BorderLayout.EAST);
+        content.add(row);
+        return content;
+    }
+
+    // ── Small styling helpers ────────────────────────────────────────────────
+    private static void group(JToggleButton... buttons) {
+        ButtonGroup g = new ButtonGroup();
+        for (JToggleButton b : buttons) g.add(b);
+    }
+
+    private static String prettyLoaderName(ModLoaderType type) {
+        return switch (type) {
+            case VANILLA -> "Vanilla";
+            case FABRIC -> "Fabric";
+            case QUILT -> "Quilt";
+            case FORGE -> "Forge";
+            case NEOFORGE -> "NeoForge";
+        };
+    }
+
+    private JLabel fieldLabel(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(new Font("SansSerif", Font.BOLD, 11));
+        l.setForeground(textDim);
+        l.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return l;
+    }
+
+    private JLabel pill(String text, Color accentColor) {
+        JLabel lbl = new JLabel(text) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        lbl.setOpaque(false);
+        lbl.setForeground(accentColor);
+        lbl.setBackground(new Color(accentColor.getRed(), accentColor.getGreen(), accentColor.getBlue(), 30));
+        lbl.setFont(new Font("SansSerif", Font.BOLD, 11));
+        lbl.setBorder(new EmptyBorder(3, 9, 3, 9));
+        return lbl;
+    }
+
+    /** Wide, short horizontal banner card: just the Fresh/Modpack toggle, centered. */
+    private JPanel sourceBanner(JComponent toggleRow) {
+        Card card = new Card(CARD_ARC, cardFill, cardBorder);
+        card.setLayout(new GridBagLayout());
+        card.setBorder(new EmptyBorder(16, 22, 16, 22));
+        card.add(toggleRow, new GridBagConstraints());
+        return card;
+    }
+
+    /** Wraps a section's content in a titled, rounded "glass" card. */
+    private JPanel sectionCard(String title, JComponent content) {
+        Card card = new Card(CARD_ARC, cardFill, cardBorder);
+        card.setLayout(new BorderLayout());
+        card.setBorder(new EmptyBorder(14, 22, 14, 22));
+
+        JLabel titleLbl = new JLabel(title.toUpperCase());
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 11));
+        titleLbl.setForeground(textDim);
+        titleLbl.setBorder(new EmptyBorder(0, 0, 12, 0));
+        card.add(titleLbl, BorderLayout.NORTH);
+        card.add(content, BorderLayout.CENTER);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return card;
+    }
+
+    /** Rounded-rect background/border "glass" card, self-contained (no cross-package dependency on Main). */
+    private static class Card extends JPanel {
+        private final int radius;
+        private final Color fill;
+        private final Color border;
+
+        Card(int radius, Color fill, Color border) {
+            this.radius = radius;
+            this.fill = fill;
+            this.border = border;
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            RoundRectangle2D.Float shape = new RoundRectangle2D.Float(
+                    0.5f, 0.5f, getWidth() - 1f, getHeight() - 1f, radius, radius);
+            g2.setColor(fill);
+            g2.fill(shape);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    /** Clips a preview icon into a rounded square with a faint edge ring. */
+    private static class RoundImageWrapper extends JPanel {
+        private final JLabel inner;
+
+        RoundImageWrapper(JLabel inner) {
+            this.inner = inner;
+            setOpaque(false);
+            setLayout(null);
+            setPreferredSize(new Dimension(64, 64));
+            // inner is not added as a child — its icon is painted directly (clipped)
+            // below, so the label itself never renders un-clipped on top.
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int s = Math.min(getWidth(), getHeight());
+            RoundRectangle2D.Float shape = new RoundRectangle2D.Float(0, 0, s, s, 14, 14);
+            Shape oldClip = g2.getClip();
+            g2.clip(shape);
+            if (inner.getIcon() != null) {
+                inner.getIcon().paintIcon(this, g2, 0, 0);
+            } else {
+                g2.setColor(new Color(255, 255, 255, 20));
+                g2.fill(shape);
+            }
+            g2.setClip(oldClip);
+            g2.setColor(new Color(255, 255, 255, 26));
+            g2.draw(shape);
+            g2.dispose();
+        }
+    }
+
+    /** Filled, accent-colored primary action button (e.g. "Create Instance"). */
+    private class PrimaryButton extends JButton {
+        PrimaryButton(String text) {
+            super(text);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setForeground(Color.WHITE);
+            setFont(new Font("SansSerif", Font.BOLD, 13));
+            setBorder(new EmptyBorder(10, 22, 10, 22));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Color fill = accent;
+            if (getModel().isPressed()) fill = fill.darker();
+            else if (getModel().isRollover()) {
+                fill = new Color(Math.min(255, fill.getRed() + 14), Math.min(255, fill.getGreen() + 14),
+                        Math.min(255, fill.getBlue() + 14));
+            }
+            g2.setColor(fill);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    /** Transparent, outlined secondary/utility button (Cancel, Browse…, etc.). */
+    private class GhostButton extends JButton {
+        GhostButton(String text) {
+            super(text);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setForeground(textColor);
+            setFont(new Font("SansSerif", Font.PLAIN, 12));
+            setBorder(new EmptyBorder(7, 14, 7, 14));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Color fill = isEnabled()
+                    ? (getModel().isRollover() ? new Color(255, 255, 255, 24) : new Color(255, 255, 255, 12))
+                    : new Color(255, 255, 255, 6);
+            g2.setColor(fill);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+            g2.setColor(new Color(255, 255, 255, 22));
+            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+            g2.dispose();
+            setForeground(isEnabled() ? textColor : textDim);
+            super.paintComponent(g);
+        }
+    }
+
+    /** Pill-shaped segmented-control button (loader picker, mode switch, dir choice). */
+    private class SegButton extends JToggleButton {
+        SegButton(String text, boolean selected) {
+            super(text, selected);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setFont(new Font("SansSerif", Font.BOLD, 11));
+            setBorder(new EmptyBorder(6, 12, 6, 12));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            boolean sel = isSelected();
+            Color fill = sel ? accent : (getModel().isRollover() ? new Color(255, 255, 255, 20)
+                    : new Color(255, 255, 255, 10));
+            g2.setColor(fill);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+            g2.dispose();
+            setForeground(sel ? Color.WHITE : textDim);
+            super.paintComponent(g);
+        }
+    }
+
+    // ── Filesystem / metadata helpers (unchanged behavior from the original) ─
     private static String resolveDefaultModpackPath() {
         try {
             Path home = Path.of(System.getProperty("user.home", "."));
@@ -599,7 +941,7 @@ public class CreateInstancePanel extends JPanel {
 
     private static void loadDefaultIcon(JLabel label) {
         try {
-            InputStream is = CreateInstancePanel.class.getResourceAsStream("/com/launcher/minecraft_image.png");
+            InputStream is = CreateInstancePanel.class.getResourceAsStream("/com/launcher/logos/loader.png");
             if (is != null) {
                 BufferedImage img = ImageIO.read(is);
                 Image scaled = img.getScaledInstance(64, 64, Image.SCALE_SMOOTH);
@@ -608,30 +950,6 @@ public class CreateInstancePanel extends JPanel {
             }
         } catch (Exception ignored) {}
         label.setIcon(null);
-    }
-
-    private static void addSectionHeader(JPanel panel, String text, int row, GridBagConstraints gbc, Color textColor) {
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 3; gbc.weightx = 1.0;
-        JPanel sepPanel = new JPanel(new GridBagLayout());
-        sepPanel.setBackground(panel.getBackground());
-        JLabel l = new JLabel(text.toUpperCase());
-        l.setFont(new Font("SansSerif", Font.BOLD, 10));
-        l.setForeground(Main.hexToColor("#9696a0", new Color(150, 150, 160)));
-        JSeparator sep = new JSeparator();
-        GridBagConstraints sgbc = new GridBagConstraints();
-        sgbc.fill = GridBagConstraints.HORIZONTAL;
-        sgbc.insets = new Insets(0, 8, 0, 0);
-        sgbc.weightx = 1.0;
-        sepPanel.add(l);
-        sepPanel.add(sep, sgbc);
-        panel.add(sepPanel, gbc);
-    }
-
-    private static JLabel fieldLabel(String text, Color textColor) {
-        JLabel l = new JLabel(text);
-        l.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        l.setForeground(textColor);
-        return l;
     }
 
     private static class ModpackMeta {

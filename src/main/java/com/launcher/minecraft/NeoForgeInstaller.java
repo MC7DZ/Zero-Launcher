@@ -180,6 +180,8 @@ public class NeoForgeInstaller {
             logIf(log, "Using cached NeoForge installer: " + installerJar);
         }
 
+        ensureLauncherProfile(gameDir);
+
         logIf(log, "Running NeoForge installer (this may take a minute) …");
         int exitCode = runInstallerProcess(installerJar, gameDir, log);
         if (exitCode != 0) {
@@ -214,6 +216,26 @@ public class NeoForgeInstaller {
     // ------------------------------------------------------------------------
     // Internal helpers
     // ------------------------------------------------------------------------
+
+    /**
+     * The official NeoForge (and Forge) installer jars refuse to run in
+     * {@code --install-client} mode unless the target directory already
+     * looks like a real {@code .minecraft} folder — specifically, they check
+     * for the presence of {@code launcher_profiles.json}. Since this launcher
+     * manages its own instance/profile data and never writes that file, the
+     * installer was failing with "There is no minecraft launcher profile in
+     * ..., you need to run the launcher first!" (exit code 1). Writing a
+     * minimal stub here satisfies that check without affecting anything else.
+     */
+    private void ensureLauncherProfile(Path gameDir) throws IOException {
+        Path profile = gameDir.resolve("launcher_profiles.json");
+        if (Files.exists(profile)) {
+            return;
+        }
+        Files.createDirectories(gameDir);
+        String stub = "{\"profiles\":{},\"settings\":{},\"version\":3}";
+        Files.writeString(profile, stub);
+    }
 
     private Path resolveInstallerPath(String neoForgeVersion, Path gameDir) throws IOException {
         Path cacheRoot = globalCacheDir != null ? globalCacheDir : gameDir.resolve(".neoforge-installer-cache");

@@ -64,7 +64,7 @@ public class GameLauncher {
             ensureArg(command, "--userType", "legacy");
             ensureArg(command, "--version", version.id);
             ensureArg(command, "--gameDir", gameDir.toAbsolutePath().toString());
-            ensureArg(command, "--assetsDir", LauncherPaths.assetsDir().toAbsolutePath().toString());
+            ensureArg(command, "--assetsDir", LauncherPaths.assetsDir(gameDir).toAbsolutePath().toString());
             if (version.assetIndexId != null) ensureArg(command, "--assetIndex", version.assetIndexId);
         }
 
@@ -89,7 +89,7 @@ public class GameLauncher {
         m.put("auth_player_name", account.username);
         m.put("version_name", version.id);
         m.put("game_directory", gameDir.toAbsolutePath().toString());
-        m.put("assets_root", LauncherPaths.assetsDir().toAbsolutePath().toString());
+        m.put("assets_root", LauncherPaths.assetsDir(gameDir).toAbsolutePath().toString());
         m.put("assets_index_name", version.assetIndexId != null ? version.assetIndexId : "legacy");
         m.put("auth_uuid", stripDashes(account.uuid));
         m.put("auth_access_token", "0");

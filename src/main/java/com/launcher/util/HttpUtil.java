@@ -109,7 +109,7 @@ public final class HttpUtil {
 
         for (int i = 0; i < 3; i++) {
             try {
-                HttpRequest req = baseRequestBuilder(url).timeout(Duration.ofSeconds(30)).GET().build();
+                HttpRequest req = baseRequestBuilder(url).timeout(Duration.ofSeconds(60)).GET().build();
                 HttpResponse<Path> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofFile(tmp));
 
                 if (resp.statusCode() / 100 != 2) throw new IOException("HTTP " + resp.statusCode());
@@ -119,7 +119,7 @@ public final class HttpUtil {
             } catch (IOException e) {
                 Files.deleteIfExists(tmp);
                 if (i == 2) throw e;
-                Thread.sleep(1000); // Wait longer between retries
+                Thread.sleep(2000); // Wait longer between retries
             }
         }
     }

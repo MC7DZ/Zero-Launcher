@@ -153,7 +153,7 @@ public class ForgeInstaller {
         }
 
         String fullVersion = mcVersion + "-" + forgeVersion;
-        Path installerJar = resolveInstallerPath(fullVersion);
+        Path installerJar = resolveInstallerPath(fullVersion, gameDir);
         if (Files.notExists(installerJar)) {
             String installerUrl = baseUrl + "/" + fullVersion + "/forge-" + fullVersion + "-installer.jar";
             logIf(log, "Downloading Forge installer for " + fullVersion + " ...");
@@ -161,6 +161,8 @@ public class ForgeInstaller {
         } else {
             logIf(log, "Using cached Forge installer: " + installerJar);
         }
+
+        ensureLauncherProfile(gameDir);
 
         logIf(log, "Running Forge installer (this can take a minute) ...");
         int exitCode = runInstallerProcess(installerJar, gameDir, log);
@@ -195,21 +197,23 @@ public class ForgeInstaller {
     // Internal helpers
     // ------------------------------------------------------------------------
 
-    private Path resolveInstallerPath(String fullVersion) throws IOException {
-        if (globalCacheDir != null) {
-            Path dir = globalCacheDir.resolve("forge-installer");
-            Files.createDirectories(dir);
-            return dir.resolve("forge-" + fullVersion + "-installer.jar");
-        } else {
-            // default: inside gameDir's .forge-installer-cache
-            Path dir = Paths.get(System.getProperty("user.home"), ".forge-installer-cache");
-            // But we can also use gameDir if we had it; but we don't have it here.
-            // Actually we have gameDir only in installClient. We'll pass it there.
-            // So better to resolve inside installClient with gameDir.
-            // Let's refactor: we'll pass gameDir to resolveInstallerPath.
-            // We'll modify to accept gameDir.
+    /**
+     * The official Forge (and NeoForge) installer jars refuse to run in
+     * {@code --installClient} mode unless the target directory already looks
+     * like a real {@code .minecraft} folder — specifically, they check for
+     * {@code launcher_profiles.json}. Since this launcher never writes that
+     * file, the installer would otherwise fail immediately with "There is no
+     * minecraft launcher profile in ..., you need to run the launcher first!"
+     * Writing a minimal stub here satisfies that check.
+     */
+    private void ensureLauncherProfile(Path gameDir) throws IOException {
+        Path profile = gameDir.resolve("launcher_profiles.json");
+        if (Files.exists(profile)) {
+            return;
         }
-        return null; // won't be reached
+        Files.createDirectories(gameDir);
+        String stub = "{\"profiles\":{},\"settings\":{},\"version\":3}";
+        Files.writeString(profile, stub);
     }
 
     // Override: we'll use gameDir-based cache.

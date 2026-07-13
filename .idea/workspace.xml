@@ -4,62 +4,23 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="s">
+    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="chnage the discover cards design add devloper section in the settings">
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CustomComboBox.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/launcher/util/JavaInstallationFinder.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/MainWrapper.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/auth/OfflineAuthService.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/AccountManager.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/DiscordRpcManager.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/DownloadManager.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/FontManager.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/InstanceManager.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/LauncherPaths.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/SettingsManager.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/FabricInstaller.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ForgeInstaller.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/GameInstaller.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/GameLauncher.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModUpdateService.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModpackExtractor.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/NeoForgeInstaller.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/QuiltInstaller.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ResolvedVersion.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ServerListReader.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/VersionManifestService.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/Account.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/AccountType.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/Instance.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/ModEntry.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/ModLoaderType.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/AddAccountPanel.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstanceDialog.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstancePanel.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CustomTitleBar.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstanceDialog.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstancePanel.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/LoginDialog.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationCenter.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationPanel.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/WindowResizer.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/WrapLayout.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/util/HttpUtil.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/util/JsonUtil.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/util/SingleInstanceGuard.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/launcher/Tray_icon.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/launcher/ZeroLauncherIcon.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/launcher/dawn_client_icon.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/launcher/fonts/Minecraft.ttf" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/launcher/minecraft_image.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/launcher/styles.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/launcher/ZeroLauncherIcon.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/launcher/dawn_client_icon.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/launcher/fonts/Minecraft.ttf" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/launcher/minecraft_image.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/launcher/styles.css" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/LauncherPaths.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/manager/LauncherPaths.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/SettingsManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/manager/SettingsManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/GameInstaller.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/GameInstaller.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/GameLauncher.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/GameLauncher.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstanceDialog.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstanceDialog.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstancePanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstancePanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstanceDialog.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstanceDialog.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstancePanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstancePanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/util/HttpUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/util/HttpUtil.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/com/launcher/Tray_icon.png" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Tray_icon.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/com/launcher/ZeroLauncherIcon.png" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/ZeroLauncherIcon.png" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -67,7 +28,7 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="62" />
+    <option name="cachedIndexableFilesCount" value="72" />
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -90,61 +51,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.4192612333427286" />
-      <entry key="MS500" value="2.4694768146569164" />
-      <entry key="S2" value="4.349480907211482" />
-      <entry key="S5" value="5.577405213628373" />
-      <entry key="S10" value="6.200881471755927" />
-      <entry key="S30" value="6.710346080869415" />
-      <entry key="S60" value="6.851984898154754" />
-      <entry key="M2" value="6.92852966670641" />
-      <entry key="M5" value="8.770982345048843" />
-      <entry key="M10" value="21.673625703778086" />
-      <entry key="M15" value="36.567816031101756" />
-      <entry key="M30" value="66.56572689306267" />
-      <entry key="H1" value="91.54424889909396" />
-      <entry key="H2" value="107.723580213396" />
-      <entry key="H4" value="116.94001527827065" />
-      <entry key="D1" value="125.26156220391903" />
-      <entry key="W1" value="126.75009544326126" />
+      <entry key="MS100" value="1.0000126559102036" />
+      <entry key="MS500" value="1.1295375880257041" />
+      <entry key="S2" value="3.009600037045549" />
+      <entry key="S5" value="6.698305092823978" />
+      <entry key="S10" value="9.734586140991304" />
+      <entry key="S30" value="12.902198896492841" />
+      <entry key="S60" value="13.900286142588696" />
+      <entry key="M2" value="14.43995191357465" />
+      <entry key="M5" value="16.540710258428277" />
+      <entry key="M10" value="29.443657359447844" />
+      <entry key="M15" value="44.32614240990083" />
+      <entry key="M30" value="74.35581962787073" />
+      <entry key="H1" value="99.40218029898071" />
+      <entry key="H2" value="115.64051999660484" />
+      <entry key="H4" value="124.89505908960642" />
+      <entry key="D1" value="133.25355385661797" />
+      <entry key="W1" value="134.74893821574247" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
       <entry key="MS500" value="0.0" />
-      <entry key="S2" value="1.9388879480444158E-268" />
-      <entry key="S5" value="8.22282569753175E-108" />
-      <entry key="S10" value="2.867546982619771E-54" />
-      <entry key="S30" value="1.4207037083740002E-18" />
-      <entry key="S60" value="1.1919327616833088E-9" />
-      <entry key="M2" value="3.4524379236755426E-5" />
-      <entry key="M5" value="0.01641535772701338" />
-      <entry key="M10" value="0.12812243256749933" />
-      <entry key="M15" value="0.25414610049566233" />
-      <entry key="M30" value="0.5041290514299512" />
-      <entry key="H1" value="0.7100204584587344" />
-      <entry key="H2" value="0.8426271170919757" />
-      <entry key="H4" value="0.9179472300148713" />
-      <entry key="D1" value="0.9858320939984048" />
-      <entry key="W1" value="0.9979636149735983" />
+      <entry key="S2" value="1.3413237758841937E-269" />
+      <entry key="S5" value="2.824967456489361E-108" />
+      <entry key="S10" value="1.680763950258739E-54" />
+      <entry key="S30" value="1.1889645561318199E-18" />
+      <entry key="S60" value="1.090396513261033E-9" />
+      <entry key="M2" value="3.302115251260976E-5" />
+      <entry key="M5" value="0.016125637428303287" />
+      <entry key="M10" value="0.12698676083869265" />
+      <entry key="M15" value="0.2526420462895655" />
+      <entry key="M30" value="0.5026351025242525" />
+      <entry key="H1" value="0.7089676315067229" />
+      <entry key="H2" value="0.8420021564739145" />
+      <entry key="H4" value="0.9176067548105311" />
+      <entry key="D1" value="0.9857711421887829" />
+      <entry key="W1" value="0.9979548001865064" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.7919636928289637" />
-      <entry key="MS500" value="2.283673711408868" />
-      <entry key="S2" value="4.294278750341924" />
-      <entry key="S5" value="5.553589467411229" />
-      <entry key="S10" value="6.188563842474106" />
-      <entry key="S30" value="6.706132042186427" />
-      <entry key="S60" value="6.8498630732501375" />
-      <entry key="M2" value="6.927497546688564" />
-      <entry key="M5" value="8.786583305261253" />
-      <entry key="M10" value="21.799988485194618" />
-      <entry key="M15" value="36.81975952259849" />
-      <entry key="M30" value="67.06772545782516" />
-      <entry key="H1" value="92.25277786851942" />
-      <entry key="H2" value="108.56532391474843" />
-      <entry key="H4" value="117.85748164291822" />
-      <entry key="D1" value="126.24730826616486" />
-      <entry key="W1" value="127.74804661760369" />
+      <entry key="MS100" value="0.913842391735463" />
+      <entry key="MS500" value="1.1080632317757295" />
+      <entry key="S2" value="2.9806797119487154" />
+      <entry key="S5" value="6.659608300534768" />
+      <entry key="S10" value="9.7037725663543" />
+      <entry key="S30" value="12.888022969285712" />
+      <entry key="S60" value="13.892593715771968" />
+      <entry key="M2" value="14.435975511614961" />
+      <entry key="M5" value="16.554812007884163" />
+      <entry key="M10" value="29.56828335965098" />
+      <entry key="M15" value="44.57618267738943" />
+      <entry key="M30" value="74.8561239197686" />
+      <entry key="H1" value="100.10955520027358" />
+      <entry key="H2" value="116.48158763262022" />
+      <entry key="H4" value="125.8121592690512" />
+      <entry key="D1" value="134.23923465648173" />
+      <entry key="W1" value="135.7468799588232" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -255,7 +216,15 @@
       <option name="project" value="LOCAL" />
       <updated>1783780428756</updated>
     </task>
-    <option name="localTasksCounter" value="9" />
+    <task id="LOCAL-00009" summary="add fix button and dropdown &#10;make the launcher more orginaized &#10;remake the discover section look">
+      <option name="closed" value="true" />
+      <created>1783857803042</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1783857803042</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -280,6 +249,8 @@
     <MESSAGE value="add notifications styles &#10;fix the windowing system &#10;add system tray&#10;add multi instances" />
     <MESSAGE value="add loading screen" />
     <MESSAGE value="s" />
-    <option name="LAST_COMMIT_MESSAGE" value="s" />
+    <MESSAGE value="add fix button and dropdown &#10;make the launcher more orginaized &#10;remake the discover section look" />
+    <MESSAGE value="chnage the discover cards design add devloper section in the settings" />
+    <option name="LAST_COMMIT_MESSAGE" value="chnage the discover cards design add devloper section in the settings" />
   </component>
 </project>
