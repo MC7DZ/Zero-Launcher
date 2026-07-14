@@ -40,7 +40,13 @@ public class ModUpdateService {
 
         List<Path> jarFiles;
         try (Stream<Path> files = Files.list(modsDir)) {
-            jarFiles = files.filter(p -> p.getFileName().toString().toLowerCase().endsWith(".jar"))
+            jarFiles = files.filter(p -> {
+                        String n = p.getFileName().toString().toLowerCase();
+                        // Disabled mods are kept on disk as "<name>.jar.disabled" so they're
+                        // excluded from the actual game's classpath, but we still want to
+                        // list them here (as disabled) so the user can re-enable them.
+                        return n.endsWith(".jar") || n.endsWith(".jar.disabled");
+                    })
                     .sorted()
                     .toList();
         }
@@ -119,6 +125,17 @@ public class ModUpdateService {
                         String vName = versionObj.get("name").getAsString();
                         // Use it as project name if we don't have one
                         if (mod.projectName == null) mod.projectName = vName;
+                    }
+
+                    // Modrinth's version_files response includes the loaders this specific
+                    // jar/version supports (e.g. ["fabric"], ["forge","neoforge"]) — capture
+                    // it so the Mods tab's loader filter chips can filter by it.
+                    if (versionObj.has("loaders") && versionObj.get("loaders").isJsonArray()) {
+                        java.util.List<String> loaderList = new ArrayList<>();
+                        for (JsonElement le : versionObj.getAsJsonArray("loaders")) {
+                            loaderList.add(le.getAsString().toLowerCase());
+                        }
+                        mod.loaders = loaderList;
                     }
                 }
             }
@@ -400,6 +417,20 @@ public class ModUpdateService {
      */
     public JsonObject searchProjectsPage(String query, String projectType, String loader, String gameVersion,
                                           int offset, int limit) throws Exception {
+        return searchProjectsPage(query, projectType,
+                (loader == null || loader.isBlank()) ? java.util.List.of() : java.util.List.of(loader),
+                gameVersion, offset, limit);
+    }
+
+    /**
+     * Same as {@link #searchProjectsPage(String, String, String, String, int, int)}, but accepts
+     * multiple loaders at once (e.g. the Discover tab's Fabric/Forge/NeoForge/Quilt filter chips).
+     * When more than one loader is given, they're combined with OR (a project matching ANY of the
+     * selected loaders is returned) — Modrinth facets treat entries within the same inner array as
+     * OR and separate inner arrays as AND. An empty/null list means no loader filter at all.
+     */
+    public JsonObject searchProjectsPage(String query, String projectType, java.util.List<String> loaders, String gameVersion,
+                                          int offset, int limit) throws Exception {
         StringBuilder url = new StringBuilder(MODRINTH_API + "/search?");
         url.append("query=").append(java.net.URLEncoder.encode(query == null ? "" : query, "UTF-8"));
 
@@ -410,10 +441,16 @@ public class ModUpdateService {
         facets.add(projectTypeFacet);
 
         // Loader filtering only makes sense for mods — resource packs aren't loader-specific.
-        if ("mod".equals(projectType) && loader != null && !loader.isBlank()) {
+        if ("mod".equals(projectType) && loaders != null && !loaders.isEmpty()) {
             JsonArray loaderFacet = new JsonArray();
-            loaderFacet.add("categories:" + loader.toLowerCase());
-            facets.add(loaderFacet);
+            for (String loader : loaders) {
+                if (loader != null && !loader.isBlank()) {
+                    loaderFacet.add("categories:" + loader.toLowerCase());
+                }
+            }
+            if (loaderFacet.size() > 0) {
+                facets.add(loaderFacet);
+            }
         }
 
         // Neither mods nor resource packs are filtered by game version anymore — every result

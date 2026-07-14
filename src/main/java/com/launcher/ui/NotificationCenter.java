@@ -28,7 +28,7 @@ import java.util.List;
 public final class NotificationCenter extends JPanel {
 
     private static final int MAX_VISIBLE = 4;
-    private static final int WIDTH = 450;
+    private static final int WIDTH = 420;
     private static final int GAP = 8;
     private static final int DEFAULT_DURATION_MS = 5000;
     private static final int ERROR_DURATION_MS = 8000;

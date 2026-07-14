@@ -88,16 +88,14 @@ public class NotificationPanel extends JPanel {
         textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
 
         Color textColor = Main.hexToColor(settings.textColor, new Color(226, 226, 234));
-        JLabel titleLabel = new JLabel("<html><b>" + escape(title) + "</b></html>");
+        JLabel titleLabel = new JLabel("<html><body style='width: 300px;'><b>" + escape(title) + "</b></body></html>");
         titleLabel.setFont(new Font("SansSerif", Font.BOLD, 15));
         titleLabel.setForeground(textColor);
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         textCol.add(titleLabel);
 
         if (message != null && !message.isBlank()) {
-            FontMetrics fm = getFontMetrics(new Font("SansSerif", Font.PLAIN, 13));
-            int textW = SwingUtilities.computeStringWidth(fm, message);
-            int wrapW = Math.min(420, Math.max(250, textW + 30));
+            int wrapW = 300;
             JLabel msgLabel = new JLabel("<html><body style='width: " + wrapW + "px;'>" + escape(message).replace("\n", "<br>") + "</body></html>");
             msgLabel.setFont(new Font("SansSerif", Font.PLAIN, 13));
             msgLabel.setForeground(Main.hexToColor("#a1a1aa", new Color(161, 161, 170)));
@@ -173,7 +171,7 @@ public class NotificationPanel extends JPanel {
     @Override
     public Dimension getPreferredSize() {
         Dimension d = super.getPreferredSize();
-        return new Dimension(Math.max(d.width, 320), Math.max(d.height, 70));
+        return new Dimension(Math.max(d.width, 380), Math.max(d.height, 70));
     }
 
     private java.awt.image.BufferedImage getFrostedBackground() {

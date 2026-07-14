@@ -4,23 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="chnage the discover cards design add devloper section in the settings">
-      <change afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CustomComboBox.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/java/com/launcher/util/JavaInstallationFinder.java" afterDir="false" />
+    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="fix some bugs from instanlig other mods loaders">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/LauncherPaths.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/manager/LauncherPaths.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/SettingsManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/manager/SettingsManager.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/GameInstaller.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/GameInstaller.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/GameLauncher.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/GameLauncher.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstanceDialog.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstanceDialog.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstancePanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstancePanel.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstanceDialog.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstanceDialog.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstancePanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstancePanel.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/util/HttpUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/util/HttpUtil.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/launcher/Tray_icon.png" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Tray_icon.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/launcher/ZeroLauncherIcon.png" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/ZeroLauncherIcon.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModUpdateService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModUpdateService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/ModEntry.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/model/ModEntry.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationCenter.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationCenter.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationPanel.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -51,61 +41,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.0000126559102036" />
-      <entry key="MS500" value="1.1295375880257041" />
-      <entry key="S2" value="3.009600037045549" />
-      <entry key="S5" value="6.698305092823978" />
-      <entry key="S10" value="9.734586140991304" />
-      <entry key="S30" value="12.902198896492841" />
-      <entry key="S60" value="13.900286142588696" />
-      <entry key="M2" value="14.43995191357465" />
-      <entry key="M5" value="16.540710258428277" />
-      <entry key="M10" value="29.443657359447844" />
-      <entry key="M15" value="44.32614240990083" />
-      <entry key="M30" value="74.35581962787073" />
-      <entry key="H1" value="99.40218029898071" />
-      <entry key="H2" value="115.64051999660484" />
-      <entry key="H4" value="124.89505908960642" />
-      <entry key="D1" value="133.25355385661797" />
-      <entry key="W1" value="134.74893821574247" />
+      <entry key="MS100" value="1.0308311106116157" />
+      <entry key="MS500" value="1.6498067513873522" />
+      <entry key="S2" value="4.2293462194197025" />
+      <entry key="S5" value="8.072216384837784" />
+      <entry key="S10" value="13.185239359886129" />
+      <entry key="S30" value="24.92934032149365" />
+      <entry key="S60" value="31.13407577001644" />
+      <entry key="M2" value="35.1673291774838" />
+      <entry key="M5" value="39.60351207639449" />
+      <entry key="M10" value="52.99788891180183" />
+      <entry key="M15" value="67.99970937476118" />
+      <entry key="M30" value="98.32620956042163" />
+      <entry key="H1" value="123.73419380118396" />
+      <entry key="H2" value="140.25679080706797" />
+      <entry key="H4" value="149.68900939826167" />
+      <entry key="D1" value="158.2170757756832" />
+      <entry key="W1" value="159.743672441271" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
       <entry key="MS500" value="0.0" />
-      <entry key="S2" value="1.3413237758841937E-269" />
-      <entry key="S5" value="2.824967456489361E-108" />
-      <entry key="S10" value="1.680763950258739E-54" />
-      <entry key="S30" value="1.1889645561318199E-18" />
-      <entry key="S60" value="1.090396513261033E-9" />
-      <entry key="M2" value="3.302115251260976E-5" />
-      <entry key="M5" value="0.016125637428303287" />
-      <entry key="M10" value="0.12698676083869265" />
-      <entry key="M15" value="0.2526420462895655" />
-      <entry key="M30" value="0.5026351025242525" />
-      <entry key="H1" value="0.7089676315067229" />
-      <entry key="H2" value="0.8420021564739145" />
-      <entry key="H4" value="0.9176067548105311" />
-      <entry key="D1" value="0.9857711421887829" />
-      <entry key="W1" value="0.9979548001865064" />
+      <entry key="S2" value="2.392962849131447E-274" />
+      <entry key="S5" value="3.561019751143352E-110" />
+      <entry key="S10" value="1.8870664405747227E-55" />
+      <entry key="S30" value="5.735822858792343E-19" />
+      <entry key="S60" value="7.573521544692625E-10" />
+      <entry key="M2" value="2.752003187623994E-5" />
+      <entry key="M5" value="0.014991999982663103" />
+      <entry key="M10" value="0.12244182284931547" />
+      <entry key="M15" value="0.24657735577103043" />
+      <entry key="M30" value="0.4965655603956343" />
+      <entry key="H1" value="0.7046740809733496" />
+      <entry key="H2" value="0.8394486767952812" />
+      <entry key="H4" value="0.9162143181566633" />
+      <entry key="D1" value="0.9855216721138419" />
+      <entry key="W1" value="0.9979187172148979" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.913842391735463" />
-      <entry key="MS500" value="1.1080632317757295" />
-      <entry key="S2" value="2.9806797119487154" />
-      <entry key="S5" value="6.659608300534768" />
-      <entry key="S10" value="9.7037725663543" />
-      <entry key="S30" value="12.888022969285712" />
-      <entry key="S60" value="13.892593715771968" />
-      <entry key="M2" value="14.435975511614961" />
-      <entry key="M5" value="16.554812007884163" />
-      <entry key="M10" value="29.56828335965098" />
-      <entry key="M15" value="44.57618267738943" />
-      <entry key="M30" value="74.8561239197686" />
-      <entry key="H1" value="100.10955520027358" />
-      <entry key="H2" value="116.48158763262022" />
-      <entry key="H4" value="125.8121592690512" />
-      <entry key="D1" value="134.23923465648173" />
-      <entry key="W1" value="135.7468799588232" />
+      <entry key="MS100" value="0.9362858960184931" />
+      <entry key="MS500" value="1.6222728423746646" />
+      <entry key="S2" value="4.214059047290574" />
+      <entry key="S5" value="8.058148909849466" />
+      <entry key="S10" value="13.164637445983503" />
+      <entry key="S30" value="24.906588833011167" />
+      <entry key="S60" value="31.11803344220024" />
+      <entry key="M2" value="35.15778359753531" />
+      <entry key="M5" value="39.61388733070822" />
+      <entry key="M10" value="53.11664363332523" />
+      <entry key="M15" value="68.24279701529134" />
+      <entry key="M30" value="98.81999228479523" />
+      <entry key="H1" value="124.43704345771356" />
+      <entry key="H2" value="141.09518681255605" />
+      <entry key="H4" value="150.604657338405" />
+      <entry key="D1" value="159.2024970221349" />
+      <entry key="W1" value="160.74157665784023" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -117,25 +107,26 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/monib/.minecraft/resourcepacks&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "main",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/home/monib/.minecraft/resourcepacks",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "preferences.pluginManager"
   }
-}</component>
+}]]></component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -224,7 +215,15 @@
       <option name="project" value="LOCAL" />
       <updated>1783857803042</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="fix some bugs from instanlig other mods loaders">
+      <option name="closed" value="true" />
+      <created>1783977195718</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1783977195718</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -251,6 +250,7 @@
     <MESSAGE value="s" />
     <MESSAGE value="add fix button and dropdown &#10;make the launcher more orginaized &#10;remake the discover section look" />
     <MESSAGE value="chnage the discover cards design add devloper section in the settings" />
-    <option name="LAST_COMMIT_MESSAGE" value="chnage the discover cards design add devloper section in the settings" />
+    <MESSAGE value="fix some bugs from instanlig other mods loaders" />
+    <option name="LAST_COMMIT_MESSAGE" value="fix some bugs from instanlig other mods loaders" />
   </component>
 </project>

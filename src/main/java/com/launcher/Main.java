@@ -185,8 +185,11 @@ public class Main extends JFrame {
     // ─── Export / Import Mods ─────────────────────────────────────────────────
     private JButton exportModsBtn;
     private JButton importModsBtn;
+    private JButton exportPresetBtn;
     private RoundedPanel exportOverlay;
     private RoundedPanel importOverlay;
+    private RoundedPanel exportPresetOverlay;
+    private RoundedPanel applyPresetOverlay;
 
     private final Map<String, ImageIcon> modIconCache = new ConcurrentHashMap<>();
     private final Map<ModLoaderType, Image> loaderLogoCache = new ConcurrentHashMap<>();
@@ -199,6 +202,14 @@ public class Main extends JFrame {
 
     private JToggleButton discoverModsToggle;
     private JToggleButton discoverPacksToggle;
+    // Loader filter chips shown centered under the Modrinth search bar — only
+    // visible while browsing Mods (hidden entirely for Resource Packs, which
+    // aren't loader-specific). Multiple chips can be active at once; none
+    // selected shows everything, one or more shows projects matching any of
+    // the checked loaders (OR).
+    private JPanel discoverLoaderFilterRow;
+    private JToggleButton discoverFabricFilterBtn, discoverQuiltFilterBtn, discoverNeoForgeFilterBtn, discoverForgeFilterBtn;
+    private final java.util.Set<String> discoverLoaderFilters = new java.util.LinkedHashSet<>();
     private JTextField discoverSearchField;
     private RoundedPanel discoverSearchWrapPanel;
     private JButton discoverSearchBtn;
@@ -496,6 +507,21 @@ public class Main extends JFrame {
         layeredPane.add(downloadsPopover, JLayeredPane.MODAL_LAYER);
         downloadsPopover.setVisible(false);
         positionDownloadsPopover();
+
+        // Clicking anywhere outside the popover (and outside its own toggle button,
+        // which already has its own show/hide click handler) closes it — matches the
+        // export/import mod overlays' close behavior instead of requiring the user to
+        // hit the explicit ✕ button every time.
+        Toolkit.getDefaultToolkit().addAWTEventListener(evt -> {
+            if (!(evt instanceof MouseEvent me) || me.getID() != MouseEvent.MOUSE_PRESSED) return;
+            if (downloadsPopover == null || !downloadsPopover.isVisible()) return;
+            Component src = me.getComponent();
+            if (src == null) return;
+            Point pointOnLayeredPane = SwingUtilities.convertPoint(src, me.getPoint(), layeredPane);
+            if (downloadsPopover.getBounds().contains(pointOnLayeredPane)) return;
+            if (downloadsToggleWrap != null && downloadsToggleWrap.getBounds().contains(pointOnLayeredPane)) return;
+            animateDownloadsPopoverHide();
+        }, AWTEvent.MOUSE_EVENT_MASK);
 
         killInstancesPopover = buildKillInstancesPopover();
         layeredPane.add(killInstancesPopover, JLayeredPane.MODAL_LAYER);
@@ -1300,6 +1326,11 @@ public class Main extends JFrame {
                 updateDawnStatus(sel);
                 if (logArea != null)
                     log("Selected instance \"" + sel.name + "\" (" + sel.mcVersion + ", " + sel.modLoader + ").");
+                // Keep the Mods tab in sync with whichever instance is selected, instead of
+                // only refreshing when the user explicitly hits Refresh or "Manage Mods" —
+                // switching instances while already on the Mods tab used to leave the
+                // previous instance's mod list on screen.
+                refreshModsView(sel);
             } else {
                 nameLbl.setText("No instance selected");
                 versionBadge.setText(" ");
@@ -1565,6 +1596,17 @@ public class Main extends JFrame {
         importModsBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
         rightActions.add(importModsBtn);
 
+        // ── Export Preset button — dev-only, unlocked via Settings > Developer ─
+        exportPresetBtn = new JButton("🧪  Export Preset");
+        exportPresetBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        exportPresetBtn.setFocusPainted(false);
+        exportPresetBtn.setForeground(Color.WHITE);
+        exportPresetBtn.setBackground(new Color(139, 92, 246)); // violet #8b5cf6
+        exportPresetBtn.setMargin(new Insets(8, 16, 8, 16));
+        exportPresetBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        exportPresetBtn.setVisible(com.launcher.manager.SettingsManager.getInstance().getSettings().unlockDevStuff);
+        rightActions.add(exportPresetBtn);
+
         actionsWrapper.add(leftActions, BorderLayout.WEST);
         actionsWrapper.add(rightActions, BorderLayout.EAST);
         toolbar.add(actionsWrapper);
@@ -1664,14 +1706,16 @@ public class Main extends JFrame {
                 center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
                 center.setOpaque(false);
 
-                JLabel nameLbl = new JLabel(isDawnClient ? "Dawn Client" : mod.displayName());
+                String nameText = isDawnClient ? "Dawn Client" : mod.displayName();
+                JLabel nameLbl = new JLabel(mod.disabled ? (nameText + "  (Disabled)") : nameText);
                 nameLbl.setFont(new Font("SansSerif", Font.BOLD, 13));
-                nameLbl.setForeground(textColor);
+                nameLbl.setForeground(mod.disabled ? tint(textColor, -100) : textColor);
                 nameLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
                 center.add(nameLbl);
 
-                // Second row: file name + size
-                String infoText = mod.fileName + "  ·  " + mod.formattedSize();
+                // Second row: file name + size (strip the ".disabled" suffix from the
+                // displayed file name — the toggle/label already communicate that state).
+                String infoText = mod.displayFileName() + "  ·  " + mod.formattedSize();
                 JLabel infoLbl = new JLabel(infoText);
                 infoLbl.setFont(new Font("SansSerif", Font.PLAIN, 10));
                 infoLbl.setForeground(tint(textColor, -80));
@@ -1731,6 +1775,21 @@ public class Main extends JFrame {
                 }
 
                 statusWrap.add(statusLbl);
+
+                // Enable/disable toggle — same pill switch component used in Settings —
+                // placed to the right of the status pill (Checking…/Up to date/etc). Dawn
+                // Client is a launcher-managed jar, not a regular mod, so it isn't given a
+                // toggle (there's nothing meaningful to disable there).
+                if (!isDawnClient) {
+                    CustomToggle enabledToggle = new CustomToggle("", !mod.disabled);
+                    // This toggle only renders the current state — the actual click is
+                    // handled by the JList's own mouse listener below (list cell renderer
+                    // components don't receive real mouse events), the same pattern already
+                    // used for the per-row "Update" button.
+                    enabledToggle.setName("enableToggle");
+                    statusWrap.add(enabledToggle);
+                }
+
                 card.add(statusWrap, BorderLayout.EAST);
 
                 return card;
@@ -1744,14 +1803,27 @@ public class Main extends JFrame {
                 int idx = modsList.locationToIndex(e.getPoint());
                 if (idx < 0) return;
                 ModEntry mod = modsListModel.getElementAt(idx);
-                if (!"Update available".equals(mod.status) || mod.updateUrl == null) return;
 
-                // Check if the click was in the right-hand area (status/update region)
                 Rectangle cellBounds = modsList.getCellBounds(idx, idx);
                 if (cellBounds == null) return;
                 int relativeX = e.getX() - cellBounds.x;
+
+                // Enable/disable toggle now sits at the far right of the card, just past
+                // the status pill (Checking…/Up to date/etc). Dawn Client doesn't get a
+                // toggle (see renderer above), so there's nothing to click there.
+                boolean isDawnClient = mod.fileName != null
+                        && mod.fileName.equalsIgnoreCase("dawn-standalone.jar");
+                if (!isDawnClient && relativeX >= cellBounds.width - 48) {
+                    toggleModEnabled(mod);
+                    return;
+                }
+
+                if (!"Update available".equals(mod.status) || mod.updateUrl == null) return;
+
+                // Check if the click was in the right-hand area (status/update region),
+                // just to the left of the enable/disable toggle.
                 // The update button is roughly in the right 180px of the cell
-                if (relativeX < cellBounds.width - 180) return;
+                if (relativeX < cellBounds.width - 220 || relativeX > cellBounds.width - 48) return;
 
                 Instance sel = instanceList.getSelectedValue();
                 if (sel == null) return;
@@ -2038,6 +2110,23 @@ public class Main extends JFrame {
         });
 
         // ══════════════════════════════════════════════════════════════════════
+        // EXPORT PRESET — dev-only, same as Export Mods but with extra preset
+        // metadata (Name, Type, Description, Mod Loader(s))
+        // ══════════════════════════════════════════════════════════════════════
+        exportPresetBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null) {
+                notifications.error("No instance", "Select an instance first.");
+                return;
+            }
+            if (currentModEntries.isEmpty()) {
+                notifications.info("No mods", "This instance has no mods to export.");
+                return;
+            }
+            showExportPresetOverlay(sel);
+        });
+
+        // ══════════════════════════════════════════════════════════════════════
         // IMPORT MODS — file chooser + in-launcher overlay with mod selection
         // ══════════════════════════════════════════════════════════════════════
         importModsBtn.addActionListener(e -> {
@@ -2204,12 +2293,44 @@ public class Main extends JFrame {
         modsListModel.clear();
         int count = 0;
         for (ModEntry m : currentModEntries) {
-            if (filter.isEmpty() || m.displayName().toLowerCase().contains(filter)) {
-                modsListModel.addElement(m);
-                count++;
-            }
+            if (!filter.isEmpty() && !m.displayName().toLowerCase().contains(filter)) continue;
+            modsListModel.addElement(m);
+            count++;
         }
         modsCountLabel.setText(count + " mod" + (count != 1 ? "s" : "") + " shown");
+    }
+
+    /**
+     * Enables or disables a mod by renaming its jar on disk, appending/stripping
+     * the ".disabled" suffix (the same convention most Minecraft launchers use so
+     * disabled jars stay out of the mod loader's classpath without deleting them).
+     * Updates the ModEntry in place and re-renders the list immediately for a
+     * snappy toggle, then re-scans in the background to pick up any secondary
+     * effects (e.g. Fix Mods / update status depending on file presence).
+     */
+    private void toggleModEnabled(ModEntry mod) {
+        if (mod.filePath == null || mod.fileName == null) return;
+        Instance sel = instanceList.getSelectedValue();
+        Path oldPath = Path.of(mod.filePath);
+        boolean wasDisabled = mod.disabled;
+        String newFileName = wasDisabled
+                ? mod.fileName.substring(0, mod.fileName.length() - ".disabled".length())
+                : mod.fileName + ".disabled";
+        Path newPath = oldPath.resolveSibling(newFileName);
+        try {
+            Files.move(oldPath, newPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            mod.fileName = newFileName;
+            mod.filePath = newPath.toAbsolutePath().toString();
+            mod.disabled = !wasDisabled;
+            modsList.repaint();
+            notifications.info(mod.disabled ? "Mod disabled" : "Mod enabled",
+                    mod.displayName() + (mod.disabled ? " will be skipped on launch." : " will load on launch."));
+            if (sel != null) {
+                refreshModsView(sel);
+            }
+        } catch (java.io.IOException ex) {
+            notifications.error("Couldn't " + (wasDisabled ? "enable" : "disable") + " mod", ex.getMessage());
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -2421,6 +2542,336 @@ public class Main extends JFrame {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // EXPORT PRESET OVERLAY — dev-only. Same mod selection + save flow as
+    // Export Mods, plus preset metadata (Name, Type, Description, Mod Loader(s)).
+    // ══════════════════════════════════════════════════════════════════════════
+    private void showExportPresetOverlay(Instance inst) {
+        // Remove any existing overlay
+        if (exportPresetOverlay != null) {
+            layeredPane.remove(exportPresetOverlay);
+            layeredPane.repaint();
+        }
+
+        exportPresetOverlay = new RoundedPanel(18, new Color(20, 20, 26, 250), new Color(255, 255, 255, 34));
+        exportPresetOverlay.putClientProperty("keepCustomBg", Boolean.TRUE);
+        exportPresetOverlay.setLayout(new BorderLayout());
+        exportPresetOverlay.setFrostedGlass(layeredPane, 8, new Color(12, 12, 16, 150));
+
+        Color violet = new Color(139, 92, 246);
+
+        // ── Header ──
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(14, 18, 10, 12));
+
+        JLabel title = new JLabel("🧪  Export Preset — " + inst.name);
+        title.setFont(new Font("SansSerif", Font.BOLD, 17));
+        title.setForeground(violet);
+        header.add(title, BorderLayout.CENTER);
+
+        JButton closeBtn = new JButton("✕");
+        closeBtn.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
+        closeBtn.setFocusPainted(false);
+        closeBtn.setContentAreaFilled(false);
+        closeBtn.setBorderPainted(false);
+        closeBtn.setOpaque(false);
+        closeBtn.setMargin(new Insets(4, 10, 4, 10));
+        closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeBtn.addActionListener(ev -> animateOverlayHide(exportPresetOverlay));
+        header.add(closeBtn, BorderLayout.EAST);
+
+        exportPresetOverlay.add(header, BorderLayout.NORTH);
+
+        // ── Info bar ──
+        JPanel infoBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
+        infoBar.setOpaque(false);
+        infoBar.setBorder(new EmptyBorder(0, 18, 6, 18));
+        JLabel versionLbl = new JLabel("MC " + inst.mcVersion);
+        versionLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        versionLbl.setForeground(new Color(156, 163, 175));
+        infoBar.add(versionLbl);
+
+        // ── Preset details form (Name / Type / Description / Mod Loader) ──
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        formPanel.setOpaque(false);
+        formPanel.setBorder(new EmptyBorder(2, 18, 8, 18));
+        GridBagConstraints fgbc = new GridBagConstraints();
+        fgbc.insets = new Insets(4, 0, 4, 10);
+        fgbc.anchor = GridBagConstraints.WEST;
+        fgbc.fill = GridBagConstraints.HORIZONTAL;
+        int frow = 0;
+
+        JLabel nameLbl = new JLabel("Name");
+        nameLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
+        nameLbl.setForeground(Color.WHITE);
+        CustomTextField nameField = new CustomTextField();
+        nameField.setText(inst.name);
+        nameField.setColumns(22);
+
+        fgbc.gridx = 0; fgbc.gridy = frow; fgbc.weightx = 0; formPanel.add(nameLbl, fgbc);
+        fgbc.gridx = 1; fgbc.weightx = 1; formPanel.add(nameField, fgbc);
+        frow++;
+
+        JLabel typeLbl = new JLabel("Type");
+        typeLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
+        typeLbl.setForeground(Color.WHITE);
+        CustomComboBox<String> typeBox = new CustomComboBox<>(
+                new String[] { "Performance", "Quality Of Life", "Full Set" });
+
+        fgbc.gridx = 0; fgbc.gridy = frow; fgbc.weightx = 0; formPanel.add(typeLbl, fgbc);
+        fgbc.gridx = 1; fgbc.weightx = 1; formPanel.add(typeBox, fgbc);
+        frow++;
+
+        JLabel descLbl = new JLabel("Description");
+        descLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
+        descLbl.setForeground(Color.WHITE);
+        JTextArea descArea = new JTextArea(3, 20);
+        descArea.setLineWrap(true);
+        descArea.setWrapStyleWord(true);
+        descArea.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        descArea.setForeground(Color.WHITE);
+        descArea.setBackground(new Color(255, 255, 255, 20));
+        descArea.setCaretColor(Color.WHITE);
+        descArea.setBorder(new EmptyBorder(6, 8, 6, 8));
+        JScrollPane descScroll = new JScrollPane(descArea);
+        descScroll.setBorder(BorderFactory.createLineBorder(new Color(255, 255, 255, 40), 1, true));
+        descScroll.setOpaque(false);
+        descScroll.getViewport().setOpaque(false);
+
+        fgbc.gridx = 0; fgbc.gridy = frow; fgbc.weightx = 0; fgbc.anchor = GridBagConstraints.NORTHWEST;
+        formPanel.add(descLbl, fgbc);
+        fgbc.gridx = 1; fgbc.weightx = 1; fgbc.anchor = GridBagConstraints.WEST;
+        formPanel.add(descScroll, fgbc);
+        frow++;
+
+        // Mod Loader — one or more loaders can be checked (e.g. Fabric + Forge,
+        // just one, or as many additional loaders as the preset supports).
+        JLabel loaderLbl = new JLabel("Mod Loader");
+        loaderLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
+        loaderLbl.setForeground(Color.WHITE);
+
+        JPanel loaderPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
+        loaderPanel.setOpaque(false);
+        List<JCheckBox> loaderChecks = new ArrayList<>();
+        for (ModLoaderType lt : ModLoaderType.values()) {
+            JCheckBox lc = new JCheckBox(lt.name());
+            lc.setOpaque(false);
+            lc.setForeground(Color.WHITE);
+            lc.setFont(new Font("SansSerif", Font.PLAIN, 12));
+            lc.putClientProperty("loaderType", lt);
+            // Pre-check the instance's own loader as a sensible default.
+            if (inst.modLoader != null && inst.modLoader == lt) {
+                lc.setSelected(true);
+            } else if (inst.modLoader == null && lt == ModLoaderType.VANILLA) {
+                lc.setSelected(true);
+            }
+            loaderChecks.add(lc);
+            loaderPanel.add(lc);
+        }
+
+        fgbc.gridx = 0; fgbc.gridy = frow; fgbc.weightx = 0; formPanel.add(loaderLbl, fgbc);
+        fgbc.gridx = 1; fgbc.weightx = 1; formPanel.add(loaderPanel, fgbc);
+        frow++;
+
+        // ── Mod checkboxes list ──
+        JPanel listPanel = new JPanel();
+        listPanel.setOpaque(false);
+        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
+        listPanel.setBorder(new EmptyBorder(4, 18, 4, 18));
+
+        List<JCheckBox> checkboxes = new ArrayList<>();
+        for (ModEntry mod : currentModEntries) {
+            JCheckBox cb = new JCheckBox(mod.displayName(), true);
+            cb.setOpaque(false);
+            cb.setForeground(Color.WHITE);
+            cb.setFont(new Font("SansSerif", Font.PLAIN, 13));
+            cb.putClientProperty("modEntry", mod);
+            if (mod.modrinthId != null) {
+                cb.setToolTipText("Modrinth: https://modrinth.com/mod/" + mod.modrinthId);
+            } else {
+                cb.setToolTipText("No Modrinth link (will be skipped during import)");
+                cb.setForeground(new Color(180, 180, 190));
+            }
+            checkboxes.add(cb);
+            JPanel row = new JPanel(new BorderLayout());
+            row.setOpaque(false);
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+            row.add(cb, BorderLayout.WEST);
+            if (mod.modrinthId != null) {
+                JLabel link = new JLabel("modrinth.com/mod/" + mod.modrinthId);
+                link.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                link.setForeground(new Color(139, 92, 246, 170));
+                row.add(link, BorderLayout.EAST);
+            }
+            listPanel.add(row);
+            listPanel.add(Box.createVerticalStrut(2));
+        }
+
+        JScrollPane scroll = new JScrollPane(listPanel,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        com.launcher.ui.SmoothScroll.install(scroll);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+
+        JPanel topFormWrap = new JPanel();
+        topFormWrap.setOpaque(false);
+        topFormWrap.setLayout(new BoxLayout(topFormWrap, BoxLayout.Y_AXIS));
+        topFormWrap.add(infoBar);
+        topFormWrap.add(formPanel);
+
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.setOpaque(false);
+        centerPanel.add(topFormWrap, BorderLayout.NORTH);
+        centerPanel.add(scroll, BorderLayout.CENTER);
+        exportPresetOverlay.add(centerPanel, BorderLayout.CENTER);
+
+        // ── Bottom bar: Select All/None, Choose Location, Export ──
+        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        bottomBar.setOpaque(false);
+        bottomBar.setBorder(new EmptyBorder(6, 18, 14, 18));
+
+        JButton selectAll = new JButton("Select All");
+        selectAll.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectAll.setMargin(new Insets(6, 14, 6, 14));
+        selectAll.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectAll.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(true)));
+        bottomBar.add(selectAll);
+
+        JButton selectNone = new JButton("Select None");
+        selectNone.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectNone.setMargin(new Insets(6, 14, 6, 14));
+        selectNone.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectNone.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(false)));
+        bottomBar.add(selectNone);
+
+        // Save location path holder — this is now the PARENT folder the preset gets
+        // exported into (e.g. Downloads), not the JSON file itself. The actual
+        // export creates "<name>_preset/" inside it, containing the JSON plus a
+        // copy of the instance's config folder.
+        final Path[] savePath = { null };
+        JLabel savePathLbl = new JLabel("No location chosen");
+        savePathLbl.setFont(new Font("SansSerif", Font.ITALIC, 11));
+        savePathLbl.setForeground(new Color(156, 163, 175));
+
+        JButton chooseLocBtn = new JButton("📂  Choose Save Location");
+        chooseLocBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        chooseLocBtn.setMargin(new Insets(6, 14, 6, 14));
+        chooseLocBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        chooseLocBtn.addActionListener(ev -> {
+            JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle("Choose Folder to Export Preset Into");
+            fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            fc.setAcceptAllFileFilterUsed(false);
+            if (fc.showDialog(this, "Select Folder") == JFileChooser.APPROVE_OPTION) {
+                Path dir = fc.getSelectedFile().toPath();
+                savePath[0] = dir;
+                savePathLbl.setText(dir.toAbsolutePath().toString());
+            }
+        });
+        bottomBar.add(chooseLocBtn);
+
+        JButton exportBtn = new JButton("✔  Export Preset");
+        exportBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        exportBtn.setForeground(Color.WHITE);
+        exportBtn.setBackground(violet);
+        exportBtn.setMargin(new Insets(8, 20, 8, 20));
+        exportBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        exportBtn.addActionListener(ev -> {
+            String presetName = nameField.getText() == null ? "" : nameField.getText().trim();
+            if (presetName.isEmpty()) {
+                notifications.warning("Missing name", "Please enter a preset name.");
+                return;
+            }
+            List<ModLoaderType> selectedLoaders = new ArrayList<>();
+            for (JCheckBox lc : loaderChecks) {
+                if (lc.isSelected()) {
+                    selectedLoaders.add((ModLoaderType) lc.getClientProperty("loaderType"));
+                }
+            }
+            if (selectedLoaders.isEmpty()) {
+                notifications.warning("No mod loader", "Select at least one mod loader for this preset.");
+                return;
+            }
+            if (savePath[0] == null) {
+                notifications.warning("No save location", "Please choose a folder to export into first.");
+                return;
+            }
+            List<ModEntry> selected = new ArrayList<>();
+            for (JCheckBox cb : checkboxes) {
+                if (cb.isSelected()) {
+                    selected.add((ModEntry) cb.getClientProperty("modEntry"));
+                }
+            }
+            if (selected.isEmpty()) {
+                notifications.warning("Nothing selected", "Select at least one mod to export.");
+                return;
+            }
+            // Build JSON
+            JsonObject root = new JsonObject();
+            root.addProperty("launcherVersion", "Zero Launcher");
+            root.addProperty("presetName", presetName);
+            root.addProperty("presetType", (String) typeBox.getSelectedItem());
+            root.addProperty("description", descArea.getText());
+            JsonArray loadersArr = new JsonArray();
+            for (ModLoaderType lt : selectedLoaders) {
+                loadersArr.add(lt.name());
+            }
+            root.add("modLoaders", loadersArr);
+            JsonArray modsArr = new JsonArray();
+            for (ModEntry m : selected) {
+                JsonObject mObj = new JsonObject();
+                mObj.addProperty("name", m.displayName());
+                mObj.addProperty("fileName", m.fileName);
+                if (m.modrinthId != null) {
+                    mObj.addProperty("modrinthId", m.modrinthId);
+                    mObj.addProperty("modrinthUrl", "https://modrinth.com/mod/" + m.modrinthId);
+                }
+                modsArr.add(mObj);
+            }
+            root.add("mods", modsArr);
+
+            // Exported as a folder: "<name>_preset/<name>_preset.json" plus a copy of
+            // the instance's "config" folder sitting right alongside the JSON, so the
+            // whole preset (mod list + mod configs) travels together in one folder.
+            String safeName = presetName.replaceAll("[\\\\/:*?\"<>|]", "_");
+            Path presetDir = savePath[0].resolve(safeName + "_preset");
+            Path jsonFile = presetDir.resolve(safeName + "_preset.json");
+
+            try {
+                Files.createDirectories(presetDir);
+                Files.writeString(jsonFile, JsonUtil.GSON.toJson(root));
+
+                Path gameDir = instanceManager.resolveGameDir(inst);
+                Path configDir = gameDir.resolve("config");
+                if (Files.isDirectory(configDir)) {
+                    copyDirectoryRecursively(configDir, presetDir.resolve("config"));
+                }
+
+                notifications.success("Preset exported",
+                        "Exported preset \"" + presetName + "\" (" + selected.size() + " mod(s)) to "
+                                + presetDir.getFileName());
+                animateOverlayHide(exportPresetOverlay);
+            } catch (Exception ex) {
+                notifications.error("Export failed", ex.getMessage());
+            }
+        });
+        bottomBar.add(exportBtn);
+
+        JPanel bottomWrap = new JPanel(new BorderLayout());
+        bottomWrap.setOpaque(false);
+        bottomWrap.add(savePathLbl, BorderLayout.WEST);
+        bottomWrap.add(bottomBar, BorderLayout.EAST);
+        bottomWrap.setBorder(new EmptyBorder(0, 18, 0, 0));
+        exportPresetOverlay.add(bottomWrap, BorderLayout.SOUTH);
+
+        // Position and animate
+        positionModOverlay(exportPresetOverlay);
+        animateOverlayShow(exportPresetOverlay);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // IMPORT MODS OVERLAY
     // ══════════════════════════════════════════════════════════════════════════
     private void showImportOverlay(Instance targetInst, JsonObject root, String fileName) {
@@ -2493,7 +2944,7 @@ public class Main extends JFrame {
             String modrinthId = mObj.has("modrinthId") ? mObj.get("modrinthId").getAsString() : null;
             String modrinthUrl = mObj.has("modrinthUrl") ? mObj.get("modrinthUrl").getAsString() : null;
 
-            JCheckBox cb = new JCheckBox(name, true);
+            CustomToggle cb = new CustomToggle(name, true);
             cb.setOpaque(false);
             cb.setFont(new Font("SansSerif", Font.PLAIN, 13));
             cb.putClientProperty("modrinthId", modrinthId);
@@ -2561,6 +3012,13 @@ public class Main extends JFrame {
         progressLbl.setFont(new Font("SansSerif", Font.ITALIC, 11));
         progressLbl.setForeground(new Color(156, 163, 175));
 
+        JProgressBar progressBar = new JProgressBar(0, 1);
+        progressBar.setStringPainted(false);
+        progressBar.setPreferredSize(new Dimension(260, 8));
+        progressBar.setMaximumSize(new Dimension(260, 8));
+        progressBar.setForeground(new Color(245, 158, 11));
+        progressBar.setVisible(false);
+
         JButton importBtn = new JButton("⬇  Import Selected");
         importBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
         importBtn.setForeground(Color.WHITE);
@@ -2587,6 +3045,10 @@ public class Main extends JFrame {
             }
             importBtn.setEnabled(false);
             importBtn.setText("⏳  Importing...");
+            progressBar.setMaximum(Math.max(1, toDownload.size()));
+            progressBar.setValue(0);
+            progressBar.setVisible(true);
+            progressLbl.setText("Starting…");
 
             // Download in background thread
             new Thread(() -> {
@@ -2606,6 +3068,7 @@ public class Main extends JFrame {
                     final int idx = i + 1;
                     SwingUtilities.invokeLater(() -> {
                         progressLbl.setText("Downloading " + idx + "/" + toDownload.size() + ": " + mName);
+                        progressBar.setValue(idx);
                         setStatus("Importing mod " + idx + "/" + toDownload.size() + ": " + mName);
                     });
                     try {
@@ -2628,6 +3091,7 @@ public class Main extends JFrame {
                     importBtn.setEnabled(true);
                     importBtn.setText("⬇  Import Selected");
                     progressLbl.setText(" ");
+                    progressBar.setVisible(false);
                     setStatus("Import complete");
                     refreshModsView(targetInst);
 
@@ -2652,7 +3116,15 @@ public class Main extends JFrame {
 
         JPanel bottomWrap = new JPanel(new BorderLayout());
         bottomWrap.setOpaque(false);
-        bottomWrap.add(progressLbl, BorderLayout.WEST);
+        JPanel bottomLeft = new JPanel();
+        bottomLeft.setOpaque(false);
+        bottomLeft.setLayout(new BoxLayout(bottomLeft, BoxLayout.Y_AXIS));
+        progressLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        progressBar.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bottomLeft.add(progressLbl);
+        bottomLeft.add(Box.createVerticalStrut(4));
+        bottomLeft.add(progressBar);
+        bottomWrap.add(bottomLeft, BorderLayout.WEST);
         bottomWrap.add(bottomBar, BorderLayout.EAST);
         bottomWrap.setBorder(new EmptyBorder(0, 18, 0, 0));
         importOverlay.add(bottomWrap, BorderLayout.SOUTH);
@@ -2664,8 +3136,12 @@ public class Main extends JFrame {
 
     // ── Overlay positioning + show/hide animation helpers ────────────────────
     private void positionModOverlay(RoundedPanel overlay) {
-        int width = Math.min(620, layeredPane.getWidth() - 80);
-        int height = Math.min(560, layeredPane.getHeight() - 80);
+        positionModOverlay(overlay, 620, 560);
+    }
+
+    private void positionModOverlay(RoundedPanel overlay, int maxWidth, int maxHeight) {
+        int width = Math.min(maxWidth, layeredPane.getWidth() - 80);
+        int height = Math.min(maxHeight, layeredPane.getHeight() - 80);
         int x = (layeredPane.getWidth() - width) / 2;
         int y = (layeredPane.getHeight() - height) / 2;
         overlay.setBounds(x, y, width, height);
@@ -3539,8 +4015,28 @@ public class Main extends JFrame {
         this.discoverSearchWrapPanel = discoverSearchWrap;
 
         rowGbc.gridy = 2;
-        rowGbc.insets = new Insets(0, 0, 0, 0);
+        rowGbc.insets = new Insets(0, 0, 12, 0);
         topCard.add(discoverSearchWrap, rowGbc);
+
+        // Row 4: Fabric/Quilt/NeoForge/Forge loader filter chips, centered under the
+        // search bar. Only shown while browsing Mods — resource packs aren't
+        // loader-specific, so this row is hidden entirely on that side.
+        discoverFabricFilterBtn = buildDiscoverLoaderFilterChip("Fabric", "fabric");
+        discoverQuiltFilterBtn = buildDiscoverLoaderFilterChip("Quilt", "quilt");
+        discoverNeoForgeFilterBtn = buildDiscoverLoaderFilterChip("NeoForge", "neoforge");
+        discoverForgeFilterBtn = buildDiscoverLoaderFilterChip("Forge", "forge");
+
+        JPanel loaderFilterRow = new JPanel(new WrapLayout(FlowLayout.CENTER, 8, 0));
+        loaderFilterRow.setOpaque(false);
+        loaderFilterRow.add(discoverFabricFilterBtn);
+        loaderFilterRow.add(discoverQuiltFilterBtn);
+        loaderFilterRow.add(discoverNeoForgeFilterBtn);
+        loaderFilterRow.add(discoverForgeFilterBtn);
+        discoverLoaderFilterRow = loaderFilterRow;
+
+        rowGbc.gridy = 3;
+        rowGbc.insets = new Insets(0, 0, 0, 0);
+        topCard.add(loaderFilterRow, rowGbc);
 
         JPanel topSection = new JPanel(new BorderLayout());
         topSection.setOpaque(false);
@@ -3673,8 +4169,13 @@ public class Main extends JFrame {
         discoverSearchField.addActionListener(e -> doSearch.run()); // Enter key
         discoverRefreshBtn.addActionListener(e -> performDiscoverSearch());
 
-        // Toggle also triggers a fresh search when results are already showing
+        // Toggle also triggers a fresh search when results are already showing, and
+        // shows/hides the loader filter chips (Mods-only — resource packs aren't
+        // loader-specific).
         ActionListener toggleAction = e -> {
+            discoverLoaderFilterRow.setVisible(discoverModsToggle.isSelected());
+            topCard.revalidate();
+            topCard.repaint();
             if (discoverTotalHits > 0 || !discoverSearchField.getText().isBlank()) {
                 discoverOffset = 0;
                 performDiscoverSearch();
@@ -3682,6 +4183,8 @@ public class Main extends JFrame {
         };
         discoverModsToggle.addActionListener(toggleAction);
         discoverPacksToggle.addActionListener(toggleAction);
+        // Initial state matches the default "Mods" selection.
+        discoverLoaderFilterRow.setVisible(discoverModsToggle.isSelected());
 
         discoverPrevPageBtn.addActionListener(e -> {
             if (discoverOffset >= ModUpdateService.DISCOVER_PAGE_SIZE) {
@@ -4824,6 +5327,28 @@ public class Main extends JFrame {
         });
     }
 
+    /**
+     * Builds one selectable loader-filter chip for the Discover tab's search bar
+     * (Fabric/Quilt/NeoForge/Forge). Unlike the Mods/Resource Packs toggle above
+     * it, these are NOT mutually exclusive — any number can be active at once.
+     * With none selected, every mod is shown; with one or more selected, only
+     * mods supporting any of the checked loaders are shown (OR).
+     */
+    private JToggleButton buildDiscoverLoaderFilterChip(String label, String loaderId) {
+        JToggleButton chip = new JToggleButton(label);
+        styleDiscoverSegment(chip);
+        chip.addActionListener(e -> {
+            if (chip.isSelected()) {
+                discoverLoaderFilters.add(loaderId);
+            } else {
+                discoverLoaderFilters.remove(loaderId);
+            }
+            discoverOffset = 0;
+            performDiscoverSearch();
+        });
+        return chip;
+    }
+
     private void styleDiscoverPrimaryButton(JButton btn) {
         btn.setFont(new Font("SansSerif", Font.BOLD, 12));
         btn.setForeground(Color.WHITE);
@@ -5108,25 +5633,28 @@ public class Main extends JFrame {
         String projectType = isPack ? "resourcepack" : "mod";
 
         Instance target = instanceList.getSelectedValue();
-        String loader = null;
-        String gameVersion = null;
-        if (target != null) {
-            gameVersion = target.mcVersion;
-            if (target.modLoader != null && target.modLoader != ModLoaderType.VANILLA) {
-                loader = target.modLoader.name().toLowerCase();
-            }
-        }
+        String gameVersion = target != null ? target.mcVersion : null;
+
+        // Loader filtering now comes from the Fabric/Quilt/NeoForge/Forge chips
+        // under the search bar (Mods side only) rather than being auto-derived
+        // from the selected instance's own loader.
+        List<String> loaders = isPack
+                ? java.util.Collections.emptyList()
+                : new ArrayList<>(discoverLoaderFilters);
+        // For per-card badges/version-matching, a single loader is meaningful; with
+        // zero or multiple selected there's no one loader to badge against.
+        String cardLoader = loaders.size() == 1 ? loaders.get(0) : null;
 
         discoverSearchBtn.setEnabled(false);
         showDiscoverSkeletons();
 
-        final String fLoader = loader;
+        final String fLoader = cardLoader;
         final String fGameVersion = gameVersion;
 
         new Thread(() -> {
             try {
                 JsonObject result = discoverModService.searchProjectsPage(
-                        query, projectType, fLoader, fGameVersion,
+                        query, projectType, loaders, fGameVersion,
                         discoverOffset, ModUpdateService.DISCOVER_PAGE_SIZE);
 
                 JsonArray hits = result.getAsJsonArray("hits");
@@ -5212,6 +5740,29 @@ public class Main extends JFrame {
                     compatible = true;
                     break;
                 }
+            }
+        }
+
+        // Mod loader compatibility — Modrinth exposes the loaders a project supports
+        // as part of its "categories" (e.g. "fabric", "forge", "quilt", "neoforge"),
+        // so we can check the target instance's loader against that list the same
+        // way the game-version check above works. Search results are already
+        // facet-filtered server-side by loader when one is selected, but this gives
+        // an explicit per-card badge instead of relying on that silently, and still
+        // degrades gracefully (badge just isn't shown) for Vanilla instances/no
+        // instance selected, where "loader" is null.
+        boolean loaderCompatible = false;
+        if (loader != null) {
+            for (String catField : new String[] { "categories", "display_categories" }) {
+                if (hit.has(catField) && hit.get(catField).isJsonArray()) {
+                    for (var c : hit.getAsJsonArray(catField)) {
+                        if (loader.equalsIgnoreCase(c.getAsString())) {
+                            loaderCompatible = true;
+                            break;
+                        }
+                    }
+                }
+                if (loaderCompatible) break;
             }
         }
 
@@ -5304,18 +5855,34 @@ public class Main extends JFrame {
 
         content.add(headerRow);
 
-        // Compatibility badge — pill instead of plain colored text, so it reads as a
-        // status chip rather than a stray line of text.
-        if (gameVersion != null) {
-            JLabel badge = compatible
-                    ? discoverPill("✓ Supports " + gameVersion, new Color(120, 230, 160), new Color(60, 200, 120, 36))
-                    : discoverPill("⚠ Not supported (" + gameVersion + ")", new Color(240, 190, 90),
-                            new Color(230, 160, 40, 34));
-            JPanel badgeWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        // Compatibility badges — pills instead of plain colored text, so they read as
+        // status chips rather than a stray line of text. Version and mod loader are
+        // shown as separate badges since a mod can match one but not the other.
+        if (gameVersion != null || loader != null) {
+            JPanel badgeWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
             badgeWrap.setOpaque(false);
             badgeWrap.setAlignmentX(Component.LEFT_ALIGNMENT);
             badgeWrap.setBorder(new EmptyBorder(8, 0, 0, 0));
-            badgeWrap.add(badge);
+
+            if (gameVersion != null) {
+                JLabel versionBadge = compatible
+                        ? discoverPill("✓ Supports " + gameVersion, new Color(120, 230, 160),
+                                new Color(60, 200, 120, 36))
+                        : discoverPill("⚠ Not supported (" + gameVersion + ")", new Color(240, 190, 90),
+                                new Color(230, 160, 40, 34));
+                badgeWrap.add(versionBadge);
+            }
+
+            if (loader != null) {
+                String loaderLabel = loader.substring(0, 1).toUpperCase() + loader.substring(1);
+                JLabel loaderBadge = loaderCompatible
+                        ? discoverPill("✓ Supports " + loaderLabel, new Color(120, 230, 160),
+                                new Color(60, 200, 120, 36))
+                        : discoverPill("⚠ Not supported (" + loaderLabel + ")", new Color(240, 190, 90),
+                                new Color(230, 160, 40, 34));
+                badgeWrap.add(loaderBadge);
+            }
+
             content.add(badgeWrap);
         }
 
@@ -5325,7 +5892,7 @@ public class Main extends JFrame {
         descLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
         descLbl.setForeground(DISC_TEXT_DIM);
         descLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
-        descLbl.setBorder(new EmptyBorder(gameVersion != null ? 8 : 10, 0, 0, 0));
+        descLbl.setBorder(new EmptyBorder((gameVersion != null || loader != null) ? 8 : 10, 0, 0, 0));
         content.add(descLbl);
 
         card.add(content, BorderLayout.CENTER);
@@ -5388,6 +5955,7 @@ public class Main extends JFrame {
         lbl.setForeground(fg);
         lbl.setBackground(bg);
         lbl.setFont(new Font("SansSerif", Font.BOLD, 10));
+        lbl.setHorizontalAlignment(SwingConstants.CENTER);
         lbl.setBorder(new EmptyBorder(3, 9, 3, 9));
         return lbl;
     }
@@ -5577,14 +6145,18 @@ public class Main extends JFrame {
     // SETTINGS TAB
     // ══════════════════════════════════════════════════════════════════════════
     private JPanel createCard(String title) {
+        return createCard(title, TitledBorder.LEFT);
+    }
+
+    private JPanel createCard(String title, int titleJustification) {
         JPanel card = new JPanel();
         card.setLayout(new GridBagLayout());
         card.putClientProperty("settingsCardTitle", title);
         card.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createTitledBorder(
-                        BorderFactory.createLineBorder(new Color(60, 60, 70), 1, true),
+                        BorderFactory.createLineBorder(new Color(60, 60, 70), 2, true),
                         title,
-                        TitledBorder.LEFT,
+                        titleJustification,
                         TitledBorder.TOP,
                         new Font("SansSerif", Font.BOLD, 13),
                         hexToColor(com.launcher.manager.SettingsManager.getInstance().getSettings().accentColor,
@@ -5595,7 +6167,154 @@ public class Main extends JFrame {
         return card;
     }
 
-    // ── Presets tab (dev-only, unlocked via Settings > Developer) ───────────────
+    // ── Presets tab (bundled presets under resources/com/launcher/Presets) ──────
+    /**
+     * One bundled preset folder under {@code resources/com/launcher/Presets/<folder>/},
+     * containing exactly one preset JSON (same format {@link #showExportPresetOverlay}
+     * writes) and an optional {@code config/} folder. Resolved once at scan time so the
+     * rest of the UI doesn't need to care whether the app is running exploded (IDE/dev)
+     * or packaged inside a jar — both are handled by {@link #scanBundledPresets()} and
+     * {@link #extractPresetConfig(BundledPreset, Path)}.
+     */
+    private static class BundledPreset {
+        final String folderName;
+        final JsonObject json;
+        final boolean hasConfig;
+        // Set when running exploded (IDE/dev) — the actual folder on disk.
+        final Path fileDir;
+        // Set when running from inside a packaged jar instead.
+        final String jarPath;
+        final String jarEntryPrefix; // e.g. "com/launcher/Presets/Example/"
+
+        BundledPreset(String folderName, JsonObject json, boolean hasConfig, Path fileDir, String jarPath, String jarEntryPrefix) {
+            this.folderName = folderName;
+            this.json = json;
+            this.hasConfig = hasConfig;
+            this.fileDir = fileDir;
+            this.jarPath = jarPath;
+            this.jarEntryPrefix = jarEntryPrefix;
+        }
+
+        String name() { return json.has("presetName") ? json.get("presetName").getAsString() : folderName; }
+        String type() { return json.has("presetType") ? json.get("presetType").getAsString() : ""; }
+        String description() { return json.has("description") ? json.get("description").getAsString() : ""; }
+        List<String> modLoaders() {
+            List<String> out = new ArrayList<>();
+            if (json.has("modLoaders") && json.get("modLoaders").isJsonArray()) {
+                for (var el : json.getAsJsonArray("modLoaders")) out.add(el.getAsString());
+            }
+            return out;
+        }
+        JsonArray mods() { return json.has("mods") ? json.getAsJsonArray("mods") : new JsonArray(); }
+    }
+
+    /**
+     * Scans {@code /com/launcher/Presets} on the classpath for bundled preset folders,
+     * each expected to contain one {@code *.json} preset file and optionally a
+     * {@code config} subfolder. Works both when running exploded (a real directory on
+     * disk) and when packaged inside a jar (reading zip entries directly).
+     */
+    private List<BundledPreset> scanBundledPresets() {
+        List<BundledPreset> out = new ArrayList<>();
+        try {
+            URL dirUrl = getClass().getResource("/com/launcher/Presets");
+            if (dirUrl == null) return out;
+
+            if ("file".equals(dirUrl.getProtocol())) {
+                File dir = new File(dirUrl.toURI());
+                File[] children = dir.listFiles(File::isDirectory);
+                if (children != null) {
+                    Arrays.sort(children, Comparator.comparing(File::getName));
+                    for (File folder : children) {
+                        File[] jsonFiles = folder.listFiles((d, n) -> n.toLowerCase().endsWith(".json"));
+                        if (jsonFiles == null || jsonFiles.length == 0) continue;
+                        try {
+                            JsonObject json = JsonUtil.parse(Files.readString(jsonFiles[0].toPath())).getAsJsonObject();
+                            boolean hasConfig = new File(folder, "config").isDirectory();
+                            out.add(new BundledPreset(folder.getName(), json, hasConfig, folder.toPath(), null, null));
+                        } catch (Exception ex) {
+                            log("Failed to read bundled preset \"" + folder.getName() + "\": " + ex.getMessage());
+                        }
+                    }
+                }
+            } else if ("jar".equals(dirUrl.getProtocol())) {
+                String path = dirUrl.getPath(); // file:/x/y.jar!/com/launcher/Presets
+                int bang = path.indexOf("!");
+                String jarFilePath = java.net.URLDecoder.decode(
+                        path.substring("file:".length(), bang), "UTF-8");
+                String prefix = "com/launcher/Presets/";
+                try (java.util.jar.JarFile jar = new java.util.jar.JarFile(jarFilePath)) {
+                    // First pass: discover immediate subfolder names.
+                    Set<String> folders = new TreeSet<>();
+                    Enumeration<java.util.jar.JarEntry> entries = jar.entries();
+                    while (entries.hasMoreElements()) {
+                        String name = entries.nextElement().getName();
+                        if (name.startsWith(prefix) && name.length() > prefix.length()) {
+                            String rest = name.substring(prefix.length());
+                            int slash = rest.indexOf('/');
+                            if (slash > 0) folders.add(rest.substring(0, slash));
+                        }
+                    }
+                    for (String folder : folders) {
+                        String folderPrefix = prefix + folder + "/";
+                        String jsonEntryName = null;
+                        boolean hasConfig = false;
+                        Enumeration<java.util.jar.JarEntry> entries2 = jar.entries();
+                        while (entries2.hasMoreElements()) {
+                            String name = entries2.nextElement().getName();
+                            if (!name.startsWith(folderPrefix)) continue;
+                            String rest = name.substring(folderPrefix.length());
+                            if (jsonEntryName == null && rest.toLowerCase().endsWith(".json") && !rest.contains("/")) {
+                                jsonEntryName = name;
+                            }
+                            if (rest.startsWith("config/")) hasConfig = true;
+                        }
+                        if (jsonEntryName == null) continue;
+                        try (InputStream is = jar.getInputStream(jar.getJarEntry(jsonEntryName))) {
+                            String text = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                            JsonObject json = JsonUtil.parse(text).getAsJsonObject();
+                            out.add(new BundledPreset(folder, json, hasConfig, null, jarFilePath, folderPrefix));
+                        } catch (Exception ex) {
+                            log("Failed to read bundled preset \"" + folder + "\": " + ex.getMessage());
+                        }
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            log("Failed to scan bundled presets: " + ex.getMessage());
+        }
+        return out;
+    }
+
+    /**
+     * Copies a bundled preset's {@code config} folder into the given target directory
+     * (normally {@code <instance game dir>/config}), handling both the exploded and
+     * jar-packaged cases (see {@link #scanBundledPresets()}).
+     */
+    private void extractPresetConfig(BundledPreset preset, Path targetConfigDir) throws IOException {
+        if (!preset.hasConfig) return;
+        if (preset.fileDir != null) {
+            copyDirectoryRecursively(preset.fileDir.resolve("config"), targetConfigDir);
+        } else if (preset.jarPath != null) {
+            String configPrefix = preset.jarEntryPrefix + "config/";
+            try (java.util.jar.JarFile jar = new java.util.jar.JarFile(preset.jarPath)) {
+                Enumeration<java.util.jar.JarEntry> entries = jar.entries();
+                while (entries.hasMoreElements()) {
+                    java.util.jar.JarEntry entry = entries.nextElement();
+                    String name = entry.getName();
+                    if (!name.startsWith(configPrefix) || entry.isDirectory()) continue;
+                    String relative = name.substring(configPrefix.length());
+                    if (relative.isEmpty()) continue;
+                    Path target = targetConfigDir.resolve(relative);
+                    Files.createDirectories(target.getParent());
+                    try (InputStream is = jar.getInputStream(entry)) {
+                        Files.copy(is, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            }
+        }
+    }
+
     private JPanel buildPresetSection(String title, String noteHtml) {
         JPanel section = new JPanel();
         section.setOpaque(false);
@@ -5625,42 +6344,512 @@ public class Main extends JFrame {
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
         mainPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
 
-        // ── 1. PERFORMANCE ───────────────────────────────────────────────────
-        JPanel performanceSection = buildPresetSection("Performance",
-                "This section is in early development. Mod &amp; setting presets focused on FPS " +
-                        "and load times will show up here.");
-        performanceSection.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mainPanel.add(performanceSection);
-        mainPanel.add(Box.createVerticalStrut(14));
-        JSeparator sep1 = new JSeparator();
-        sep1.setForeground(new Color(60, 60, 70));
-        mainPanel.add(sep1);
-        mainPanel.add(Box.createVerticalStrut(14));
+        Color accent = hexToColor(com.launcher.manager.SettingsManager.getInstance().getSettings().accentColor,
+                new Color(16, 185, 129));
 
-        // ── 2. QUALITY OF LIFE ───────────────────────────────────────────────
-        JPanel qolSection = buildPresetSection("Quality Of Life",
-                "This section is in early development. Presets bundling convenience &amp; utility " +
-                        "mods will show up here.");
-        qolSection.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mainPanel.add(qolSection);
-        mainPanel.add(Box.createVerticalStrut(14));
-        JSeparator sep2 = new JSeparator();
-        sep2.setForeground(new Color(60, 60, 70));
-        mainPanel.add(sep2);
-        mainPanel.add(Box.createVerticalStrut(14));
+        JLabel headerLbl = new JLabel("Presets");
+        headerLbl.setFont(new Font("SansSerif", Font.BOLD, 20));
+        headerLbl.setForeground(Color.WHITE);
+        headerLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        mainPanel.add(headerLbl);
 
-        // ── 3. FULL SETS ──────────────────────────────────────────────────────
-        JPanel fullSetsSection = buildPresetSection("Full Sets",
-                "This section is in early development. Complete, curated modpack presets will show " +
-                        "up here.");
-        fullSetsSection.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mainPanel.add(fullSetsSection);
+        JLabel subLbl = new JLabel("Curated mod &amp; config bundles you can apply straight onto an instance."
+                .replace("&amp;", "&"));
+        subLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        subLbl.setForeground(new Color(150, 150, 165));
+        subLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        subLbl.setBorder(new EmptyBorder(2, 0, 14, 0));
+        mainPanel.add(subLbl);
+
+        List<BundledPreset> presets = scanBundledPresets();
+
+        if (presets.isEmpty()) {
+            JPanel empty = buildPresetSection("No presets found",
+                    "Drop preset folders (each with a preset *.json and optional config folder) into " +
+                            "resources/com/launcher/Presets and they'll show up here.");
+            empty.setAlignmentX(Component.LEFT_ALIGNMENT);
+            mainPanel.add(empty);
+        } else {
+            // Group presets by their "presetType" (Performance / Quality Of Life / Full Set /
+            // etc.), same idea as the Settings tab's Appearance/Behavior/Window/Performance
+            // cards — one titled section per type, with untyped presets falling into "Other".
+            LinkedHashMap<String, List<BundledPreset>> byType = new LinkedHashMap<>();
+            for (BundledPreset preset : presets) {
+                String type = preset.type().isBlank() ? "Other" : preset.type();
+                byType.computeIfAbsent(type, k -> new ArrayList<>()).add(preset);
+            }
+
+            for (Map.Entry<String, List<BundledPreset>> entry : byType.entrySet()) {
+                JPanel typeCard = createCard(entry.getKey(), TitledBorder.CENTER);
+                typeCard.setLayout(new WrapLayout(FlowLayout.LEFT, 12, 12));
+                // Cap at 5 cards per row on very wide windows, while still wrapping down
+                // to fewer per row (responsively) on narrower ones.
+                int count = entry.getValue().size();
+                int cols = Math.max(1, Math.min(5, count));
+                int rows = (int) Math.ceil(count / (double) cols);
+                int maxRowWidth = 5 * 310 + 4 * 12;
+                int estWidth = cols * 310 + (cols - 1) * 12 + 24;
+                int estHeight = rows * (218 + 12) + 36;
+                // WrapLayout's own preferredLayoutSize() reports an unbounded width until the
+                // panel has actually been sized once (see its javadoc) — that would otherwise
+                // blow up this whole tab's layout. Giving it an explicit, bounded estimate here
+                // avoids that, while the real wrapping at paint/resize time still uses the
+                // panel's actual assigned width (so it stays responsive).
+                typeCard.setPreferredSize(new Dimension(Math.min(estWidth, maxRowWidth), estHeight));
+                typeCard.setMaximumSize(new Dimension(maxRowWidth, Integer.MAX_VALUE));
+                typeCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+                for (BundledPreset preset : entry.getValue()) {
+                    typeCard.add(buildPresetCard(preset, accent));
+                }
+                mainPanel.add(typeCard);
+                mainPanel.add(Box.createVerticalStrut(12));
+            }
+        }
 
         JScrollPane scroll = new JScrollPane(mainPanel);
         com.launcher.ui.SmoothScroll.install(scroll);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         return scroll;
+    }
+
+    /** Builds one card in the Presets tab for a single bundled preset. */
+    private JPanel buildPresetCard(BundledPreset preset, Color accent) {
+        RoundedPanel card = new RoundedPanel(16, new Color(255, 255, 255, 10), new Color(255, 255, 255, 24));
+        card.putClientProperty("keepCustomBg", Boolean.TRUE);
+        card.setLayout(new BorderLayout(0, 8));
+        card.setBorder(new EmptyBorder(14, 16, 14, 16));
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // Same fixed footprint as the Discover tab's cards, so Presets reads as a
+        // uniform grid instead of ragged variable-height rows.
+        card.setPreferredSize(new Dimension(310, 218));
+        card.setMinimumSize(new Dimension(310, 218));
+        card.setMaximumSize(new Dimension(310, 218));
+
+        JPanel top = new JPanel(new BorderLayout(10, 0));
+        top.setOpaque(false);
+
+        JLabel iconLbl = new JLabel(loadPresetImage(preset, 48));
+        iconLbl.setPreferredSize(new Dimension(48, 48));
+        iconLbl.setVerticalAlignment(SwingConstants.TOP);
+        top.add(iconLbl, BorderLayout.WEST);
+
+        JPanel titleCol = new JPanel();
+        titleCol.setOpaque(false);
+        titleCol.setLayout(new BoxLayout(titleCol, BoxLayout.Y_AXIS));
+
+        JLabel nameLbl = new JLabel(preset.name());
+        nameLbl.setFont(new Font("SansSerif", Font.BOLD, 16));
+        nameLbl.setForeground(Color.WHITE);
+        nameLbl.setHorizontalAlignment(SwingConstants.LEFT);
+        nameLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        titleCol.add(nameLbl);
+
+        JPanel pillRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        pillRow.setOpaque(false);
+        pillRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        if (!preset.type().isBlank()) {
+            pillRow.add(discoverPill(preset.type(), accent, new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 36)));
+        }
+        for (String loader : preset.modLoaders()) {
+            pillRow.add(discoverPill(loader, new Color(200, 200, 210), new Color(255, 255, 255, 16)));
+        }
+        pillRow.add(discoverPill(preset.mods().size() + " mod" + (preset.mods().size() != 1 ? "s" : ""),
+                new Color(200, 200, 210), new Color(255, 255, 255, 16)));
+        if (preset.hasConfig) {
+            pillRow.add(discoverPill("Includes config", new Color(120, 230, 160), new Color(60, 200, 120, 36)));
+        }
+        titleCol.add(pillRow);
+        top.add(titleCol, BorderLayout.CENTER);
+
+        card.add(top, BorderLayout.NORTH);
+
+        if (!preset.description().isBlank()) {
+            JLabel descLbl = new JLabel("<html><body style='width: 260px;'>" + escapeHtml(preset.description())
+                    + "</body></html>");
+            descLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+            descLbl.setForeground(new Color(170, 170, 182));
+            card.add(descLbl, BorderLayout.CENTER);
+        }
+
+        JButton applyBtn = new JButton("Apply");
+        applyBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        applyBtn.setForeground(Color.WHITE);
+        applyBtn.setBackground(accent);
+        applyBtn.setMargin(new Insets(8, 20, 8, 20));
+        applyBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        applyBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null) {
+                notifications.warning("No instance selected", "Select an instance on the Instances tab first.");
+                return;
+            }
+            showApplyPresetOverlay(preset, sel);
+        });
+        JPanel bottomWrap = new JPanel(new BorderLayout());
+        bottomWrap.setOpaque(false);
+        JPanel applyWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        applyWrap.setOpaque(false);
+        applyWrap.add(applyBtn);
+        bottomWrap.add(applyWrap, BorderLayout.EAST);
+        card.add(bottomWrap, BorderLayout.SOUTH);
+
+        return card;
+    }
+
+    /**
+     * Loads a preset's icon: {@code image.png} sitting next to the preset's JSON
+     * (either on disk or inside the packaged jar), falling back to the launcher's
+     * default Minecraft icon when the preset doesn't provide one.
+     */
+    private ImageIcon loadPresetImage(BundledPreset preset, int size) {
+        BufferedImage img = null;
+        try {
+            if (preset.fileDir != null) {
+                File imgFile = preset.fileDir.resolve("image.png").toFile();
+                if (imgFile.isFile()) {
+                    img = ImageIO.read(imgFile);
+                }
+            } else if (preset.jarPath != null) {
+                try (java.util.jar.JarFile jar = new java.util.jar.JarFile(preset.jarPath)) {
+                    java.util.jar.JarEntry entry = jar.getJarEntry(preset.jarEntryPrefix + "image.png");
+                    if (entry != null) {
+                        try (InputStream is = jar.getInputStream(entry)) {
+                            img = ImageIO.read(is);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            img = null;
+        }
+        if (img == null) {
+            try (InputStream is = getClass().getResourceAsStream("/com/launcher/minecraft_image.png")) {
+                if (is != null) img = ImageIO.read(is);
+            } catch (Exception ex) {
+                img = null;
+            }
+        }
+        if (img == null) return new ImageIcon();
+        Image scaled = img.getScaledInstance(size, size, Image.SCALE_SMOOTH);
+        return new ImageIcon(scaled);
+    }
+
+    /**
+     * Shows the "Apply Preset" overlay for a bundled preset — lets the user toggle
+     * which mods to install, auto-disables the whole list when the target instance's
+     * mod loader isn't one this preset was built for, and (if the preset bundles a
+     * config folder) offers a "Use the recommended mods config" toggle that copies it
+     * into the instance on Apply.
+     */
+    private void showApplyPresetOverlay(BundledPreset preset, Instance targetInst) {
+        if (applyPresetOverlay != null) {
+            layeredPane.remove(applyPresetOverlay);
+            layeredPane.repaint();
+        }
+
+        applyPresetOverlay = new RoundedPanel(18, new Color(20, 20, 26, 250), new Color(255, 255, 255, 34));
+        applyPresetOverlay.putClientProperty("keepCustomBg", Boolean.TRUE);
+        applyPresetOverlay.setLayout(new BorderLayout());
+        applyPresetOverlay.setFrostedGlass(layeredPane, 8, new Color(12, 12, 16, 150));
+
+        Color accent = hexToColor(com.launcher.manager.SettingsManager.getInstance().getSettings().accentColor,
+                new Color(16, 185, 129));
+
+        // ── Header ──
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(14, 18, 10, 12));
+
+        JLabel title = new JLabel("🧩  Apply Preset — " + preset.name());
+        title.setFont(new Font("SansSerif", Font.BOLD, 17));
+        title.setForeground(accent);
+        header.add(title, BorderLayout.CENTER);
+
+        JButton closeBtn = new JButton("✕");
+        closeBtn.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
+        closeBtn.setFocusPainted(false);
+        closeBtn.setContentAreaFilled(false);
+        closeBtn.setBorderPainted(false);
+        closeBtn.setOpaque(false);
+        closeBtn.setMargin(new Insets(4, 10, 4, 10));
+        closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeBtn.addActionListener(ev -> animateOverlayHide(applyPresetOverlay));
+        header.add(closeBtn, BorderLayout.EAST);
+
+        applyPresetOverlay.add(header, BorderLayout.NORTH);
+
+        // ── Info bar: preset's loaders vs. target instance's loader ──
+        List<String> presetLoaders = preset.modLoaders();
+        String targetLoader = targetInst.modLoader != null ? targetInst.modLoader.name() : "VANILLA";
+        boolean loaderMatches = presetLoaders.isEmpty()
+                || presetLoaders.stream().anyMatch(l -> l.equalsIgnoreCase(targetLoader));
+
+        JPanel infoBar = new JPanel();
+        infoBar.setOpaque(false);
+        infoBar.setLayout(new BoxLayout(infoBar, BoxLayout.Y_AXIS));
+        infoBar.setBorder(new EmptyBorder(0, 18, 8, 18));
+
+        JLabel targetLbl = new JLabel("→  Target: " + targetInst.name + "  (MC " + targetInst.mcVersion + ", " + targetLoader + ")");
+        targetLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
+        targetLbl.setForeground(new Color(200, 200, 210));
+        targetLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        infoBar.add(targetLbl);
+
+        if (!loaderMatches) {
+            JLabel warnLbl = new JLabel("⚠ This preset targets " + String.join("/", presetLoaders)
+                    + " — mods below are unchecked by default since they won't work on " + targetLoader + ".");
+            warnLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            warnLbl.setForeground(new Color(240, 190, 90));
+            warnLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+            warnLbl.setBorder(new EmptyBorder(3, 0, 0, 0));
+            infoBar.add(warnLbl);
+        }
+
+        // ── Mod checkboxes list ──
+        JsonArray modsArr = preset.mods();
+        JPanel listPanel = new JPanel();
+        listPanel.setOpaque(false);
+        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
+        listPanel.setBorder(new EmptyBorder(4, 18, 4, 18));
+
+        List<JCheckBox> checkboxes = new ArrayList<>();
+        for (int i = 0; i < modsArr.size(); i++) {
+            JsonObject mObj = modsArr.get(i).getAsJsonObject();
+            String name = mObj.has("name") ? mObj.get("name").getAsString() : "Unknown mod";
+            String modrinthId = mObj.has("modrinthId") ? mObj.get("modrinthId").getAsString() : null;
+            String modrinthUrl = mObj.has("modrinthUrl") ? mObj.get("modrinthUrl").getAsString() : null;
+
+            CustomToggle cb = new CustomToggle(name, loaderMatches);
+            cb.setOpaque(false);
+            cb.setFont(new Font("SansSerif", Font.PLAIN, 13));
+            cb.putClientProperty("modrinthId", modrinthId);
+            cb.putClientProperty("modName", name);
+
+            if (modrinthId == null) {
+                cb.setForeground(new Color(255, 160, 80));
+                cb.setToolTipText("⚠ No Modrinth ID — cannot download automatically");
+                cb.setSelected(false);
+                cb.setEnabled(false);
+            } else if (!loaderMatches) {
+                cb.setForeground(new Color(150, 150, 165));
+                cb.setToolTipText("⚠ Disabled — this preset targets " + String.join("/", presetLoaders)
+                        + ", not " + targetLoader);
+                cb.setSelected(false);
+                cb.setEnabled(false);
+            } else {
+                cb.setForeground(Color.WHITE);
+                cb.setToolTipText(modrinthUrl != null ? modrinthUrl : "Modrinth ID: " + modrinthId);
+            }
+            checkboxes.add(cb);
+
+            JPanel row = new JPanel(new BorderLayout());
+            row.setOpaque(false);
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+            row.add(cb, BorderLayout.WEST);
+            if (modrinthUrl != null) {
+                JLabel link = new JLabel(modrinthUrl.replace("https://", ""));
+                link.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                link.setForeground(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 160));
+                row.add(link, BorderLayout.EAST);
+            }
+            listPanel.add(row);
+            listPanel.add(Box.createVerticalStrut(2));
+        }
+
+        JScrollPane scroll = new JScrollPane(listPanel,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        com.launcher.ui.SmoothScroll.install(scroll);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.setOpaque(false);
+        centerPanel.add(infoBar, BorderLayout.NORTH);
+        centerPanel.add(scroll, BorderLayout.CENTER);
+        applyPresetOverlay.add(centerPanel, BorderLayout.CENTER);
+
+        // ── Bottom bar: recommended-config toggle (left), Select All/None + Apply (right) ──
+        CustomToggle useConfigCb = new CustomToggle("Use the recommended mods config", true);
+        useConfigCb.setOpaque(false);
+        useConfigCb.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        useConfigCb.setForeground(new Color(220, 220, 230));
+
+        RoundedPanel useConfigWrap = new RoundedPanel(10, new Color(255, 255, 255, 14), new Color(255, 255, 255, 26));
+        useConfigWrap.putClientProperty("keepCustomBg", Boolean.TRUE);
+        useConfigWrap.setLayout(new BorderLayout());
+        useConfigWrap.setBorder(new EmptyBorder(6, 12, 6, 12));
+        useConfigWrap.add(useConfigCb, BorderLayout.CENTER);
+        useConfigWrap.setVisible(preset.hasConfig);
+
+        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        bottomBar.setOpaque(false);
+        bottomBar.setBorder(new EmptyBorder(6, 18, 14, 18));
+
+        JButton selectAll = new JButton("Select All");
+        selectAll.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectAll.setMargin(new Insets(6, 14, 6, 14));
+        selectAll.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectAll.addActionListener(ev -> checkboxes.forEach(cb -> { if (cb.isEnabled()) cb.setSelected(true); }));
+        bottomBar.add(selectAll);
+
+        JButton selectNone = new JButton("Select None");
+        selectNone.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectNone.setMargin(new Insets(6, 14, 6, 14));
+        selectNone.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectNone.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(false)));
+        bottomBar.add(selectNone);
+
+        JLabel progressLbl = new JLabel(" ");
+        progressLbl.setFont(new Font("SansSerif", Font.ITALIC, 11));
+        progressLbl.setForeground(new Color(156, 163, 175));
+
+        JProgressBar progressBar = new JProgressBar(0, 1);
+        progressBar.setStringPainted(false);
+        progressBar.setPreferredSize(new Dimension(260, 8));
+        progressBar.setMaximumSize(new Dimension(260, 8));
+        progressBar.setForeground(accent);
+        progressBar.setVisible(false);
+
+        JButton applyBtn = new JButton("✔  Apply Preset");
+        applyBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        applyBtn.setForeground(Color.WHITE);
+        applyBtn.setBackground(accent);
+        applyBtn.setMargin(new Insets(8, 20, 8, 20));
+        applyBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        applyBtn.addActionListener(ev -> {
+            List<String[]> toDownload = new ArrayList<>(); // [modrinthId, name]
+            List<String> skipped = new ArrayList<>();
+            for (JCheckBox cb : checkboxes) {
+                if (!cb.isSelected()) continue;
+                String mid = (String) cb.getClientProperty("modrinthId");
+                String mName = (String) cb.getClientProperty("modName");
+                if (mid != null && !mid.isBlank()) {
+                    toDownload.add(new String[]{ mid, mName });
+                } else {
+                    skipped.add(mName);
+                }
+            }
+            boolean applyConfig = useConfigWrap.isVisible() && useConfigCb.isSelected();
+            if (toDownload.isEmpty() && !applyConfig) {
+                notifications.warning("Nothing to apply", "No mods selected and no config to copy.");
+                return;
+            }
+            applyBtn.setEnabled(false);
+            applyBtn.setText("⏳  Applying...");
+            progressBar.setMaximum(Math.max(1, toDownload.size()));
+            progressBar.setValue(0);
+            progressBar.setVisible(true);
+            progressLbl.setText("Starting…");
+
+            new Thread(() -> {
+                Path gameDir = instanceManager.resolveGameDir(targetInst);
+                Path modsDir = gameDir.resolve("mods");
+                try { Files.createDirectories(modsDir); } catch (Exception ignored) {}
+
+                String loader = targetInst.modLoader != null && targetInst.modLoader != ModLoaderType.VANILLA
+                        ? targetInst.modLoader.name().toLowerCase() : null;
+                ModUpdateService service = new ModUpdateService();
+                int success = 0;
+                List<String> failed = new ArrayList<>();
+
+                for (int i = 0; i < toDownload.size(); i++) {
+                    String[] entry = toDownload.get(i);
+                    String mid = entry[0];
+                    String mName = entry[1];
+                    final int idx = i + 1;
+                    SwingUtilities.invokeLater(() -> {
+                        progressLbl.setText("Downloading " + idx + "/" + toDownload.size() + ": " + mName);
+                        progressBar.setValue(idx);
+                        setStatus("Applying preset — mod " + idx + "/" + toDownload.size() + ": " + mName);
+                    });
+                    try {
+                        String url = service.getDownloadUrlForProject(mid, "mod", loader, targetInst.mcVersion);
+                        if (url == null) {
+                            failed.add(mName + " (no compatible version)");
+                            continue;
+                        }
+                        String dlFileName = url.substring(url.lastIndexOf('/') + 1);
+                        com.launcher.util.HttpUtil.downloadToFile(url, modsDir.resolve(dlFileName));
+                        success++;
+                    } catch (Exception ex) {
+                        failed.add(mName + " (" + ex.getMessage() + ")");
+                    }
+                }
+
+                boolean configCopied = false;
+                String configError = null;
+                if (applyConfig) {
+                    SwingUtilities.invokeLater(() -> progressLbl.setText("Copying recommended config…"));
+                    try {
+                        extractPresetConfig(preset, gameDir.resolve("config"));
+                        configCopied = true;
+                    } catch (Exception ex) {
+                        configError = ex.getMessage();
+                    }
+                }
+
+                final int finalSuccess = success;
+                final List<String> finalFailed = failed;
+                final boolean finalConfigCopied = configCopied;
+                final String finalConfigError = configError;
+                SwingUtilities.invokeLater(() -> {
+                    applyBtn.setEnabled(true);
+                    applyBtn.setText("✔  Apply Preset");
+                    progressLbl.setText(" ");
+                    progressBar.setVisible(false);
+                    setStatus("Preset applied");
+                    refreshModsView(targetInst);
+
+                    StringBuilder msg = new StringBuilder();
+                    if (!toDownload.isEmpty()) {
+                        msg.append("Installed ").append(finalSuccess).append(" of ").append(toDownload.size()).append(" mod(s).");
+                    }
+                    if (finalConfigCopied) {
+                        msg.append(msg.length() > 0 ? "\n" : "").append("Copied the recommended mods config.");
+                    } else if (finalConfigError != null) {
+                        msg.append(msg.length() > 0 ? "\n" : "").append("Failed to copy config: ").append(finalConfigError);
+                    }
+                    if (!skipped.isEmpty()) {
+                        msg.append("\nSkipped (no Modrinth ID): ").append(String.join(", ", skipped));
+                    }
+                    if (!finalFailed.isEmpty()) {
+                        msg.append("\nFailed: ").append(String.join(", ", finalFailed));
+                    }
+                    if (finalFailed.isEmpty() && skipped.isEmpty() && finalConfigError == null) {
+                        notifications.success("Preset applied", msg.toString());
+                    } else {
+                        notifications.warning("Preset applied with issues", msg.toString());
+                    }
+                    animateOverlayHide(applyPresetOverlay);
+                });
+            }, "preset-apply").start();
+        });
+        bottomBar.add(applyBtn);
+
+        JPanel bottomWrap = new JPanel(new BorderLayout());
+        bottomWrap.setOpaque(false);
+        JPanel bottomLeft = new JPanel();
+        bottomLeft.setOpaque(false);
+        bottomLeft.setLayout(new BoxLayout(bottomLeft, BoxLayout.Y_AXIS));
+        progressLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        progressBar.setAlignmentX(Component.LEFT_ALIGNMENT);
+        useConfigWrap.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bottomLeft.add(progressLbl);
+        bottomLeft.add(Box.createVerticalStrut(4));
+        bottomLeft.add(progressBar);
+        bottomLeft.add(Box.createVerticalStrut(6));
+        bottomLeft.add(useConfigWrap);
+        bottomWrap.add(bottomLeft, BorderLayout.WEST);
+        bottomWrap.add(bottomBar, BorderLayout.EAST);
+        bottomWrap.setBorder(new EmptyBorder(0, 18, 0, 0));
+        applyPresetOverlay.add(bottomWrap, BorderLayout.SOUTH);
+
+        // Position and animate
+        positionModOverlay(applyPresetOverlay, 760, 680);
+        animateOverlayShow(applyPresetOverlay);
     }
 
     private JScrollPane buildSettingsArea() {
@@ -6971,7 +8160,7 @@ public class Main extends JFrame {
     private void positionDownloadsPopover() {
         if (downloadsPopover == null || downloadsToggleWrap == null)
             return;
-        int width = 440, height = 520;
+        int width = 560, height = 640;
         int x = downloadsToggleWrap.getX() + downloadsToggleWrap.getWidth() / 2 - width / 2;
         x = Math.max(8, Math.min(x, layeredPane.getWidth() - width - 8));
         int y = downloadsToggleWrap.getY() + downloadsToggleWrap.getHeight() + 8;
