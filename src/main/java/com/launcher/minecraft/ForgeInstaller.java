@@ -153,6 +153,19 @@ public class ForgeInstaller {
         }
 
         String fullVersion = mcVersion + "-" + forgeVersion;
+
+        // If this Forge version was already installed into gameDir on a previous launch,
+        // reuse it instead of re-downloading the installer and re-running it every time
+        // (which also meant every launch failed outright if the network was briefly down).
+        try {
+            String existingVersionId = detectForgeVersionId(gameDir, mcVersion, forgeVersion);
+            logIf(log, "Forge " + fullVersion + " already installed, skipping installer. Version ID: "
+                    + existingVersionId);
+            return existingVersionId;
+        } catch (IOException notInstalledYet) {
+            // fall through and install below
+        }
+
         Path installerJar = resolveInstallerPath(fullVersion, gameDir);
         if (Files.notExists(installerJar)) {
             String installerUrl = baseUrl + "/" + fullVersion + "/forge-" + fullVersion + "-installer.jar";
@@ -272,6 +285,7 @@ public class ForgeInstaller {
             throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(
                 javaCommand,
+                "-Djava.awt.headless=true",
                 "-jar",
                 installerJar.toAbsolutePath().toString(),
                 "--installClient",

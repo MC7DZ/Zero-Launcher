@@ -570,7 +570,7 @@ public class EditInstancePanel extends JPanel {
             java.nio.file.Path dir = (instanceToEdit.useCustomDirectory
                     && instanceToEdit.customDirectoryPath != null && !instanceToEdit.customDirectoryPath.isBlank())
                     ? java.nio.file.Path.of(instanceToEdit.customDirectoryPath)
-                    : LauncherPaths.defaultInstanceDir(instanceToEdit.name);
+                    : LauncherPaths.getDefaultMinecraftPath();
             File dirFile = dir.toFile();
             if (!dirFile.exists()) dirFile.mkdirs();
             if (Desktop.isDesktopSupported()) {
@@ -684,14 +684,19 @@ public class EditInstancePanel extends JPanel {
     }
 
     private JPanel directoryContent(JToggleButton defaultDirBtn, JToggleButton customDirBtn, JPanel dirFieldRow) {
-        JPanel content = new JPanel(new BorderLayout(10, 0));
+        JPanel content = new JPanel();
         content.setOpaque(false);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         JPanel seg = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         seg.setOpaque(false);
+        seg.setAlignmentX(Component.LEFT_ALIGNMENT);
         seg.add(defaultDirBtn);
         seg.add(customDirBtn);
-        content.add(seg, BorderLayout.WEST);
-        content.add(dirFieldRow, BorderLayout.CENTER);
+        content.add(seg);
+        content.add(Box.createVerticalStrut(8));
+        dirFieldRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        dirFieldRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, dirFieldRow.getPreferredSize().height));
+        content.add(dirFieldRow);
         return content;
     }
 

@@ -1,0 +1,89 @@
+{
+  "launcherVersion": "Zero Launcher",
+  "presetName": "NeoForge Preformnace Preset",
+  "presetType": "Performance",
+  "description": "NeoForge Preformance Preset for low end PCs",
+  "modLoaders": [
+    "NEOFORGE"
+  ],
+  "mods": [
+    {
+      "name": "BadOptimizations",
+      "fileName": "BadOptimizations-2.4.1-26.1-forge.jar",
+      "modrinthId": "g96Z4WVZ",
+      "modrinthUrl": "https://modrinth.com/mod/g96Z4WVZ"
+    },
+    {
+      "name": "ImmediatelyFast",
+      "fileName": "ImmediatelyFast-NeoForge-1.15.3+26.1.jar",
+      "modrinthId": "5ZwdcRci",
+      "modrinthUrl": "https://modrinth.com/mod/5ZwdcRci"
+    },
+    {
+      "name": "ScalableLux",
+      "fileName": "ScalableLux-neoforge-0.3.0-alpha.0.18-all.jar",
+      "modrinthId": "Ps1zyz6x",
+      "modrinthUrl": "https://modrinth.com/mod/Ps1zyz6x"
+    },
+    {
+      "name": "Concurrent Chunk Management Engine (NeoForge)",
+      "fileName": "c2me-neoforge-mc26.1.2-0.4.0-alpha.0.91.jar",
+      "modrinthId": "COlSi5iR",
+      "modrinthUrl": "https://modrinth.com/mod/COlSi5iR"
+    },
+    {
+      "name": "Cloth Config API",
+      "fileName": "cloth-config-26.1.154.jar",
+      "modrinthId": "9s6osm5g",
+      "modrinthUrl": "https://modrinth.com/mod/9s6osm5g"
+    },
+    {
+      "name": "FerriteCore",
+      "fileName": "ferritecore-9.0.0-neoforge.jar",
+      "modrinthId": "uXXizFIs",
+      "modrinthUrl": "https://modrinth.com/mod/uXXizFIs"
+    },
+    {
+      "name": "Lithium",
+      "fileName": "lithium-neoforge-0.24.6+mc26.1.2.jar",
+      "modrinthId": "gvQqBUqZ",
+      "modrinthUrl": "https://modrinth.com/mod/gvQqBUqZ"
+    },
+    {
+      "name": "ModernFix",
+      "fileName": "modernfix-neoforge-5.27.18+mc26.1.2.jar",
+      "modrinthId": "nmDcB62a",
+      "modrinthUrl": "https://modrinth.com/mod/nmDcB62a"
+    },
+    {
+      "name": "More Culling",
+      "fileName": "moreculling-neoforge-26.1.2-1.7.2.jar",
+      "modrinthId": "51shyZVL",
+      "modrinthUrl": "https://modrinth.com/mod/51shyZVL"
+    },
+    {
+      "name": "ServerCore",
+      "fileName": "servercore-neoforge-1.5.16+26.1.1.jar",
+      "modrinthId": "4WWQxlQP",
+      "modrinthUrl": "https://modrinth.com/mod/4WWQxlQP"
+    },
+    {
+      "name": "Sodium Extra",
+      "fileName": "sodium-extra-neoforge-0.9.3+mc26.1.2.jar",
+      "modrinthId": "PtjYWJkn",
+      "modrinthUrl": "https://modrinth.com/mod/PtjYWJkn"
+    },
+    {
+      "name": "Sodium",
+      "fileName": "sodium-neoforge-0.8.9+mc26.1.1.jar",
+      "modrinthId": "AANobbMI",
+      "modrinthUrl": "https://modrinth.com/mod/AANobbMI"
+    },
+    {
+      "name": "Fast Noise",
+      "fileName": "zfastnoise-1.0.29+26.1.2+neoforge.jar",
+      "modrinthId": "OnlVIpq5",
+      "modrinthUrl": "https://modrinth.com/mod/OnlVIpq5"
+    }
+  ]
+}

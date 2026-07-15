@@ -105,14 +105,22 @@ public class QuiltInstaller {
         if (mcVersion == null || mcVersion.isBlank()) {
             throw new IllegalArgumentException("mcVersion must not be null or blank");
         }
-        return loaderCache.computeIfAbsent(mcVersion, v -> {
-            try {
-                return fetchLoaderVersionsUncached(v);
-            } catch (QuiltApiException e) {
-                // Wrap in RuntimeException because computeIfAbsent cannot throw checked exceptions
-                throw new RuntimeException(e);
+        try {
+            return loaderCache.computeIfAbsent(mcVersion, v -> {
+                try {
+                    return fetchLoaderVersionsUncached(v);
+                } catch (QuiltApiException e) {
+                    // Wrap in RuntimeException because computeIfAbsent cannot throw checked exceptions;
+                    // unwrapped again below so callers still see the documented QuiltApiException.
+                    throw new RuntimeException(e);
+                }
+            });
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof QuiltApiException qae) {
+                throw qae;
             }
-        });
+            throw e;
+        }
     }
 
     /**

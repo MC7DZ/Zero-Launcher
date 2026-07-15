@@ -1,0 +1,120 @@
+{
+  "launcherVersion": "Zero Launcher",
+  "presetName": "Fabric Preformnace Preset",
+  "presetType": "Performance",
+  "description": "Fabric/Quilt Preformance Preset for low end PCs",
+  "modLoaders": [
+    "FABRIC",
+    "Quilt"
+  ],
+  "mods": [
+    {
+      "name": "BadOptimizations",
+      "fileName": "BadOptimizations-2.4.1-26.1-fabric.jar",
+      "modrinthId": "g96Z4WVZ",
+      "modrinthUrl": "https://modrinth.com/mod/g96Z4WVZ"
+    },
+    {
+      "name": "ImmediatelyFast",
+      "fileName": "ImmediatelyFast-Fabric-1.15.3+26.1.jar",
+      "modrinthId": "5ZwdcRci",
+      "modrinthUrl": "https://modrinth.com/mod/5ZwdcRci"
+    },
+    {
+      "name": "No Chat Reports",
+      "fileName": "NoChatReports-FABRIC-26.1-v2.19.0.jar",
+      "modrinthId": "qQyHxfxd",
+      "modrinthUrl": "https://modrinth.com/mod/qQyHxfxd"
+    },
+    {
+      "name": "ScalableLux",
+      "fileName": "ScalableLux-fabric-0.3.0-alpha.0.2-all.jar",
+      "modrinthId": "Ps1zyz6x",
+      "modrinthUrl": "https://modrinth.com/mod/Ps1zyz6x"
+    },
+    {
+      "name": "Better Block Entities",
+      "fileName": "bbe-fabric-1.3.6+mc26.1.2.jar",
+      "modrinthId": "ONZm0H7Y",
+      "modrinthUrl": "https://modrinth.com/mod/ONZm0H7Y"
+    },
+    {
+      "name": "Concurrent Chunk Management Engine (Fabric)",
+      "fileName": "c2me-fabric-mc26.1.2-0.4.0-alpha.0.31.jar",
+      "modrinthId": "VSNURh3q",
+      "modrinthUrl": "https://modrinth.com/mod/VSNURh3q"
+    },
+    {
+      "name": "Cloth Config API",
+      "fileName": "cloth-config-26.1.154.jar",
+      "modrinthId": "9s6osm5g",
+      "modrinthUrl": "https://modrinth.com/mod/9s6osm5g"
+    },
+    {
+      "name": "Entity Culling",
+      "fileName": "entityculling-fabric-1.10.5-mc26.1.jar",
+      "modrinthId": "NNAgCjsB",
+      "modrinthUrl": "https://modrinth.com/mod/NNAgCjsB"
+    },
+    {
+      "name": "Fabric API",
+      "fileName": "fabric-api-0.154.2+26.1.2.jar",
+      "modrinthId": "P7dR8mSH",
+      "modrinthUrl": "https://modrinth.com/mod/P7dR8mSH"
+    },
+    {
+      "name": "FerriteCore",
+      "fileName": "ferritecore-9.0.0-fabric.jar",
+      "modrinthId": "uXXizFIs",
+      "modrinthUrl": "https://modrinth.com/mod/uXXizFIs"
+    },
+    {
+      "name": "Lithium",
+      "fileName": "lithium-fabric-0.24.6+mc26.1.2.jar",
+      "modrinthId": "gvQqBUqZ",
+      "modrinthUrl": "https://modrinth.com/mod/gvQqBUqZ"
+    },
+    {
+      "name": "ModernFix-mVUS",
+      "fileName": "modernfix-5.27.19-build.1.jar",
+      "modrinthId": "TjSm1wrD",
+      "modrinthUrl": "https://modrinth.com/mod/TjSm1wrD"
+    },
+    {
+      "name": "More Culling",
+      "fileName": "moreculling-fabric-26.1.2-1.7.2.jar",
+      "modrinthId": "51shyZVL",
+      "modrinthUrl": "https://modrinth.com/mod/51shyZVL"
+    },
+    {
+      "name": "ServerCore",
+      "fileName": "servercore-fabric-1.5.19+26.1.2.jar",
+      "modrinthId": "4WWQxlQP",
+      "modrinthUrl": "https://modrinth.com/mod/4WWQxlQP"
+    },
+    {
+      "name": "Sodium Extra",
+      "fileName": "sodium-extra-fabric-0.9.3+mc26.1.2.jar",
+      "modrinthId": "PtjYWJkn",
+      "modrinthUrl": "https://modrinth.com/mod/PtjYWJkn"
+    },
+    {
+      "name": "Sodium",
+      "fileName": "sodium-fabric-0.9.1+mc26.1.2.jar",
+      "modrinthId": "AANobbMI",
+      "modrinthUrl": "https://modrinth.com/mod/AANobbMI"
+    },
+    {
+      "name": "Very Many Players (Fabric)",
+      "fileName": "vmp-fabric-mc26.1.2-0.2.0+beta.7.234-all.jar",
+      "modrinthId": "wnEe9KBa",
+      "modrinthUrl": "https://modrinth.com/mod/wnEe9KBa"
+    },
+    {
+      "name": "Fast Noise",
+      "fileName": "zfastnoise-1.0.39+26.1.2.jar",
+      "modrinthId": "OnlVIpq5",
+      "modrinthUrl": "https://modrinth.com/mod/OnlVIpq5"
+    }
+  ]
+}

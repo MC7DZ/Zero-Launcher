@@ -219,9 +219,20 @@ public class ModpackExtractor {
             }
             String url = downloads.get(0).getAsString();
 
-            // Expected size and hash
+            // Expected size and hash.
+            // NOTE: Modrinth's index format nests the hash under "hashes": { "sha1": ..., "sha512": ... },
+            // not a top-level "hash" field. Reading "hash" directly always returned null, silently
+            // disabling hash verification for every file.
             long expectedSize = fileObj.has("fileSize") ? fileObj.get("fileSize").getAsLong() : -1;
-            String expectedSha1 = fileObj.has("hash") ? fileObj.get("hash").getAsString() : null;
+            String expectedSha1 = null;
+            if (fileObj.has("hashes") && fileObj.get("hashes").isJsonObject()) {
+                JsonObject hashes = fileObj.getAsJsonObject("hashes");
+                if (hashes.has("sha1")) {
+                    expectedSha1 = hashes.get("sha1").getAsString();
+                }
+            } else if (fileObj.has("hash")) {
+                expectedSha1 = fileObj.get("hash").getAsString();
+            }
 
             tasks.add(new DownloadTask(url, dest, expectedSize, expectedSha1));
         }

@@ -170,6 +170,17 @@ public class NeoForgeInstaller {
             throw new IllegalArgumentException("gameDir must not be null");
         }
 
+        // If this NeoForge version was already installed into gameDir on a previous launch,
+        // reuse it instead of re-downloading the installer and re-running it every time.
+        try {
+            String existingVersionId = detectNeoForgeVersionId(gameDir, neoForgeVersion);
+            logIf(log, "NeoForge " + neoForgeVersion + " already installed, skipping installer. Version ID: "
+                    + existingVersionId);
+            return existingVersionId;
+        } catch (IOException notInstalledYet) {
+            // fall through and install below
+        }
+
         Path installerJar = resolveInstallerPath(neoForgeVersion, gameDir);
         if (Files.notExists(installerJar)) {
             String installerUrl = mavenBase + "/" + neoForgeVersion

@@ -28,6 +28,7 @@ public class Instance {
     // Modpack installation fields
     public String modpackFilePath;       // absolute path to the .mrpack or .zip file
     public String modpackInstallPath;    // directory where the modpack is installed
+    public boolean modpackExtracted = false; // whether the modpack's mods/overrides have been extracted yet
 
     // Last known multiplayer server this instance connected to (host:port or host).
     // Populated by scanning the game log while Minecraft is running. Used by the

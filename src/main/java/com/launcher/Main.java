@@ -175,8 +175,8 @@ public class Main extends JFrame {
     private JButton updateAllBtn;
     private JButton updateSelectedBtn;
     private JButton refreshModsBtn;
-    private JButton deleteModBtn;
     private JButton dedupeModsBtn;
+    private JButton disableIncompatibleModsBtn;
     private JButton installDependenciesBtn;
     private JButton fixModsBtn;
     private RoundedPanel fixModsDropdown;
@@ -197,6 +197,7 @@ public class Main extends JFrame {
     private ImageIcon defaultModIcon24;
     private ImageIcon defaultModIcon48;
     private ImageIcon dawnClientIcon32;
+    private ImageIcon dawnClientIcon48;
 
     // ─── Discover tab (Modrinth browser) ───────────────────────────────────────
 
@@ -369,6 +370,7 @@ public class Main extends JFrame {
             if (is != null) {
                 Image raw = ImageIO.read(is);
                 dawnClientIcon32 = new ImageIcon(raw.getScaledInstance(32, 32, Image.SCALE_SMOOTH));
+                dawnClientIcon48 = new ImageIcon(raw.getScaledInstance(48, 48, Image.SCALE_SMOOTH));
             }
         } catch (Exception ignored) {
         }
@@ -1410,22 +1412,21 @@ public class Main extends JFrame {
         delBtn.addActionListener(e -> {
             Instance sel = instanceList.getSelectedValue();
             if (sel != null) {
-                int res = JOptionPane.showConfirmDialog(this, "Are you sure you want to delete " + sel.name + "?",
-                        "Delete Instance", JOptionPane.YES_NO_OPTION);
-                if (res == JOptionPane.YES_OPTION) {
-                    Path gameDir = instanceManager.resolveGameDir(sel);
-                    String dirName = gameDir.getFileName().toString();
-                    Path instanceJson = gameDir.resolve(dirName + ".json");
-                    try {
-                        Files.deleteIfExists(instanceJson);
-                    } catch (Exception ex) {
-                        log("Failed to delete instance JSON: " + ex.getMessage());
-                    }
-                    instanceManager.remove(sel);
-                    instanceManager.save();
-                    refreshInstances();
-                    notifications.warning("Instance deleted", "Deleted: " + sel.name);
-                }
+                showConfirmOverlay("Delete Instance", "Are you sure you want to delete " + sel.name + "?",
+                        "Delete", true, () -> {
+                            Path gameDir = instanceManager.resolveGameDir(sel);
+                            String dirName = gameDir.getFileName().toString();
+                            Path instanceJson = gameDir.resolve(dirName + ".json");
+                            try {
+                                Files.deleteIfExists(instanceJson);
+                            } catch (Exception ex) {
+                                log("Failed to delete instance JSON: " + ex.getMessage());
+                            }
+                            instanceManager.remove(sel);
+                            instanceManager.save();
+                            refreshInstances();
+                            notifications.warning("Instance deleted", "Deleted: " + sel.name);
+                        });
             }
         });
 
@@ -1457,6 +1458,12 @@ public class Main extends JFrame {
     // ══════════════════════════════════════════════════════════════════════════
     // MODS TAB
     // ══════════════════════════════════════════════════════════════════════════
+    // Padding (in px) applied on every side of each mod card inside its grid
+    // cell — this is what creates the visible gap between cards. Shared with
+    // the mouse listener so click coordinates can be translated back into
+    // "card-local" space.
+    private static final int MOD_CARD_GAP = 8;
+
     private JPanel buildModsArea() {
         JPanel p = new JPanel(new BorderLayout(0, 8));
         p.setBorder(new EmptyBorder(14, 14, 10, 14));
@@ -1532,7 +1539,6 @@ public class Main extends JFrame {
 
         refreshModsBtn = new JButton("↻  Refresh");
         checkUpdatesBtn = new JButton("⟳  Check Updates");
-        deleteModBtn = new JButton("🗑  Delete");
 
         // These are still used internally by the Fix Mods popup actions, but no
         // longer placed directly on the toolbar.
@@ -1540,9 +1546,10 @@ public class Main extends JFrame {
         updateSelectedBtn = new JButton("⬆  Update Selected");
         installDependenciesBtn = new JButton("🔗  Install Deps");
         dedupeModsBtn = new JButton("🧹  Deduplicate");
+        disableIncompatibleModsBtn = new JButton("🚫  Disable Incompatible");
 
         // Toolbar buttons (only Refresh, Check Updates, Delete shown directly)
-        JButton[] btns = { refreshModsBtn, checkUpdatesBtn, deleteModBtn };
+        JButton[] btns = { refreshModsBtn, checkUpdatesBtn };
         for (JButton b : btns) {
             b.setFont(new Font("SansSerif", Font.BOLD, 11));
             b.setFocusPainted(false);
@@ -1568,10 +1575,11 @@ public class Main extends JFrame {
                 if (e.getX() >= fixModsBtn.getWidth() - 32) {
                     toggleFixModsDropdown();
                 } else {
-                    // Clicked on the left side: execute all 3 actions
+                    // Clicked on the left side: execute all fixes
                     updateAllBtn.doClick();
                     installDependenciesBtn.doClick();
                     dedupeModsBtn.doClick();
+                    disableIncompatibleModsBtn.doClick();
                 }
             }
         });
@@ -1627,11 +1635,34 @@ public class Main extends JFrame {
         modsList = new JList<>(modsListModel);
         modsList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         modsList.setOpaque(false);
-        modsList.setFixedCellHeight(68);
+        // Two-column compact grid (Feather Launcher style) instead of one full-width
+        // row per mod. HORIZONTAL_WRAP + visibleRowCount=0 lays cards left-to-right,
+        // wrapping to a new row once a row is full, growing vertically (scrollable).
+        // fixedCellWidth is recomputed on resize (see the JScrollPane listener below)
+        // so exactly 2 columns always fit the current window width.
+        modsList.setLayoutOrientation(JList.HORIZONTAL_WRAP);
+        modsList.setVisibleRowCount(0);
+        // Bigger cards than before (was 150x320) — more breathing room for the
+        // icon/name/version rows and the bottom status/toggle row. Height is padded
+        // out by 2*MOD_CARD_GAP so the new inter-card gap doesn't eat into the
+        // card's own content area.
+        modsList.setFixedCellHeight(220 + 2 * MOD_CARD_GAP);
+        modsList.setFixedCellWidth(380);
         modsList.setBorder(new EmptyBorder(4, 4, 4, 4));
         modsList.setCellRenderer(new ListCellRenderer<ModEntry>() {
             private final RoundedPanel card = new RoundedPanel(14, new Color(255, 255, 255, 10),
                     new Color(255, 255, 255, 18));
+            // Cards are laid out by JList with zero native spacing, so each cell is
+            // wrapped in a small transparent padding frame — this is what actually
+            // produces the neat gap between cards in the grid (both horizontally and
+            // vertically). MOD_CARD_GAP is shared with the mouse listener below so
+            // click hit-testing stays aligned with the (now inset) card bounds.
+            private final JPanel cellWrap = new JPanel(new BorderLayout());
+            {
+                cellWrap.setOpaque(false);
+                cellWrap.setBorder(new EmptyBorder(MOD_CARD_GAP, MOD_CARD_GAP, MOD_CARD_GAP, MOD_CARD_GAP));
+                cellWrap.add(card, BorderLayout.CENTER);
+            }
 
             @Override
             public Component getListCellRendererComponent(JList<? extends ModEntry> list, ModEntry mod, int index,
@@ -1645,10 +1676,8 @@ public class Main extends JFrame {
                 Color textColor = hexToColor(settings.textColor, new Color(226, 226, 234));
 
                 card.removeAll();
-                card.setLayout(new BorderLayout(10, 0));
-                card.setBorder(new EmptyBorder(8, 10, 8, 10));
-                int cardWidth = list.getWidth() > 0 ? list.getWidth() - 8 : 400;
-                card.setPreferredSize(new Dimension(cardWidth, 62));
+                card.setLayout(new BorderLayout(10, 8));
+                card.setBorder(new EmptyBorder(12, 14, 12, 14));
 
                 // Dawn Client is installed as a raw "dawn-standalone.jar" file — special-case
                 // it
@@ -1676,20 +1705,25 @@ public class Main extends JFrame {
                     card.setColors(new Color(255, 255, 255, 10), new Color(255, 255, 255, 18));
                 }
 
-                // Icon (32×32, async-loaded)
+                // Top row: icon + name + file/version info
+                JPanel top = new JPanel(new BorderLayout(10, 0));
+                top.setOpaque(false);
+
                 JLabel iconLbl = new JLabel();
-                iconLbl.setPreferredSize(new Dimension(32, 32));
-                if (isDawnClient && dawnClientIcon32 != null) {
-                    iconLbl.setIcon(dawnClientIcon32);
+                // Larger icon box (was 44x44) paired with higher-resolution source icons
+                // below, so mod icons read as clearer and more prominent inside the card.
+                iconLbl.setPreferredSize(new Dimension(52, 52));
+                if (isDawnClient && dawnClientIcon48 != null) {
+                    iconLbl.setIcon(dawnClientIcon48);
                 } else if (mod.iconUrl != null && !mod.iconUrl.isBlank()) {
                     ImageIcon icon = modIconCache.get(mod.iconUrl);
                     if (icon != null) {
                         iconLbl.setIcon(icon);
                     } else {
-                        iconLbl.setIcon(defaultModIcon);
+                        iconLbl.setIcon(defaultModIcon48);
                         final String url = mod.iconUrl;
                         new Thread(() -> {
-                            ImageIcon ic = loadIconRobust(url, 32);
+                            ImageIcon ic = loadIconRobust(url, 48);
                             if (ic != null) {
                                 modIconCache.put(url, ic);
                             }
@@ -1697,18 +1731,18 @@ public class Main extends JFrame {
                         }, "mod-icon").start();
                     }
                 } else {
-                    iconLbl.setIcon(defaultModIcon);
+                    iconLbl.setIcon(defaultModIcon48);
                 }
-                card.add(iconLbl, BorderLayout.WEST);
+                top.add(iconLbl, BorderLayout.WEST);
 
-                // Center: name, file name, version info
+                // Name, file name, version info
                 JPanel center = new JPanel();
                 center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
                 center.setOpaque(false);
 
                 String nameText = isDawnClient ? "Dawn Client" : mod.displayName();
                 JLabel nameLbl = new JLabel(mod.disabled ? (nameText + "  (Disabled)") : nameText);
-                nameLbl.setFont(new Font("SansSerif", Font.BOLD, 13));
+                nameLbl.setFont(new Font("SansSerif", Font.BOLD, 16));
                 nameLbl.setForeground(mod.disabled ? tint(textColor, -100) : textColor);
                 nameLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
                 center.add(nameLbl);
@@ -1717,7 +1751,7 @@ public class Main extends JFrame {
                 // displayed file name — the toggle/label already communicate that state).
                 String infoText = mod.displayFileName() + "  ·  " + mod.formattedSize();
                 JLabel infoLbl = new JLabel(infoText);
-                infoLbl.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                infoLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
                 infoLbl.setForeground(tint(textColor, -80));
                 infoLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
                 center.add(infoLbl);
@@ -1728,18 +1762,21 @@ public class Main extends JFrame {
                     verText += "  →  v" + mod.latestVersion;
                 }
                 JLabel verLbl = new JLabel(verText);
-                verLbl.setFont(new Font("SansSerif", Font.PLAIN, 10));
+                verLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
                 verLbl.setForeground(mod.latestVersion != null ? new Color(245, 158, 11) : tint(textColor, -60));
                 verLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
                 center.add(verLbl);
 
-                card.add(center, BorderLayout.CENTER);
+                top.add(center, BorderLayout.CENTER);
+                card.add(top, BorderLayout.NORTH);
 
-                // Right: status pill
+                // Bottom row: status pill + update button (left) and delete/toggle (right),
+                // spanning the full card width — compact grid cards don't have room for
+                // everything on one line like the old full-width rows did.
                 JLabel statusLbl = new JLabel(mod.status);
-                statusLbl.setFont(new Font("SansSerif", Font.BOLD, 10));
+                statusLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
                 statusLbl.setOpaque(true);
-                statusLbl.setBorder(new EmptyBorder(3, 8, 3, 8));
+                statusLbl.setBorder(new EmptyBorder(5, 10, 5, 10));
                 switch (mod.status) {
                     case "Up to date" -> {
                         statusLbl.setForeground(new Color(16, 185, 129));
@@ -1758,23 +1795,56 @@ public class Main extends JFrame {
                         statusLbl.setBackground(new Color(255, 255, 255, 10));
                     }
                 }
-                JPanel statusWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 8));
-                statusWrap.setOpaque(false);
 
+                JPanel bottom = new JPanel(new BorderLayout());
+                bottom.setOpaque(false);
+
+                JPanel leftWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+                leftWrap.setOpaque(false);
+                leftWrap.add(statusLbl);
                 // Add an "Update" button label for mods with available updates
                 if ("Update available".equals(mod.status) && mod.updateUrl != null) {
                     JLabel updateBtnLbl = new JLabel("⬆ Update");
-                    updateBtnLbl.setFont(new Font("SansSerif", Font.BOLD, 10));
+                    updateBtnLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
                     updateBtnLbl.setForeground(Color.WHITE);
                     updateBtnLbl.setOpaque(true);
                     updateBtnLbl.setBackground(new Color(245, 158, 11));
-                    updateBtnLbl.setBorder(new EmptyBorder(4, 10, 4, 10));
+                    updateBtnLbl.setBorder(new EmptyBorder(6, 12, 6, 12));
                     updateBtnLbl.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
                     updateBtnLbl.setName("updateBtn"); // marker for mouse listener
-                    statusWrap.add(updateBtnLbl);
+                    leftWrap.add(updateBtnLbl);
                 }
+                bottom.add(leftWrap, BorderLayout.WEST);
 
-                statusWrap.add(statusLbl);
+                JPanel statusWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 6));
+                statusWrap.setOpaque(false);
+
+                // Delete button — small red square with a trash-can glyph, placed just to
+                // the left of the enable/disable toggle. Like the toggle, it's rendered
+                // here but the real click is handled by the JList's mouse listener below
+                // (list cell renderer components don't receive real mouse events).
+                if (!isDawnClient) {
+                    JLabel trashBtn = new JLabel("🗑", SwingConstants.CENTER) {
+                        @Override
+                        protected void paintComponent(Graphics g) {
+                            Graphics2D g2 = (Graphics2D) g.create();
+                            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                            Color danger = new Color(220, 38, 38);
+                            g2.setColor(new Color(danger.getRed(), danger.getGreen(), danger.getBlue(), 18));
+                            g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
+                            g2.setColor(new Color(danger.getRed(), danger.getGreen(), danger.getBlue(), 130));
+                            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
+                            g2.dispose();
+                            super.paintComponent(g);
+                        }
+                    };
+                    trashBtn.setName("deleteBtn");
+                    trashBtn.setFont(new Font("SansSerif", Font.PLAIN, 16));
+                    trashBtn.setForeground(new Color(220, 38, 38));
+                    trashBtn.setOpaque(false);
+                    trashBtn.setPreferredSize(new Dimension(32, 32));
+                    statusWrap.add(trashBtn);
+                }
 
                 // Enable/disable toggle — same pill switch component used in Settings —
                 // placed to the right of the status pill (Checking…/Up to date/etc). Dawn
@@ -1790,9 +1860,10 @@ public class Main extends JFrame {
                     statusWrap.add(enabledToggle);
                 }
 
-                card.add(statusWrap, BorderLayout.EAST);
+                bottom.add(statusWrap, BorderLayout.EAST);
+                card.add(bottom, BorderLayout.SOUTH);
 
-                return card;
+                return cellWrap;
             }
         });
 
@@ -1806,24 +1877,43 @@ public class Main extends JFrame {
 
                 Rectangle cellBounds = modsList.getCellBounds(idx, idx);
                 if (cellBounds == null) return;
-                int relativeX = e.getX() - cellBounds.x;
+                // Each cell now has MOD_CARD_GAP of transparent padding around the
+                // actual card (that's what creates the gap between cards), so translate
+                // the click into card-local coordinates before hit-testing, and ignore
+                // clicks that land in the padding itself.
+                int relativeX = e.getX() - cellBounds.x - MOD_CARD_GAP;
+                int relativeY = e.getY() - cellBounds.y - MOD_CARD_GAP;
+                int cardWidth = cellBounds.width - 2 * MOD_CARD_GAP;
+                int cardHeight = cellBounds.height - 2 * MOD_CARD_GAP;
+                if (relativeX < 0 || relativeY < 0 || relativeX >= cardWidth || relativeY >= cardHeight) return;
 
-                // Enable/disable toggle now sits at the far right of the card, just past
-                // the status pill (Checking…/Up to date/etc). Dawn Client doesn't get a
-                // toggle (see renderer above), so there's nothing to click there.
+                // All the interactive controls (status pill, update button, delete
+                // button, toggle) now live in the card's bottom row, not spread across
+                // the full card height like the old full-width rows — so ignore clicks
+                // above that band (e.g. on the icon/name/version area up top).
+                boolean inBottomRow = relativeY >= cardHeight - 52;
+                if (!inBottomRow) return;
+
+                // Enable/disable toggle and delete button sit at the far right of the
+                // bottom row. Toggle occupies the last ~56px; the trash button sits in
+                // the ~44px band just to its left. Dawn Client doesn't get either (see
+                // renderer above), so there's nothing to click there.
                 boolean isDawnClient = mod.fileName != null
                         && mod.fileName.equalsIgnoreCase("dawn-standalone.jar");
-                if (!isDawnClient && relativeX >= cellBounds.width - 48) {
+                if (!isDawnClient && relativeX >= cardWidth - 56) {
                     toggleModEnabled(mod);
+                    return;
+                }
+                if (!isDawnClient && relativeX >= cardWidth - 100 && relativeX < cardWidth - 56) {
+                    deleteMod(mod);
                     return;
                 }
 
                 if (!"Update available".equals(mod.status) || mod.updateUrl == null) return;
 
-                // Check if the click was in the right-hand area (status/update region),
-                // just to the left of the enable/disable toggle.
-                // The update button is roughly in the right 180px of the cell
-                if (relativeX < cellBounds.width - 220 || relativeX > cellBounds.width - 48) return;
+                // The status pill + "Update" button sit at the bottom-left of the card,
+                // so only treat clicks in that left-hand band as the update action.
+                if (relativeX > 200) return;
 
                 Instance sel = instanceList.getSelectedValue();
                 if (sel == null) return;
@@ -1853,7 +1943,34 @@ public class Main extends JFrame {
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
+        // Responsive grid: pick a column count (1–4) based on how many
+        // MIN_CARD_WIDTH-ish cards actually fit the current viewport, so a
+        // maximized window shows 4 cards per row while a narrower window shows
+        // fewer — then stretch each card evenly to fill the row.
+        final int MIN_CARD_WIDTH = 360;
+        final int MAX_COLUMNS = 4;
+        Runnable recalcModsColumns = () -> {
+            int viewportWidth = scroll.getViewport().getWidth();
+            if (viewportWidth <= 0) return;
+            int columns = Math.max(1, Math.min(MAX_COLUMNS, viewportWidth / MIN_CARD_WIDTH));
+            int perColumn = Math.max(MIN_CARD_WIDTH, (viewportWidth - 8) / columns);
+            if (modsList.getFixedCellWidth() != perColumn) {
+                modsList.setFixedCellWidth(perColumn);
+                modsList.revalidate();
+                modsList.repaint();
+            }
+        };
+        scroll.getViewport().addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                recalcModsColumns.run();
+            }
+        });
         p.add(scroll, BorderLayout.CENTER);
+        // Run once up front (rather than waiting for the first resize event) so the
+        // grid is already laid out correctly — e.g. 4 columns on a maximized window —
+        // the very first time the Mods tab is shown.
+        SwingUtilities.invokeLater(recalcModsColumns);
 
         // ── Button actions ──────────────────────────────────────────────────
         refreshModsBtn.addActionListener(e -> {
@@ -1979,26 +2096,8 @@ public class Main extends JFrame {
             }, "update-selected").start();
         });
 
-        deleteModBtn.addActionListener(e -> {
-            List<ModEntry> selected = modsList.getSelectedValuesList();
-            if (selected.isEmpty())
-                return;
-            int res = JOptionPane.showConfirmDialog(this,
-                    "Are you sure you want to delete " + selected.size() + " mod(s)?", "Delete Mods",
-                    JOptionPane.YES_NO_OPTION);
-            if (res == JOptionPane.YES_OPTION) {
-                for (ModEntry m : selected) {
-                    try {
-                        Files.deleteIfExists(Path.of(m.filePath));
-                    } catch (Exception ignored) {
-                    }
-                }
-                Instance sel = instanceList.getSelectedValue();
-                if (sel != null)
-                    refreshModsView(sel);
-                notifications.warning("Mods deleted", "Deleted " + selected.size() + " mod(s).");
-            }
-        });
+        // (Bulk toolbar delete removed — each mod row now has its own trash button;
+        // see deleteMod(ModEntry) below.)
 
         dedupeModsBtn.addActionListener(e -> {
             Instance sel = instanceList.getSelectedValue();
@@ -2029,6 +2128,42 @@ public class Main extends JFrame {
             } else {
                 refreshModsView(sel);
                 notifications.success("Deduplicated", "Removed " + removed + " duplicate mod(s).");
+            }
+        });
+
+        disableIncompatibleModsBtn.addActionListener(e -> {
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null)
+                return;
+            String loaderName = sel.modLoader != null && sel.modLoader != ModLoaderType.VANILLA
+                    ? sel.modLoader.name().toLowerCase()
+                    : null;
+            int disabledCount = 0;
+            java.util.List<String> disabledNames = new ArrayList<>();
+            for (ModEntry mod : new ArrayList<>(currentModEntries)) {
+                if (mod.disabled) continue; // already disabled, leave as-is
+                if (!mod.isIncompatibleWith(loaderName, sel.mcVersion)) continue;
+                if (mod.filePath == null || mod.fileName == null) continue;
+                Path oldPath = Path.of(mod.filePath);
+                String newFileName = mod.fileName + ".disabled";
+                Path newPath = oldPath.resolveSibling(newFileName);
+                try {
+                    Files.move(oldPath, newPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    mod.fileName = newFileName;
+                    mod.filePath = newPath.toAbsolutePath().toString();
+                    mod.disabled = true;
+                    disabledCount++;
+                    disabledNames.add(mod.displayName());
+                } catch (java.io.IOException ignored) {
+                }
+            }
+            if (disabledCount == 0) {
+                notifications.info("No incompatible mods", "All identified mods match this instance's Minecraft version and modloader.");
+            } else {
+                refreshModsView(sel);
+                notifications.success("Disabled incompatible mods",
+                        "Disabled " + disabledCount + " mod(s) that don't match this instance's version/modloader:\n"
+                                + String.join(", ", disabledNames));
             }
         });
 
@@ -2253,6 +2388,21 @@ public class Main extends JFrame {
         modsCountLabel.setText("Scanning…");
         log("Scanning mods for \"" + inst.name + "\"…");
         long startedAt = System.currentTimeMillis();
+
+        // Snapshot the identities (Modrinth name/icon/update info) we already know
+        // about, keyed by content hash. Toggling or deleting a single mod — or just
+        // hitting Refresh — used to rebuild the whole list from scratch, which reset
+        // every ModEntry back to "Checking…" with its raw filename until the Modrinth
+        // round-trip finished again. That made already-identified mods flicker their
+        // name/icon away for a moment on every action. Carrying the known identity
+        // over for any jar whose content hash hasn't changed fixes that.
+        Map<String, ModEntry> knownByHash = new HashMap<>();
+        for (ModEntry m : currentModEntries) {
+            if (m.sha1Hash != null && m.modrinthId != null) {
+                knownByHash.put(m.sha1Hash, m);
+            }
+        }
+
         new Thread(() -> {
             try {
                 ModUpdateService service = new ModUpdateService();
@@ -2260,6 +2410,26 @@ public class Main extends JFrame {
                 List<ModEntry> list = service.scanModsDir(modsDir);
                 log("Found " + list.size() + " mod jar(s) in " + modsDir + " (hashed in "
                         + (System.currentTimeMillis() - startedAt) + " ms).");
+
+                // Re-apply any identity we already had for mods whose file content is
+                // unchanged (same SHA-1), so the freshly-scanned entries keep their name/
+                // icon/update status instead of dropping back to "unidentified" while we
+                // wait on Modrinth again.
+                for (ModEntry m : list) {
+                    ModEntry known = m.sha1Hash != null ? knownByHash.get(m.sha1Hash) : null;
+                    if (known != null) {
+                        m.modrinthId = known.modrinthId;
+                        m.projectName = known.projectName;
+                        m.currentVersion = known.currentVersion;
+                        m.latestVersion = known.latestVersion;
+                        m.updateUrl = known.updateUrl;
+                        m.updateFileName = known.updateFileName;
+                        m.iconUrl = known.iconUrl;
+                        m.status = known.status;
+                        m.loaders = known.loaders;
+                        m.gameVersions = known.gameVersions;
+                    }
+                }
 
                 // Publish the scanned list to the UI immediately instead of waiting for the
                 // Modrinth identification round-trip to finish first — the list used to sit
@@ -2308,6 +2478,26 @@ public class Main extends JFrame {
      * snappy toggle, then re-scans in the background to pick up any secondary
      * effects (e.g. Fix Mods / update status depending on file presence).
      */
+    /**
+     * Deletes a single mod jar from disk after confirmation, used by the per-row
+     * trash button. Mirrors the old toolbar bulk-delete behavior but for one mod.
+     */
+    private void deleteMod(ModEntry mod) {
+        if (mod.filePath == null) return;
+        showConfirmOverlay("Delete Mod",
+                "Are you sure you want to delete \"" + mod.displayName() + "\"?", "Delete", true, () -> {
+                    try {
+                        Files.deleteIfExists(Path.of(mod.filePath));
+                    } catch (Exception ignored) {
+                    }
+                    Instance sel = instanceList.getSelectedValue();
+                    if (sel != null) {
+                        refreshModsView(sel);
+                    }
+                    notifications.warning("Mod deleted", mod.displayName() + " was deleted.");
+                });
+    }
+
     private void toggleModEnabled(ModEntry mod) {
         if (mod.filePath == null || mod.fileName == null) return;
         Instance sel = instanceList.getSelectedValue();
@@ -3196,6 +3386,76 @@ public class Main extends JFrame {
         holder[0].start();
     }
 
+    // ── Custom confirmation popout (replaces JOptionPane.showConfirmDialog) ──
+    private RoundedPanel confirmOverlay;
+
+    /** Convenience overload for a plain (non-destructive) confirmation. */
+    private void showConfirmOverlay(String title, String message, String confirmLabel, Runnable onConfirm) {
+        showConfirmOverlay(title, message, confirmLabel, false, onConfirm);
+    }
+
+    /**
+     * Shows a small themed confirm/cancel popout in the launcher's own frosted-glass
+     * overlay style, instead of an OS-native JOptionPane dialog. {@code danger} tints
+     * the title and confirm button red for destructive actions (delete, reset, etc.).
+     */
+    private void showConfirmOverlay(String title, String message, String confirmLabel, boolean danger,
+            Runnable onConfirm) {
+        if (confirmOverlay != null) {
+            layeredPane.remove(confirmOverlay);
+            layeredPane.repaint();
+        }
+
+        RoundedPanel overlay = new RoundedPanel(18, new Color(20, 20, 26, 250), new Color(255, 255, 255, 34));
+        overlay.putClientProperty("keepCustomBg", Boolean.TRUE);
+        overlay.setLayout(new BorderLayout());
+        overlay.setFrostedGlass(layeredPane, 8, new Color(12, 12, 16, 150));
+        confirmOverlay = overlay;
+
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(16, 20, 8, 12));
+        JLabel titleLbl = new JLabel(title);
+        titleLbl.setFont(new Font("SansSerif", Font.BOLD, 16));
+        titleLbl.setForeground(danger ? new Color(239, 68, 68) : new Color(6, 182, 212));
+        header.add(titleLbl, BorderLayout.CENTER);
+        overlay.add(header, BorderLayout.NORTH);
+
+        JLabel msgLbl = new JLabel("<html><body style='width:300px;'>" + message + "</body></html>");
+        msgLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        msgLbl.setForeground(new Color(200, 200, 208));
+        msgLbl.setBorder(new EmptyBorder(0, 20, 12, 20));
+        overlay.add(msgLbl, BorderLayout.CENTER);
+
+        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        bottomBar.setOpaque(false);
+        bottomBar.setBorder(new EmptyBorder(0, 20, 16, 20));
+
+        JButton cancelBtn = new JButton("Cancel");
+        cancelBtn.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        cancelBtn.setMargin(new Insets(6, 16, 6, 16));
+        cancelBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        cancelBtn.addActionListener(ev -> animateOverlayHide(overlay));
+        bottomBar.add(cancelBtn);
+
+        JButton confirmBtn = new JButton(confirmLabel);
+        confirmBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        confirmBtn.setForeground(Color.WHITE);
+        confirmBtn.setBackground(danger ? new Color(239, 68, 68) : new Color(6, 182, 212));
+        confirmBtn.setMargin(new Insets(6, 18, 6, 18));
+        confirmBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        confirmBtn.addActionListener(ev -> {
+            animateOverlayHide(overlay);
+            onConfirm.run();
+        });
+        bottomBar.add(confirmBtn);
+
+        overlay.add(bottomBar, BorderLayout.SOUTH);
+
+        positionModOverlay(overlay, 420, 170);
+        animateOverlayShow(overlay);
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // FIX MODS — Custom themed dropdown
     // ══════════════════════════════════════════════════════════════════════════
@@ -3229,16 +3489,36 @@ public class Main extends JFrame {
         fixModsDropdown.add(sep);
         fixModsDropdown.add(Box.createVerticalStrut(4));
 
+        // ── Scrollable items container ──
+        // As more fixes get added to this menu it can outgrow the fixed dropdown
+        // height, so the item rows live in their own panel inside a scroll pane
+        // (title/separator stay fixed at the top, outside the scrollable area).
+        JPanel itemsPanel = new JPanel();
+        itemsPanel.setOpaque(false);
+        itemsPanel.setLayout(new BoxLayout(itemsPanel, BoxLayout.Y_AXIS));
+
+        JScrollPane itemsScroll = new JScrollPane(itemsPanel);
+        itemsScroll.setOpaque(false);
+        itemsScroll.getViewport().setOpaque(false);
+        itemsScroll.setBorder(null);
+        itemsScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        itemsScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        itemsScroll.getVerticalScrollBar().setUnitIncrement(16);
+        itemsScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+        fixModsDropdown.add(itemsScroll);
+
         // ── Dropdown items ──
         String[][] items = {
             {"⬆  Update All Mods", "Update all mods to their latest versions"},
             {"🔗  Install Dependencies", "Find and install missing required dependencies"},
-            {"🧹  Deduplicate Mods", "Remove duplicate mod files (keeps newest)"}
+            {"🧹  Deduplicate Mods", "Remove duplicate mod files (keeps newest)"},
+            {"🚫  Disable Incompatible Mods", "Disable mods whose version/loader doesn't match this instance"}
         };
         Runnable[] actions = {
             () -> updateAllBtn.doClick(),
             () -> installDependenciesBtn.doClick(),
-            () -> dedupeModsBtn.doClick()
+            () -> dedupeModsBtn.doClick(),
+            () -> disableIncompatibleModsBtn.doClick()
         };
         Color hoverBg = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 30); // accent hover tint
 
@@ -3308,7 +3588,7 @@ public class Main extends JFrame {
                 }
             });
 
-            fixModsDropdown.add(row);
+            itemsPanel.add(row);
         }
 
         fixModsDropdown.setVisible(false);
@@ -3333,7 +3613,7 @@ public class Main extends JFrame {
         // Position below the Fix Mods button
         Point btnLoc = SwingUtilities.convertPoint(fixModsBtn, 0, fixModsBtn.getHeight(), layeredPane);
         int dropW = 280;
-        int dropH = 210;
+        int dropH = 260;
         int x = Math.max(8, Math.min(btnLoc.x, layeredPane.getWidth() - dropW - 8));
         int y = btnLoc.y + 4;
         // If it would go off the bottom, show above the button instead
@@ -6209,6 +6489,18 @@ public class Main extends JFrame {
     }
 
     /**
+     * Returns true if a preset built for {@code presetLoader} can reasonably be applied
+     * to an instance running {@code targetLoader}. Besides an exact match, Quilt is
+     * built to be backwards-compatible with Fabric mods (via the Quilt Standard
+     * Libraries), so Fabric presets are also considered compatible with Quilt instances.
+     */
+    private static boolean loadersCompatible(String presetLoader, String targetLoader) {
+        if (presetLoader == null || targetLoader == null) return false;
+        if (presetLoader.equalsIgnoreCase(targetLoader)) return true;
+        return presetLoader.equalsIgnoreCase("FABRIC") && targetLoader.equalsIgnoreCase("QUILT");
+    }
+
+    /**
      * Scans {@code /com/launcher/Presets} on the classpath for bundled preset folders,
      * each expected to contain one {@code *.json} preset file and optionally a
      * {@code config} subfolder. Works both when running exploded (a real directory on
@@ -6506,13 +6798,13 @@ public class Main extends JFrame {
         BufferedImage img = null;
         try {
             if (preset.fileDir != null) {
-                File imgFile = preset.fileDir.resolve("image.png").toFile();
+                File imgFile = preset.fileDir.resolve("icon.png").toFile();
                 if (imgFile.isFile()) {
                     img = ImageIO.read(imgFile);
                 }
             } else if (preset.jarPath != null) {
                 try (java.util.jar.JarFile jar = new java.util.jar.JarFile(preset.jarPath)) {
-                    java.util.jar.JarEntry entry = jar.getJarEntry(preset.jarEntryPrefix + "image.png");
+                    java.util.jar.JarEntry entry = jar.getJarEntry(preset.jarEntryPrefix + "icon.png");
                     if (entry != null) {
                         try (InputStream is = jar.getInputStream(entry)) {
                             img = ImageIO.read(is);
@@ -6583,7 +6875,7 @@ public class Main extends JFrame {
         List<String> presetLoaders = preset.modLoaders();
         String targetLoader = targetInst.modLoader != null ? targetInst.modLoader.name() : "VANILLA";
         boolean loaderMatches = presetLoaders.isEmpty()
-                || presetLoaders.stream().anyMatch(l -> l.equalsIgnoreCase(targetLoader));
+                || presetLoaders.stream().anyMatch(l -> loadersCompatible(l, targetLoader));
 
         JPanel infoBar = new JPanel();
         infoBar.setOpaque(false);
@@ -6633,10 +6925,10 @@ public class Main extends JFrame {
                 cb.setEnabled(false);
             } else if (!loaderMatches) {
                 cb.setForeground(new Color(150, 150, 165));
-                cb.setToolTipText("⚠ Disabled — this preset targets " + String.join("/", presetLoaders)
-                        + ", not " + targetLoader);
+                cb.setToolTipText("⚠ Unchecked by default — this preset targets " + String.join("/", presetLoaders)
+                        + ", not " + targetLoader + ". You can still enable it manually if you're sure it's compatible.");
                 cb.setSelected(false);
-                cb.setEnabled(false);
+                cb.setEnabled(true);
             } else {
                 cb.setForeground(Color.WHITE);
                 cb.setToolTipText(modrinthUrl != null ? modrinthUrl : "Modrinth ID: " + modrinthId);
@@ -6872,7 +7164,7 @@ public class Main extends JFrame {
 
         // Corrected to directly access public fields
         appearanceCard.add(createColorInputRow("Accent Color (Hex)", () -> s.accentColor, (val) -> s.accentColor = val,
-                saveAndApply, "#10b981"), gbc);
+                saveAndApply, "#fa0404"), gbc);
         gbc.gridy++;
         appearanceCard.add(createColorInputRow("Background Color (Hex)", () -> s.bgColor, (val) -> s.bgColor = val,
                 saveAndApply, "#0a0a0f"), gbc);
@@ -7579,10 +7871,9 @@ public class Main extends JFrame {
         JButton resetAllBtn = new JButton("Reset All Settings");
         resetAllBtn.setForeground(new Color(239, 68, 68));
         resetAllBtn.addActionListener(e -> {
-            int choice = JOptionPane.showConfirmDialog(this,
+            showConfirmOverlay("Reset All Settings",
                     "This will reset ALL launcher settings back to their defaults. Continue?",
-                    "Reset All Settings", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (choice == JOptionPane.YES_OPTION) {
+                    "Reset", true, () -> {
                 mgr.resetToDefaults();
                 applyTheme();
                 int idx = mainTabPane.getSelectedIndex();
@@ -7607,7 +7898,7 @@ public class Main extends JFrame {
                     flashBackTimer.setRepeats(false);
                     flashBackTimer.start();
                 }
-            }
+            });
         });
         addSettingsRow(resetCard, "", resetAllBtn, gbc);
 
@@ -8786,6 +9077,28 @@ public class Main extends JFrame {
                 Files.createDirectories(gameDir);
                 Files.createDirectories(nativesDir);
 
+                // Extract the modpack (mods + config overrides) into the instance's game
+                // directory. This previously never ran anywhere, so instances created from a
+                // .mrpack ended up with an empty mods/config folder.
+                if (instance.modpackFilePath != null && !instance.modpackFilePath.isBlank()
+                        && !instance.modpackExtracted) {
+                    Path modpackFile = Path.of(instance.modpackFilePath);
+                    if (Files.exists(modpackFile)) {
+                        log("Extracting modpack: " + modpackFile.getFileName() + "…");
+                        SwingUtilities.invokeLater(() -> setStatus("Extracting modpack…"));
+                        try {
+                            new com.launcher.minecraft.ModpackExtractor().extract(modpackFile, gameDir, this::log);
+                            instance.modpackExtracted = true;
+                            instanceManager.update(instance);
+                            instanceManager.save();
+                        } catch (Exception ex) {
+                            log("Modpack extraction failed: " + ex.getMessage());
+                        }
+                    } else {
+                        log("Modpack file no longer exists at " + instance.modpackFilePath + ", skipping extraction.");
+                    }
+                }
+
                 GameInstaller installer = new GameInstaller();
                 VersionManifestService manifestService = new VersionManifestService();
                 JsonObject versionJson = null;
@@ -8812,16 +9125,40 @@ public class Main extends JFrame {
                         }
 
                     } else if (instance.modLoader == ModLoaderType.FABRIC) {
-                        log("Fetching Fabric profile " + instance.modLoaderVersion + "…");
-                        SwingUtilities.invokeLater(() -> setStatus("Fetching Fabric profile…"));
-                        versionJson = new FabricInstaller().fetchProfileJson(instance.mcVersion,
-                                instance.modLoaderVersion);
+                        String fabricVid = "fabric-loader-" + instance.modLoaderVersion + "-" + instance.mcVersion;
+                        Path localFabricJson = LauncherPaths.findLocalVersionJson(fabricVid, gameDir);
+                        try {
+                            log("Fetching Fabric profile " + instance.modLoaderVersion + "…");
+                            SwingUtilities.invokeLater(() -> setStatus("Fetching Fabric profile…"));
+                            versionJson = new FabricInstaller().fetchProfileJson(instance.mcVersion,
+                                    instance.modLoaderVersion);
+                        } catch (Exception fetchEx) {
+                            if (localFabricJson != null) {
+                                log("Fabric meta unreachable (" + fetchEx.getMessage()
+                                        + "), using previously cached profile instead.");
+                                versionJson = JsonUtil.parse(Files.readString(localFabricJson)).getAsJsonObject();
+                            } else {
+                                throw fetchEx;
+                            }
+                        }
 
                     } else if (instance.modLoader == ModLoaderType.QUILT) {
-                        log("Fetching Quilt profile " + instance.modLoaderVersion + "…");
-                        SwingUtilities.invokeLater(() -> setStatus("Fetching Quilt profile…"));
-                        versionJson = new QuiltInstaller().fetchProfileJson(instance.mcVersion,
-                                instance.modLoaderVersion);
+                        String quiltVid = "quilt-loader-" + instance.modLoaderVersion + "-" + instance.mcVersion;
+                        Path localQuiltJson = LauncherPaths.findLocalVersionJson(quiltVid, gameDir);
+                        try {
+                            log("Fetching Quilt profile " + instance.modLoaderVersion + "…");
+                            SwingUtilities.invokeLater(() -> setStatus("Fetching Quilt profile…"));
+                            versionJson = new QuiltInstaller().fetchProfileJson(instance.mcVersion,
+                                    instance.modLoaderVersion);
+                        } catch (Exception fetchEx) {
+                            if (localQuiltJson != null) {
+                                log("Quilt meta unreachable (" + fetchEx.getMessage()
+                                        + "), using previously cached profile instead.");
+                                versionJson = JsonUtil.parse(Files.readString(localQuiltJson)).getAsJsonObject();
+                            } else {
+                                throw fetchEx;
+                            }
+                        }
 
                     } else if (instance.modLoader == ModLoaderType.NEOFORGE) {
                         log("Installing NeoForge " + instance.modLoaderVersion + "…");
@@ -8836,7 +9173,17 @@ public class Main extends JFrame {
                         ForgeInstaller fi = new ForgeInstaller();
                         String fv = instance.modLoaderVersion;
                         if ("Recommended".equals(fv) || "Latest".equals(fv)) {
-                            fv = fi.fetchPromotedLatest(instance.mcVersion, "Recommended".equals(fv));
+                            try {
+                                fv = fi.fetchPromotedLatest(instance.mcVersion, "Recommended".equals(fv));
+                            } catch (Exception promoEx) {
+                                throw new RuntimeException(
+                                        "Could not resolve a \"" + fv + "\" Forge build for " + instance.mcVersion
+                                                + " (" + promoEx.getMessage()
+                                                + "). Pick a specific Forge version for this instance instead of \""
+                                                + fv + "\", or check your network/firewall access to "
+                                                + "files.minecraftforge.net.",
+                                        promoEx);
+                            }
                         }
                         String vid = fi.installClient(instance.mcVersion, fv, gameDir, this::log);
                         versionJson = fi.loadGeneratedVersionJson(gameDir, vid);
@@ -9426,15 +9773,9 @@ public class Main extends JFrame {
      * — so this offers to restart the window immediately.
      */
     private void promptRestartForTitleBarChange() {
-        int choice = JOptionPane.showConfirmDialog(this,
-                "Changing the title bar style requires restarting the launcher window.\nRestart now?",
-                "Restart Required", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-        if (choice == JOptionPane.YES_OPTION) {
-            restartLauncherWindow();
-        } else {
-            notifications.info("Restart later",
-                    "The new title bar style will apply the next time you restart Zero Launcher.");
-        }
+        showConfirmOverlay("Restart Required",
+                "Changing the title bar style requires restarting the launcher window.<br>Restart now?",
+                "Restart", () -> restartLauncherWindow());
     }
 
     /**

@@ -4,13 +4,68 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="fix some bugs from instanlig other mods loaders">
+    <list default="true" id="b9025a38-ab01-49e5-926f-dcf43c1b32dd" name="Changes" comment="starting with presets">
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/Fabric &amp; Quilt Preformnace Preset_preset.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/BBEConfig.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/NoChatReports/NCR-Client.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/NoChatReports/NCR-Common.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/NoChatReports/NCR-ServerPreferences.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/NoChatReports/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/badoptimizations.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/c2me.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/entityculling.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/ferritecore.mixin.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/immediatelyfast.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/lithium.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/modernfix-mixins.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/moreculling.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/servercore/config.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/servercore/optimizations.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/sodium-extra-options.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/sodium-extra.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/sodium-fingerprint.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/sodium-mixins.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/sodium-options.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/transition.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/trender.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/vmp.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/config/zfastnoise.mixin.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric &amp; Quilt Preformnace Preset_preset/icon.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/NeoForge Preformnace Preset_preset.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/NoChatReports/NCR-Client.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/badoptimizations.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/c2me.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/entityculling.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/ferritecore.mixin.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/immediatelyfast.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/lithium.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/modernfix-mixins.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/moreculling.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/servercore/config.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/servercore/optimizations.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/sodium-options.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/config/vmp.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset/icon.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/logos/Quilt.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/logos/fabric.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/logos/forge.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/logos/loader.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/logos/loaders.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/logos/neoforge.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/com/launcher/logos/vanilla.png" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/Main.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/manager/InstanceManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/manager/InstanceManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ForgeInstaller.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ForgeInstaller.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModUpdateService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModUpdateService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModpackExtractor.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/ModpackExtractor.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/NeoForgeInstaller.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/NeoForgeInstaller.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/QuiltInstaller.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/minecraft/QuiltInstaller.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/Instance.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/model/Instance.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/model/LauncherSettings.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/model/ModEntry.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/model/ModEntry.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationCenter.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationCenter.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/NotificationPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstancePanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/CreateInstancePanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstancePanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/launcher/ui/EditInstancePanel.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -18,7 +73,7 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="72" />
+    <option name="cachedIndexableFilesCount" value="112" />
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -41,61 +96,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.0308311106116157" />
-      <entry key="MS500" value="1.6498067513873522" />
-      <entry key="S2" value="4.2293462194197025" />
-      <entry key="S5" value="8.072216384837784" />
-      <entry key="S10" value="13.185239359886129" />
-      <entry key="S30" value="24.92934032149365" />
-      <entry key="S60" value="31.13407577001644" />
-      <entry key="M2" value="35.1673291774838" />
-      <entry key="M5" value="39.60351207639449" />
-      <entry key="M10" value="52.99788891180183" />
-      <entry key="M15" value="67.99970937476118" />
-      <entry key="M30" value="98.32620956042163" />
-      <entry key="H1" value="123.73419380118396" />
-      <entry key="H2" value="140.25679080706797" />
-      <entry key="H4" value="149.68900939826167" />
-      <entry key="D1" value="158.2170757756832" />
-      <entry key="W1" value="159.743672441271" />
+      <entry key="MS100" value="1.0180737233363528" />
+      <entry key="MS500" value="1.513767032361323" />
+      <entry key="S2" value="2.6273971938822913" />
+      <entry key="S5" value="3.3092284043011264" />
+      <entry key="S10" value="3.6265555455581686" />
+      <entry key="S30" value="4.065043526909411" />
+      <entry key="S60" value="4.560253303893778" />
+      <entry key="M2" value="5.090833860372544" />
+      <entry key="M5" value="6.808096529061214" />
+      <entry key="M10" value="15.527821126489107" />
+      <entry key="M15" value="28.17162477614603" />
+      <entry key="M30" value="63.45853034880808" />
+      <entry key="H1" value="102.83090125354566" />
+      <entry key="H2" value="133.10316234009244" />
+      <entry key="H4" value="152.0050677959108" />
+      <entry key="D1" value="170.09780058379772" />
+      <entry key="W1" value="173.4364494072094" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
       <entry key="MS500" value="0.0" />
-      <entry key="S2" value="2.392962849131447E-274" />
-      <entry key="S5" value="3.561019751143352E-110" />
-      <entry key="S10" value="1.8870664405747227E-55" />
-      <entry key="S30" value="5.735822858792343E-19" />
-      <entry key="S60" value="7.573521544692625E-10" />
-      <entry key="M2" value="2.752003187623994E-5" />
-      <entry key="M5" value="0.014991999982663103" />
-      <entry key="M10" value="0.12244182284931547" />
-      <entry key="M15" value="0.24657735577103043" />
-      <entry key="M30" value="0.4965655603956343" />
-      <entry key="H1" value="0.7046740809733496" />
-      <entry key="H2" value="0.8394486767952812" />
-      <entry key="H4" value="0.9162143181566633" />
-      <entry key="D1" value="0.9855216721138419" />
-      <entry key="W1" value="0.9979187172148979" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="9.495971741029745E-207" />
+      <entry key="S10" value="9.744727672454344E-104" />
+      <entry key="S30" value="4.6017522738935815E-35" />
+      <entry key="S60" value="6.783621653581201E-18" />
+      <entry key="M2" value="2.6045386642515404E-9" />
+      <entry key="M5" value="3.683768446181114E-4" />
+      <entry key="M10" value="0.019193145771814288" />
+      <entry key="M15" value="0.0716854101679115" />
+      <entry key="M30" value="0.26774131203068297" />
+      <entry key="H1" value="0.5174372541967608" />
+      <entry key="H2" value="0.7193311158268908" />
+      <entry key="H4" value="0.8481339020619852" />
+      <entry key="D1" value="0.9729206110600453" />
+      <entry key="W1" value="0.9960858528863846" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.9362858960184931" />
-      <entry key="MS500" value="1.6222728423746646" />
-      <entry key="S2" value="4.214059047290574" />
-      <entry key="S5" value="8.058148909849466" />
-      <entry key="S10" value="13.164637445983503" />
-      <entry key="S30" value="24.906588833011167" />
-      <entry key="S60" value="31.11803344220024" />
-      <entry key="M2" value="35.15778359753531" />
-      <entry key="M5" value="39.61388733070822" />
-      <entry key="M10" value="53.11664363332523" />
-      <entry key="M15" value="68.24279701529134" />
-      <entry key="M30" value="98.81999228479523" />
-      <entry key="H1" value="124.43704345771356" />
-      <entry key="H2" value="141.09518681255605" />
-      <entry key="H4" value="150.604657338405" />
-      <entry key="D1" value="159.2024970221349" />
-      <entry key="W1" value="160.74157665784023" />
+      <entry key="MS100" value="0.034362216302388796" />
+      <entry key="MS500" value="0.9515611037364561" />
+      <entry key="S2" value="2.4373605146303956" />
+      <entry key="S5" value="3.2273619311058845" />
+      <entry key="S10" value="3.5845065204808844" />
+      <entry key="S30" value="4.050723562704426" />
+      <entry key="S60" value="4.553014824550123" />
+      <entry key="M2" value="5.087179236135237" />
+      <entry key="M5" value="6.806862693765752" />
+      <entry key="M10" value="15.545653321739357" />
+      <entry key="M15" value="28.241750078196773" />
+      <entry key="M30" value="63.724477537899816" />
+      <entry key="H1" value="103.34684406703975" />
+      <entry key="H2" value="133.82151156121336" />
+      <entry key="H4" value="152.85263679421553" />
+      <entry key="D1" value="171.0706151829924" />
+      <entry key="W1" value="174.43251980203615" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -107,26 +162,38 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.MCP Project settings loaded": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "main",
-    "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "/home/monib/.minecraft/resourcepacks",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "preferences.pluginManager"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/monib/IdeaProjects/Zero-Launcher/src/main/resources/com/launcher/Presets/Quilt Preformnace Preset_preset&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;
   }
-}]]></component>
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Quilt Preformnace Preset_preset" />
+      <recent name="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/NeoForge Preformnace Preset_preset" />
+      <recent name="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/Fabric Preformnace Preset_preset" />
+      <recent name="$PROJECT_DIR$/src/main/resources/com/launcher/Presets/forge_preformance_preset" />
+      <recent name="$PROJECT_DIR$/src/main/resources/com/launcher/Presets" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src/main/resources/com/launcher/Presets" />
+    </key>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -223,7 +290,15 @@
       <option name="project" value="LOCAL" />
       <updated>1783977195718</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="starting with presets">
+      <option name="closed" value="true" />
+      <created>1784032802565</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1784032802565</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -251,6 +326,7 @@
     <MESSAGE value="add fix button and dropdown &#10;make the launcher more orginaized &#10;remake the discover section look" />
     <MESSAGE value="chnage the discover cards design add devloper section in the settings" />
     <MESSAGE value="fix some bugs from instanlig other mods loaders" />
-    <option name="LAST_COMMIT_MESSAGE" value="fix some bugs from instanlig other mods loaders" />
+    <MESSAGE value="starting with presets" />
+    <option name="LAST_COMMIT_MESSAGE" value="starting with presets" />
   </component>
 </project>

@@ -9,7 +9,7 @@ public class LauncherSettings {
     public int defaultsVersion = 1;
 
     // Appearance
-    public String accentColor      = "#00a9e0";   // Rem Color <3
+    public String accentColor      = "#fa0404";   // Rem Color <3
     public String bgColor          = "#0a0a0f";   // near-black base
     public String panelBgColor     = "#13131a";   // slightly lighter panel
     public String textColor        = "#e2e2ea";   // off-white text
@@ -53,7 +53,7 @@ public class LauncherSettings {
     public boolean showConsoleOnLaunch  = true;
     /** Whether the log console panel is currently shown or collapsed (toggled from the top bar). */
     public boolean logConsoleVisible    = false;
-    public boolean scanOnStartup        = true;
+    public boolean scanOnStartup        = false;
     public boolean showHiddenInstances  = false;
     /** ID of the instance that was selected the last time the launcher was open;
      *  used to auto-select it again the next time the launcher starts. */

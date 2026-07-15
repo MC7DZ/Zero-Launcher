@@ -990,7 +990,7 @@ public class CreateInstancePanel extends JPanel {
                     meta.loaderVersion = deps.get("fabric-loader").getAsString();
                 } else if (deps.has("quilt-loader")) {
                     meta.loaderType = ModLoaderType.QUILT;
-                    meta.loaderVersion = deps.get("quilt").getAsString();
+                    meta.loaderVersion = deps.get("quilt-loader").getAsString();
                 } else if (deps.has("forge")) {
                     meta.loaderType = ModLoaderType.FORGE;
                     meta.loaderVersion = deps.get("forge").getAsString();

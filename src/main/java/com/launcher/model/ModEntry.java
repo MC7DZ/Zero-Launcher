@@ -19,6 +19,23 @@ public class ModEntry {
     public String status;         // "Checking…", "Up to date", "Update available", "Unknown"
     public boolean disabled;      // true if the jar is currently suffixed ".disabled" on disk
     public java.util.List<String> loaders; // mod loaders this jar's Modrinth version supports (e.g. "fabric", "forge"), null if unidentified
+    public java.util.List<String> gameVersions; // Minecraft versions this jar's Modrinth version supports, null if unidentified
+
+    /**
+     * Returns true if this mod is known to be INCOMPATIBLE with the given loader and/or
+     * Minecraft version — i.e. we successfully identified the mod's supported loaders/versions
+     * and neither list contains the instance's loader/version. Returns false (not flagged) when
+     * the mod couldn't be identified, since we can't know either way.
+     */
+    public boolean isIncompatibleWith(String loaderName, String mcVersion) {
+        boolean loaderMismatch = loaders != null && !loaders.isEmpty()
+                && loaderName != null && !loaderName.isBlank()
+                && loaders.stream().noneMatch(l -> l.equalsIgnoreCase(loaderName));
+        boolean versionMismatch = gameVersions != null && !gameVersions.isEmpty()
+                && mcVersion != null && !mcVersion.isBlank()
+                && gameVersions.stream().noneMatch(v -> v.equalsIgnoreCase(mcVersion));
+        return loaderMismatch || versionMismatch;
+    }
 
     public ModEntry() {
         this.status = "Checking…";

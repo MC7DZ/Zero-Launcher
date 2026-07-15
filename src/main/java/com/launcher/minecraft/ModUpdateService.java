@@ -137,6 +137,16 @@ public class ModUpdateService {
                         }
                         mod.loaders = loaderList;
                     }
+
+                    // Minecraft versions this specific jar/version supports, so we can flag
+                    // mods that don't match the instance's Minecraft version.
+                    if (versionObj.has("game_versions") && versionObj.get("game_versions").isJsonArray()) {
+                        java.util.List<String> gvList = new ArrayList<>();
+                        for (JsonElement ge : versionObj.getAsJsonArray("game_versions")) {
+                            gvList.add(ge.getAsString());
+                        }
+                        mod.gameVersions = gvList;
+                    }
                 }
             }
 

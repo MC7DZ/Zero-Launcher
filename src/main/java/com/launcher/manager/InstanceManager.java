@@ -97,7 +97,7 @@ public class InstanceManager {
         if (instance.useCustomDirectory && instance.customDirectoryPath != null && !instance.customDirectoryPath.isBlank()) {
             return Path.of(instance.customDirectoryPath);
         }
-        return LauncherPaths.defaultInstanceDir(instance.name);
+        return LauncherPaths.getDefaultMinecraftPath();
     }
 
     private void scanMinecraftFolder() {
