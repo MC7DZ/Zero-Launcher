@@ -1,0 +1,15 @@
+{
+  "gammaMultiplier": 3,
+  "pumpkinBlur": false,
+  "fireOffset": -29,
+  "shieldOffset": 0,
+  "blindnessFog": false,
+  "darknessFog": false,
+  "lavaFog": false,
+  "powderSnowFog": false,
+  "waterFog": false,
+  "atmosphericFog": true,
+  "showMapWhileInBoat": true,
+  "fixShieldRiptideTrident": true,
+  "darkWindowBorders": true
+}

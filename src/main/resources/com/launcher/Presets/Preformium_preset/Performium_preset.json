@@ -1,0 +1,220 @@
+{
+  "presetName": "Performium",
+  "presetType": "Performance",
+  "description": "Nice preformance modpack with some features",
+  "modLoaders": [
+    "FABRIC"
+  ],
+  "mods": [
+    {
+      "name": "BadOptimizations",
+      "fileName": "BadOptimizations-2.4.1-26.2-fabric.jar",
+      "modrinthId": "g96Z4WVZ",
+      "modrinthUrl": "https://modrinth.com/mod/g96Z4WVZ"
+    },
+    {
+      "name": "Gamma Utils (Fullbright)",
+      "fileName": "Gamma-Utils-Fabric-3.1.0+mc26.2-beta.jar",
+      "modrinthId": "wdLuzzEP",
+      "modrinthUrl": "https://modrinth.com/mod/wdLuzzEP"
+    },
+    {
+      "name": "ImmediatelyFast",
+      "fileName": "ImmediatelyFast-Fabric-1.16.2+26.2.jar",
+      "modrinthId": "5ZwdcRci",
+      "modrinthUrl": "https://modrinth.com/mod/5ZwdcRci"
+    },
+    {
+      "name": "Resourcify",
+      "fileName": "Resourcify (26.2-fabric)-1.8.5.jar",
+      "modrinthId": "RLzHAoZe",
+      "modrinthUrl": "https://modrinth.com/mod/RLzHAoZe"
+    },
+    {
+      "name": "ScalableLux",
+      "fileName": "ScalableLux-fabric-0.3.0-alpha.0.3-all.jar",
+      "modrinthId": "Ps1zyz6x",
+      "modrinthUrl": "https://modrinth.com/mod/Ps1zyz6x"
+    },
+    {
+      "name": "Concurrent Chunk Management Engine (Fabric)",
+      "fileName": "c2me-fabric-mc26.2-0.4.2-alpha.0.17.jar",
+      "modrinthId": "VSNURh3q",
+      "modrinthUrl": "https://modrinth.com/mod/VSNURh3q"
+    },
+    {
+      "name": "Capes",
+      "fileName": "capes-1.5.11+26.2.jar",
+      "modrinthId": "89Wsn8GD",
+      "modrinthUrl": "https://modrinth.com/mod/89Wsn8GD"
+    },
+    {
+      "name": "Cloth Config API",
+      "fileName": "cloth-config-26.2.155.jar",
+      "modrinthId": "9s6osm5g",
+      "modrinthUrl": "https://modrinth.com/mod/9s6osm5g"
+    },
+    {
+      "name": "Continuity",
+      "fileName": "continuity-3.0.1+26.2.jar",
+      "modrinthId": "1IjD5062",
+      "modrinthUrl": "https://modrinth.com/mod/1IjD5062"
+    },
+    {
+      "name": "[EMF] Entity Model Features",
+      "fileName": "entity_model_features-3.2.6-26.2-fabric.jar",
+      "modrinthId": "4I1XuqiY",
+      "modrinthUrl": "https://modrinth.com/mod/4I1XuqiY"
+    },
+    {
+      "name": "[ETF] Entity Texture Features",
+      "fileName": "entity_texture_features-7.1.1-26.2-fabric.jar",
+      "modrinthId": "BVzZfTc1",
+      "modrinthUrl": "https://modrinth.com/mod/BVzZfTc1"
+    },
+    {
+      "name": "Entity Culling",
+      "fileName": "entityculling-fabric-1.10.5-mc26.2.jar",
+      "modrinthId": "NNAgCjsB",
+      "modrinthUrl": "https://modrinth.com/mod/NNAgCjsB"
+    },
+    {
+      "name": "Fabric API",
+      "fileName": "fabric-api-0.154.2+26.2.jar",
+      "modrinthId": "P7dR8mSH",
+      "modrinthUrl": "https://modrinth.com/mod/P7dR8mSH"
+    },
+    {
+      "name": "Fabric Language Kotlin",
+      "fileName": "fabric-language-kotlin-1.13.12+kotlin.2.4.0.jar",
+      "modrinthId": "Ha28R6CL",
+      "modrinthUrl": "https://modrinth.com/mod/Ha28R6CL"
+    },
+    {
+      "name": "FerriteCore",
+      "fileName": "ferritecore-9.0.0-fabric.jar",
+      "modrinthId": "uXXizFIs",
+      "modrinthUrl": "https://modrinth.com/mod/uXXizFIs"
+    },
+    {
+      "name": "kennytvs-epic-force-close-loading-screen-mod-for-fabric",
+      "fileName": "forcecloseloadingscreen-2.3.6.jar",
+      "modrinthId": "blWBX5n1",
+      "modrinthUrl": "https://modrinth.com/mod/blWBX5n1"
+    },
+    {
+      "name": "Fzzy Config",
+      "fileName": "fzzy_config-0.7.6+26.2.jar",
+      "modrinthId": "hYykXjDp",
+      "modrinthUrl": "https://modrinth.com/mod/hYykXjDp"
+    },
+    {
+      "name": "Iris Shaders",
+      "fileName": "iris-fabric-1.11.2+mc26.2.jar",
+      "modrinthId": "YL57xq9U",
+      "modrinthUrl": "https://modrinth.com/mod/YL57xq9U"
+    },
+    {
+      "name": "Language Reload",
+      "fileName": "language-reload-1.7.7+26.2.jar",
+      "modrinthId": "uLbm7CG6",
+      "modrinthUrl": "https://modrinth.com/mod/uLbm7CG6"
+    },
+    {
+      "name": "Lithium",
+      "fileName": "lithium-fabric-0.25.2+mc26.2.jar",
+      "modrinthId": "gvQqBUqZ",
+      "modrinthUrl": "https://modrinth.com/mod/gvQqBUqZ"
+    },
+    {
+      "name": "MidnightLib",
+      "fileName": "midnightlib-fabric-1.9.3+26.2.jar",
+      "modrinthId": "codAaoxh",
+      "modrinthUrl": "https://modrinth.com/mod/codAaoxh"
+    },
+    {
+      "name": "Mod Menu",
+      "fileName": "modmenu-20.0.1.jar",
+      "modrinthId": "mOgUt4GM",
+      "modrinthUrl": "https://modrinth.com/mod/mOgUt4GM"
+    },
+    {
+      "name": "More Culling",
+      "fileName": "moreculling-fabric-26.2-1.8.0.jar",
+      "modrinthId": "51shyZVL",
+      "modrinthUrl": "https://modrinth.com/mod/51shyZVL"
+    },
+    {
+      "name": "OptiGUI",
+      "fileName": "optigui-2.3.0-beta.10+26.2.jar",
+      "modrinthId": "JuksLGBQ",
+      "modrinthUrl": "https://modrinth.com/mod/JuksLGBQ"
+    },
+    {
+      "name": "Packet Fixer",
+      "fileName": "packetfixer-fabric-3.3.5-26.2.jar",
+      "modrinthId": "c7m1mi73",
+      "modrinthUrl": "https://modrinth.com/mod/c7m1mi73"
+    },
+    {
+      "name": "Text Placeholder API",
+      "fileName": "placeholder-api-3.1.0-beta.1+26.2.jar",
+      "modrinthId": "eXts2L7r",
+      "modrinthUrl": "https://modrinth.com/mod/eXts2L7r"
+    },
+    {
+      "name": "Puzzle",
+      "fileName": "puzzle-fabric-2.3.1+26.2.jar",
+      "modrinthId": "3IuO68q1",
+      "modrinthUrl": "https://modrinth.com/mod/3IuO68q1"
+    },
+    {
+      "name": "Reese\u0027s Sodium Options",
+      "fileName": "reeses-sodium-options-fabric-2.2.3+mc26.2.jar",
+      "modrinthId": "Bh37bMuy",
+      "modrinthUrl": "https://modrinth.com/mod/Bh37bMuy"
+    },
+    {
+      "name": "Sodium Extra",
+      "fileName": "sodium-extra-fabric-0.9.3+mc26.2.jar",
+      "modrinthId": "PtjYWJkn",
+      "modrinthUrl": "https://modrinth.com/mod/PtjYWJkn"
+    },
+    {
+      "name": "Sodium",
+      "fileName": "sodium-fabric-0.9.1+mc26.2.jar",
+      "modrinthId": "AANobbMI",
+      "modrinthUrl": "https://modrinth.com/mod/AANobbMI"
+    },
+    {
+      "name": "Sodium Shadowy Path Blocks (SSPB)",
+      "fileName": "sodium-shadowy-path-blocks-fabric-7.0.0.jar",
+      "modrinthId": "EIa1eiMm",
+      "modrinthUrl": "https://modrinth.com/mod/EIa1eiMm"
+    },
+    {
+      "name": "spark",
+      "fileName": "spark-1.10.173-fabric.jar",
+      "modrinthId": "l6YH9Als",
+      "modrinthUrl": "https://modrinth.com/mod/l6YH9Als"
+    },
+    {
+      "name": "Very Many Players (Fabric)",
+      "fileName": "vmp-fabric-mc26.2-0.2.0+beta.7.236-all.jar",
+      "modrinthId": "wnEe9KBa",
+      "modrinthUrl": "https://modrinth.com/mod/wnEe9KBa"
+    },
+    {
+      "name": "YetAnotherConfigLib (YACL)",
+      "fileName": "yet_another_config_lib_v3-3.9.5+26.2-fabric.jar",
+      "modrinthId": "1eAoo2KR",
+      "modrinthUrl": "https://modrinth.com/mod/1eAoo2KR"
+    },
+    {
+      "name": "Zoomify (Zoom)",
+      "fileName": "zoomify-2.16.1+26.2.jar",
+      "modrinthId": "w7ThoJFB",
+      "modrinthUrl": "https://modrinth.com/mod/w7ThoJFB"
+    }
+  ]
+}

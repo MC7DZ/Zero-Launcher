@@ -435,6 +435,10 @@ public class EditInstancePanel extends JPanel {
             GhostButton deleteBtn = new GhostButton("Delete Instance");
             deleteBtn.setForeground(new Color(240, 90, 90));
             deleteBtn.addActionListener(e -> {
+                if (!com.launcher.manager.SettingsManager.getInstance().getSettings().confirmDestructiveActions) {
+                    onDelete.run();
+                    return;
+                }
                 int res = JOptionPane.showConfirmDialog(this,
                         "Are you sure you want to delete \"" + instanceToEdit.name + "\"? This cannot be undone.",
                         "Delete Instance", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);

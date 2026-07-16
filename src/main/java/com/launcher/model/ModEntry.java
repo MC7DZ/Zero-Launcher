@@ -16,6 +16,7 @@ public class ModEntry {
     public String updateUrl;      // download URL for the update, null if up-to-date
     public String updateFileName; // filename of the updated mod jar
     public String iconUrl;        // Modrinth project icon URL, null if unknown
+    public String description;    // Short project summary/description from Modrinth, null if unknown
     public String status;         // "Checking…", "Up to date", "Update available", "Unknown"
     public boolean disabled;      // true if the jar is currently suffixed ".disabled" on disk
     public java.util.List<String> loaders; // mod loaders this jar's Modrinth version supports (e.g. "fabric", "forge"), null if unidentified

@@ -1,0 +1,113 @@
+{
+  "launcherVersion": "Zero Launcher",
+  "presetName": "Survival",
+  "presetType": "Quality Of Life",
+  "description": "add some featuer that could be helpfull in SMPs",
+  "modLoaders": [
+    "FABRIC"
+  ],
+  "mods": [
+    {
+      "name": "Mouse Tweaks",
+      "fileName": "MouseTweaks-fabric-mc1.21.11-2.30.jar",
+      "modrinthId": "aC3cM3Vq",
+      "modrinthUrl": "https://modrinth.com/mod/aC3cM3Vq"
+    },
+    {
+      "name": "Resourcify",
+      "fileName": "Resourcify (1.21.11-fabric)-1.8.5.jar",
+      "modrinthId": "RLzHAoZe",
+      "modrinthUrl": "https://modrinth.com/mod/RLzHAoZe"
+    },
+    {
+      "name": "AppleSkin",
+      "fileName": "appleskin-fabric-mc1.21.11-3.0.8.jar",
+      "modrinthId": "EsAfCjCV",
+      "modrinthUrl": "https://modrinth.com/mod/EsAfCjCV"
+    },
+    {
+      "name": "Bobby",
+      "fileName": "bobby-5.2.11.1+mc1.21.11.jar",
+      "modrinthId": "M08ruV16",
+      "modrinthUrl": "https://modrinth.com/mod/M08ruV16"
+    },
+    {
+      "name": "Continuity",
+      "fileName": "continuity-3.0.1-beta.1+1.21.11.jar",
+      "modrinthId": "1IjD5062",
+      "modrinthUrl": "https://modrinth.com/mod/1IjD5062"
+    },
+    {
+      "name": "[EMF] Entity Model Features",
+      "fileName": "entity_model_features-3.2.4-1.21.11-fabric.jar",
+      "modrinthId": "4I1XuqiY",
+      "modrinthUrl": "https://modrinth.com/mod/4I1XuqiY"
+    },
+    {
+      "name": "[ESF] Entity Sound Features",
+      "fileName": "entity_sound_features-0.8.1-1.21.9-fabric.jar",
+      "modrinthId": "IMuO8COj",
+      "modrinthUrl": "https://modrinth.com/mod/IMuO8COj"
+    },
+    {
+      "name": "[ETF] Entity Texture Features",
+      "fileName": "entity_texture_features_1.21.11-fabric-7.1.jar",
+      "modrinthId": "BVzZfTc1",
+      "modrinthUrl": "https://modrinth.com/mod/BVzZfTc1"
+    },
+    {
+      "name": "Fabric API",
+      "fileName": "fabric-api-0.141.4+1.21.11.jar",
+      "modrinthId": "P7dR8mSH",
+      "modrinthUrl": "https://modrinth.com/mod/P7dR8mSH"
+    },
+    {
+      "name": "Fabric Language Kotlin",
+      "fileName": "fabric-language-kotlin-1.13.13+kotlin.2.4.10.jar",
+      "modrinthId": "Ha28R6CL",
+      "modrinthUrl": "https://modrinth.com/mod/Ha28R6CL"
+    },
+    {
+      "name": "LambDynamicLights - Dynamic Lights",
+      "fileName": "lambdynamiclights-4.9.1+1.21.11.jar",
+      "modrinthId": "yBW8D80W",
+      "modrinthUrl": "https://modrinth.com/mod/yBW8D80W"
+    },
+    {
+      "name": "Mod Menu",
+      "fileName": "modmenu-17.0.1-beta.1.jar",
+      "modrinthId": "mOgUt4GM",
+      "modrinthUrl": "https://modrinth.com/mod/mOgUt4GM"
+    },
+    {
+      "name": "Text Placeholder API",
+      "fileName": "placeholder-api-2.8.2%2B1.21.10.jar",
+      "modrinthId": "eXts2L7r",
+      "modrinthUrl": "https://modrinth.com/mod/eXts2L7r"
+    },
+    {
+      "name": "Shulker Box Tooltip",
+      "fileName": "shulkerboxtooltip-fabric-5.2.16+1.21.11.jar",
+      "modrinthId": "2M01OLQq",
+      "modrinthUrl": "https://modrinth.com/mod/2M01OLQq"
+    },
+    {
+      "name": "Xaero\u0027s Minimap",
+      "fileName": "xaerominimap-fabric-1.21.11-26.3.0.jar",
+      "modrinthId": "1bokaNcj",
+      "modrinthUrl": "https://modrinth.com/mod/1bokaNcj"
+    },
+    {
+      "name": "Xaero\u0027s World Map",
+      "fileName": "xaeroworldmap-fabric-1.21.11-1.43.0.jar",
+      "modrinthId": "NcUtCpym",
+      "modrinthUrl": "https://modrinth.com/mod/NcUtCpym"
+    },
+    {
+      "name": "YetAnotherConfigLib (YACL)",
+      "fileName": "yet_another_config_lib_v3-3.8.2+1.21.11-fabric.jar",
+      "modrinthId": "1eAoo2KR",
+      "modrinthUrl": "https://modrinth.com/mod/1eAoo2KR"
+    }
+  ]
+}

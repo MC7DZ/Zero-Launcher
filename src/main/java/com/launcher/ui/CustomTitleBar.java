@@ -63,7 +63,12 @@ public final class CustomTitleBar extends JPanel {
         closeBtn.addActionListener(e -> {
             if (frame instanceof com.launcher.Main mainFrame) {
                 if (mainFrame.isAnyGameRunning()) {
-                    mainFrame.setVisible(false);
+                    // Must go through hideToTray() (not a raw setVisible(false)) so the
+                    // hiddenToTray flag gets set — otherwise restoreFromTray() (used by
+                    // both "restore on game close" and the tray's "Show Launcher" menu
+                    // item) sees hiddenToTray == false and treats it as a no-op, leaving
+                    // the window hidden with no way to bring it back.
+                    mainFrame.hideToTray();
                     return;
                 }
             }

@@ -174,6 +174,28 @@ public class ModUpdateService {
 
         if (projectIds.isEmpty()) return;
 
+        // Apply anything already cached on disk (name/icon/description keyed by Modrinth
+        // project ID, persisted in the launcher's cache folder) so re-scans don't need to
+        // re-hit the Modrinth API for mods we've already identified before.
+        com.launcher.manager.ModMetadataCache metadataCache = com.launcher.manager.ModMetadataCache.getInstance();
+        List<String> uncachedIds = new ArrayList<>();
+        for (String id : projectIds) {
+            com.launcher.manager.ModMetadataCache.Entry cached = metadataCache.get(id);
+            if (cached != null) {
+                for (ModEntry mod : mods) {
+                    if (id.equals(mod.modrinthId)) {
+                        if (cached.projectName != null) mod.projectName = cached.projectName;
+                        if (cached.iconUrl != null) mod.iconUrl = cached.iconUrl;
+                        if (cached.description != null) mod.description = cached.description;
+                    }
+                }
+            } else {
+                uncachedIds.add(id);
+            }
+        }
+        if (uncachedIds.isEmpty()) return;
+        projectIds = uncachedIds;
+
         try {
             // Use the GET /projects endpoint with IDs
             StringBuilder idsParam = new StringBuilder("[");
@@ -187,20 +209,27 @@ public class ModUpdateService {
                     MODRINTH_API + "/projects?ids=" + java.net.URLEncoder.encode(idsParam.toString(), "UTF-8"));
             JsonArray projects = JsonUtil.parse(response).getAsJsonArray();
 
-            // Build maps of project ID -> title and project ID -> icon_url
+            // Build maps of project ID -> title, icon_url, and description
             java.util.HashMap<String, String> nameMap = new java.util.HashMap<>();
             java.util.HashMap<String, String> iconMap = new java.util.HashMap<>();
+            java.util.HashMap<String, String> descMap = new java.util.HashMap<>();
             for (JsonElement el : projects) {
                 JsonObject proj = el.getAsJsonObject();
                 String id = proj.get("id").getAsString();
                 String title = proj.has("title") ? proj.get("title").getAsString() : null;
                 String icon = proj.has("icon_url") && !proj.get("icon_url").isJsonNull()
                         ? proj.get("icon_url").getAsString() : null;
+                // "description" is Modrinth's short one-line summary (as opposed to "body",
+                // the full long-form project page markdown) — the right length for a card.
+                String desc = proj.has("description") && !proj.get("description").isJsonNull()
+                        ? proj.get("description").getAsString() : null;
                 if (title != null) nameMap.put(id, title);
                 if (icon != null) iconMap.put(id, icon);
+                if (desc != null) descMap.put(id, desc);
             }
 
-            // Apply names and icons
+            // Apply names, icons, and descriptions; persist each identified project's
+            // metadata to the on-disk cache so future scans don't need to re-fetch it.
             for (ModEntry mod : mods) {
                 if (mod.modrinthId != null) {
                     if (nameMap.containsKey(mod.modrinthId)) {
@@ -209,7 +238,13 @@ public class ModUpdateService {
                     if (iconMap.containsKey(mod.modrinthId)) {
                         mod.iconUrl = iconMap.get(mod.modrinthId);
                     }
+                    if (descMap.containsKey(mod.modrinthId)) {
+                        mod.description = descMap.get(mod.modrinthId);
+                    }
                 }
+            }
+            for (String id : projectIds) {
+                metadataCache.put(id, nameMap.get(id), iconMap.get(id), descMap.get(id));
             }
         } catch (Exception e) {
             log.accept("Failed to fetch project names: " + e.getMessage());

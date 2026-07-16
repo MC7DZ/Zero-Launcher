@@ -174,7 +174,9 @@ public class Main extends JFrame {
     private JButton checkUpdatesBtn;
     private JButton updateAllBtn;
     private JButton updateSelectedBtn;
-    private JButton refreshModsBtn;
+    private JButton deleteSelectedModsBtn;
+    private javax.swing.Timer modsAutoRefreshTimer;
+    private volatile boolean modsScanInProgress = false;
     private JButton dedupeModsBtn;
     private JButton disableIncompatibleModsBtn;
     private JButton installDependenciesBtn;
@@ -879,10 +881,16 @@ public class Main extends JFrame {
         // (unmaximized) window.
         wasMaximizedBeforeHide = (getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
         hiddenToTray = true;
+        // NOTE: previously this also called dispose() here to "release native window
+        // resources". That destroyed the native peer of this undecorated/translucent
+        // frame, and recreating it later via setVisible(true) in restoreFromTray()
+        // was unreliable — the window would fail to reappear both when the game
+        // process exited (restoreLauncherOnGameClose) and when clicking "Show
+        // Launcher" in the tray menu, since both paths go through restoreFromTray().
+        // Simply hiding the window (without disposing it) is the standard, reliable
+        // way to minimize-to-tray in Swing.
         setVisible(false);
-        dispose(); // Releases native window resources
         isMinimized = true;
-        System.gc(); // Force GC to clean up RAM completely
     }
 
     public void restoreFromTray() {
@@ -1537,7 +1545,6 @@ public class Main extends JFrame {
         JPanel rightActions = new JPanel(new WrapLayout(FlowLayout.RIGHT, 8, 6));
         rightActions.setOpaque(false);
 
-        refreshModsBtn = new JButton("↻  Refresh");
         checkUpdatesBtn = new JButton("⟳  Check Updates");
 
         // These are still used internally by the Fix Mods popup actions, but no
@@ -1548,8 +1555,10 @@ public class Main extends JFrame {
         dedupeModsBtn = new JButton("🧹  Deduplicate");
         disableIncompatibleModsBtn = new JButton("🚫  Disable Incompatible");
 
-        // Toolbar buttons (only Refresh, Check Updates, Delete shown directly)
-        JButton[] btns = { refreshModsBtn, checkUpdatesBtn };
+        // Toolbar buttons (Check Updates shown directly — the old manual Refresh
+        // button was removed since the mod list now keeps itself up to date via
+        // modsAutoRefreshTimer, see below).
+        JButton[] btns = { checkUpdatesBtn };
         for (JButton b : btns) {
             b.setFont(new Font("SansSerif", Font.BOLD, 11));
             b.setFocusPainted(false);
@@ -1557,6 +1566,18 @@ public class Main extends JFrame {
             b.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
             leftActions.add(b);
         }
+
+        // "Delete Selected" — only shown once one or more mods are checked/selected
+        // in the list (see the modsList selection listener below).
+        deleteSelectedModsBtn = new JButton("🗑  Delete Selected");
+        deleteSelectedModsBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        deleteSelectedModsBtn.setFocusPainted(false);
+        deleteSelectedModsBtn.setForeground(Color.WHITE);
+        deleteSelectedModsBtn.setBackground(new Color(220, 38, 38)); // red
+        deleteSelectedModsBtn.setMargin(new Insets(8, 16, 8, 16));
+        deleteSelectedModsBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        deleteSelectedModsBtn.setVisible(false);
+        leftActions.add(deleteSelectedModsBtn);
 
         // ── Fix Mods dropdown button ─────────────────────────────────────────
         fixModsBtn = new JButton("🔧  Fix Mods  |  ▾");
@@ -1713,6 +1734,7 @@ public class Main extends JFrame {
                 // Larger icon box (was 44x44) paired with higher-resolution source icons
                 // below, so mod icons read as clearer and more prominent inside the card.
                 iconLbl.setPreferredSize(new Dimension(52, 52));
+                iconLbl.setAlignmentX(Component.CENTER_ALIGNMENT);
                 if (isDawnClient && dawnClientIcon48 != null) {
                     iconLbl.setIcon(dawnClientIcon48);
                 } else if (mod.iconUrl != null && !mod.iconUrl.isBlank()) {
@@ -1733,7 +1755,18 @@ public class Main extends JFrame {
                 } else {
                     iconLbl.setIcon(defaultModIcon48);
                 }
-                top.add(iconLbl, BorderLayout.WEST);
+
+                // Icon column: just the icon itself. The description used to live
+                // here (centered under the icon), but it's now placed in its own
+                // full-width row below (see descRow), left-aligned and indented to
+                // start under the icon, so the title/filename/size/toggle/delete
+                // controls in the center/bottom rows keep their original positions.
+                JPanel iconCol = new JPanel();
+                iconCol.setLayout(new BoxLayout(iconCol, BoxLayout.Y_AXIS));
+                iconCol.setOpaque(false);
+                iconCol.add(iconLbl);
+
+                top.add(iconCol, BorderLayout.WEST);
 
                 // Name, file name, version info
                 JPanel center = new JPanel();
@@ -1769,6 +1802,28 @@ public class Main extends JFrame {
 
                 top.add(center, BorderLayout.CENTER);
                 card.add(top, BorderLayout.NORTH);
+
+                // Description row: sits directly under the icon (left-aligned, indented
+                // to match the icon column's width so it starts right where the icon
+                // starts), then stretches across the rest of the card's width to use
+                // the space that used to be empty below the icon. Placed with a bit of
+                // extra top padding to separate it clearly from the icon above.
+                if (!isDawnClient && mod.description != null && !mod.description.isBlank()) {
+                    String descText = mod.description.trim();
+                    String shortDesc = descText.length() > 120 ? descText.substring(0, 120) + "\u2026" : descText;
+                    JLabel descRowLbl = new JLabel(
+                            "<html><body style='width: 300px; text-align:left'>" + shortDesc + "</body></html>");
+                    descRowLbl.setFont(new Font("SansSerif", Font.PLAIN, 13));
+                    descRowLbl.setForeground(new Color(0x9C, 0x92, 0x87)); // Warm Gray
+                    descRowLbl.setHorizontalAlignment(SwingConstants.LEFT);
+                    // Left inset (52 icon width + 10 top's hgap) aligns the text's start
+                    // with the icon directly above it; extra top inset provides the
+                    // vertical separation from the icon/name rows. Nudged a bit further
+                    // left than the icon's edge for a tighter, less boxed-in look.
+                    descRowLbl.setBorder(new EmptyBorder(8, 48, 0, 0));
+                    descRowLbl.setToolTipText("<html><body style='width: 260px'>" + descText + "</body></html>");
+                    card.add(descRowLbl, BorderLayout.CENTER);
+                }
 
                 // Bottom row: status pill + update button (left) and delete/toggle (right),
                 // spanning the full card width — compact grid cards don't have room for
@@ -1973,11 +2028,61 @@ public class Main extends JFrame {
         SwingUtilities.invokeLater(recalcModsColumns);
 
         // ── Button actions ──────────────────────────────────────────────────
-        refreshModsBtn.addActionListener(e -> {
-            Instance sel = instanceList.getSelectedValue();
-            if (sel != null)
-                refreshModsView(sel);
+
+        // Show/hide + label the "Delete Selected" button based on how many mods are
+        // currently selected in the list (replaces the old always-visible toolbar
+        // bulk-delete button — this one only appears once there's something to act on).
+        modsList.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            int count = modsList.getSelectedValuesList().size();
+            deleteSelectedModsBtn.setVisible(count > 0);
+            deleteSelectedModsBtn.setText(count > 0
+                    ? "🗑  Delete Selected (" + count + ")"
+                    : "🗑  Delete Selected");
+            deleteSelectedModsBtn.getParent().revalidate();
+            deleteSelectedModsBtn.getParent().repaint();
         });
+
+        deleteSelectedModsBtn.addActionListener(e -> {
+            List<ModEntry> selected = modsList.getSelectedValuesList();
+            if (selected.isEmpty()) return;
+            String msg = selected.size() == 1
+                    ? "Are you sure you want to delete \"" + selected.get(0).displayName() + "\"?"
+                    : "Are you sure you want to delete these " + selected.size() + " mods?";
+            showConfirmOverlay("Delete Selected Mods", msg, "Delete", true, () -> {
+                for (ModEntry mod : selected) {
+                    if (mod.filePath == null) continue;
+                    try {
+                        Files.deleteIfExists(Path.of(mod.filePath));
+                    } catch (Exception ignored) {
+                    }
+                }
+                Instance sel = instanceList.getSelectedValue();
+                if (sel != null) {
+                    refreshModsView(sel);
+                }
+                notifications.warning("Mods deleted", selected.size() + " mod(s) were deleted.");
+            });
+        });
+
+        // ── Auto-refresh (replaces the old manual Refresh button) ───────────
+        // Periodically re-scans the current instance's mods folder so the list
+        // picks up changes (mods added/removed outside the launcher, etc.) without
+        // the user having to click anything. Guarded by modsScanInProgress so
+        // overlapping scans can't pile up, and only runs while the Mods tab is
+        // actually the visible tab so it isn't wastefully scanning/hitting Modrinth
+        // in the background the whole time the launcher is open.
+        if (modsAutoRefreshTimer != null) {
+            modsAutoRefreshTimer.stop();
+        }
+        modsAutoRefreshTimer = new javax.swing.Timer(1000, e -> {
+            if (modsScanInProgress) return;
+            if (mainTabPane == null || mainTabPane.getSelectedIndex() != 1) return;
+            Instance sel = instanceList.getSelectedValue();
+            if (sel == null) return;
+            refreshModsView(sel);
+        });
+        modsAutoRefreshTimer.start();
 
         checkUpdatesBtn.addActionListener(e -> {
             Instance sel = instanceList.getSelectedValue();
@@ -2307,7 +2412,7 @@ public class Main extends JFrame {
         if (url == null || url.isBlank() || iconLoadFailures.contains(url))
             return null;
         try {
-            byte[] bytes = com.launcher.util.HttpUtil.getBytes(url);
+            byte[] bytes = com.launcher.manager.ModIconCache.getInstance().getOrFetch(url);
             BufferedImage img = ImageIO.read(new java.io.ByteArrayInputStream(bytes));
             if (img == null || img.getWidth() <= 0 || img.getHeight() <= 0) {
                 iconLoadFailures.add(url);
@@ -2384,6 +2489,8 @@ public class Main extends JFrame {
     }
 
     private void refreshModsView(Instance inst) {
+        if (modsScanInProgress) return;
+        modsScanInProgress = true;
         modsHeaderLabel.setText("Mods — " + inst.name);
         modsCountLabel.setText("Scanning…");
         log("Scanning mods for \"" + inst.name + "\"…");
@@ -2443,7 +2550,14 @@ public class Main extends JFrame {
 
                 // Identify mods against Modrinth in the background; the list refreshes again
                 // once names/versions/update status come back.
-                service.identifyMods(list, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                // Only hit Modrinth for mods we don't already have an identity for — the
+                // known-hash carry-over above already restores modrinthId/status for
+                // unchanged jars, so re-querying those every auto-refresh tick would just
+                // spam the API for no benefit.
+                List<ModEntry> unidentified = list.stream().filter(m -> m.modrinthId == null).toList();
+                if (!unidentified.isEmpty()) {
+                    service.identifyMods(unidentified, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                }
                 long identified = list.stream().filter(m -> m.modrinthId != null).count();
                 log("Identified " + identified + " of " + list.size() + " mod(s) on Modrinth in "
                         + (System.currentTimeMillis() - startedAt) + " ms total.");
@@ -2454,20 +2568,40 @@ public class Main extends JFrame {
             } catch (Exception ex) {
                 log("Mod scan failed: " + ex.getMessage());
                 SwingUtilities.invokeLater(() -> notifications.error("Mod scan failed", ex.getMessage()));
+            } finally {
+                modsScanInProgress = false;
             }
         }, "mod-scan").start();
     }
 
     private void filterMods() {
         String filter = modsSearchField.getText().toLowerCase().trim();
+
+        // Remember which mods (by file path) were selected before rebuilding the
+        // list model, so the periodic auto-refresh doesn't silently clear the
+        // user's selection (and the "Delete Selected" button) out from under them.
+        Set<String> selectedPaths = new java.util.HashSet<>();
+        for (ModEntry m : modsList.getSelectedValuesList()) {
+            if (m.filePath != null) selectedPaths.add(m.filePath);
+        }
+
         modsListModel.clear();
         int count = 0;
+        List<Integer> indicesToReselect = new ArrayList<>();
         for (ModEntry m : currentModEntries) {
             if (!filter.isEmpty() && !m.displayName().toLowerCase().contains(filter)) continue;
             modsListModel.addElement(m);
+            if (m.filePath != null && selectedPaths.contains(m.filePath)) {
+                indicesToReselect.add(count);
+            }
             count++;
         }
         modsCountLabel.setText(count + " mod" + (count != 1 ? "s" : "") + " shown");
+
+        if (!indicesToReselect.isEmpty()) {
+            int[] idxArr = indicesToReselect.stream().mapToInt(Integer::intValue).toArray();
+            modsList.setSelectedIndices(idxArr);
+        }
     }
 
     /**
@@ -3401,6 +3535,13 @@ public class Main extends JFrame {
      */
     private void showConfirmOverlay(String title, String message, String confirmLabel, boolean danger,
             Runnable onConfirm) {
+        // "danger" popouts are the destructive ones (delete instance/mod, reset settings).
+        // If the user has turned off destructive-action confirmations in Settings, skip
+        // the prompt entirely and just perform the action.
+        if (danger && !com.launcher.manager.SettingsManager.getInstance().getSettings().confirmDestructiveActions) {
+            onConfirm.run();
+            return;
+        }
         if (confirmOverlay != null) {
             layeredPane.remove(confirmOverlay);
             layeredPane.repaint();
@@ -7491,6 +7632,15 @@ public class Main extends JFrame {
             mgr.save();
         });
         addSettingsRow(behaviorCard, "", autoRefreshOnFailCb, gbc);
+
+        CustomToggle confirmDestructiveCb = new CustomToggle(
+                "Ask for confirmation before destructive actions (deleting an instance/mod, resetting settings)");
+        confirmDestructiveCb.setSelected(s.confirmDestructiveActions);
+        confirmDestructiveCb.addActionListener(e -> {
+            s.confirmDestructiveActions = confirmDestructiveCb.isSelected();
+            mgr.save();
+        });
+        addSettingsRow(behaviorCard, "", confirmDestructiveCb, gbc);
 
         mainPanel.add(behaviorCard);
         mainPanel.add(Box.createVerticalStrut(12));

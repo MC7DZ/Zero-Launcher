@@ -67,6 +67,9 @@ public class LauncherSettings {
     /** If a game launch fails because its version data couldn't be loaded, automatically re-scan
      *  that instance's mods and resource packs, in case stale/corrupt files were the cause. */
     public boolean autoRefreshModsOnVersionLoadFail = true;
+    /** Show a confirmation popout before destructive actions (deleting an instance, a mod, or
+     *  resetting all settings). When off, those actions run immediately with no prompt. */
+    public boolean confirmDestructiveActions = true;
 
     // Performance
     /** Default RAM in GB for new instances. */
