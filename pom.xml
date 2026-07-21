@@ -6,7 +6,7 @@
 
   <groupId>com.launcher</groupId>
   <artifactId>zero-launcher</artifactId>
-  <version>1.0.5</version>
+  <version>1.0.15</version>
   <packaging>jar</packaging>
 
   <properties>

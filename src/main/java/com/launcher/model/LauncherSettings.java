@@ -121,7 +121,7 @@ public class LauncherSettings {
     public boolean rpcShowStateSingleplayer = true;
     public boolean rpcShowStateMultiplayer  = true;
     // ── Advanced ──
-    public String rpcAppId = "1528905372625146066"; // default minecraft app id
+    public String rpcAppId = "1131048770109460500"; // default minecraft app id
 
     // ── Developer ────────────────────────────────────────────────────────────
     public boolean unlockDevStuff       = false;
