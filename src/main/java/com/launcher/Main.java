@@ -336,7 +336,17 @@ public class Main extends JFrame {
                     systemTray.setTooltip("Zero Launcher");
 
                     systemTray.getMenu().add(new dorkbox.systemTray.MenuItem("Show Launcher", e -> {
-                        SwingUtilities.invokeLater(this::restoreFromTray);
+                        com.launcher.util.WindowDebug.log("tray-menu", "'Show Launcher' clicked (on thread "
+                                + Thread.currentThread().getName() + ")");
+                        SwingUtilities.invokeLater(() -> {
+                            try {
+                                restoreFromTray();
+                            } catch (Throwable t) {
+                                // Callbacks on dorkbox's native tray thread can otherwise swallow
+                                // exceptions silently, making it look like nothing happened at all.
+                                com.launcher.util.WindowDebug.logException("tray-menu:Show Launcher", t);
+                            }
+                        });
                     }));
 
                     systemTray.getMenu().add(new dorkbox.systemTray.Separator());
@@ -882,12 +892,17 @@ public class Main extends JFrame {
     }
 
     public void hideToTray() {
-        if (hiddenToTray) return; // already hidden, don't clobber the remembered state
+        com.launcher.util.WindowDebug.log("hideToTray", "called, hiddenToTray=" + hiddenToTray);
+        if (hiddenToTray) {
+            com.launcher.util.WindowDebug.log("hideToTray", "no-op, already hidden");
+            return; // already hidden, don't clobber the remembered state
+        }
         // Remember whether the window was maximized so restoreFromTray() can
         // bring it back the same way, instead of always snapping to a normal
         // (unmaximized) window.
         wasMaximizedBeforeHide = (getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
         hiddenToTray = true;
+        com.launcher.util.WindowDebug.dumpState("hideToTray:before-setVisible-false", this);
         // NOTE: previously this also called dispose() here to "release native window
         // resources". That destroyed the native peer of this undecorated/translucent
         // frame, and recreating it later via setVisible(true) in restoreFromTray()
@@ -898,21 +913,74 @@ public class Main extends JFrame {
         // way to minimize-to-tray in Swing.
         setVisible(false);
         isMinimized = true;
+        com.launcher.util.WindowDebug.dumpState("hideToTray:after-setVisible-false", this);
     }
 
     public void restoreFromTray() {
+        com.launcher.util.WindowDebug.log("restoreFromTray", "called, hiddenToTray=" + hiddenToTray);
+        com.launcher.util.WindowDebug.dumpState("restoreFromTray:entry", this);
         // Only actually do anything if the window was hidden via hideToTray() in the
         // first place. Without this guard, calling restoreFromTray() after a launch
         // that errored out *before* ever hiding the window (e.g. a download failure)
         // would still force setExtendedState(NORMAL) below, which silently un-maximized
         // an already-visible, already-maximized launcher window.
-        if (!hiddenToTray) return;
+        if (!hiddenToTray) {
+            com.launcher.util.WindowDebug.log("restoreFromTray",
+                    "GUARD HIT: hiddenToTray is false, doing nothing. "
+                    + "If the window is actually hidden/invisible right now, this is the bug: "
+                    + "something hid the window (setVisible(false) or a native iconify) without "
+                    + "going through hideToTray(), so this guard is blocking the restore.");
+            return;
+        }
         hiddenToTray = false;
-        setVisible(true);
+        // Apply the remembered maximized/normal state BEFORE mapping the window
+        // back onto the screen, not after. Doing it after setVisible(true) makes
+        // the window manager remap/resize the frame a second time right after it
+        // was just mapped, and on some Linux/X11 compositors that second remap
+        // races with the initial paint, leaving the window blank ("invisible")
+        // the first time it's restored.
         setExtendedState(wasMaximizedBeforeHide ? JFrame.MAXIMIZED_BOTH : JFrame.NORMAL);
+        setVisible(true);
         toFront();
         requestFocus();
         isMinimized = false;
+        com.launcher.util.WindowDebug.dumpState("restoreFromTray:after-setVisible-true", this);
+        // The immediate same-tick pixel-nudge that used to be here fires before the
+        // X11 window manager/compositor has actually finished mapping the window on
+        // screen — Java reports visible=true/showing=true immediately, but that just
+        // means the *request* to map was sent, not that a frame has actually been
+        // composited yet. Debug logs confirmed this: every field (visible, showing,
+        // bounds, screen) looked correct even on restores where nothing was actually
+        // painted on screen, and the fix that reliably worked was hiding the window
+        // and showing it again — i.e. a *second* full map cycle.
+        //
+        // So instead of a same-tick resize trick, do a short delayed re-affirm: wait
+        // long enough for the WM to finish the first map (150ms is comfortably more
+        // than a compositor frame), then force a repaint.
+        //
+        // NOTE: this used to unmap and immediately remap the window here
+        // (setVisible(false) followed by setVisible(true)) to force a second full
+        // map cycle. That did work around the invisible-window issue on the
+        // handful of X11/compositor setups that needed it, but on every other
+        // platform it meant the launcher visibly flashed - appearing, vanishing,
+        // then reappearing - which looked like "Show Launcher" opening the window
+        // twice. A geometry nudge (resize by 1px and immediately back) forces the
+        // same kind of repaint/remap on a stuck compositor without ever actually
+        // hiding an already-visible window, so it fixes the original bug without
+        // reintroducing the double-show flash.
+        javax.swing.Timer remapKick = new javax.swing.Timer(150, ev -> {
+            com.launcher.util.WindowDebug.dumpState("restoreFromTray:before-remap-kick", this);
+            Rectangle bounds = getBounds();
+            setBounds(bounds.x, bounds.y, bounds.width + 1, bounds.height);
+            setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+            toFront();
+            requestFocus();
+            revalidate();
+            repaint();
+            com.launcher.util.WindowDebug.dumpState("restoreFromTray:after-remap-kick", this);
+        });
+        remapKick.setRepeats(false);
+        remapKick.start();
     }
 
     private void checkNetworkAndShowOfflineButton() {
@@ -8436,6 +8504,19 @@ public class Main extends JFrame {
                 "<html><body style='width:420px; color:#a0a0aa;'>Enables early, unfinished features that may be " +
                         "unstable.</body></html>");
         addSettingsRow(developerCard, "", devNote, gbc);
+
+        CustomToggle debugModeCb = new CustomToggle("Debug Mode");
+        debugModeCb.setSelected(s.debugMode);
+        debugModeCb.addActionListener(e -> {
+            s.debugMode = debugModeCb.isSelected();
+            mgr.save();
+        });
+        addSettingsRow(developerCard, "", debugModeCb, gbc);
+
+        JLabel debugModeNote = new JLabel(
+                "<html><body style='width:420px; color:#a0a0aa;'>Prints diagnostic/debug messages to the console " +
+                        "(window state, tray restore, etc). Takes effect immediately.</body></html>");
+        addSettingsRow(developerCard, "", debugModeNote, gbc);
 
         mainPanel.add(developerCard);
         mainPanel.add(Box.createVerticalStrut(12));

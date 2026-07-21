@@ -52,7 +52,28 @@ public final class CustomTitleBar extends JPanel {
 
         TitleBarButton minimizeBtn = new TitleBarButton(Glyph.MINIMIZE);
         minimizeBtn.setToolTipText("Minimize");
-        minimizeBtn.addActionListener(e -> frame.setExtendedState(Frame.ICONIFIED));
+        minimizeBtn.addActionListener(e -> {
+            // Undecorated frames (custom title bar) can't be reliably restored by the
+            // OS/window manager after a native Frame.ICONIFIED — on several WMs an
+            // undecorated iconified window gets no taskbar entry at all, so it just
+            // vanishes with no way back. And since that path never went through
+            // hideToTray(), hiddenToTray stayed false, so the tray's "Show Launcher"
+            // (which calls restoreFromTray()) saw hiddenToTray == false and no-opped,
+            // leaving the user with an unreachable, "invisible" window.
+            //
+            // Route through hideToTray() when the tray icon is available, since that's
+            // the reliable, tested show/hide path (also used for "restore on game
+            // close"). Only fall back to a real OS-level iconify if the tray is
+            // disabled, so there's still a way to minimize.
+            if (frame instanceof com.launcher.Main mainFrame
+                    && com.launcher.manager.SettingsManager.getInstance().getSettings().enableSystemTray) {
+                com.launcher.util.WindowDebug.log("minimizeBtn", "routing through hideToTray() (tray enabled)");
+                mainFrame.hideToTray();
+            } else {
+                com.launcher.util.WindowDebug.log("minimizeBtn", "tray disabled or not a Main frame, using native iconify");
+                frame.setExtendedState(frame.getExtendedState() | Frame.ICONIFIED);
+            }
+        });
 
         maximizeBtn = new TitleBarButton(Glyph.MAXIMIZE);
         maximizeBtn.setToolTipText("Maximize");

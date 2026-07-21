@@ -125,6 +125,8 @@ public class LauncherSettings {
 
     // ── Developer ────────────────────────────────────────────────────────────
     public boolean unlockDevStuff       = false;
+    /** When on, verbose diagnostic messages (WindowDebug, etc.) are printed to the console. */
+    public boolean debugMode            = false;
     public String privateServersIps     = "";
     public String customDiscordRpcImage = "minecraft_image";
     /** Display name shown as the Rich Presence image tooltip / branding text. */
