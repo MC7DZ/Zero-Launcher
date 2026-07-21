@@ -3996,7 +3996,7 @@ public class Main extends JFrame {
         String[][] items = {
             {"⬆  Update All Mods", "Update all mods to their latest versions"},
             {"🔗  Install Dependencies", "Find and install missing required dependencies"},
-            {"🧹  Deduplicate Mods", "Remove duplicate mod files (keeps newest)"},
+            {"✎  Deduplicate Mods", "Remove duplicate mod files (keeps newest)"},
             {"🚫  Disable Incompatible Mods", "Disable mods whose version/loader doesn't match this instance"}
         };
         Runnable[] actions = {
