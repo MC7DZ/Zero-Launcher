@@ -97,21 +97,38 @@ public class LauncherSettings {
     public boolean redactPaths          = true;
     public boolean redactTokens         = true;
     public boolean clearSessionOnExit   = false;
+    public boolean hideLaunchCommand    = true;
 
     // Discord RPC
-    // Zero Launcher ships with its own bundled Discord Application ID (just like
-    // the official discord-rpc example app does) so nobody has to create a
-    // Discord application or paste in an App ID to get Rich Presence working —
-    // it's entirely client-side and works out of the box.
     public boolean enableDiscordRpc     = true;
-    public boolean showServerOnRpc      = true;
+    // ── General ──
+    public boolean rpcShowInLauncher    = true;
+    public boolean rpcShowInstanceName  = true;
+    public boolean rpcShowMinecraftVersion = true;
+    public boolean rpcShowServerIp      = false;
+    public boolean rpcShowGameState     = true;
+    public String  rpcCustomStateText   = "In Zero Launcher";
+    // ── Launcher tab visibility ──
+    public boolean rpcShowLauncherActivity = true;
+    public boolean rpcShowTabInstances  = true;
+    public boolean rpcShowTabMods       = true;
+    public boolean rpcShowTabDiscover   = true;
+    public boolean rpcShowTabPresets    = true;
+    public boolean rpcShowTabSettings   = true;
+    // ── In-game state visibility ──
+    public boolean rpcShowStateLaunching   = true;
+    public boolean rpcShowStateMainMenu    = true;
+    public boolean rpcShowStateSingleplayer = true;
+    public boolean rpcShowStateMultiplayer  = true;
+    // ── Advanced ──
+    public String rpcAppId = "1528905372625146066"; // default minecraft app id
 
     // ── Developer ────────────────────────────────────────────────────────────
     public boolean unlockDevStuff       = false;
     public String privateServersIps     = "";
-    public String customDiscordRpcImage = "minecraft_image.png";
+    public String customDiscordRpcImage = "minecraft_image";
     /** Display name shown as the Rich Presence image tooltip / branding text. */
-    public String customDiscordRpcName  = "Zero Launcher";
+    public String customDiscordRpcName  = "Minecraft";
     @Deprecated
     public String discordAppId          = ""; // No longer used/shown in the UI — kept only so old settings.json files still parse.
 

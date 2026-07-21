@@ -15,7 +15,6 @@ import com.launcher.util.JavaInstallationFinder;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
-import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
@@ -88,10 +87,18 @@ public class EditInstancePanel extends JPanel {
         nameField.setBorder(new EmptyBorder(4, 4, 4, 10));
 
         CustomComboBox<String> versionBox = new CustomComboBox<>();
+        if (instanceToEdit.mcVersion != null) {
+            versionBox.addItem(instanceToEdit.mcVersion);
+            versionBox.setSelectedItem(instanceToEdit.mcVersion);
+        }
         versionBox.setEnabled(false);
         CustomToggle snapshotsCb = new CustomToggle("Include snapshots");
 
         CustomComboBox<String> loaderVerBox = new CustomComboBox<>();
+        if (instanceToEdit.modLoaderVersion != null) {
+            loaderVerBox.addItem(instanceToEdit.modLoaderVersion);
+            loaderVerBox.setSelectedItem(instanceToEdit.modLoaderVersion);
+        }
         loaderVerBox.setEnabled(false);
         JLabel loaderVerLabel = fieldLabel("Loader version");
         boolean startsVanilla = selectedLoader[0] == ModLoaderType.VANILLA;
@@ -199,14 +206,11 @@ public class EditInstancePanel extends JPanel {
         rescanJavaBtn.addActionListener(e -> doScanJava.run());
 
         browseJavaBtn.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Select Java Executable");
-            fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
             String exeName = System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java";
-            fc.setSelectedFile(new File(exeName));
-            if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                String chosen = fc.getSelectedFile().getAbsolutePath();
-                javaPathField.setText(chosen);
+            File chosen = com.launcher.util.NativeFileChooser.openFile(this, "Select Java Executable", "Java Executable (" + exeName + ")");
+            if (chosen != null) {
+                String chosenPath = chosen.getAbsolutePath();
+                javaPathField.setText(chosenPath);
                 javaInstallDropdown.setSelectedItem(customPathLabel);
             }
         });
@@ -224,11 +228,9 @@ public class EditInstancePanel extends JPanel {
         GhostButton browseDirBtn = new GhostButton("Browse…");
         browseDirBtn.setEnabled(usesCustomDir);
         browseDirBtn.addActionListener(e -> {
-            JFileChooser dc = new JFileChooser();
-            dc.setDialogTitle("Select Directory");
-            dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            if (dc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                customDirField.setText(dc.getSelectedFile().getAbsolutePath());
+            File dir = com.launcher.util.NativeFileChooser.openDirectory(this, "Select Directory");
+            if (dir != null) {
+                customDirField.setText(dir.getAbsolutePath());
             }
         });
         defaultDirBtn.addActionListener(e -> {
@@ -352,7 +354,6 @@ public class EditInstancePanel extends JPanel {
         };
 
         Runnable loadLoaderVers = () -> {
-            loaderVerBox.removeAllItems();
             ModLoaderType loader = selectedLoader[0];
             String mcVer = (String) versionBox.getSelectedItem();
             if (loader == ModLoaderType.VANILLA || mcVer == null) {
@@ -360,6 +361,7 @@ public class EditInstancePanel extends JPanel {
                 return;
             }
             if (loader == ModLoaderType.FORGE) {
+                loaderVerBox.removeAllItems();
                 loaderVerBox.setEnabled(true);
                 loaderVerBox.addItem("Recommended");
                 loaderVerBox.addItem("Latest");
@@ -367,8 +369,8 @@ public class EditInstancePanel extends JPanel {
                         ? instanceToEdit.modLoaderVersion : "Recommended");
                 return;
             }
+            loaderVerBox.setEnabled(false);
             if (loader == ModLoaderType.NEOFORGE) {
-                loaderVerBox.setEnabled(false);
                 new Thread(() -> {
                     try {
                         List<String> vers = new NeoForgeInstaller().fetchVersions(mcVer);
@@ -390,7 +392,6 @@ public class EditInstancePanel extends JPanel {
                 }, "fetch-neoforge-vers").start();
                 return;
             }
-            loaderVerBox.setEnabled(false);
             final boolean isQuilt = loader == ModLoaderType.QUILT;
             new Thread(() -> {
                 try {
@@ -452,16 +453,21 @@ public class EditInstancePanel extends JPanel {
         saveBtn.addActionListener(e -> {
             String name = nameField.getText().trim();
             String ver = (String) versionBox.getSelectedItem();
-            if (name.isEmpty() || ver == null) {
-                JOptionPane.showMessageDialog(this, "Instance name and MC version are required.", "Error",
+            ModLoaderType lType = selectedLoader[0];
+            String lVer = lType == ModLoaderType.VANILLA ? null : (String) loaderVerBox.getSelectedItem();
+            
+            boolean invalidMcVer = (ver == null || ver.contains("load") || ver.contains("Load") || ver.contains("Fail"));
+            boolean invalidLoaderVer = (lType != ModLoaderType.VANILLA && (lVer == null || lVer.contains("load") || lVer.contains("Load") || lVer.contains("Fail")));
+            
+            if (name.isEmpty() || invalidMcVer || invalidLoaderVer) {
+                JOptionPane.showMessageDialog(this, "Please choose a valid Instance name, MC version, and Loader version.", "Error",
                         JOptionPane.ERROR_MESSAGE);
                 return;
             }
             instanceToEdit.name = name;
             instanceToEdit.mcVersion = ver;
-            instanceToEdit.modLoader = selectedLoader[0];
-            instanceToEdit.modLoaderVersion = selectedLoader[0] == ModLoaderType.VANILLA
-                    ? null : (String) loaderVerBox.getSelectedItem();
+            instanceToEdit.modLoader = lType;
+            instanceToEdit.modLoaderVersion = lVer;
             instanceToEdit.ramMb = ramSlider.getValue();
             instanceToEdit.hidden = hiddenCb.isSelected();
             instanceToEdit.imagePath = chosenImagePath[0];
@@ -596,11 +602,8 @@ public class EditInstancePanel extends JPanel {
         resetImageBtn.setEnabled(chosenImagePath[0] != null);
 
         changeImageBtn.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Choose Instance Image");
-            fc.setFileFilter(new FileNameExtensionFilter("Images", "png", "jpg", "jpeg", "gif", "bmp"));
-            if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                File chosen = fc.getSelectedFile();
+            File chosen = com.launcher.util.NativeFileChooser.openFile(this, "Choose Instance Image", "Images", "png", "jpg", "jpeg", "gif", "bmp");
+            if (chosen != null) {
                 try {
                     ImageIcon img = new ImageIcon(chosen.getAbsolutePath());
                     Image scaled = img.getImage().getScaledInstance(64, 64, Image.SCALE_SMOOTH);

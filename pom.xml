@@ -14,6 +14,21 @@
     <maven.compiler.release>17</maven.compiler.release>
   </properties>
 
+  <repositories>
+    <repository>
+      <id>jitpack.io</id>
+      <url>https://jitpack.io</url>
+    </repository>
+    <repository>
+      <id>sponge-repo</id>
+      <url>https://repo.spongepowered.org/repository/maven-public/</url>
+    </repository>
+    <repository>
+      <id>jcenter</id>
+      <url>https://jcenter.bintray.com/</url>
+    </repository>
+  </repositories>
+
   <dependencies>
     <dependency>
       <groupId>com.formdev</groupId>
@@ -25,11 +40,24 @@
       <artifactId>gson</artifactId>
       <version>2.10.1</version>
     </dependency>
-    <dependency>
-      <groupId>io.github.cdagaming</groupId>
-      <artifactId>DiscordIPC</artifactId>
-      <version>0.11.3</version>
-    </dependency>
+        <!-- Discord RPC (Minnced official java wrapper) -->
+        <dependency>
+            <groupId>club.minnced</groupId>
+            <artifactId>java-discord-rpc</artifactId>
+            <version>2.0.2</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>net.java.dev.jna</groupId>
+                    <artifactId>jna</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>club.minnced</groupId>
+            <artifactId>discord-rpc-release</artifactId>
+            <version>v3.4.0</version>
+            <scope>runtime</scope>
+        </dependency>
     <!-- Adds WebP decoding support to ImageIO (javax.imageio.ImageIO.read), since stock Java
          can't decode WebP and many Modrinth icons are served in that format. -->
     <dependency>
@@ -50,6 +78,7 @@
   </dependencies>
 
   <build>
+    <finalName>zero-launcher-1.0.0</finalName>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -62,7 +91,6 @@
               <mainClass>com.launcher.MainWrapper</mainClass>
             </manifest>
           </archive>
-          <finalName>zero-launcher-1.0.0</finalName>
         </configuration>
       </plugin>
 

@@ -17,7 +17,6 @@ import com.launcher.manager.SettingsManager;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
-import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -106,12 +105,8 @@ public class CreateInstanceDialog extends JDialog {
         resetImageBtn.setEnabled(false);
 
         changeImageBtn.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Choose Instance Image");
-            fc.setFileFilter(new FileNameExtensionFilter("Images", "png", "jpg", "jpeg", "gif", "bmp"));
-            int res = fc.showOpenDialog(this);
-            if (res == JFileChooser.APPROVE_OPTION) {
-                File chosen = fc.getSelectedFile();
+            File chosen = com.launcher.util.NativeFileChooser.openFile(this, "Choose Instance Image", "Images", "png", "jpg", "jpeg", "gif", "bmp");
+            if (chosen != null) {
                 try {
                     ImageIcon img = new ImageIcon(chosen.getAbsolutePath());
                     Image scaled = img.getImage().getScaledInstance(64, 64, Image.SCALE_SMOOTH);
@@ -227,11 +222,9 @@ public class CreateInstanceDialog extends JDialog {
         browseBtn.setEnabled(false);
 
         browseBtn.addActionListener(e -> {
-            JFileChooser dc = new JFileChooser();
-            dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            int d = dc.showOpenDialog(this);
-            if (d == JFileChooser.APPROVE_OPTION) {
-                customDirField.setText(dc.getSelectedFile().getAbsolutePath());
+            File dir = com.launcher.util.NativeFileChooser.openDirectory(this, "Select Directory");
+            if (dir != null) {
+                customDirField.setText(dir.getAbsolutePath());
             }
         });
 
@@ -299,12 +292,8 @@ public class CreateInstanceDialog extends JDialog {
         detectedInfoLabel.setVisible(false);
 
         modpackBrowseBtn.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Select Modpack File");
-            fc.setFileFilter(new FileNameExtensionFilter("Modpack files", "mrpack"));
-            int res = fc.showOpenDialog(this);
-            if (res == JFileChooser.APPROVE_OPTION) {
-                File chosen = fc.getSelectedFile();
+            File chosen = com.launcher.util.NativeFileChooser.openFile(this, "Select Modpack File", "Modpack files", "mrpack");
+            if (chosen != null) {
                 chosenModpackPath[0] = chosen.getAbsolutePath();
                 modpackFileHint.setText(chosen.getName());
                 modpackFileHint.setForeground(textColor);
@@ -391,11 +380,9 @@ public class CreateInstanceDialog extends JDialog {
 
         JButton installPathBrowseBtn = new JButton("Browse…");
         installPathBrowseBtn.addActionListener(e -> {
-            JFileChooser dc = new JFileChooser();
-            dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            int chosenRes = dc.showOpenDialog(this);
-            if (chosenRes == JFileChooser.APPROVE_OPTION) {
-                installPathField.setText(dc.getSelectedFile().getAbsolutePath());
+            File dir = com.launcher.util.NativeFileChooser.openDirectory(this, "Select Directory");
+            if (dir != null) {
+                installPathField.setText(dir.getAbsolutePath());
             }
         });
 

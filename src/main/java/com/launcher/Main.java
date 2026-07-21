@@ -49,6 +49,8 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -189,6 +191,7 @@ public class Main extends JFrame {
     private JButton importModsBtn;
     private JButton exportPresetBtn;
     private RoundedPanel exportOverlay;
+    private RoundedPanel discordRpcOverlay;
     private RoundedPanel importOverlay;
     private RoundedPanel exportPresetOverlay;
     private RoundedPanel applyPresetOverlay;
@@ -218,6 +221,12 @@ public class Main extends JFrame {
     private JButton discoverSearchBtn;
     private JPanel discoverResultsPane;
     private final Map<String, ImageIcon> discoverIconCache = new ConcurrentHashMap<>();
+    private final ExecutorService discoverIconExecutor = Executors.newFixedThreadPool(4, r -> {
+        Thread t = new Thread(r, "discover-icon-loader");
+        t.setDaemon(true);
+        return t;
+    });
+    private final java.util.List<javax.swing.Timer> discoverSkeletonTimers = new ArrayList<>();
     /**
      * URLs that failed to load/decode once (e.g. WebP images Java can't decode,
      * blocked
@@ -386,10 +395,8 @@ public class Main extends JFrame {
         mainTabPane.addTab(" Instances", buildInstanceArea());
         mainTabPane.addTab(" Mods", buildModsArea());
         mainTabPane.addTab(" Discover", buildDiscoverArea());
+        mainTabPane.addTab(" Presets", buildRecommendationsArea());
         mainTabPane.addTab(" Settings", buildSettingsArea());
-        if (com.launcher.manager.SettingsManager.getInstance().getSettings().unlockDevStuff) {
-            mainTabPane.addTab(" Presets", buildRecommendationsArea());
-        }
         rootPanel.add(mainTabPane, BorderLayout.CENTER);
 
         logAreaPanel = buildLogArea();
@@ -920,7 +927,7 @@ public class Main extends JFrame {
                 int responseCode = connection.getResponseCode();
                 if (responseCode >= 200 && responseCode < 400) {
                     // Success, online
-                    SwingUtilities.invokeLater(() -> offlinePlayButton.setVisible(false));
+                    // offlinePlayButton is now always shown
                 } else {
                     // Reached but bad status
                     SwingUtilities.invokeLater(() -> offlinePlayButton.setVisible(true));
@@ -1275,7 +1282,7 @@ public class Main extends JFrame {
         offlinePlayButton.setForeground(Color.WHITE);
         offlinePlayButton.setFocusPainted(false);
         offlinePlayButton.putClientProperty("JButton.arc", PLAY_BUTTON_ARC);
-        offlinePlayButton.setVisible(false); // Hidden by default
+        offlinePlayButton.setVisible(true); // Always show
         primaryActions.add(offlinePlayButton);
 
         JButton manageModsBtn = new JButton("Manage Mods");
@@ -1296,8 +1303,8 @@ public class Main extends JFrame {
         destructiveActions.add(killInstanceBtn);
         this.killInstanceButton = killInstanceBtn;
 
-        JButton delBtn = new JButton("Delete");
-        delBtn.setPreferredSize(new Dimension(80, 36));
+        JButton delBtn = new JButton("🗑️");
+        delBtn.setPreferredSize(new Dimension(44, 36));
         delBtn.setBackground(new Color(239, 68, 68));
         delBtn.setForeground(Color.WHITE);
         delBtn.setFocusPainted(false);
@@ -2375,11 +2382,8 @@ public class Main extends JFrame {
                 notifications.error("No instance", "Select a target instance first.");
                 return;
             }
-            JFileChooser chooser = new JFileChooser();
-            chooser.setDialogTitle("Select Mod List JSON");
-            chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("JSON Files (*.json)", "json"));
-            if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
-            File jsonFile = chooser.getSelectedFile();
+            File jsonFile = com.launcher.util.NativeFileChooser.openFile(this, "Select Mod List JSON", "JSON Files", "json");
+            if (jsonFile == null) return;
             try {
                 String content = Files.readString(jsonFile.toPath());
                 JsonObject root = JsonUtil.parse(content).getAsJsonObject();
@@ -2658,6 +2662,303 @@ public class Main extends JFrame {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // DISCORD RPC SETTINGS OVERLAY
+    // ══════════════════════════════════════════════════════════════════════════
+    private void showDiscordRpcOverlay() {
+        if (discordRpcOverlay != null) {
+            layeredPane.remove(discordRpcOverlay);
+            layeredPane.repaint();
+        }
+
+        discordRpcOverlay = new RoundedPanel(18, new Color(20, 20, 26, 250), new Color(255, 255, 255, 34));
+        discordRpcOverlay.putClientProperty("keepCustomBg", Boolean.TRUE);
+        discordRpcOverlay.setLayout(new BorderLayout());
+        discordRpcOverlay.setFrostedGlass(layeredPane, 8, new Color(12, 12, 16, 150));
+
+        // ── Header ──
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(14, 18, 10, 12));
+
+        JLabel title = new JLabel("⚙  Discord RPC Configuration");
+        title.setFont(new Font("SansSerif", Font.BOLD, 17));
+        title.setForeground(new Color(6, 182, 212)); // cyan accent
+        header.add(title, BorderLayout.CENTER);
+
+        JButton closeBtn = new JButton("✕");
+        closeBtn.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
+        closeBtn.setFocusPainted(false);
+        closeBtn.setContentAreaFilled(false);
+        closeBtn.setBorderPainted(false);
+        closeBtn.setOpaque(false);
+        closeBtn.setMargin(new Insets(4, 10, 4, 10));
+        closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeBtn.addActionListener(ev -> animateOverlayHide(discordRpcOverlay));
+        header.add(closeBtn, BorderLayout.EAST);
+
+        discordRpcOverlay.add(header, BorderLayout.NORTH);
+
+        // ── Scrollable Body ──
+        JPanel bodyPanel = new JPanel();
+        bodyPanel.setLayout(new BoxLayout(bodyPanel, BoxLayout.Y_AXIS));
+        bodyPanel.setOpaque(false);
+        bodyPanel.setBorder(new EmptyBorder(4, 20, 10, 20));
+
+        com.launcher.manager.SettingsManager mgr = com.launcher.manager.SettingsManager.getInstance();
+        com.launcher.model.LauncherSettings s = mgr.getSettings();
+
+        // Section 1: General & Custom App ID
+        JLabel generalLbl = new JLabel("General");
+        generalLbl.setFont(new Font("SansSerif", Font.BOLD, 14));
+        generalLbl.setForeground(new Color(6, 182, 212));
+        generalLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(generalLbl);
+        bodyPanel.add(Box.createVerticalStrut(6));
+        
+        CustomToggle showInLauncherCb = new CustomToggle("Show RPC when in Zero Launcher");
+        showInLauncherCb.setSelected(s.rpcShowInLauncher);
+        showInLauncherCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(showInLauncherCb);
+
+        CustomToggle showInstanceCb = new CustomToggle("Show Modpack / Instance Name");
+        showInstanceCb.setSelected(s.rpcShowInstanceName);
+        showInstanceCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(showInstanceCb);
+
+        CustomToggle showVersionCb = new CustomToggle("Show Minecraft Version");
+        showVersionCb.setSelected(s.rpcShowMinecraftVersion);
+        showVersionCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(showVersionCb);
+
+        CustomToggle showServerCb = new CustomToggle("Show Multiplayer Server IP");
+        showServerCb.setSelected(s.rpcShowServerIp);
+        showServerCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(showServerCb);
+
+        CustomToggle showGameStateCb = new CustomToggle("Show Game State (e.g., 'In Main Menu')");
+        showGameStateCb.setSelected(s.rpcShowGameState);
+        showGameStateCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(showGameStateCb);
+        
+        bodyPanel.add(Box.createVerticalStrut(10));
+        JLabel appIdLbl = new JLabel("Icon Style");
+        appIdLbl.setForeground(new Color(200, 200, 200));
+        appIdLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        appIdLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(appIdLbl);
+        
+        // Index-based mapping (avoids any risk of string-label mismatches):
+        // 0 = Modern Icon, 1 = Vanilla Icon, 2 = Classic Icon, 3 = Custom
+        final String MODERN_APP_ID  = "1528905372625146066";
+        final String VANILLA_APP_ID = "1131048770109460500";
+        final String CLASSIC_APP_ID = "1528907493265375382";
+
+        CustomComboBox<String> appIdField = new CustomComboBox<>(new String[]{
+            "Modern Icon", "Vanilla Icon", "Classic Icon", "Custom"
+        });
+        String savedAppId = s.rpcAppId != null ? s.rpcAppId.trim() : "";
+        boolean isKnownAppId = VANILLA_APP_ID.equals(savedAppId)
+                || CLASSIC_APP_ID.equals(savedAppId)
+                || MODERN_APP_ID.equals(savedAppId);
+        int initialIndex;
+        if (VANILLA_APP_ID.equals(savedAppId)) {
+            initialIndex = 1;
+        } else if (CLASSIC_APP_ID.equals(savedAppId)) {
+            initialIndex = 2;
+        } else if (!isKnownAppId && !savedAppId.isEmpty()) {
+            initialIndex = 3; // Custom
+        } else {
+            initialIndex = 0; // Modern (default)
+        }
+        appIdField.setSelectedIndex(initialIndex);
+        appIdField.setAlignmentX(Component.LEFT_ALIGNMENT);
+        appIdField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        bodyPanel.add(appIdField);
+
+        bodyPanel.add(Box.createVerticalStrut(8));
+        JLabel customAppIdLbl = new JLabel("Custom Discord Application ID:");
+        customAppIdLbl.setForeground(new Color(200, 200, 200));
+        customAppIdLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        customAppIdLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(customAppIdLbl);
+
+        CustomTextField customAppIdField = new CustomTextField();
+        customAppIdField.setText(initialIndex == 3 ? savedAppId : "");
+        customAppIdField.setAlignmentX(Component.LEFT_ALIGNMENT);
+        customAppIdField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        bodyPanel.add(customAppIdField);
+
+        boolean customSelectedInitially = appIdField.getSelectedIndex() == 3;
+        customAppIdLbl.setVisible(customSelectedInitially);
+        customAppIdField.setVisible(customSelectedInitially);
+
+        appIdField.addActionListener(ev -> {
+            boolean isCustom = appIdField.getSelectedIndex() == 3;
+            customAppIdLbl.setVisible(isCustom);
+            customAppIdField.setVisible(isCustom);
+            bodyPanel.revalidate();
+            bodyPanel.repaint();
+        });
+
+        bodyPanel.add(Box.createVerticalStrut(10));
+        JLabel stateTextLbl = new JLabel("Custom status text (shown when in the launcher):");
+        stateTextLbl.setForeground(new Color(200, 200, 200));
+        stateTextLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        stateTextLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(stateTextLbl);
+
+        CustomTextField stateTextField = new CustomTextField();
+        stateTextField.setText(s.rpcCustomStateText != null ? s.rpcCustomStateText : "In Zero Launcher");
+        stateTextField.setAlignmentX(Component.LEFT_ALIGNMENT);
+        stateTextField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        bodyPanel.add(stateTextField);
+        bodyPanel.add(Box.createVerticalStrut(16));
+
+        // Section 2: Launcher Tab Visibility
+        JLabel launcherLbl = new JLabel("Launcher — Which tabs to show on Discord");
+        launcherLbl.setFont(new Font("SansSerif", Font.BOLD, 14));
+        launcherLbl.setForeground(new Color(6, 182, 212));
+        launcherLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(launcherLbl);
+        bodyPanel.add(Box.createVerticalStrut(6));
+
+        CustomToggle showLauncherActivityCb = new CustomToggle("Show which tab I'm browsing");
+        showLauncherActivityCb.setSelected(s.rpcShowLauncherActivity);
+        showLauncherActivityCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(showLauncherActivityCb);
+
+        CustomToggle tabInstancesCb = new CustomToggle("    Instances");
+        tabInstancesCb.setSelected(s.rpcShowTabInstances);
+        tabInstancesCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(tabInstancesCb);
+
+        CustomToggle tabModsCb = new CustomToggle("    Mods");
+        tabModsCb.setSelected(s.rpcShowTabMods);
+        tabModsCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(tabModsCb);
+
+        CustomToggle tabDiscoverCb = new CustomToggle("    Discover");
+        tabDiscoverCb.setSelected(s.rpcShowTabDiscover);
+        tabDiscoverCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(tabDiscoverCb);
+
+        CustomToggle tabPresetsCb = new CustomToggle("    Presets");
+        tabPresetsCb.setSelected(s.rpcShowTabPresets);
+        tabPresetsCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(tabPresetsCb);
+
+        CustomToggle tabSettingsCb = new CustomToggle("    Settings");
+        tabSettingsCb.setSelected(s.rpcShowTabSettings);
+        tabSettingsCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(tabSettingsCb);
+        bodyPanel.add(Box.createVerticalStrut(16));
+
+        // Section 3: In-Game State Visibility
+        JLabel gameLbl = new JLabel("In-Game — Which states to show on Discord");
+        gameLbl.setFont(new Font("SansSerif", Font.BOLD, 14));
+        gameLbl.setForeground(new Color(6, 182, 212));
+        gameLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(gameLbl);
+        bodyPanel.add(Box.createVerticalStrut(6));
+
+        CustomToggle stateLaunchingCb = new CustomToggle("Launching Game");
+        stateLaunchingCb.setSelected(s.rpcShowStateLaunching);
+        stateLaunchingCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(stateLaunchingCb);
+        bodyPanel.add(Box.createVerticalStrut(2));
+
+        CustomToggle stateMainMenuCb = new CustomToggle("Main Menu");
+        stateMainMenuCb.setSelected(s.rpcShowStateMainMenu);
+        stateMainMenuCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(stateMainMenuCb);
+
+        CustomToggle stateSingleplayerCb = new CustomToggle("Singleplayer");
+        stateSingleplayerCb.setSelected(s.rpcShowStateSingleplayer);
+        stateSingleplayerCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(stateSingleplayerCb);
+
+        CustomToggle stateMultiplayerCb = new CustomToggle("Multiplayer");
+        stateMultiplayerCb.setSelected(s.rpcShowStateMultiplayer);
+        stateMultiplayerCb.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bodyPanel.add(stateMultiplayerCb);
+
+        JScrollPane scrollPane = new JScrollPane(bodyPanel);
+        scrollPane.setOpaque(false);
+        scrollPane.getViewport().setOpaque(false);
+        scrollPane.setBorder(null);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        discordRpcOverlay.add(scrollPane, BorderLayout.CENTER);
+
+        // ── Bottom ──
+        JPanel bottomWrap = new JPanel(new BorderLayout());
+        bottomWrap.setOpaque(false);
+        bottomWrap.setBorder(new EmptyBorder(10, 20, 20, 20));
+
+        JButton saveBtn = new JButton("✔  Save Changes");
+        saveBtn.setFocusPainted(false);
+        saveBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        saveBtn.addActionListener(e -> {
+            int selectedIconIndex = appIdField.getSelectedIndex();
+            String newAppId;
+            switch (selectedIconIndex) {
+                case 1: // Vanilla Icon
+                    newAppId = VANILLA_APP_ID;
+                    break;
+                case 2: // Classic Icon
+                    newAppId = CLASSIC_APP_ID;
+                    break;
+                case 3: // Custom — must use exactly what the user typed, no silent substitution
+                    String customValue = customAppIdField.getText() != null ? customAppIdField.getText().trim() : "";
+                    if (customValue.isEmpty()) {
+                        customAppIdField.requestFocusInWindow();
+                        return; // abort save — don't silently fall back to another icon
+                    }
+                    newAppId = customValue;
+                    break;
+                default: // Modern Icon (default)
+                    newAppId = MODERN_APP_ID;
+                    break;
+            }
+            
+            boolean appIdChanged = !newAppId.equals(s.rpcAppId);
+            s.rpcAppId = newAppId;
+            
+            s.rpcShowInLauncher = showInLauncherCb.isSelected();
+            s.rpcShowInstanceName = showInstanceCb.isSelected();
+            s.rpcShowMinecraftVersion = showVersionCb.isSelected();
+            s.rpcShowServerIp = showServerCb.isSelected();
+            s.rpcShowGameState = showGameStateCb.isSelected();
+            s.rpcCustomStateText = stateTextField.getText();
+
+            s.rpcShowLauncherActivity = showLauncherActivityCb.isSelected();
+            s.rpcShowTabInstances = tabInstancesCb.isSelected();
+            s.rpcShowTabMods = tabModsCb.isSelected();
+            s.rpcShowTabDiscover = tabDiscoverCb.isSelected();
+            s.rpcShowTabPresets = tabPresetsCb.isSelected();
+            s.rpcShowTabSettings = tabSettingsCb.isSelected();
+
+            s.rpcShowStateLaunching = stateLaunchingCb.isSelected();
+            s.rpcShowStateMainMenu = stateMainMenuCb.isSelected();
+            s.rpcShowStateSingleplayer = stateSingleplayerCb.isSelected();
+            s.rpcShowStateMultiplayer = stateMultiplayerCb.isSelected();
+
+            mgr.save();
+            
+            if (appIdChanged) {
+                com.launcher.manager.DiscordRpcManager.getInstance().shutdown();
+                com.launcher.manager.DiscordRpcManager.getInstance().init();
+            } else {
+                com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
+            }
+            animateOverlayHide(discordRpcOverlay);
+        });
+        bottomWrap.add(saveBtn, BorderLayout.EAST);
+        discordRpcOverlay.add(bottomWrap, BorderLayout.SOUTH);
+
+        positionModOverlay(discordRpcOverlay);
+        animateOverlayShow(discordRpcOverlay);
+    }
+    // ══════════════════════════════════════════════════════════════════════════
     // EXPORT MODS OVERLAY
     // ══════════════════════════════════════════════════════════════════════════
     private void showExportOverlay(Instance inst) {
@@ -2787,13 +3088,9 @@ public class Main extends JFrame {
         chooseLocBtn.setMargin(new Insets(6, 14, 6, 14));
         chooseLocBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
         chooseLocBtn.addActionListener(ev -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Save Mod List As");
             String safeName = inst.name.replaceAll("[\\\\/:*?\"<>|]", "_");
-            fc.setSelectedFile(new File(safeName + "_mods.json"));
-            fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("JSON Files (*.json)", "json"));
-            if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-                File f = fc.getSelectedFile();
+            File f = com.launcher.util.NativeFileChooser.saveFile(this, "Save Mod List As", safeName + "_mods.json", "JSON Files", "json");
+            if (f != null) {
                 if (!f.getName().endsWith(".json")) f = new File(f.getAbsolutePath() + ".json");
                 savePath[0] = f.toPath();
                 savePathLbl.setText(f.getAbsolutePath());
@@ -3084,12 +3381,9 @@ public class Main extends JFrame {
         chooseLocBtn.setMargin(new Insets(6, 14, 6, 14));
         chooseLocBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
         chooseLocBtn.addActionListener(ev -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Choose Folder to Export Preset Into");
-            fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            fc.setAcceptAllFileFilterUsed(false);
-            if (fc.showDialog(this, "Select Folder") == JFileChooser.APPROVE_OPTION) {
-                Path dir = fc.getSelectedFile().toPath();
+            File dirFile = com.launcher.util.NativeFileChooser.openDirectory(this, "Choose Folder to Export Preset Into");
+            if (dirFile != null) {
+                Path dir = dirFile.toPath();
                 savePath[0] = dir;
                 savePathLbl.setText(dir.toAbsolutePath().toString());
             }
@@ -3262,11 +3556,11 @@ public class Main extends JFrame {
         listPanel.setBorder(new EmptyBorder(4, 18, 4, 18));
 
         List<JCheckBox> checkboxes = new ArrayList<>();
+        Map<JCheckBox, JLabel> statusLabels = new LinkedHashMap<>();
         for (int i = 0; i < modsArr.size(); i++) {
             JsonObject mObj = modsArr.get(i).getAsJsonObject();
             String name = mObj.has("name") ? mObj.get("name").getAsString() : "Unknown mod";
             String modrinthId = mObj.has("modrinthId") ? mObj.get("modrinthId").getAsString() : null;
-            String modrinthUrl = mObj.has("modrinthUrl") ? mObj.get("modrinthUrl").getAsString() : null;
 
             CustomToggle cb = new CustomToggle(name, true);
             cb.setOpaque(false);
@@ -3274,27 +3568,26 @@ public class Main extends JFrame {
             cb.putClientProperty("modrinthId", modrinthId);
             cb.putClientProperty("modName", name);
 
+            JLabel statusLbl = new JLabel();
+            statusLbl.setFont(new Font("SansSerif", Font.PLAIN, 13));
+
             if (modrinthId != null) {
                 cb.setForeground(Color.WHITE);
-                cb.setToolTipText(modrinthUrl != null ? modrinthUrl : "Modrinth ID: " + modrinthId);
+                setModStatus(statusLbl, "⏳", "Waiting", STATUS_COLOR_WAITING, "Waiting to download");
             } else {
                 cb.setForeground(new Color(255, 160, 80));
-                cb.setToolTipText("⚠ No Modrinth ID — cannot download automatically");
                 cb.setSelected(false);
                 cb.setEnabled(false);
+                setModStatus(statusLbl, "⏭️", "Skipped", STATUS_COLOR_SKIPPED, "Skipped — mod could not be identified for automatic download");
             }
             checkboxes.add(cb);
+            statusLabels.put(cb, statusLbl);
 
             JPanel row = new JPanel(new BorderLayout());
             row.setOpaque(false);
             row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
             row.add(cb, BorderLayout.WEST);
-            if (modrinthUrl != null) {
-                JLabel link = new JLabel(modrinthUrl.replace("https://", ""));
-                link.setFont(new Font("SansSerif", Font.PLAIN, 10));
-                link.setForeground(new Color(245, 158, 11, 160));
-                row.add(link, BorderLayout.EAST);
-            }
+            row.add(statusLbl, BorderLayout.EAST);
             listPanel.add(row);
             listPanel.add(Box.createVerticalStrut(2));
         }
@@ -3351,14 +3644,16 @@ public class Main extends JFrame {
         importBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
         importBtn.addActionListener(ev -> {
             // Gather selected mods with Modrinth IDs
-            List<String[]> toDownload = new ArrayList<>(); // [modrinthId, name]
+            List<Object[]> toDownload = new ArrayList<>(); // [modrinthId, name, statusLabel]
             List<String> skipped = new ArrayList<>();
             for (JCheckBox cb : checkboxes) {
+                JLabel statusLbl = statusLabels.get(cb);
                 if (!cb.isSelected()) continue;
                 String mid = (String) cb.getClientProperty("modrinthId");
                 String mName = (String) cb.getClientProperty("modName");
                 if (mid != null && !mid.isBlank()) {
-                    toDownload.add(new String[]{ mid, mName });
+                    toDownload.add(new Object[]{ mid, mName, statusLbl });
+                    if (statusLbl != null) setModStatus(statusLbl, "⏳", "Waiting", STATUS_COLOR_WAITING, "Waiting to download");
                 } else {
                     skipped.add(mName);
                 }
@@ -3382,35 +3677,66 @@ public class Main extends JFrame {
                 String loader = targetInst.modLoader != null && targetInst.modLoader != ModLoaderType.VANILLA
                         ? targetInst.modLoader.name().toLowerCase() : null;
                 ModUpdateService service = new ModUpdateService();
+
+                // Identify already-installed mods so we don't re-download/duplicate them.
+                Set<String> installedIds = new HashSet<>();
+                try {
+                    List<ModEntry> existing = service.scanModsDir(modsDir);
+                    service.identifyMods(existing, log -> {});
+                    for (ModEntry me : existing) {
+                        if (me.modrinthId != null) installedIds.add(me.modrinthId);
+                    }
+                } catch (Exception ignored) {
+                    // Best-effort — if we can't scan/identify existing mods, just proceed with downloads.
+                }
+
                 int success = 0;
                 List<String> failed = new ArrayList<>();
+                List<String> alreadyInstalled = new ArrayList<>();
 
                 for (int i = 0; i < toDownload.size(); i++) {
-                    String[] entry = toDownload.get(i);
-                    String mid = entry[0];
-                    String mName = entry[1];
+                    Object[] entry = toDownload.get(i);
+                    String mid = (String) entry[0];
+                    String mName = (String) entry[1];
+                    JLabel statusLbl = (JLabel) entry[2];
                     final int idx = i + 1;
+
+                    if (installedIds.contains(mid)) {
+                        alreadyInstalled.add(mName);
+                        SwingUtilities.invokeLater(() -> {
+                            progressBar.setValue(idx);
+                            progressLbl.setText("Skipped " + idx + "/" + toDownload.size() + ": " + mName + " (already installed)");
+                            if (statusLbl != null) setModStatus(statusLbl, "⏭️", "Skipped", STATUS_COLOR_SKIPPED, "Skipped — already installed");
+                        });
+                        continue;
+                    }
+
                     SwingUtilities.invokeLater(() -> {
                         progressLbl.setText("Downloading " + idx + "/" + toDownload.size() + ": " + mName);
                         progressBar.setValue(idx);
                         setStatus("Importing mod " + idx + "/" + toDownload.size() + ": " + mName);
+                        if (statusLbl != null) setModStatus(statusLbl, "⬇️", "Downloading", STATUS_COLOR_DOWNLOADING, "Downloading…");
                     });
                     try {
                         String url = service.getDownloadUrlForProject(mid, "mod", loader, targetInst.mcVersion);
                         if (url == null) {
                             failed.add(mName + " (no compatible version)");
+                            SwingUtilities.invokeLater(() -> { if (statusLbl != null) setModStatus(statusLbl, "❌", "Failed", STATUS_COLOR_FAILED, "Failed — no compatible version"); });
                             continue;
                         }
                         String dlFileName = url.substring(url.lastIndexOf('/') + 1);
                         com.launcher.util.HttpUtil.downloadToFile(url, modsDir.resolve(dlFileName));
                         success++;
+                        SwingUtilities.invokeLater(() -> { if (statusLbl != null) setModStatus(statusLbl, "✅", "Downloaded", STATUS_COLOR_DOWNLOADED, "Downloaded"); });
                     } catch (Exception ex) {
                         failed.add(mName + " (" + ex.getMessage() + ")");
+                        SwingUtilities.invokeLater(() -> { if (statusLbl != null) setModStatus(statusLbl, "❌", "Failed", STATUS_COLOR_FAILED, "Failed — " + ex.getMessage()); });
                     }
                 }
 
                 final int finalSuccess = success;
                 final List<String> finalFailed = failed;
+                final List<String> finalAlreadyInstalled = alreadyInstalled;
                 SwingUtilities.invokeLater(() -> {
                     importBtn.setEnabled(true);
                     importBtn.setText("⬇  Import Selected");
@@ -3421,8 +3747,11 @@ public class Main extends JFrame {
 
                     StringBuilder msg = new StringBuilder();
                     msg.append("Installed ").append(finalSuccess).append(" of ").append(toDownload.size()).append(" mod(s).");
+                    if (!finalAlreadyInstalled.isEmpty()) {
+                        msg.append("\nAlready installed (skipped): ").append(String.join(", ", finalAlreadyInstalled));
+                    }
                     if (!skipped.isEmpty()) {
-                        msg.append("\nSkipped (no Modrinth ID): ").append(String.join(", ", skipped));
+                        msg.append("\nSkipped (couldn't identify mod): ").append(String.join(", ", skipped));
                     }
                     if (!finalFailed.isEmpty()) {
                         msg.append("\nFailed: ").append(String.join(", ", finalFailed));
@@ -3459,6 +3788,21 @@ public class Main extends JFrame {
     }
 
     // ── Overlay positioning + show/hide animation helpers ────────────────────
+    // ── Colorful mod download/import status badge helper ────────────────────
+    private static final Color STATUS_COLOR_WAITING = new Color(245, 158, 11);      // amber
+    private static final Color STATUS_COLOR_DOWNLOADING = new Color(59, 130, 246);  // blue
+    private static final Color STATUS_COLOR_DOWNLOADED = new Color(16, 185, 129);   // green
+    private static final Color STATUS_COLOR_FAILED = new Color(239, 68, 68);        // red
+    private static final Color STATUS_COLOR_SKIPPED = new Color(168, 85, 247);      // purple
+
+    private static void setModStatus(JLabel lbl, String emoji, String word, Color color, String tooltip) {
+        if (lbl == null) return;
+        lbl.setText(emoji + "  " + word);
+        lbl.setForeground(color);
+        lbl.setFont(lbl.getFont().deriveFont(Font.BOLD));
+        lbl.setToolTipText(tooltip);
+    }
+
     private void positionModOverlay(RoundedPanel overlay) {
         positionModOverlay(overlay, 620, 560);
     }
@@ -4487,9 +4831,6 @@ public class Main extends JFrame {
         scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
-        scroll.getViewport().setOpaque(false);
-        scroll.setOpaque(false);
-        scroll.setBorder(null);
         // Fixes a real Swing z-order/ghosting bug: JViewport's default
         // BLIT_SCROLL_MODE copies (blits) the previously painted pixels and only
         // repaints the newly-exposed strip when scrolling, which assumes fully
@@ -4509,7 +4850,6 @@ public class Main extends JFrame {
         scroll.getVerticalScrollBar().addAdjustmentListener(e -> {
             topCard.repaint();
         });
-        // Re-layout on resize so WrapLayout recalculates row heights
         scroll.addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
@@ -4754,8 +5094,41 @@ public class Main extends JFrame {
         private int paletteVersion = 0;
         private int cachePaletteVersion = -1;
 
+        private static class Particle {
+            float x, y, size, alpha, alphaVelocity, yVelocity;
+            public Particle(int width, int height) {
+                respawn(width, height, true);
+            }
+            void respawn(int width, int height, boolean randomY) {
+                x = (float) (Math.random() * width);
+                y = randomY ? (float) (Math.random() * height) : height + 10;
+                size = (float) (Math.random() * 4 + 2);
+                alpha = 0f;
+                alphaVelocity = (float) (Math.random() * 0.01 + 0.005);
+                yVelocity = (float) (Math.random() * 0.5 + 0.2);
+            }
+            void update(int width, int height) {
+                y -= yVelocity;
+                alpha += alphaVelocity;
+                if (alpha > 0.6f) alphaVelocity = -Math.abs(alphaVelocity);
+                if (y < -10 || alpha < 0f) respawn(width, height, false);
+            }
+        }
+        
+        private final java.util.List<Particle> particles = new java.util.ArrayList<>();
+        private javax.swing.Timer particleTimer;
+
         GradientBackgroundPane() {
             setOpaque(true);
+            for (int i = 0; i < 40; i++) particles.add(new Particle(1920, 1080));
+            particleTimer = new javax.swing.Timer(16, e -> {
+                int w = getWidth(), h = getHeight();
+                if (w > 0 && h > 0) {
+                    for (Particle p : particles) p.update(w, h);
+                    repaint();
+                }
+            });
+            particleTimer.start();
         }
 
         /**
@@ -5163,6 +5536,15 @@ public class Main extends JFrame {
                 g2.drawImage(fadeFromFrame, 0, 0, getWidth(), getHeight(), null);
                 g2.setComposite(old);
             }
+            
+            // Draw ambient particles
+            for (Particle p : particles) {
+                if (p.alpha > 0) {
+                    g2.setColor(new Color(glowColor.getRed(), glowColor.getGreen(), glowColor.getBlue(), (int) (Math.min(1f, p.alpha) * 255)));
+                    g2.fill(new java.awt.geom.Ellipse2D.Float(p.x, p.y, p.size, p.size));
+                }
+            }
+            
             g2.dispose();
         }
     }
@@ -5311,6 +5693,12 @@ public class Main extends JFrame {
 
             if (outgoingSnapshot != null) {
                 crossfadeFrom(outgoingSnapshot);
+            }
+            
+            // Notify Discord RPC of tab switch
+            if (index >= 0 && index < buttons.size()) {
+                String title = buttons.get(index).getText();
+                com.launcher.manager.DiscordRpcManager.getInstance().updateLauncherTab(title);
             }
         }
 
@@ -5538,7 +5926,6 @@ public class Main extends JFrame {
                 g2.drawRoundRect(0, 0, w - 1, h - 1, radius, radius);
             }
             g2.dispose();
-            super.paintComponent(g);
         }
 
         /**
@@ -5974,6 +6361,8 @@ public class Main extends JFrame {
     // ── Skeleton loading placeholders ────────────────────────────────────────
     private void showDiscoverSkeletons() {
         discoverResultsPane.removeAll();
+        for (javax.swing.Timer t : discoverSkeletonTimers) t.stop();
+        discoverSkeletonTimers.clear();
         // Fill enough skeleton cards to cover a full viewport (and then some) so
         // the loading state doesn't look sparse compared to a real results page —
         // scale roughly to the page size instead of a fixed small handful.
@@ -5997,6 +6386,7 @@ public class Main extends JFrame {
                     repaint();
                 });
                 shimmer.start();
+                discoverSkeletonTimers.add(shimmer);
             }
 
             @Override
@@ -6083,6 +6473,8 @@ public class Main extends JFrame {
 
                 SwingUtilities.invokeLater(() -> {
                     discoverResultsPane.removeAll();
+                    for (javax.swing.Timer t : discoverSkeletonTimers) t.stop();
+                    discoverSkeletonTimers.clear();
                     for (var el : hits) {
                         JsonObject hit = el.getAsJsonObject();
                         discoverResultsPane.add(buildDiscoverCard(hit, projectType, fLoader, fGameVersion));
@@ -6097,6 +6489,8 @@ public class Main extends JFrame {
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
                     discoverResultsPane.removeAll();
+                    for (javax.swing.Timer t : discoverSkeletonTimers) t.stop();
+                    discoverSkeletonTimers.clear();
                     discoverResultsPane.revalidate();
                     discoverResultsPane.repaint();
                     discoverSearchBtn.setEnabled(true);
@@ -6231,13 +6625,13 @@ public class Main extends JFrame {
                 iconLabel.setIcon(cached);
             } else {
                 iconLabel.setIcon(defaultModIcon48);
-                new Thread(() -> {
+                discoverIconExecutor.submit(() -> {
                     ImageIcon icon = loadIconRobust(fIconUrl, 48);
                     if (icon != null) {
                         discoverIconCache.put(fIconUrl, icon);
                         SwingUtilities.invokeLater(() -> iconLabel.setIcon(icon));
                     }
-                }, "icon-load").start();
+                });
             }
         } else {
             iconLabel.setIcon(defaultModIcon48);
@@ -6249,11 +6643,12 @@ public class Main extends JFrame {
         titleCol.setLayout(new BoxLayout(titleCol, BoxLayout.Y_AXIS));
         titleCol.setBorder(new EmptyBorder(1, 0, 0, 0));
 
-        JLabel titleLbl = new JLabel(
-                "<html><body style='width: 165px;'><b>" + escapeHtml(title) + "</b></body></html>");
+        JLabel titleLbl = new JLabel(title);
         titleLbl.setForeground(DISC_TEXT);
         titleLbl.setFont(new Font("SansSerif", Font.BOLD, 14));
         titleLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        titleLbl.setPreferredSize(new Dimension(165, titleLbl.getPreferredSize().height));
+        titleLbl.setMaximumSize(new Dimension(165, titleLbl.getPreferredSize().height));
         titleCol.add(titleLbl);
 
         if (!author.isEmpty()) {
@@ -6308,12 +6703,18 @@ public class Main extends JFrame {
         }
 
         // Description
-        JLabel descLbl = new JLabel(
-                "<html><body style='width: 262px;'>" + escapeHtml(desc) + "</body></html>");
+        JTextArea descLbl = new JTextArea(desc);
+        descLbl.setWrapStyleWord(true);
+        descLbl.setLineWrap(true);
+        descLbl.setEditable(false);
+        descLbl.setFocusable(false);
+        descLbl.setOpaque(false);
+        descLbl.setBackground(new Color(0, 0, 0, 0));
         descLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
         descLbl.setForeground(DISC_TEXT_DIM);
         descLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
         descLbl.setBorder(new EmptyBorder((gameVersion != null || loader != null) ? 8 : 10, 0, 0, 0));
+        descLbl.setMaximumSize(new Dimension(262, 44));
         content.add(descLbl);
 
         card.add(content, BorderLayout.CENTER);
@@ -7047,11 +7448,11 @@ public class Main extends JFrame {
         listPanel.setBorder(new EmptyBorder(4, 18, 4, 18));
 
         List<JCheckBox> checkboxes = new ArrayList<>();
+        Map<JCheckBox, JLabel> statusLabels = new LinkedHashMap<>();
         for (int i = 0; i < modsArr.size(); i++) {
             JsonObject mObj = modsArr.get(i).getAsJsonObject();
             String name = mObj.has("name") ? mObj.get("name").getAsString() : "Unknown mod";
             String modrinthId = mObj.has("modrinthId") ? mObj.get("modrinthId").getAsString() : null;
-            String modrinthUrl = mObj.has("modrinthUrl") ? mObj.get("modrinthUrl").getAsString() : null;
 
             CustomToggle cb = new CustomToggle(name, loaderMatches);
             cb.setOpaque(false);
@@ -7059,33 +7460,33 @@ public class Main extends JFrame {
             cb.putClientProperty("modrinthId", modrinthId);
             cb.putClientProperty("modName", name);
 
+            JLabel statusLbl = new JLabel();
+            statusLbl.setFont(new Font("SansSerif", Font.PLAIN, 13));
+
             if (modrinthId == null) {
                 cb.setForeground(new Color(255, 160, 80));
-                cb.setToolTipText("⚠ No Modrinth ID — cannot download automatically");
                 cb.setSelected(false);
                 cb.setEnabled(false);
+                setModStatus(statusLbl, "⏭️", "Skipped", STATUS_COLOR_SKIPPED, "Skipped — mod could not be identified for automatic download");
             } else if (!loaderMatches) {
                 cb.setForeground(new Color(150, 150, 165));
                 cb.setToolTipText("⚠ Unchecked by default — this preset targets " + String.join("/", presetLoaders)
                         + ", not " + targetLoader + ". You can still enable it manually if you're sure it's compatible.");
                 cb.setSelected(false);
                 cb.setEnabled(true);
+                setModStatus(statusLbl, "⏳", "Waiting", STATUS_COLOR_WAITING, "Waiting to download");
             } else {
                 cb.setForeground(Color.WHITE);
-                cb.setToolTipText(modrinthUrl != null ? modrinthUrl : "Modrinth ID: " + modrinthId);
+                setModStatus(statusLbl, "⏳", "Waiting", STATUS_COLOR_WAITING, "Waiting to download");
             }
             checkboxes.add(cb);
+            statusLabels.put(cb, statusLbl);
 
             JPanel row = new JPanel(new BorderLayout());
             row.setOpaque(false);
             row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
             row.add(cb, BorderLayout.WEST);
-            if (modrinthUrl != null) {
-                JLabel link = new JLabel(modrinthUrl.replace("https://", ""));
-                link.setFont(new Font("SansSerif", Font.PLAIN, 10));
-                link.setForeground(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 160));
-                row.add(link, BorderLayout.EAST);
-            }
+            row.add(statusLbl, BorderLayout.EAST);
             listPanel.add(row);
             listPanel.add(Box.createVerticalStrut(2));
         }
@@ -7153,14 +7554,16 @@ public class Main extends JFrame {
         applyBtn.setMargin(new Insets(8, 20, 8, 20));
         applyBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
         applyBtn.addActionListener(ev -> {
-            List<String[]> toDownload = new ArrayList<>(); // [modrinthId, name]
+            List<Object[]> toDownload = new ArrayList<>(); // [modrinthId, name, statusLabel]
             List<String> skipped = new ArrayList<>();
             for (JCheckBox cb : checkboxes) {
+                JLabel statusLbl = statusLabels.get(cb);
                 if (!cb.isSelected()) continue;
                 String mid = (String) cb.getClientProperty("modrinthId");
                 String mName = (String) cb.getClientProperty("modName");
                 if (mid != null && !mid.isBlank()) {
-                    toDownload.add(new String[]{ mid, mName });
+                    toDownload.add(new Object[]{ mid, mName, statusLbl });
+                    if (statusLbl != null) setModStatus(statusLbl, "⏳", "Waiting", STATUS_COLOR_WAITING, "Waiting to download");
                 } else {
                     skipped.add(mName);
                 }
@@ -7185,30 +7588,60 @@ public class Main extends JFrame {
                 String loader = targetInst.modLoader != null && targetInst.modLoader != ModLoaderType.VANILLA
                         ? targetInst.modLoader.name().toLowerCase() : null;
                 ModUpdateService service = new ModUpdateService();
+
+                // Identify already-installed mods so we don't re-download/duplicate them.
+                Set<String> installedIds = new HashSet<>();
+                try {
+                    List<ModEntry> existing = service.scanModsDir(modsDir);
+                    service.identifyMods(existing, log -> {});
+                    for (ModEntry me : existing) {
+                        if (me.modrinthId != null) installedIds.add(me.modrinthId);
+                    }
+                } catch (Exception ignored) {
+                    // Best-effort — if we can't scan/identify existing mods, just proceed with downloads.
+                }
+
                 int success = 0;
                 List<String> failed = new ArrayList<>();
+                List<String> alreadyInstalled = new ArrayList<>();
 
                 for (int i = 0; i < toDownload.size(); i++) {
-                    String[] entry = toDownload.get(i);
-                    String mid = entry[0];
-                    String mName = entry[1];
+                    Object[] entry = toDownload.get(i);
+                    String mid = (String) entry[0];
+                    String mName = (String) entry[1];
+                    JLabel statusLbl = (JLabel) entry[2];
                     final int idx = i + 1;
+
+                    if (installedIds.contains(mid)) {
+                        alreadyInstalled.add(mName);
+                        SwingUtilities.invokeLater(() -> {
+                            progressBar.setValue(idx);
+                            progressLbl.setText("Skipped " + idx + "/" + toDownload.size() + ": " + mName + " (already installed)");
+                            if (statusLbl != null) setModStatus(statusLbl, "⏭️", "Skipped", STATUS_COLOR_SKIPPED, "Skipped — already installed");
+                        });
+                        continue;
+                    }
+
                     SwingUtilities.invokeLater(() -> {
                         progressLbl.setText("Downloading " + idx + "/" + toDownload.size() + ": " + mName);
                         progressBar.setValue(idx);
                         setStatus("Applying preset — mod " + idx + "/" + toDownload.size() + ": " + mName);
+                        if (statusLbl != null) setModStatus(statusLbl, "⬇️", "Downloading", STATUS_COLOR_DOWNLOADING, "Downloading…");
                     });
                     try {
                         String url = service.getDownloadUrlForProject(mid, "mod", loader, targetInst.mcVersion);
                         if (url == null) {
                             failed.add(mName + " (no compatible version)");
+                            SwingUtilities.invokeLater(() -> { if (statusLbl != null) setModStatus(statusLbl, "❌", "Failed", STATUS_COLOR_FAILED, "Failed — no compatible version"); });
                             continue;
                         }
                         String dlFileName = url.substring(url.lastIndexOf('/') + 1);
                         com.launcher.util.HttpUtil.downloadToFile(url, modsDir.resolve(dlFileName));
                         success++;
+                        SwingUtilities.invokeLater(() -> { if (statusLbl != null) setModStatus(statusLbl, "✅", "Downloaded", STATUS_COLOR_DOWNLOADED, "Downloaded"); });
                     } catch (Exception ex) {
                         failed.add(mName + " (" + ex.getMessage() + ")");
+                        SwingUtilities.invokeLater(() -> { if (statusLbl != null) setModStatus(statusLbl, "❌", "Failed", STATUS_COLOR_FAILED, "Failed — " + ex.getMessage()); });
                     }
                 }
 
@@ -7226,6 +7659,7 @@ public class Main extends JFrame {
 
                 final int finalSuccess = success;
                 final List<String> finalFailed = failed;
+                final List<String> finalAlreadyInstalled = alreadyInstalled;
                 final boolean finalConfigCopied = configCopied;
                 final String finalConfigError = configError;
                 SwingUtilities.invokeLater(() -> {
@@ -7244,6 +7678,9 @@ public class Main extends JFrame {
                         msg.append(msg.length() > 0 ? "\n" : "").append("Copied the recommended mods config.");
                     } else if (finalConfigError != null) {
                         msg.append(msg.length() > 0 ? "\n" : "").append("Failed to copy config: ").append(finalConfigError);
+                    }
+                    if (!finalAlreadyInstalled.isEmpty()) {
+                        msg.append("\nAlready installed (skipped): ").append(String.join(", ", finalAlreadyInstalled));
                     }
                     if (!skipped.isEmpty()) {
                         msg.append("\nSkipped (no Modrinth ID): ").append(String.join(", ", skipped));
@@ -7397,12 +7834,9 @@ public class Main extends JFrame {
         });
 
         browseImageBtn.addActionListener(e -> {
-            JFileChooser chooser = new JFileChooser();
-            chooser.setDialogTitle("Choose a background image");
-            chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-                    "Images (png, jpg, jpeg, gif, bmp, webp)", "png", "jpg", "jpeg", "gif", "bmp", "webp"));
-            if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                File chosen = chooser.getSelectedFile();
+            File chosen = com.launcher.util.NativeFileChooser.openFile(this, "Choose a background image",
+                    "Images (png, jpg, jpeg, gif, bmp, webp)", "png", "jpg", "jpeg", "gif", "bmp", "webp");
+            if (chosen != null) {
                 s.backgroundImagePath = chosen.getAbsolutePath();
                 s.useBackgroundImage = true;
                 useBackgroundImageCb.setSelected(true);
@@ -7508,12 +7942,8 @@ public class Main extends JFrame {
         JButton addFontBtn = new JButton("Add Font…");
         addFontBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
         addFontBtn.addActionListener(e -> {
-            JFileChooser chooser = new JFileChooser();
-            chooser.setDialogTitle("Choose a font file");
-            chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-                    "Fonts (ttf, otf)", "ttf", "otf"));
-            if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                File chosen = chooser.getSelectedFile();
+            File chosen = com.launcher.util.NativeFileChooser.openFile(this, "Choose a font file", "Fonts (ttf, otf)", "ttf", "otf");
+            if (chosen != null) {
                 String family = com.launcher.manager.FontManager.registerFontFile(chosen.getAbsolutePath());
                 if (family == null) {
                     JOptionPane.showMessageDialog(this,
@@ -7831,25 +8261,18 @@ public class Main extends JFrame {
         javaRescanBtn.addActionListener(e -> doScan.run());
 
         javaBrowseBtn.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Select Java Executable");
-            fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
             String exeName = System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java";
             File startDir = javaPathField.getText() != null && !javaPathField.getText().isBlank()
                     ? new File(javaPathField.getText()).getParentFile()
                     : null;
-            if (startDir != null && startDir.isDirectory()) {
-                fc.setCurrentDirectory(startDir);
-            }
-            fc.setSelectedFile(new File(exeName));
-            int res = fc.showOpenDialog(this);
-            if (res == JFileChooser.APPROVE_OPTION) {
-                String chosen = fc.getSelectedFile().getAbsolutePath();
-                javaPathField.setText(chosen);
-                s.javaPath = chosen;
+            File chosen = com.launcher.util.NativeFileChooser.openFile(this, "Select Java Executable", startDir, "Java Executable (" + exeName + ")");
+            if (chosen != null) {
+                String chosenPath = chosen.getAbsolutePath();
+                javaPathField.setText(chosenPath);
+                s.javaPath = chosenPath;
                 mgr.save();
                 javaInstallDropdown.setSelectedItem(customPathLabel);
-                log("Java executable set to " + chosen + ".");
+                log("Java executable set to " + chosenPath + ".");
             }
         });
 
@@ -7943,6 +8366,14 @@ public class Main extends JFrame {
         });
         addSettingsRow(privacyCard, "", redactTokensCb, gbc);
 
+        CustomToggle hideLaunchCommandCb = new CustomToggle("Hide launch command in logs");
+        hideLaunchCommandCb.setSelected(s.hideLaunchCommand);
+        hideLaunchCommandCb.addActionListener(e -> {
+            s.hideLaunchCommand = hideLaunchCommandCb.isSelected();
+            mgr.save();
+        });
+        addSettingsRow(privacyCard, "", hideLaunchCommandCb, gbc);
+
         CustomToggle clearSessionCb = new CustomToggle("Clear account sessions when the launcher closes");
         clearSessionCb.setSelected(s.clearSessionOnExit);
         clearSessionCb.addActionListener(e -> {
@@ -7955,38 +8386,33 @@ public class Main extends JFrame {
         mainPanel.add(Box.createVerticalStrut(12));
 
         // ── 6. DISCORD RPC CARD ───────────────────────────────────────────────
-        JPanel discordCard = createCard("Discord RPC (Forced Off)");
+        JPanel discordCard = createCard("Discord Rich Presence");
         gbc = createGbc();
 
         CustomToggle enableRpcCb = new CustomToggle("Enable Discord Rich Presence");
-        enableRpcCb.setSelected(false);
-        enableRpcCb.setEnabled(false);
+        enableRpcCb.setSelected(s.enableDiscordRpc);
+        enableRpcCb.addActionListener(e -> {
+            s.enableDiscordRpc = enableRpcCb.isSelected();
+            mgr.save();
+            if (s.enableDiscordRpc) {
+                com.launcher.manager.DiscordRpcManager.getInstance().init();
+            } else {
+                com.launcher.manager.DiscordRpcManager.getInstance().shutdown();
+            }
+        });
         addSettingsRow(discordCard, "", enableRpcCb, gbc);
 
-        CustomToggle showServerCb = new CustomToggle("Show connected server IP in Discord status");
-        showServerCb.setSelected(false);
-        showServerCb.setEnabled(false);
-        addSettingsRow(discordCard, "", showServerCb, gbc);
+        JButton configRpcBtn = new JButton("Configure Discord RPC...");
+        configRpcBtn.setFocusPainted(false);
+        configRpcBtn.addActionListener(e -> showDiscordRpcOverlay());
+        addSettingsRow(discordCard, "", configRpcBtn, gbc);
 
-        CustomTextField rpcNameField = new CustomTextField(
-                s.customDiscordRpcName != null ? s.customDiscordRpcName : "Zero Launcher");
-        rpcNameField.setEnabled(false);
-        addSettingsRow(discordCard, "Custom RPC Name", rpcNameField, gbc);
 
         JLabel discordNote = new JLabel(
-                "<html><body style='color:#ef4444;'>⚠ Currently this is not available. Try using a mod like Vanilla RPC instead.</body></html>");
+                "<html><body style='width:420px; color:#a0a0aa;'>Rich Presence uses Minecraft's official Discord " +
+                        "application so it displays the Minecraft icon automatically. " +
+                        "Toggle the switch above to enable or disable it.</body></html>");
         addSettingsRow(discordCard, "", discordNote, gbc);
-
-        JButton findVanillaRpcBtn = new JButton("Find Vanilla RPC in Discover");
-        findVanillaRpcBtn.addActionListener(e -> {
-            mainTabPane.setSelectedIndex(2); // Discover tab
-            if (discoverSearchField != null) {
-                discoverSearchField.setText("Vanilla RPC");
-            }
-            discoverOffset = 0;
-            performDiscoverSearch();
-        });
-        addSettingsRow(discordCard, "", findVanillaRpcBtn, gbc);
 
         mainPanel.add(discordCard);
         mainPanel.add(Box.createVerticalStrut(12));
@@ -8001,14 +8427,14 @@ public class Main extends JFrame {
             s.unlockDevStuff = unlockDevStuffCb.isSelected();
             mgr.save();
             notifications.info("Restart required",
-                    "Restart the launcher for the Presets tab to " +
-                            (s.unlockDevStuff ? "appear." : "disappear."));
+                    "Restart the launcher for developer features to " +
+                            (s.unlockDevStuff ? "be enabled." : "be disabled."));
         });
         addSettingsRow(developerCard, "", unlockDevStuffCb, gbc);
 
         JLabel devNote = new JLabel(
                 "<html><body style='width:420px; color:#a0a0aa;'>Enables early, unfinished features that may be " +
-                        "unstable — currently adds a \"Presets\" tab.</body></html>");
+                        "unstable.</body></html>");
         addSettingsRow(developerCard, "", devNote, gbc);
 
         mainPanel.add(developerCard);
@@ -9469,10 +9895,12 @@ public class Main extends JFrame {
                 });
                 System.gc();
 
-                com.launcher.manager.DiscordRpcManager.getInstance().updatePlaying(instance, resolved.id);
+                com.launcher.manager.DiscordRpcManager.getInstance().updateLaunching(instance, resolved.id);
                 try (var reader = process.inputReader()) {
                     String line;
                     java.util.regex.Pattern serverRegex = java.util.regex.Pattern.compile("Connecting to (\\S+),");
+                    java.util.regex.Pattern singleplayerRegex = java.util.regex.Pattern.compile("Starting integrated minecraft server|Loaded \\d+ advancements");
+                    java.util.regex.Pattern mainMenuRegex = java.util.regex.Pattern.compile("Stopping server|Stopping internal server|Disconnecting from|Disconnected from|lost connection|Sound engine started|OpenAL initialized");
                     while ((line = reader.readLine()) != null) {
                         log("[game] " + line);
                         java.util.regex.Matcher matcher = serverRegex.matcher(line);
@@ -9483,6 +9911,10 @@ public class Main extends JFrame {
                             instanceManager.save();
                             com.launcher.manager.DiscordRpcManager.getInstance().updatePlayingServer(instance,
                                     resolved.id, serverIp);
+                        } else if (singleplayerRegex.matcher(line).find()) {
+                            com.launcher.manager.DiscordRpcManager.getInstance().updateGameState(com.launcher.manager.DiscordRpcManager.GameState.SINGLEPLAYER);
+                        } else if (mainMenuRegex.matcher(line).find()) {
+                            com.launcher.manager.DiscordRpcManager.getInstance().updateGameState(com.launcher.manager.DiscordRpcManager.GameState.MAIN_MENU);
                         }
                     }
                 }
@@ -9595,7 +10027,7 @@ public class Main extends JFrame {
                     playButton.setBackground(new Color(245, 158, 11)); // Yellow/Amber
                     playButton.setText("PLAY ▸ (" + runningInstances.size() + ")");
                     playButton.setEnabled(true);
-                    offlinePlayButton.setVisible(false); // Hide it once successful
+                    // offlinePlayButton.setVisible(false); // Hide it once successful
                 });
 
                 SwingUtilities.invokeLater(() -> {
@@ -9835,7 +10267,20 @@ public class Main extends JFrame {
             return;
         Font f = comp.getFont();
         if (f != null && !family.equals(f.getFamily())) {
-            comp.setFont(new Font(family, f.getStyle(), f.getSize()));
+            Font newFont = new Font(family, f.getStyle(), f.getSize());
+            
+            // Check if the new font can actually display the component's text (e.g., Unicode icons like ▸, ✕, ⚙)
+            String text = null;
+            if (comp instanceof javax.swing.JLabel l) text = l.getText();
+            else if (comp instanceof javax.swing.AbstractButton b) text = b.getText();
+            else if (comp instanceof javax.swing.text.JTextComponent t) text = t.getText();
+            
+            if (text != null && !text.isEmpty() && newFont.canDisplayUpTo(text) != -1) {
+                // Font cannot display some characters in the text, fall back to SansSerif for this component
+                newFont = new Font("SansSerif", f.getStyle(), f.getSize());
+            }
+            
+            comp.setFont(newFont);
         }
         if (comp instanceof Container container) {
             for (Component child : container.getComponents()) {
@@ -10466,6 +10911,31 @@ public class Main extends JFrame {
             // exits.
             return;
         }
+
+        // ── GNOME taskbar icon fix ──────────────────────────────────────────
+        // GNOME Shell looks up the taskbar/dash icon by matching the window's
+        // WM_CLASS against an installed .desktop file's StartupWMClass, then uses
+        // that file's Icon=. It ignores setIconImage() entirely (KDE/XFCE read the
+        // icon straight off the window instead, which is why it worked there).
+        //
+        // AWT auto-derives WM_CLASS from the main class name (here:
+        // "com.launcher.MainWrapper" -> "com-launcher-MainWrapper"). Overriding
+        // that at runtime requires reflection into a JDK-internal field that the
+        // module system blocks by default (no --add-opens without a special JVM
+        // flag), so instead of fighting Java over it, ensureDesktopEntryInstalled()
+        // below just writes a .desktop file whose StartupWMClass matches the name
+        // Java already uses.
+
+        // Silently (re)install the .desktop entry + icon GNOME needs to resolve the
+        // taskbar icon. No user action required; this just writes a couple of small
+        // files under the user's own home directory the first time (and whenever the
+        // installed copy is missing or stale).
+        try {
+            ensureDesktopEntryInstalled();
+        } catch (Throwable ignored) {
+            // Never let this block startup — worst case the icon issue persists.
+        }
+
         try {
             UIManager.setLookAndFeel(new FlatDarkLaf());
 
@@ -10575,6 +11045,119 @@ public class Main extends JFrame {
             m.toFront();
             m.requestFocus();
         });
+    }
+
+    /**
+     * Self-installs the .desktop entry + icon that GNOME needs to show the real
+     * taskbar/dash icon. GNOME resolves the icon by matching a window's WM_CLASS
+     * to an installed .desktop file's StartupWMClass, then reads that file's
+     * Icon= — it ignores setIconImage(). KDE/XFCE don't need this; they read the
+     * icon straight off the window.
+     * <p>
+     * AWT derives WM_CLASS from the main class name automatically
+     * ("com.launcher.MainWrapper" becomes "com-launcher-MainWrapper"); trying to
+     * override that at runtime needs a JDK-internal field the module system
+     * blocks without a special startup flag, so instead this just matches the
+     * .desktop file to the name Java already uses.
+     * <p>
+     * This writes into the current user's own XDG data dirs
+     * (~/.local/share/...), so it needs no elevated permissions, no download, and
+     * no action from the user beyond just running the app once. It's a no-op
+     * (skips the write and the cache refresh) once the installed copy already
+     * matches, so it doesn't do any extra work on subsequent launches.
+     */
+    private static void ensureDesktopEntryInstalled() {
+        if (!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("linux")) {
+            return; // Only relevant on Linux desktops.
+        }
+
+        String home = System.getProperty("user.home");
+        if (home == null || home.isBlank()) {
+            return;
+        }
+
+        java.io.File desktopDir = new java.io.File(home, ".local/share/applications");
+        java.io.File iconDir = new java.io.File(home, ".local/share/icons/hicolor/128x128/apps");
+        java.io.File desktopFile = new java.io.File(desktopDir, "zerolauncher.desktop");
+        java.io.File iconFile = new java.io.File(iconDir, "zerolauncher.png");
+
+        // Reconstruct how this JVM was actually launched (java binary + jvm args +
+        // main class/jar + program args) so the .desktop entry relaunches the app
+        // the same way, whether it's `java -jar X.jar`, a module launch, etc.
+        String execLine;
+        try {
+            ProcessHandle.Info info = ProcessHandle.current().info();
+            StringBuilder sb = new StringBuilder();
+            sb.append(info.command().orElse("java"));
+            for (String arg : info.arguments().orElse(new String[0])) {
+                // Quote defensively in case any path/arg contains spaces.
+                sb.append(' ').append(arg.contains(" ") ? "\"" + arg + "\"" : arg);
+            }
+            execLine = sb.toString();
+        } catch (Throwable t) {
+            execLine = "java -jar ZeroLauncher.jar";
+        }
+
+        String desiredDesktopContent = "[Desktop Entry]\n" +
+                "Type=Application\n" +
+                "Name=Zero Launcher\n" +
+                "Comment=Minecraft launcher\n" +
+                "Exec=" + execLine + " %U\n" +
+                "Icon=zerolauncher\n" +
+                "Terminal=false\n" +
+                "Categories=Game;\n" +
+                "StartupWMClass=com-launcher-MainWrapper\n" +
+                "StartupNotify=true\n";
+
+        try {
+            boolean desktopUpToDate = desktopFile.isFile()
+                    && desiredDesktopContent.equals(java.nio.file.Files.readString(desktopFile.toPath()));
+            boolean iconUpToDate = iconFile.isFile() && iconFile.length() > 0;
+
+            if (desktopUpToDate && iconUpToDate) {
+                return; // Already installed correctly — nothing to do.
+            }
+
+            java.nio.file.Files.createDirectories(desktopDir.toPath());
+            java.nio.file.Files.createDirectories(iconDir.toPath());
+
+            if (!iconUpToDate) {
+                try (java.io.InputStream in = Main.class.getResourceAsStream("/com/launcher/ZeroLauncherIcon.png")) {
+                    if (in != null) {
+                        java.nio.file.Files.copy(in, iconFile.toPath(),
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            }
+
+            if (!desktopUpToDate) {
+                java.nio.file.Files.writeString(desktopFile.toPath(), desiredDesktopContent);
+                try {
+                    java.nio.file.Files.setPosixFilePermissions(desktopFile.toPath(),
+                            java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+                } catch (Throwable ignored) {
+                    // Non-POSIX filesystem — fine, execute bit isn't required for GNOME's lookup.
+                }
+            }
+
+            // Nudge GNOME/desktop caches to pick up the change immediately rather than
+            // waiting for its own periodic rescan. Both are best-effort/optional.
+            runQuietly("update-desktop-database", desktopDir.getAbsolutePath());
+            runQuietly("gtk-update-icon-cache", new java.io.File(home, ".local/share/icons/hicolor").getAbsolutePath());
+        } catch (Throwable ignored) {
+            // Never block startup on this being unavailable (e.g. read-only home, sandboxed env).
+        }
+    }
+
+    private static void runQuietly(String command, String arg) {
+        try {
+            new ProcessBuilder(command, arg)
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+        } catch (Throwable ignored) {
+            // Command may not exist on this system (e.g. non-GNOME) — harmless to skip.
+        }
     }
 
     /**

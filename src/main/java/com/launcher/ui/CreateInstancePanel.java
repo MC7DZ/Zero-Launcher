@@ -18,7 +18,6 @@ import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
-import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
@@ -113,11 +112,9 @@ public class CreateInstancePanel extends JPanel {
         GhostButton browseDirBtn = new GhostButton("Browse…");
         browseDirBtn.setEnabled(false);
         browseDirBtn.addActionListener(e -> {
-            JFileChooser dc = new JFileChooser();
-            dc.setDialogTitle("Select Directory");
-            dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            if (dc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                customDirField.setText(dc.getSelectedFile().getAbsolutePath());
+            File dir = com.launcher.util.NativeFileChooser.openDirectory(this, "Select Directory");
+            if (dir != null) {
+                customDirField.setText(dir.getAbsolutePath());
             }
         });
         defaultDirBtn.addActionListener(e -> {
@@ -171,11 +168,8 @@ public class CreateInstancePanel extends JPanel {
         GhostButton resetInstallPathBtn = new GhostButton("Reset");
 
         modpackBrowseBtn.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Select Modpack File");
-            fc.setFileFilter(new FileNameExtensionFilter("Modpack files", "mrpack"));
-            if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
-            File chosen = fc.getSelectedFile();
+            File chosen = com.launcher.util.NativeFileChooser.openFile(this, "Select Modpack File", "Modpack files", "mrpack");
+            if (chosen == null) return;
             chosenModpackPath[0] = chosen.getAbsolutePath();
             modpackFileHint.setText(chosen.getName());
             modpackFileHint.setForeground(textColor);
@@ -238,11 +232,9 @@ public class CreateInstancePanel extends JPanel {
         });
 
         installPathBrowseBtn.addActionListener(e -> {
-            JFileChooser dc = new JFileChooser();
-            dc.setDialogTitle("Select Directory");
-            dc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            if (dc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                installPathField.setText(dc.getSelectedFile().getAbsolutePath());
+            File dir = com.launcher.util.NativeFileChooser.openDirectory(this, "Select Directory");
+            if (dir != null) {
+                installPathField.setText(dir.getAbsolutePath());
             }
         });
         resetInstallPathBtn.addActionListener(e -> installPathField.setText(defaultInstallPath));
@@ -404,7 +396,6 @@ public class CreateInstancePanel extends JPanel {
         };
 
         Runnable loadLoaderVers = () -> {
-            loaderVerBox.removeAllItems();
             ModLoaderType loader = selectedLoader[0];
             String mcVer = (String) versionBox.getSelectedItem();
             if (loader == ModLoaderType.VANILLA || mcVer == null) {
@@ -412,14 +403,15 @@ public class CreateInstancePanel extends JPanel {
                 return;
             }
             if (loader == ModLoaderType.FORGE) {
+                loaderVerBox.removeAllItems();
                 loaderVerBox.setEnabled(true);
                 loaderVerBox.addItem("Recommended");
                 loaderVerBox.addItem("Latest");
                 loaderVerBox.setSelectedItem("Recommended");
                 return;
             }
+            loaderVerBox.setEnabled(false);
             if (loader == ModLoaderType.NEOFORGE) {
-                loaderVerBox.setEnabled(false);
                 new Thread(() -> {
                     try {
                         List<String> vers = new NeoForgeInstaller().fetchVersions(mcVer);
@@ -438,7 +430,6 @@ public class CreateInstancePanel extends JPanel {
                 }, "fetch-neoforge-vers").start();
                 return;
             }
-            loaderVerBox.setEnabled(false);
             final boolean isQuilt = loader == ModLoaderType.QUILT;
             new Thread(() -> {
                 try {
@@ -482,13 +473,17 @@ public class CreateInstancePanel extends JPanel {
         createBtn.addActionListener(e -> {
             String name = nameField.getText().trim();
             String ver = (String) versionBox.getSelectedItem();
-            if (name.isEmpty() || ver == null) {
-                JOptionPane.showMessageDialog(this, "Instance name and MC version are required.", "Error",
+            ModLoaderType lType = selectedLoader[0];
+            String lVer = lType == ModLoaderType.VANILLA ? null : (String) loaderVerBox.getSelectedItem();
+            
+            boolean invalidMcVer = (ver == null || ver.contains("load") || ver.contains("Load") || ver.contains("Fail"));
+            boolean invalidLoaderVer = (lType != ModLoaderType.VANILLA && (lVer == null || lVer.contains("load") || lVer.contains("Load") || lVer.contains("Fail")));
+            
+            if (name.isEmpty() || invalidMcVer || invalidLoaderVer) {
+                JOptionPane.showMessageDialog(this, "Please choose a valid Instance name, MC version, and Loader version.", "Error",
                         JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            ModLoaderType lType = selectedLoader[0];
-            String lVer = lType == ModLoaderType.VANILLA ? null : (String) loaderVerBox.getSelectedItem();
 
             Instance newInstance = new Instance(name, ver, lType, lVer);
             newInstance.ramMb = ramSlider.getValue();
@@ -561,11 +556,8 @@ public class CreateInstancePanel extends JPanel {
         resetImageBtn.setEnabled(false);
 
         changeImageBtn.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Choose Instance Image");
-            fc.setFileFilter(new FileNameExtensionFilter("Images", "png", "jpg", "jpeg", "gif", "bmp"));
-            if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                File chosen = fc.getSelectedFile();
+            File chosen = com.launcher.util.NativeFileChooser.openFile(this, "Choose Instance Image", "Images", "png", "jpg", "jpeg", "gif", "bmp");
+            if (chosen != null) {
                 try {
                     ImageIcon img = new ImageIcon(chosen.getAbsolutePath());
                     Image scaled = img.getImage().getScaledInstance(64, 64, Image.SCALE_SMOOTH);
