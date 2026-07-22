@@ -1,261 +1,401 @@
 # Zero Launcher
 
-> **Note**
+<p align="center">
+  <img src="assets/banner.png" alt="Zero Launcher Banner">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-2ea44f?style=for-the-badge" alt="Platform">
+  <img src="https://img.shields.io/badge/Built%20With-Java%20(Swing%2FAWT)-f89820?style=for-the-badge" alt="Java">
+  <img src="https://img.shields.io/badge/Status-In%20Development-8b5cf6?style=for-the-badge" alt="Status">
+  <img src="https://img.shields.io/badge/Future-Rust-ce422b?style=for-the-badge" alt="Rust">
+</p>
+
+<p align="center">
+A modern, lightweight, and highly customizable Minecraft launcher built entirely with Java (Swing/AWT), designed for both Windows and Linux.
+</p>
+
+---
+
+> [!NOTE]
 >
-> Zero Launcher is my current flagship project and will continue to receive improvements. Once it reaches the level I have in mind, I'll begin working on **Zero Launcher RUST**—a complete rewrite of the launcher in **Rust** while preserving the same vision and features.
+> **Zero Launcher** is my primary project and will continue to receive updates until it reaches the level of quality I have in mind.
 >
-> The goal isn't to replace the current launcher overnight, but to explore what can be achieved with a lower-level language and build an even faster, more efficient foundation for the future.
+> Once that milestone is reached, development will begin on **Zero Launcher RUST**—a complete rewrite of the launcher using **Rust** while preserving the same philosophy, features, and user experience.
 >
-> **Why Rust?**
->
-> * Better performance and lower memory usage.
-> * Faster startup times.
-> * Safer memory management without garbage collection.
-> * Improved reliability for large projects.
-> * Better scalability for future features.
-> * Opportunity to build a more modern architecture from the ground up.
+> The goal isn't simply to switch programming languages. It's to build an even faster, more reliable, and more maintainable launcher on a modern foundation while keeping everything users already enjoy about Zero Launcher.
 
-A modern Minecraft launcher built entirely with Java (Swing/AWT), designed to be fast, lightweight, and highly customizable. Zero Launcher focuses on delivering a polished experience for managing Minecraft instances, mods, and customization without unnecessary complexity.
+## Why Rust?
 
-## Features
+- Better performance and lower memory usage.
+- Faster startup times.
+- Memory safety without garbage collection.
+- Improved reliability and stability.
+- Better multithreading support.
+- Easier long-term maintenance.
+- A cleaner architecture for future development.
+- Greater scalability as the project grows.
 
-### Multiple Minecraft Instances
+---
 
-* Create, edit, duplicate, and delete instances.
-* Use separate game directories for complete isolation.
-* Configure Java, RAM, JVM arguments, Java executable, and launch options per instance.
-* Repair corrupted instances automatically.
-* Clone existing instances with all their settings.
-* Backup and restore instances.
+# Features
 
-### Powerful Mod Management
+## Multiple Minecraft Instances
 
-* Automatically identify installed mods.
-* Update mods directly from Modrinth.
-* Install missing dependencies automatically.
-* Remove duplicate mod files.
-* Detect incompatible mods.
-* Update all mods with one click.
-* Export and import mod presets.
-* Browse changelogs before updating.
-* Categorize mods automatically.
-* Built-in Config Editor for supported configuration files.
+- Create, edit, duplicate, and delete instances.
+- Separate game directories for complete isolation.
+- Configure Java, RAM, JVM arguments, Java executable, and launch options per instance.
+- Clone existing instances.
+- Backup and restore instances.
+- Automatically repair corrupted installations.
 
-### Discover
+---
+
+## Powerful Mod Management
+
+- Automatically identify installed mods.
+- Update mods directly from Modrinth.
+- Install missing dependencies automatically.
+- Remove duplicate mod files.
+- Detect incompatible mods.
+- Update all mods with one click.
+- Browse changelogs before updating.
+- Categorize mods automatically.
+- Built-in Config Editor.
+- Export and import mod presets.
+- Verify installed mod integrity.
+
+---
+
+## Discover
 
 Browse Modrinth without leaving the launcher.
 
-* Search mods and resource packs.
-* Advanced filters.
-* Rich project pages with screenshots, descriptions, versions, dependencies, and download history.
-* Install directly into any instance.
-* Save favorites.
+- Search mods and resource packs.
+- Advanced filters.
+- Rich project pages with screenshots, descriptions, versions, dependencies, and changelogs.
+- One-click installation.
+- Favorite projects.
+- Recently viewed history.
 
-### Accounts
+---
 
-* Offline account support.
-* Microsoft account support *(planned)*.
-* Quick account switching.
+## Accounts
 
-### Extensive Customization
+- Offline account support.
+- Microsoft account support *(planned)*.
+- Quick account switching.
+- Custom player avatars.
 
-Zero Launcher is designed around customization.
+---
 
-* Fully customizable colors.
-* Custom fonts.
-* Custom backgrounds.
-* Blur, tint, dimming, and scaling options.
-* Transparent UI effects.
-* Custom title bar.
-* Window animations.
-* Layout customization.
-* Theme import/export.
-* Theme sharing.
+## Extensive Customization
 
-### Highly Customizable Discord Rich Presence
+Zero Launcher is built around customization.
 
-Your Discord status should be as customizable as the launcher itself.
+- Fully customizable colors.
+- Theme import and export.
+- Theme sharing.
+- Custom fonts.
+- Custom backgrounds.
+- Blur, tint, dimming, and scaling options.
+- Transparent interface effects.
+- Custom title bar.
+- Window animations.
+- Adjustable layouts.
+- Custom launcher logo.
+- Custom startup animation.
+- Adjustable corner radius.
+- Compact mode.
 
-*   Enable or disable Rich Presence.
-*   Set a custom Discord Application ID.
-*   Customize every displayed text.
-*   Select which information is visible.
-*   Show the selected instance name.
-*   Show Minecraft version.
-*   Show elapsed play time.
-*   Display a custom large image and text.
-*   Show current launcher tab (e.g., "Browsing Instances").
-*   Show game state (e.g., "Launching Game...", "In Main Menu", "In Singleplayer", "In Multiplayer").
-*   Show server IP when in multiplayer.
+---
 
-### Performance
+## Highly Customizable Discord Rich Presence
 
-* Per-instance RAM allocation.
-* Custom JVM arguments.
-* Java version management.
-* Performance profiles (Low / Balanced / High).
-* Automatic RAM recommendations based on your hardware.
+Customize nearly every part of your Discord Rich Presence.
 
-### Privacy & Security
+- Enable or disable Rich Presence.
+- Use your own Discord Application ID.
+- Customize every displayed text.
+- Customize buttons and URLs.
+- Show the selected instance.
+- Show Minecraft version.
+- Show the mod loader.
+- Show Java version.
+- Show allocated RAM.
+- Show play time.
+- Display custom images and tooltips.
+- Show the current launcher page.
+- Show launcher activity.
+- Display download progress.
+- Detect Singleplayer or Multiplayer automatically.
+- Optionally display the connected server IP.
+- Privacy mode.
+- Multiple Rich Presence profiles.
+- Automatic profile switching.
 
-* Hide usernames throughout the launcher.
-* Redact sensitive paths and tokens from logs.
-* Automatically clear sessions when exiting.
-* Privacy mode for streaming and screenshots.
+---
 
-### Console
+## Performance
 
-* Colorized live console.
-* Search within logs.
-* Filter warnings and errors.
-* Export logs.
-* Copy individual errors with one click.
+- Per-instance RAM allocation.
+- Custom JVM arguments.
+- Java version management.
+- Automatic Java detection.
+- Performance profiles.
+- Automatic RAM recommendations.
+- Faster launch optimizations.
 
-### Downloads
+---
 
-* Integrated download manager.
-* Resume interrupted downloads.
-* Parallel downloads.
-* Download speed limiter.
-* Real-time progress tracking.
+## Privacy & Security
 
-### Dawn Client Integration
+- Hide usernames throughout the launcher.
+- Redact sensitive paths.
+- Redact Minecraft session tokens.
+- Automatically clear account sessions.
+- Streamer mode.
+- Screenshot privacy mode.
 
-Install or uninstall Dawn Client directly from the launcher.
+---
 
-### System Tray
+## Console
 
-Minimize the launcher to the system tray while Minecraft is running.
+- Colorized live console.
+- Search within logs.
+- Warning and error filters.
+- Export logs.
+- Copy individual errors.
+- Timestamps.
+- Auto-scroll toggle.
 
-### Built for the Future
+---
 
-Zero Launcher is designed with long-term development in mind. Every feature is built to be maintainable, responsive, and highly configurable while keeping the interface clean and intuitive.
+## Downloads
+
+- Integrated download manager.
+- Parallel downloads.
+- Resume interrupted downloads.
+- Download speed limiter.
+- Live progress tracking.
+- Download history.
+- Retry failed downloads.
+
+---
+
+## Dawn Client Integration
+
+Install or uninstall Dawn Client directly from any compatible instance.
+
+---
+
+## System Tray
+
+Keep the launcher running in the background while Minecraft is open.
+
+- Minimize to the system tray.
+- Instant restore.
+- Optional notifications.
+- Close-to-tray behavior.
+
+---
+
+## Built for the Future
+
+Zero Launcher is designed as a long-term project with a strong focus on performance, customization, and user experience.
+
+Every feature is built with maintainability, flexibility, and responsiveness in mind, ensuring that the launcher continues to evolve without sacrificing simplicity.
 
 ---
 
 # زيرو لانشر
 
-> **ملاحظة**
+<p align="center">
+لانشر ماينكرافت حديث وخفيف وقابل للتخصيص بشكل كبير، مبني بالكامل باستخدام Java (Swing/AWT)، ومصمم للعمل على **Windows** و **Linux**.
+</p>
+
+---
+
+> [!NOTE]
 >
-> زيرو لانشر هو المشروع الأساسي الذي أعمل عليه حالياً، وسيستمر في الحصول على تحديثات وتحسينات بشكل مستمر. وبعد الانتهاء من تطويره بالشكل الذي أطمح إليه، سأبدأ العمل على **Zero Launcher RUST**، وهي إعادة بناء كاملة لنفس المشروع باستخدام لغة **Rust** مع الحفاظ على نفس الفكرة والميزات، ولكن على أساس تقني أحدث وأكثر كفاءة.
+> **زيرو لانشر** هو المشروع الأساسي الذي أعمل عليه حالياً، وسيستمر في الحصول على تحديثات وتحسينات حتى يصل إلى المستوى الذي أطمح إليه.
 >
-> الهدف ليس استبدال النسخة الحالية مباشرة، وإنما استكشاف الإمكانيات التي توفرها Rust لبناء لانشر أسرع وأكثر استقراراً وأسهل في التطوير على المدى البعيد.
+> بعد ذلك سأبدأ العمل على **Zero Launcher RUST**، وهي إعادة بناء كاملة للانشر باستخدام **Rust** مع الحفاظ على نفس الفكرة والميزات وتجربة الاستخدام.
 >
-> **لماذا Rust؟**
->
-> * أداء أعلى واستهلاك أقل للذاكرة.
-> * سرعة أكبر في تشغيل اللانشر.
-> * إدارة آمنة للذاكرة دون الحاجة إلى Garbage Collector.
-> * استقرار واعتمادية أكبر.
-> * بنية أسهل للتوسع وإضافة الميزات مستقبلاً.
-> * إعادة تصميم المشروع بهندسة حديثة من الصفر.
+> الهدف ليس مجرد تغيير لغة البرمجة، بل إنشاء نسخة أسرع وأكثر استقراراً وأسهل في التطوير والتوسع مستقبلاً، مع الحفاظ على هوية Zero Launcher.
 
-لانشر ماينكرافت حديث مبني بالكامل باستخدام Java (Swing/AWT)، يركز على الأداء، وسهولة الاستخدام، وإدارة الإصدارات والمودات، مع مستوى عالٍ من التخصيص.
+## لماذا Rust؟
 
-## المميزات
+- أداء أعلى واستهلاك أقل للذاكرة.
+- تشغيل أسرع.
+- إدارة آمنة للذاكرة دون Garbage Collector.
+- استقرار واعتمادية أكبر.
+- دعم أفضل للعمليات المتوازية.
+- سهولة تطوير المشروع على المدى الطويل.
+- بنية حديثة وقابلة للتوسع.
+- أساس قوي لإضافة المزيد من الميزات مستقبلاً.
 
-### إدارة الإصدارات
+---
 
-* إنشاء وتعديل ونسخ وحذف الإصدارات.
-* مجلد مستقل لكل إصدار.
-* تخصيص إعدادات Java وRAM وJVM لكل إصدار.
-* إصلاح الإصدارات التالفة.
-* نسخ إصدار كامل بضغطة واحدة.
-* إنشاء نسخ احتياطية واستعادتها.
+# المميزات
 
-### إدارة المودات
+## إدارة الإصدارات
 
-* التعرف على المودات تلقائياً.
-* تحديث المودات مباشرة من Modrinth.
-* تثبيت التبعيات تلقائياً.
-* إزالة الملفات المكررة.
-* اكتشاف المودات غير المتوافقة.
-* تحديث جميع المودات دفعة واحدة.
-* استيراد وتصدير Presets.
-* عرض سجل التغييرات قبل التحديث.
-* تصنيف المودات تلقائياً.
-* محرر مدمج لملفات Config.
+- إنشاء وتعديل ونسخ وحذف الإصدارات.
+- مجلد مستقل لكل إصدار.
+- تخصيص Java وRAM وJVM لكل إصدار.
+- نسخ إصدار كامل.
+- إنشاء واستعادة النسخ الاحتياطية.
+- إصلاح الإصدارات التالفة تلقائياً.
 
-### استكشاف المحتوى
+---
 
-* البحث عن المودات وحزم الموارد.
-* فلاتر متقدمة.
-* صفحة متكاملة لكل مشروع تحتوي على الصور والوصف والإصدارات والتبعيات.
-* تثبيت مباشر داخل الإصدار.
-* إضافة المشاريع إلى المفضلة.
+## إدارة المودات
 
-### إدارة الحسابات
+- التعرف على المودات تلقائياً.
+- تحديثها مباشرة من Modrinth.
+- تثبيت التبعيات تلقائياً.
+- إزالة الملفات المكررة.
+- اكتشاف المودات غير المتوافقة.
+- تحديث جميع المودات بضغطة واحدة.
+- عرض سجل التغييرات.
+- تصنيف المودات تلقائياً.
+- محرر Config مدمج.
+- استيراد وتصدير Presets.
+- التحقق من سلامة ملفات المودات.
 
-* دعم حسابات Offline.
-* دعم Microsoft مستقبلاً.
-* التبديل السريع بين الحسابات.
+---
 
-### تخصيص الواجهة
+## استكشاف المحتوى
 
-* تخصيص كامل للألوان.
-* خطوط مخصصة.
-* صور خلفية.
-* تأثيرات Blur وشفافية وتعتيم.
-* شريط عنوان مخصص.
-* تحريك عناصر الواجهة.
-* استيراد وتصدير الثيمات.
-* مشاركة الثيمات.
+- البحث عن المودات وحزم الموارد.
+- فلاتر متقدمة.
+- صفحات متكاملة للمشاريع.
+- تثبيت مباشر.
+- المفضلة.
+- سجل آخر المشاريع.
 
-### Discord Rich Presence قابل للتخصيص بالكامل
+---
 
-يمكنك التحكم في كل جزء من حالة Discord.
+## إدارة الحسابات
 
-*   تفعيل أو تعطيل الميزة.
-*   تعيين معرف تطبيق Discord مخصص.
-*   تخصيص جميع النصوص المعروضة.
-*   تحديد المعلومات التي يتم عرضها.
-*   عرض اسم الإصدار المحدد.
-*   عرض إصدار ماينكرافت.
-*   عرض وقت اللعب المنقضي.
-*   عرض صورة كبيرة مخصصة ونص.
-*   عرض علامة تبويب المشغل الحالية (مثل "تصفح الإصدارات").
-*   عرض حالة اللعبة (مثل "تشغيل اللعبة...", "في القائمة الرئيسية", "في اللعب الفردي", "في اللعب المتعدد").
-*   عرض عنوان IP للخادم عند اللعب المتعدد.
+- دعم حسابات Offline.
+- دعم Microsoft مستقبلاً.
+- التبديل السريع بين الحسابات.
+- صور الحسابات.
 
-### الأداء
+---
 
-* تخصيص RAM لكل إصدار.
-* إعدادات JVM.
-* اختيار نسخة Java.
-* أوضاع أداء جاهزة.
-* اقتراح أفضل إعدادات RAM تلقائياً.
+## تخصيص الواجهة
 
-### الخصوصية
+- تخصيص كامل للألوان.
+- استيراد وتصدير الثيمات.
+- مشاركة الثيمات.
+- خطوط مخصصة.
+- صور خلفية.
+- تأثيرات Blur والشفافية.
+- شريط عنوان مخصص.
+- تحريك عناصر الواجهة.
+- شعار مخصص.
+- أنيميشن بداية التشغيل.
+- التحكم في حواف الواجهة.
+- وضع Compact.
 
-* إخفاء اسم المستخدم.
-* إزالة المعلومات الحساسة من السجلات.
-* حذف الجلسات عند الإغلاق.
-* وضع مخصص للبث والتصوير.
+---
 
-### سجل التشغيل
+## Discord Rich Presence قابل للتخصيص بالكامل
 
-* سجل ملون مباشر.
-* البحث داخل السجل.
-* تصفية الأخطاء والتحذيرات.
-* تصدير السجل.
-* نسخ أي خطأ بضغطة واحدة.
+- تشغيل أو إيقاف الميزة.
+- استخدام Discord Application ID مخصص.
+- تخصيص جميع النصوص.
+- تخصيص الأزرار والروابط.
+- عرض اسم الإصدار.
+- عرض إصدار ماينكرافت.
+- عرض Mod Loader.
+- عرض إصدار Java.
+- عرض RAM.
+- عرض مدة اللعب.
+- صور مخصصة.
+- عرض الصفحة الحالية داخل اللانشر.
+- عرض حالة اللانشر.
+- عرض تقدم التنزيلات.
+- اكتشاف اللعب الفردي أو الجماعي.
+- عرض IP الخادم اختيارياً.
+- وضع الخصوصية.
+- ملفات إعدادات متعددة.
+- التبديل التلقائي بينها.
 
-### إدارة التنزيلات
+---
 
-* مدير تنزيلات متكامل.
-* استكمال التنزيل بعد الانقطاع.
-* تنزيلات متوازية.
-* تحديد سرعة التحميل.
-* متابعة مباشرة للتقدم.
+## الأداء
 
-### تكامل Dawn Client
+- تخصيص RAM.
+- إعدادات JVM.
+- إدارة Java.
+- اكتشاف Java تلقائياً.
+- أوضاع أداء.
+- اقتراح أفضل إعدادات RAM.
+- تحسين سرعة التشغيل.
 
-تثبيت أو إزالة Dawn Client مباشرة من داخل اللانشر.
+---
 
-### دعم System Tray
+## الخصوصية والأمان
 
-إبقاء اللانشر يعمل في الخلفية أثناء تشغيل اللعبة.
+- إخفاء اسم المستخدم.
+- إزالة المعلومات الحساسة من السجلات.
+- إخفاء Session Tokens.
+- حذف الجلسات عند الإغلاق.
+- وضع البث.
+- وضع خصوصية للصور.
 
-### مصمم للمستقبل
+---
 
-تم تصميم Zero Launcher ليكون مشروعاً طويل الأمد، مع التركيز على الأداء، وسهولة التوسع، وواجهة نظيفة، وخيارات تخصيص واسعة تجعل كل مستخدم قادراً على تشكيل تجربته بالطريقة التي تناسبه.
+## سجل التشغيل
+
+- سجل ملون مباشر.
+- البحث داخل السجل.
+- تصفية الأخطاء.
+- تصدير السجل.
+- نسخ الأخطاء.
+- عرض الوقت.
+- التحكم في التمرير التلقائي.
+
+---
+
+## إدارة التنزيلات
+
+- مدير تنزيلات متكامل.
+- تنزيلات متوازية.
+- استكمال التنزيل بعد الانقطاع.
+- تحديد سرعة التحميل.
+- عرض التقدم مباشرة.
+- سجل التنزيلات.
+- إعادة محاولة التنزيلات الفاشلة.
+
+---
+
+## تكامل Dawn Client
+
+تثبيت أو إزالة Dawn Client لأي إصدار بضغطة واحدة.
+
+---
+
+## دعم System Tray
+
+تشغيل اللانشر في الخلفية أثناء تشغيل ماينكرافت مع إمكانية تصغيره إلى System Tray.
+
+---
+
+## مصمم للمستقبل
+
+تم تصميم Zero Launcher ليكون مشروعاً طويل الأمد يركز على الأداء، وسهولة التخصيص، وتجربة استخدام حديثة، مع بنية قابلة للتطوير وإضافة المزيد من الميزات مستقبلاً دون التأثير على بساطة الاستخدام.
+
+---
+
+<p align="center">
+
+**Made for the Minecraft community.**
+
+**Built with Java today. Built with Rust tomorrow.**
+
+</p>
