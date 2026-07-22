@@ -185,6 +185,12 @@ public class Main extends JFrame {
     private JButton fixModsBtn;
     private RoundedPanel fixModsDropdown;
     private List<ModEntry> currentModEntries = new ArrayList<>();
+    // The single reused card panel behind the Mods list's cell renderer, and the
+    // idle timer that drives its scroll-culling (see buildModsArea): same
+    // lightweight-paint trick used for the Discover grid, toggled on while the
+    // list is actively scrolling and back off once it settles.
+    private RoundedPanel modsCardRenderer;
+    private javax.swing.Timer modsScrollIdleTimer;
 
     // ─── Export / Import Mods ─────────────────────────────────────────────────
     private JButton exportModsBtn;
@@ -227,6 +233,10 @@ public class Main extends JFrame {
         return t;
     });
     private final java.util.List<javax.swing.Timer> discoverSkeletonTimers = new ArrayList<>();
+    // Idle timer backing the Discover-grid card culling (see the results-pane
+    // scrollbar listener + setDiscoverCardsLightweight below): reset on every
+    // scroll tick, and flips cards back to full-quality painting once it fires.
+    private javax.swing.Timer discoverScrollIdleTimer;
     /**
      * URLs that failed to load/decode once (e.g. WebP images Java can't decode,
      * blocked
@@ -1745,9 +1755,13 @@ public class Main extends JFrame {
         modsList.setFixedCellHeight(220 + 2 * MOD_CARD_GAP);
         modsList.setFixedCellWidth(380);
         modsList.setBorder(new EmptyBorder(4, 4, 4, 4));
+        // Hoisted out of the renderer (instead of a private field inside the
+        // anonymous ListCellRenderer) so the scroll-culling listener below can
+        // reach in and toggle its lightweight-paint mode directly.
+        modsCardRenderer = new RoundedPanel(14, new Color(255, 255, 255, 10),
+                new Color(255, 255, 255, 18));
         modsList.setCellRenderer(new ListCellRenderer<ModEntry>() {
-            private final RoundedPanel card = new RoundedPanel(14, new Color(255, 255, 255, 10),
-                    new Color(255, 255, 255, 18));
+            private final RoundedPanel card = modsCardRenderer;
             // Cards are laid out by JList with zero native spacing, so each cell is
             // wrapped in a small transparent padding frame — this is what actually
             // produces the neat gap between cards in the grid (both horizontally and
@@ -2073,6 +2087,28 @@ public class Main extends JFrame {
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
+        // Card culling, same idea as the Discover grid: the shared card renderer
+        // does an AA rounded-rect fill (+ border, + the Dawn Client card's frosted
+        // blur) every time a row repaints, and SmoothScroll's animation repaints
+        // the list every ~12ms while scrolling — so drop to a cheap flat-paint
+        // fill while the scrollbar is moving, and switch back to full quality a
+        // short idle period after it stops.
+        scroll.getVerticalScrollBar().addAdjustmentListener(e -> {
+            if (modsCardRenderer != null) {
+                modsCardRenderer.setLightweightPaint(true);
+            }
+            if (modsScrollIdleTimer != null) {
+                modsScrollIdleTimer.stop();
+            }
+            modsScrollIdleTimer = new javax.swing.Timer(150, ev -> {
+                if (modsCardRenderer != null) {
+                    modsCardRenderer.setLightweightPaint(false);
+                }
+                modsList.repaint();
+            });
+            modsScrollIdleTimer.setRepeats(false);
+            modsScrollIdleTimer.start();
+        });
         // Responsive grid: pick a column count (1–4) based on how many
         // MIN_CARD_WIDTH-ish cards actually fit the current viewport, so a
         // maximized window shows 4 cards per row while a narrower window shows
@@ -4917,6 +4953,19 @@ public class Main extends JFrame {
         // on scroll guarantees anything now "underneath" it is immediately hidden.
         scroll.getVerticalScrollBar().addAdjustmentListener(e -> {
             topCard.repaint();
+            // Card culling: while the scrollbar is actively moving (either from a
+            // raw wheel notch or from SmoothScroll's animation ticking it toward a
+            // target), drop every visible Discover card into cheap flat-paint mode
+            // so each of the many repaints a scroll generates doesn't have to redo
+            // AA + gradient rendering. A short idle timer flips everything back to
+            // full quality once the scrollbar stops moving.
+            setDiscoverCardsLightweight(true);
+            if (discoverScrollIdleTimer != null) {
+                discoverScrollIdleTimer.stop();
+            }
+            discoverScrollIdleTimer = new javax.swing.Timer(150, ev -> setDiscoverCardsLightweight(false));
+            discoverScrollIdleTimer.setRepeats(false);
+            discoverScrollIdleTimer.start();
         });
         scroll.addComponentListener(new ComponentAdapter() {
             @Override
@@ -5871,6 +5920,20 @@ public class Main extends JFrame {
         // callers can fade it in/out for show/hide animations instead of an abrupt
         // toggle.
         private float alpha = 1f;
+        // "Culling" flag for cheap-paint mode: while true, paintComponent skips
+        // antialiasing, gradients, and the frosted-glass blur, and just flat-fills
+        // the shape. Toggled on for the Discover grid's cards while the list is
+        // actively being scrolled (see setDiscoverCardsLightweight) so the flurry
+        // of repaints a scroll/animation tick generates don't each have to redo
+        // expensive AA rounded-rect + gradient painting; once scrolling settles,
+        // it's flipped back off and the cards repaint at full quality.
+        private boolean lightweightPaint = false;
+
+        public void setLightweightPaint(boolean lightweight) {
+            if (this.lightweightPaint == lightweight) return;
+            this.lightweightPaint = lightweight;
+            repaint();
+        }
 
         public RoundedPanel(int radius, Color fill, Color border) {
             this.radius = radius;
@@ -5956,9 +6019,27 @@ public class Main extends JFrame {
             super.paintComponent(g);
             int w = getWidth(), h = getHeight();
             Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
             Shape roundedShape = new java.awt.geom.RoundRectangle2D.Float(0, 0, w - 1, h - 1, radius, radius);
+
+            if (lightweightPaint) {
+                // Cheap path: no AA, no gradient math, no frosted blur — just a flat
+                // fill (falling back through gradientTop/fill so the color is still
+                // roughly right) and a plain border. This is intentionally a little
+                // "flatter" looking; it's only shown for the handful of frames while
+                // actively scrolling, then swapped back to the full-quality paint below.
+                Color flat = fill != null ? fill : (gradientTop != null ? gradientTop : Color.DARK_GRAY);
+                g2.setColor(flat);
+                g2.fillRoundRect(0, 0, w - 1, h - 1, radius, radius);
+                if (border != null) {
+                    g2.setColor(border);
+                    g2.drawRoundRect(0, 0, w - 1, h - 1, radius, radius);
+                }
+                g2.dispose();
+                return;
+            }
+
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
             if (frostedBackdrop != null) {
                 BufferedImage blurred = buildFrostedCrop(w, h);
@@ -6426,6 +6507,22 @@ public class Main extends JFrame {
         // instead.
     }
 
+    // ── Discover-grid card culling ───────────────────────────────────────────
+    // Flips every card currently in discoverResultsPane (real result cards and
+    // skeleton placeholders alike, since both are RoundedPanels) between cheap
+    // flat-paint and full AA/gradient paint. Called with true the moment the
+    // scrollbar starts moving and with false a short idle period after it
+    // stops (see the scroll listener in buildDiscoverArea), so the grid only
+    // pays for expensive rendering while it's actually sitting still.
+    private void setDiscoverCardsLightweight(boolean lightweight) {
+        if (discoverResultsPane == null) return;
+        for (Component c : discoverResultsPane.getComponents()) {
+            if (c instanceof RoundedPanel) {
+                ((RoundedPanel) c).setLightweightPaint(lightweight);
+            }
+        }
+    }
+
     // ── Skeleton loading placeholders ────────────────────────────────────────
     private void showDiscoverSkeletons() {
         discoverResultsPane.removeAll();
@@ -6582,26 +6679,28 @@ public class Main extends JFrame {
         // a bit more polish: subtle top-to-bottom gradient for depth, a soft divider
         // separating content from the action row, and pill-shaped badges instead of
         // plain colored text.
+        // Rounded "glass" card family used elsewhere in the launcher. Flat fill
+        // (no top-to-bottom gradient) — the gradient this used to have gave every
+        // card a faint whitish "shine" toward the top (and cost a GradientPaint
+        // rebuild on every repaint), so it's gone in favor of a plain flat surface.
         RoundedPanel card = new RoundedPanel(18, DISC_SURFACE, DISC_BORDER);
         card.putClientProperty("keepCustomBg", Boolean.TRUE);
-        card.setGradient(tintAlpha(DISC_SURFACE, 6), DISC_SURFACE);
         card.setLayout(new BorderLayout(0, 0));
         card.setPreferredSize(new Dimension(310, 218));
         card.setBorder(new EmptyBorder(16, 16, 14, 16));
 
         // Hover effect — lighten the surface and switch the border to the accent
-        // color, plus a slightly bolder gradient so the "lift" reads clearly.
+        // color. Flat colors only, no gradient, so the hover "lift" doesn't bring
+        // the shine effect back.
         card.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseEntered(MouseEvent e) {
                 card.setColors(DISC_SURFACE_HOVER, DISC_BORDER_HOVER);
-                card.setGradient(tintAlpha(DISC_SURFACE_HOVER, 8), DISC_SURFACE_HOVER);
             }
 
             @Override
             public void mouseExited(MouseEvent e) {
                 card.setColors(DISC_SURFACE, DISC_BORDER);
-                card.setGradient(tintAlpha(DISC_SURFACE, 6), DISC_SURFACE);
             }
         });
 
