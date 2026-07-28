@@ -88,6 +88,17 @@ public final class JavaInstallationFinder {
             candidateHomes.addAll(scanLinuxDirs());
         }
 
+        // 3b. Runtimes the launcher itself auto-downloaded into
+        // "<launcherRoot>/java versions/java-<major>" (see JavaInstaller). These live outside
+        // every OS-standard location scanned above, so without this they'd never show up in the
+        // Java dropdown even though the launcher may already be using them under the hood.
+        try {
+            java.nio.file.Path javaVersionsDir = com.launcher.manager.LauncherPaths.javaVersionsDir();
+            addSubdirsAsHomes(javaVersionsDir, candidateHomes);
+        } catch (Throwable ignored) {
+            // LauncherPaths not ready yet / IO issue - not fatal, just skip this source.
+        }
+
         // 4. A "java"/"java.exe" resolvable directly on PATH
         Path onPath = findOnPath();
         if (onPath != null) {

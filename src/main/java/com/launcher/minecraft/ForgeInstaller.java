@@ -206,6 +206,40 @@ public class ForgeInstaller {
         return JsonParser.parseString(content).getAsJsonObject();
     }
 
+    /**
+     * Checks whether Forge {@code forgeVersion} for {@code mcVersion} already has a
+     * registered version directory under {@code gameDir}. Used by the interactive
+     * install guide to detect when the user has finished running the official
+     * installer themselves.
+     */
+    public boolean isInstalled(Path gameDir, String mcVersion, String forgeVersion) {
+        try {
+            detectForgeVersionId(gameDir, mcVersion, forgeVersion);
+            return true;
+        } catch (IOException notYet) {
+            return false;
+        }
+    }
+
+    /**
+     * Public wrapper around {@link #detectForgeVersionId(Path, String, String)} for callers
+     * (such as the interactive install guide dialog) that only need to resolve the version id
+     * after the user has run the Forge installer themselves.
+     */
+    public String detectVersionId(Path gameDir, String mcVersion, String forgeVersion) throws IOException {
+        return detectForgeVersionId(gameDir, mcVersion, forgeVersion);
+    }
+
+    /**
+     * Ensures {@code gameDir} looks enough like a real {@code .minecraft} folder that the
+     * official Forge installer's GUI will accept it as the install target without complaint.
+     * Public so the interactive install guide can call it before pointing the user at the
+     * installer.
+     */
+    public void prepareGameDir(Path gameDir) throws IOException {
+        ensureLauncherProfile(gameDir);
+    }
+
     // ------------------------------------------------------------------------
     // Internal helpers
     // ------------------------------------------------------------------------
@@ -338,12 +372,25 @@ public class ForgeInstaller {
             }
         }
 
-        // If not found, try containing both mcVersion and "forge"
+        // If not found, try containing both mcVersion and "forge". Must be careful here: a naive
+        // "contains(mcVersion) && contains(\"forge\")" check is a trap - a directory named
+        // "neoforge-21.8.9" contains BOTH "forge" (as a substring of "neoforge") AND, for example,
+        // mcVersion "1.8.9" (as a substring of "21.8.9"), so it would wrongly match a completely
+        // unrelated NeoForge-for-1.21.8 install when looking up a Forge 1.8.9 instance. That
+        // caused this instance to launch the wrong (modern, Java-21-only, module-system) version
+        // json entirely. Guard against it explicitly: exclude "neoforge" directories, and require
+        // mcVersion to appear as a real dot-delimited version token (not merely a substring of a
+        // larger version number like "21.8.9").
         try (Stream<Path> stream = Files.list(versionsDir)) {
             var candidates = stream
                     .filter(Files::isDirectory)
-                    .filter(p -> p.getFileName().toString().contains(mcVersion))
-                    .filter(p -> p.getFileName().toString().contains("forge"))
+                    .filter(p -> {
+                        String name = p.getFileName().toString();
+                        String lower = name.toLowerCase();
+                        if (lower.contains("neoforge")) return false; // never match NeoForge dirs here
+                        if (!lower.contains("forge")) return false;
+                        return containsVersionToken(name, mcVersion);
+                    })
                     .toList();
             if (candidates.isEmpty()) {
                 throw new IOException("No Forge version directory found under " + versionsDir);
@@ -353,6 +400,29 @@ public class ForgeInstaller {
             }
             return candidates.get(0).getFileName().toString();
         }
+    }
+
+    /**
+     * True if {@code mcVersion} appears in {@code dirName} as a whole version token - i.e.
+     * bordered by the start/end of the string or non-digit-non-dot separators - rather than as an
+     * incidental substring of a longer version number. E.g. for mcVersion "1.8.9": matches
+     * "1.8.9-forge-11.15.1.2318", does NOT match "neoforge-21.8.9" (where "1.8.9" is just the
+     * tail of "21.8.9").
+     */
+    private static boolean containsVersionToken(String dirName, String mcVersion) {
+        int idx = dirName.indexOf(mcVersion);
+        while (idx != -1) {
+            boolean leftOk = idx == 0 || !isVersionChar(dirName.charAt(idx - 1));
+            int rightIdx = idx + mcVersion.length();
+            boolean rightOk = rightIdx >= dirName.length() || !isVersionChar(dirName.charAt(rightIdx));
+            if (leftOk && rightOk) return true;
+            idx = dirName.indexOf(mcVersion, idx + 1);
+        }
+        return false;
+    }
+
+    private static boolean isVersionChar(char c) {
+        return Character.isDigit(c) || c == '.';
     }
 
     private String fetchWithRetries(String url) throws ForgeApiException {

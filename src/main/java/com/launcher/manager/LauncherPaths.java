@@ -50,6 +50,19 @@ public class LauncherPaths {
         return launcherRoot().resolve("cache");
     }
 
+    /**
+     * Where auto-installed Java runtimes live: {@code <launcherRoot>/java versions/<name>}
+     * e.g. {@code ~/.zerolauncher/java versions/java-17} on Linux or
+     * {@code %appdata%\Zero Launcher\java versions\java-17} on Windows.
+     */
+    public static Path javaVersionsDir() {
+        Path dir = launcherRoot().resolve("java versions");
+        try {
+            Files.createDirectories(dir);
+        } catch (IOException ignored) {}
+        return dir;
+    }
+
     public static Path librariesDir() {
         return getDefaultMinecraftPath().resolve("libraries");
     }
@@ -99,6 +112,29 @@ public class LauncherPaths {
     }
 
     public static Path getDefaultMinecraftPath() {
+        String custom = null;
+        try {
+            com.launcher.model.LauncherSettings settings = SettingsManager.getInstance().getSettings();
+            custom = settings != null ? settings.defaultMinecraftDir : null;
+        } catch (Throwable ignored) {
+            // Settings not available yet (e.g. very early startup) — fall through to the OS default.
+        }
+
+        Path root = (custom != null && !custom.isBlank()) ? resolveSmart(custom) : computeOsDefaultMinecraftPath();
+
+        try {
+            Files.createDirectories(root);
+        } catch (IOException ignored) {
+            // If creation fails, we still return the path, the game launch will likely fail later.
+        }
+        return root;
+    }
+
+    /**
+     * The launcher's hardcoded, platform-specific fallback location — used when the user hasn't
+     * configured a custom "Default Minecraft Directory" in Settings (the field is left blank).
+     */
+    public static Path computeOsDefaultMinecraftPath() {
         String os = System.getProperty("os.name").toLowerCase();
         Path root;
         if (os.contains("win")) {
@@ -110,12 +146,45 @@ public class LauncherPaths {
             // Linux / other unix
             root = Paths.get(System.getProperty("user.home"), ".minecraft");
         }
-        try {
-            Files.createDirectories(root);
-        } catch (IOException ignored) {
-            // If creation fails, we still return the path, the game launch will likely fail later.
-        }
         return root;
+    }
+
+    /**
+     * Resolves a user-typed directory path a little more forgivingly than a raw
+     * {@code Paths.get(...)} would: expands a leading {@code ~} to the user's home directory
+     * (common on Linux/macOS, and easy to type by habit even though most users will use the
+     * folder picker instead), and expands common environment-variable references
+     * ({@code %APPDATA%}, {@code $HOME}, {@code ${HOME}}) in case the user pasted a path from
+     * elsewhere that still contains them literally. Falls back to the OS default if the resulting
+     * path is blank or otherwise unusable.
+     */
+    private static Path resolveSmart(String raw) {
+        String path = raw.trim();
+
+        String home = System.getProperty("user.home", "");
+        if (path.equals("~")) {
+            path = home;
+        } else if (path.startsWith("~/") || path.startsWith("~\\")) {
+            path = home + path.substring(1);
+        }
+
+        String appData = System.getenv("APPDATA");
+        if (appData != null) {
+            path = path.replace("%APPDATA%", appData).replace("%appdata%", appData);
+        }
+        path = path.replace("${HOME}", home).replace("$HOME", home);
+
+        if (path.isBlank()) {
+            return computeOsDefaultMinecraftPath();
+        }
+
+        try {
+            return Paths.get(path).toAbsolutePath().normalize();
+        } catch (Exception e) {
+            // Malformed path (e.g. stray illegal characters) — don't let a bad setting break
+            // every single feature that depends on the game directory.
+            return computeOsDefaultMinecraftPath();
+        }
     }
 
     /**

@@ -105,7 +105,17 @@ public final class HttpUtil {
 
     public static void downloadToFile(String url, Path target) throws IOException, InterruptedException {
         Files.createDirectories(target.getParent());
-        Path tmp = target.resolveSibling(target.getFileName().toString() + ".part");
+        // IMPORTANT: this must be unique per *call*, not just per target. Two downloads of the
+        // same target running concurrently (e.g. the user launching the same instance twice
+        // before the first install has finished) used to share a single "<file>.part" temp path -
+        // both HTTP responses streamed into the very same file at once, producing a randomly
+        // truncated/interleaved result that then got moved on top of "target" as if it were a
+        // complete, valid download. That's what caused a *different* library to look corrupt on
+        // almost every run: whichever two downloads happened to overlap that time. A per-call
+        // random suffix means concurrent downloads of the same target each write to their own
+        // file and only ever race on the final (atomic, integrity-checked-elsewhere) move.
+        Path tmp = target.resolveSibling(target.getFileName().toString()
+                + "." + java.util.UUID.randomUUID() + ".part");
 
         for (int i = 0; i < 3; i++) {
             try {

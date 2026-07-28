@@ -60,6 +60,20 @@ public class Main extends JFrame {
 
     private final AccountManager accountManager = new AccountManager();
 
+    private static String loadAppVersion() {
+        try (InputStream in = Main.class.getResourceAsStream("/version.properties")) {
+            if (in != null) {
+                Properties p = new Properties();
+                p.load(in);
+                String v = p.getProperty("version");
+                if (v != null && !v.isBlank() && !v.contains("${")) {
+                    return v.trim();
+                }
+            }
+        } catch (Exception ignored) {}
+        return "dev";
+    }
+
     /**
      * The currently active launcher window, if any — used so a second launch
      * attempt can ask
@@ -74,6 +88,12 @@ public class Main extends JFrame {
      * Fixed width/height reserved for the notification stack — see the setup
      * comment where it's used.
      */
+    /** Current launcher version, shown in Settings > About — read from version.properties,
+     *  which Maven generates from the pom's {@code <version>} at build time (see the
+     *  filtered "resources-version" resource directory in pom.xml). Falls back to
+     *  "dev" if the properties file isn't on the classpath (e.g. running from an IDE
+     *  without having run a Maven build first). */
+    public static final String APP_VERSION = loadAppVersion();
     private static final int NOTIF_AREA_WIDTH = 450;
     private static final int NOTIF_AREA_HEIGHT = 700;
     private static final int LOG_TOGGLE_SIZE = 34;
@@ -94,6 +114,8 @@ public class Main extends JFrame {
      * True while the user is actively dragging a resize handle or the title bar.
      */
     private volatile boolean userAdjustingWindow = false;
+    private javax.swing.Timer uiRefreshTimer;
+    private int uiRefreshBurstTicksRemaining = 0;
     private long lastLogFlushWhenMinimized = 0;
 
     // Shared corner radius for the PLAY button.
@@ -104,6 +126,83 @@ public class Main extends JFrame {
     // Install Deps,
     // Deduplicate, Delete) for a noticeably rounded, capsule-shaped button look.
     private static final int ROUNDED_BUTTON_ARC = 999;
+
+    // ── Settings Export/Import field groups ─────────────────────────────────
+    // Drives the checkbox lists in the About tab's Export/Import Settings overlays.
+    // Grouped and ordered the same way the Settings tab itself is laid out. Field
+    // names must match LauncherSettings' public field names exactly — used via
+    // reflection when building/reading the exported JSON. Intentionally excludes
+    // purely internal/session state (defaultsVersion, lastSelectedInstanceId,
+    // logConsoleVisible) and the deprecated discordAppId.
+    private static final LinkedHashMap<String, String[]> SETTINGS_EXPORT_GROUPS = new LinkedHashMap<>();
+    static {
+        SETTINGS_EXPORT_GROUPS.put("Appearance", new String[] {
+                "accentColor", "bgColor", "panelBgColor", "textColor", "logBgColor", "fontFamily", "customFontPaths",
+                "backgroundStyle", "enableBackgroundAnimation", "backgroundAnimationStyle", "backgroundAnimationSpeed",
+                "backgroundAnimationFps", "headerBgColor", "searchBgColor", "notificationBgColor", "notificationStyle",
+                "useBackgroundImage", "backgroundImagePath", "backgroundImageFit", "backgroundImageDim",
+                "backgroundImageTint", "backgroundImageVignette", "enableTransparency", "enableBlurEffect", "blurStrength"
+        });
+        SETTINGS_EXPORT_GROUPS.put("Behavior", new String[] {
+                "minimizeOnLaunch", "restoreLauncherOnGameClose", "enableSystemTray", "closeAfterLaunch",
+                "showConsoleOnLaunch", "scanOnStartup", "showHiddenInstances", "smoothScrolling",
+                "checkModUpdatesOnStartup", "refreshDiscoverOnLaunch", "autoRefreshModsOnVersionLoadFail",
+                "confirmDestructiveActions"
+        });
+        SETTINGS_EXPORT_GROUPS.put("Performance", new String[] {
+                "defaultRamGb", "launcherMaxRamMb", "enableLauncherMaxRam", "extraJvmArgs", "javaPath", "jvmArgs",
+                "downloadThreadsAuto", "downloadThreads"
+        });
+        SETTINGS_EXPORT_GROUPS.put("Window", new String[] {
+                "launcherWidth", "launcherHeight", "startMaximized"
+        });
+        SETTINGS_EXPORT_GROUPS.put("Privacy & Security", new String[] {
+                "hideUsername", "redactPaths", "redactTokens", "clearSessionOnExit", "hideLaunchCommand",
+                "defaultMinecraftDir", "privateServersIps"
+        });
+        SETTINGS_EXPORT_GROUPS.put("Discord RPC", new String[] {
+                "enableDiscordRpc", "rpcShowInLauncher", "rpcShowInstanceName", "rpcShowMinecraftVersion",
+                "rpcShowServerIp", "rpcShowGameState", "rpcCustomStateText", "rpcShowLauncherActivity",
+                "rpcShowTabInstances", "rpcShowTabMods", "rpcShowTabDiscover", "rpcShowTabPresets",
+                "rpcShowTabSettings", "rpcShowStateLaunching", "rpcShowStateMainMenu", "rpcShowStateSingleplayer",
+                "rpcShowStateMultiplayer", "rpcAppId", "customDiscordRpcImage", "customDiscordRpcName"
+        });
+        SETTINGS_EXPORT_GROUPS.put("Developer", new String[] {
+                "unlockDevStuff", "debugMode"
+        });
+    }
+
+    /** Small text-style button used for the per-category "All"/"None" links in the
+     *  Export/Import Settings overlays — deliberately lighter-weight than the main
+     *  rounded buttons since these sit inline next to a category header. */
+    private static JButton smallLinkButton(String text, Color color) {
+        JButton btn = new JButton(text);
+        btn.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        btn.setForeground(color);
+        btn.setContentAreaFilled(false);
+        btn.setBorderPainted(false);
+        btn.setFocusPainted(false);
+        btn.setOpaque(false);
+        btn.setMargin(new Insets(0, 4, 0, 4));
+        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return btn;
+    }
+
+    /** "backgroundAnimationSpeed" → "Background Animation Speed", for checkbox labels. */
+    private static String humanizeFieldName(String fieldName) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < fieldName.length(); i++) {
+            char c = fieldName.charAt(i);
+            if (i == 0) {
+                sb.append(Character.toUpperCase(c));
+            } else if (Character.isUpperCase(c)) {
+                sb.append(' ').append(c);
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
 
     private JComboBox<Account> accountBox;
     private JButton accountBtn;
@@ -118,7 +217,7 @@ public class Main extends JFrame {
     // colors
     // change (see restyle section) so log text stays legible/on-theme across
     // accent/text edits.
-    private SimpleAttributeSet logAttrDefault, logAttrBracket, logAttrError, logAttrWarn, logAttrDebug, logAttrInfo;
+    private SimpleAttributeSet logAttrDefault, logAttrBracket, logAttrError, logAttrWarn, logAttrDebug, logAttrInfo, logAttrInfoBracket;
     private JButton playButton;
     private JPanel logAreaPanel;
     private RoundedPanel logCard;
@@ -201,6 +300,8 @@ public class Main extends JFrame {
     private RoundedPanel importOverlay;
     private RoundedPanel exportPresetOverlay;
     private RoundedPanel applyPresetOverlay;
+    private RoundedPanel exportSettingsOverlay;
+    private RoundedPanel importSettingsOverlay;
 
     private final Map<String, ImageIcon> modIconCache = new ConcurrentHashMap<>();
     private final Map<ModLoaderType, Image> loaderLogoCache = new ConcurrentHashMap<>();
@@ -283,11 +384,9 @@ public class Main extends JFrame {
     }
 
     private PillTabbedPane mainTabPane;
-    private com.launcher.ui.CustomTitleBar customTitleBar;
     private GradientBackgroundPane layeredPane;
     private JLabel logoSub; // the small "LAUNCHER" wordmark under the "ZERO" logo — tinted with the accent
                             // color
-    private static final int RESIZE_MARGIN = 5;
 
     public Main() {
         activeInstance = this;
@@ -301,13 +400,6 @@ public class Main extends JFrame {
         // Set default width and height to 1400x800
         int initW = (initSettings.launcherWidth >= 820) ? initSettings.launcherWidth : 1400;
         int initH = (initSettings.launcherHeight >= 560) ? initSettings.launcherHeight : 800;
-
-        // Must be set before the frame becomes displayable, so this has to
-        // happen here rather than later on in the constructor.
-        setUndecorated(initSettings.useCustomTitleBar);
-        if (initSettings.useCustomTitleBar) {
-            setMaximizedBounds(GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds());
-        }
 
         setSize(initW, initH);
         setLocationRelativeTo(null);
@@ -327,6 +419,32 @@ public class Main extends JFrame {
                 setIconImage(windowIcon);
             }
         } catch (Exception ignored) {
+        }
+
+        // Linux only: prefer the icon referenced by the installed "Zero Launcher.desktop"
+        // entry (built by something else — we only read it here) so the taskbar/dock icon
+        // matches whatever that .desktop file actually points at, instead of always using
+        // the icon baked into this jar.
+        if (isLinux()) {
+            Image desktopIcon = loadIconFromDesktopEntry();
+            if (desktopIcon != null) {
+                try {
+                    setIconImage(desktopIcon);
+                } catch (Exception ignored) {
+                }
+                try {
+                    if (Taskbar.isTaskbarSupported()) {
+                        Taskbar taskbar = Taskbar.getTaskbar();
+                        if (taskbar.isSupported(Taskbar.Feature.ICON_IMAGE)) {
+                            taskbar.setIconImage(desktopIcon);
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // Not every Linux DE/JDK combo supports the Taskbar icon feature —
+                    // the setIconImage() call above already covers WMs that key off
+                    // the window's own icon (e.g. KDE, XFCE), so just move on.
+                }
+            }
         }
 
         com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
@@ -452,27 +570,9 @@ public class Main extends JFrame {
                 });
         cardPanel.add(createInstancePanel, CREATE_INSTANCE_VIEW);
 
-        // The custom title bar, if enabled, wraps the entire cardPanel (every view)
-        // rather than just MAIN_VIEW, so it's always visible regardless of which
-        // screen — main, create-instance, edit-instance — is currently shown.
-        JComponent cardPanelHost;
-        if (initSettings.useCustomTitleBar) {
-            customTitleBar = new com.launcher.ui.CustomTitleBar(this, "Zero Launcher", windowIcon);
-
-            JPanel decorated = new JPanel(new BorderLayout());
-            decorated.add(customTitleBar, BorderLayout.NORTH);
-            decorated.add(cardPanel, BorderLayout.CENTER);
-
-            // A thin margin panel around everything is what gives an undecorated
-            // frame its resize handles back — see WindowResizer's class comment.
-            JPanel marginPanel = new JPanel(new BorderLayout());
-            marginPanel.setBorder(new EmptyBorder(RESIZE_MARGIN, RESIZE_MARGIN, RESIZE_MARGIN, RESIZE_MARGIN));
-            marginPanel.add(decorated, BorderLayout.CENTER);
-            cardPanelHost = marginPanel;
-            new com.launcher.ui.WindowResizer(this, marginPanel, RESIZE_MARGIN);
-        } else {
-            cardPanelHost = cardPanel;
-        }
+        // Custom title bar removed — the frame always uses the native OS window
+        // decorations now, so cardPanel is used directly with no extra wrapping.
+        JComponent cardPanelHost = cardPanel;
 
         // Initialize NotificationCenter
         notifications = new NotificationCenter();
@@ -573,6 +673,11 @@ public class Main extends JFrame {
         });
         downloadsRefreshTimer.start();
 
+        // Loading overlay — shown immediately, dismissed once data is ready (but never
+        // before MIN_LOADING_OVERLAY_MS has elapsed, see below).
+        final long loadingOverlayShownAt = System.currentTimeMillis();
+        final int MIN_LOADING_OVERLAY_MS = 900;
+
         // Loading overlay — shown immediately, dismissed once data is ready.
         // Supports fade-in / fade-out via an "overlayAlpha" client property that
         // controls the AlphaComposite used to paint the entire panel.
@@ -630,42 +735,60 @@ public class Main extends JFrame {
         loadingStatus.setForeground(new Color(156, 163, 175));
         loadingStatus.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        // Spinning arc indicator — draws a rotating gradient arc below the status text.
-        JComponent spinner = new JComponent() {
-            private float angle = 0f;
+        // Modern indeterminate progress bar — a rounded track with a soft gradient
+        // "runner" segment that sweeps back and forth, Material/Bootstrap-style.
+        // Runs at 60fps for smooth motion; each frame is just two rounded-rect fills
+        // (no per-frame arc/trig math beyond a couple of GradientPaints), so it's
+        // still cheap to animate continuously at that rate. Phase is derived from
+        // actual elapsed time (not a fixed per-tick step), so the motion stays smooth
+        // and at a consistent speed even if the Swing timer ticks a little late.
+        JComponent loadingBar = new JComponent() {
+            private static final int CYCLE_MS = 1400;
+            private final long startTime = System.currentTimeMillis();
 
             {
-                setPreferredSize(new Dimension(48, 48));
-                setMaximumSize(new Dimension(48, 48));
-                setMinimumSize(new Dimension(48, 48));
-                javax.swing.Timer spinTimer = new javax.swing.Timer(16, e -> {
-                    angle += 6f;
-                    if (angle >= 360f) angle -= 360f;
-                    repaint();
-                });
-                spinTimer.start();
+                setPreferredSize(new Dimension(220, 6));
+                setMaximumSize(new Dimension(220, 6));
+                setMinimumSize(new Dimension(220, 6));
+                javax.swing.Timer barTimer = new javax.swing.Timer(16, e -> repaint());
+                barTimer.start();
             }
 
             @Override
             protected void paintComponent(Graphics g) {
+                float phase = ((System.currentTimeMillis() - startTime) % CYCLE_MS) / (float) CYCLE_MS;
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int size = Math.min(getWidth(), getHeight());
-                int pad = 4;
-                g2.setStroke(new BasicStroke(3.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                // Draw a faint track circle
-                g2.setColor(new Color(255, 255, 255, 25));
-                g2.drawArc(pad, pad, size - pad * 2, size - pad * 2, 0, 360);
-                // Draw the spinning arc with accent color gradient
-                g2.setColor(new Color(16, 185, 129)); // accent green
-                g2.drawArc(pad, pad, size - pad * 2, size - pad * 2, (int) angle, 90);
-                // Draw a smaller secondary arc for visual interest
-                g2.setColor(new Color(16, 185, 129, 90));
-                g2.drawArc(pad, pad, size - pad * 2, size - pad * 2, (int) angle + 180, 60);
+                int w = getWidth(), h = getHeight();
+
+                // Track
+                g2.setColor(new Color(255, 255, 255, 22));
+                g2.fillRoundRect(0, 0, w, h, h, h);
+
+                // Runner: eased back-and-forth sweep (smoother, more "modern" feel than a
+                // hard linear loop) with a soft gradient fade at both ends.
+                float t = phase < 0.5f ? phase * 2f : (1f - phase) * 2f; // 0→1→0 triangle wave
+                float eased = t * t * (3f - 2f * t); // smoothstep, cheap and smooth
+                int runnerW = Math.max(24, w / 3);
+                int x = (int) (-runnerW + eased * (w + runnerW));
+
+                Color accent = new Color(16, 185, 129);
+                GradientPaint gp = new GradientPaint(
+                        x, 0, new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 0),
+                        x + runnerW / 2f, 0, accent);
+                g2.setPaint(gp);
+                g2.fillRoundRect(x, 0, runnerW / 2, h, h, h);
+                GradientPaint gp2 = new GradientPaint(
+                        x + runnerW / 2f, 0, accent,
+                        x + runnerW, 0, new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 0));
+                g2.setPaint(gp2);
+                g2.fillRoundRect(x + runnerW / 2, 0, runnerW / 2, h, h, h);
+
                 g2.dispose();
             }
         };
-        spinner.setAlignmentX(Component.CENTER_ALIGNMENT);
+        loadingBar.setAlignmentX(Component.CENTER_ALIGNMENT);
+        loadingBar.setOpaque(false);
 
         loadingCard.add(loadingIcon);
         loadingCard.add(Box.createVerticalStrut(14));
@@ -673,7 +796,7 @@ public class Main extends JFrame {
         loadingCard.add(Box.createVerticalStrut(8));
         loadingCard.add(loadingStatus);
         loadingCard.add(Box.createVerticalStrut(18));
-        loadingCard.add(spinner);
+        loadingCard.add(loadingBar);
 
         loadingOverlay.add(loadingCard);
 
@@ -686,7 +809,7 @@ public class Main extends JFrame {
         {
             final long fadeInStart = System.currentTimeMillis();
             final int fadeInDuration = 300;
-            javax.swing.Timer fadeInTimer = new javax.swing.Timer(16, null);
+            javax.swing.Timer fadeInTimer = new javax.swing.Timer(30, null);
             fadeInTimer.addActionListener(ev -> {
                 float progress = Math.min(1f, (System.currentTimeMillis() - fadeInStart) / (float) fadeInDuration);
                 // Ease-out curve for smooth appearance
@@ -701,7 +824,7 @@ public class Main extends JFrame {
         // Pulsing "Loading..." text opacity animation
         {
             final long pulseStart = System.currentTimeMillis();
-            javax.swing.Timer pulseTimer = new javax.swing.Timer(40, ev -> {
+            javax.swing.Timer pulseTimer = new javax.swing.Timer(80, ev -> {
                 float t = ((System.currentTimeMillis() - pulseStart) % 2000) / 2000f;
                 // Sine wave pulse between 0.45 and 1.0 opacity
                 float opacity = 0.45f + 0.55f * (0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI));
@@ -740,6 +863,7 @@ public class Main extends JFrame {
                 if (loadingOverlay.isDisplayable()) {
                     loadingOverlay.setBounds(0, 0, layeredPane.getWidth(), layeredPane.getHeight());
                 }
+                triggerUiRefreshBurst();
             }
         });
 
@@ -813,15 +937,45 @@ public class Main extends JFrame {
             }
             instanceList.setSelectedIndex(indexToSelect);
         }
+
+        // The Presets and Settings tabs are already fully built and populated by
+        // buildRecommendationsArea()/buildSettingsArea() above (bundled presets are
+        // scanned from disk synchronously, settings are read synchronously from
+        // SettingsManager) — there's nothing async to wait on for those two tabs.
+        // Mods and Discover are the two tabs whose content loads asynchronously
+        // (mod scan/identify, Modrinth search), so the loading overlay tracks those
+        // two specifically and won't dismiss until both have actually finished
+        // loading — not just after an arbitrary delay.
+        java.util.concurrent.atomic.AtomicInteger startupPendingLoads = new java.util.concurrent.atomic.AtomicInteger(
+                0);
+        java.util.concurrent.atomic.AtomicBoolean startupMinTimeElapsed = new java.util.concurrent.atomic.AtomicBoolean(
+                false);
+        java.util.concurrent.atomic.AtomicBoolean overlayDismissed = new java.util.concurrent.atomic.AtomicBoolean(
+                false);
+        Runnable[] tryDismissOverlayHolder = new Runnable[1];
+
         if (instanceList.getSelectedValue() != null) {
             updateDawnStatus(instanceList.getSelectedValue());
-            refreshModsView(instanceList.getSelectedValue());
+            startupPendingLoads.incrementAndGet();
+            refreshModsView(instanceList.getSelectedValue(), true, () -> {
+                if (startupPendingLoads.decrementAndGet() <= 0 && tryDismissOverlayHolder[0] != null) {
+                    tryDismissOverlayHolder[0].run();
+                }
+            });
         }
 
-        // Auto-refresh Discover tab with trending content
+        // Auto-refresh Discover tab with trending content. Only loads it at startup
+        // (and only makes the overlay wait on it) if the user has the
+        // "refresh Discover on launch" setting enabled — respecting that preference
+        // takes priority over pre-loading the tab.
         refreshDiscoverInstances();
         if (com.launcher.manager.SettingsManager.getInstance().getSettings().refreshDiscoverOnLaunch) {
-            SwingUtilities.invokeLater(() -> performDiscoverSearch());
+            startupPendingLoads.incrementAndGet();
+            SwingUtilities.invokeLater(() -> performDiscoverSearch(() -> {
+                if (startupPendingLoads.decrementAndGet() <= 0 && tryDismissOverlayHolder[0] != null) {
+                    tryDismissOverlayHolder[0].run();
+                }
+            }));
         }
 
         if (com.launcher.manager.SettingsManager.getInstance().getSettings().checkModUpdatesOnStartup) {
@@ -830,42 +984,112 @@ public class Main extends JFrame {
 
         checkNetworkAndShowOfflineButton();
 
-        // Dismiss the loading overlay with a short fade-out after all data is ready.
-        // We schedule this in two invokeLater calls so the window is fully painted
-        // first (at least one frame visible) before we start the timer.
+        // Dismiss the loading overlay with a short fade-out once all tabs' data is
+        // actually ready AND at least MIN_LOADING_OVERLAY_MS has passed since it
+        // appeared — but never later than MAX_LOADING_OVERLAY_MS (2s) regardless of
+        // whether loading has finished, so the launcher never sits on the splash
+        // screen for long. We schedule this in two invokeLater calls so the window
+        // is fully painted first (at least one frame visible) before we start the
+        // timer.
         SwingUtilities.invokeLater(() -> {
-            // Animate alpha from 1→0 over ~400ms then remove overlay.
-            final long fadeOutStart = System.currentTimeMillis();
-            final int fadeOutDuration = 400;
-            javax.swing.Timer fadeTimer = new javax.swing.Timer(16, null);
-            fadeTimer.addActionListener(ev -> {
-                float progress = Math.min(1f, (System.currentTimeMillis() - fadeOutStart) / (float) fadeOutDuration);
-                // Ease-in curve for smooth disappearance
-                float eased = progress * progress;
-                float alpha = 1f - eased;
-                if (progress >= 1f) {
-                    fadeTimer.stop();
-                    // Stop the pulsing text timer
-                    Object pt = loadingOverlay.getClientProperty("pulseTimer");
-                    if (pt instanceof javax.swing.Timer) ((javax.swing.Timer) pt).stop();
-                    layeredPane.remove(loadingOverlay);
-                    layeredPane.repaint();
-                } else {
-                    loadingOverlay.putClientProperty("overlayAlpha", alpha);
-                    loadingOverlay.repaint();
+            Runnable startFadeOut = () -> {
+                // Animate alpha from 1→0 over ~400ms then remove overlay.
+                final long fadeOutStart = System.currentTimeMillis();
+                final int fadeOutDuration = 400;
+                javax.swing.Timer fadeTimer = new javax.swing.Timer(30, null);
+                fadeTimer.addActionListener(ev -> {
+                    float progress = Math.min(1f,
+                            (System.currentTimeMillis() - fadeOutStart) / (float) fadeOutDuration);
+                    // Ease-in curve for smooth disappearance
+                    float eased = progress * progress;
+                    float alpha = 1f - eased;
+                    if (progress >= 1f) {
+                        fadeTimer.stop();
+                        // Stop the pulsing text timer
+                        Object pt = loadingOverlay.getClientProperty("pulseTimer");
+                        if (pt instanceof javax.swing.Timer) ((javax.swing.Timer) pt).stop();
+                        layeredPane.remove(loadingOverlay);
+                        layeredPane.repaint();
+                    } else {
+                        loadingOverlay.putClientProperty("overlayAlpha", alpha);
+                        loadingOverlay.repaint();
+                    }
+                });
+                fadeTimer.start();
+            };
+
+            Runnable tryDismissOverlay = () -> {
+                if (overlayDismissed.get()) return;
+                if (!startupMinTimeElapsed.get()) return;
+                if (startupPendingLoads.get() > 0) return;
+                if (overlayDismissed.compareAndSet(false, true)) {
+                    startFadeOut.run();
                 }
+            };
+            tryDismissOverlayHolder[0] = tryDismissOverlay;
+
+            // MIN_LOADING_OVERLAY_MS is a floor, not the whole story: it keeps the
+            // overlay from just flashing on screen for a frame when mods/discover
+            // happen to load instantly, while the pending-loads check above is what
+            // actually makes sure Mods and Discover have finished loading before the
+            // overlay comes down, even if that takes longer than the floor.
+            long elapsed = System.currentTimeMillis() - loadingOverlayShownAt;
+            long remaining = MIN_LOADING_OVERLAY_MS - elapsed;
+            Runnable markMinTimeElapsed = () -> {
+                startupMinTimeElapsed.set(true);
+                tryDismissOverlay.run();
+            };
+            if (remaining <= 0) {
+                markMinTimeElapsed.run();
+            } else {
+                javax.swing.Timer minDurationTimer = new javax.swing.Timer((int) remaining,
+                        ev -> markMinTimeElapsed.run());
+                minDurationTimer.setRepeats(false);
+                minDurationTimer.start();
+            }
+
+            // Safety valve: if Mods/Discover haven't finished loading (e.g. Modrinth is
+            // unreachable and a request stalls) don't leave the overlay up forever —
+            // the loading screen is capped at 3 seconds total, full stop.
+            int MAX_LOADING_OVERLAY_MS = 3000;
+            javax.swing.Timer maxWaitTimer = new javax.swing.Timer(MAX_LOADING_OVERLAY_MS, ev -> {
+                startupMinTimeElapsed.set(true);
+                startupPendingLoads.set(0);
+                tryDismissOverlay.run();
             });
-            fadeTimer.start();
+            maxWaitTimer.setRepeats(false);
+            maxWaitTimer.start();
         });
 
-        // Workaround for UI freeze after resizing/maximizing the window
-        javax.swing.Timer uiRefreshTimer = new javax.swing.Timer(50, e -> {
-            if (!userAdjustingWindow && !isMinimized) {
-                revalidate();
-                repaint();
+        // Workaround for UI freeze after resizing/maximizing the window.
+        // This used to run forever at 20fps (revalidate()+repaint() on the whole
+        // frame, unconditionally, the entire time the launcher was open) — by far
+        // the biggest unnecessary CPU/GPU cost in the app, since 99% of the time
+        // nothing is being resized at all. It now only runs a short burst of ticks
+        // right around an actual resize/maximize, via triggerUiRefreshBurst()
+        // (called from endWindowAdjust() and the layeredPane resize listener), and
+        // stops itself once the burst is done.
+        uiRefreshTimer = new javax.swing.Timer(50, e -> {
+            if (userAdjustingWindow || isMinimized) return; // wait for the burst that follows
+            revalidate();
+            repaint();
+            uiRefreshBurstTicksRemaining--;
+            if (uiRefreshBurstTicksRemaining <= 0) {
+                uiRefreshTimer.stop();
             }
         });
-        uiRefreshTimer.start();
+    }
+
+    /**
+     * Kicks off (or extends) a short burst of revalidate()/repaint() ticks to work
+     * around a UI freeze that can otherwise linger right after a resize/maximize —
+     * instead of the old approach of just running that refresh forever.
+     */
+    private void triggerUiRefreshBurst() {
+        uiRefreshBurstTicksRemaining = 10; // ~500ms at 50ms/tick
+        if (uiRefreshTimer != null && !uiRefreshTimer.isRunning()) {
+            uiRefreshTimer.start();
+        }
     }
 
     /**
@@ -1426,6 +1650,12 @@ public class Main extends JFrame {
                 // switching instances while already on the Mods tab used to leave the
                 // previous instance's mod list on screen.
                 refreshModsView(sel);
+                // Discover's search filters by the selected instance's Minecraft version,
+                // so switching instances should re-run the search — otherwise the results
+                // silently keep showing stale version-filtered hits for the old instance.
+                if (discoverSearchField != null) {
+                    performDiscoverSearch();
+                }
             } else {
                 nameLbl.setText("No instance selected");
                 versionBadge.setText(" ");
@@ -2186,12 +2416,18 @@ public class Main extends JFrame {
         if (modsAutoRefreshTimer != null) {
             modsAutoRefreshTimer.stop();
         }
-        modsAutoRefreshTimer = new javax.swing.Timer(1000, e -> {
+        // A 1-second interval here used to rescan and re-hit Modrinth every single
+        // tick — even though nothing had changed — which both spammed the log with
+        // repeated "Scanning/Found/Identified" lines and hammered the Modrinth API
+        // for no reason. 5 seconds is still fast enough to notice mods dropped into
+        // the folder externally, and refreshModsView is now called in "silent" mode
+        // so it only logs when the scan actually finds a change.
+        modsAutoRefreshTimer = new javax.swing.Timer(5000, e -> {
             if (modsScanInProgress) return;
             if (mainTabPane == null || mainTabPane.getSelectedIndex() != 1) return;
             Instance sel = instanceList.getSelectedValue();
             if (sel == null) return;
-            refreshModsView(sel);
+            refreshModsView(sel, true);
         });
         modsAutoRefreshTimer.start();
 
@@ -2597,11 +2833,40 @@ public class Main extends JFrame {
     }
 
     private void refreshModsView(Instance inst) {
-        if (modsScanInProgress) return;
+        refreshModsView(inst, false);
+    }
+
+    private void refreshModsView(Instance inst, boolean silent) {
+        refreshModsView(inst, silent, null);
+    }
+
+    /**
+     * @param silent     when true, suppresses the "Scanning…/Found…/Identified…" log lines
+     *                   unless the scan actually turns up a change (mods added/removed/renamed).
+     *                   Used by the periodic auto-refresh timer so it can keep polling for
+     *                   external changes to the mods folder without spamming the log every
+     *                   tick when nothing has actually changed.
+     * @param onComplete optional, invoked on the EDT once the scan (and any Modrinth
+     *                   identify/update-check round-trip it kicked off) has fully finished —
+     *                   used at startup so the loading overlay can wait for the Mods tab to
+     *                   actually be ready instead of dismissing on a flat timer.
+     */
+    private void refreshModsView(Instance inst, boolean silent, Runnable onComplete) {
+        if (modsScanInProgress) {
+            if (onComplete != null) onComplete.run();
+            return;
+        }
         modsScanInProgress = true;
         modsHeaderLabel.setText("Mods — " + inst.name);
         modsCountLabel.setText("Scanning…");
-        log("Scanning mods for \"" + inst.name + "\"…");
+        // Snapshot of what's currently shown, so we can tell after the scan whether
+        // anything actually changed (used to decide whether a silent refresh still
+        // deserves a log line).
+        Set<String> previousFileNames = new java.util.HashSet<>();
+        for (ModEntry m : currentModEntries) {
+            if (m.fileName != null) previousFileNames.add(m.fileName);
+        }
+        if (!silent) log("Scanning mods for \"" + inst.name + "\"…");
         long startedAt = System.currentTimeMillis();
 
         // Snapshot the identities (Modrinth name/icon/update info) we already know
@@ -2623,8 +2888,18 @@ public class Main extends JFrame {
                 ModUpdateService service = new ModUpdateService();
                 Path modsDir = instanceManager.resolveGameDir(inst).resolve("mods");
                 List<ModEntry> list = service.scanModsDir(modsDir);
-                log("Found " + list.size() + " mod jar(s) in " + modsDir + " (hashed in "
-                        + (System.currentTimeMillis() - startedAt) + " ms).");
+
+                Set<String> newFileNames = new java.util.HashSet<>();
+                for (ModEntry m : list) {
+                    if (m.fileName != null) newFileNames.add(m.fileName);
+                }
+                boolean changed = !newFileNames.equals(previousFileNames);
+                boolean shouldLog = !silent || changed;
+
+                if (shouldLog) {
+                    log("Found " + list.size() + " mod jar(s) in " + modsDir + " (hashed in "
+                            + (System.currentTimeMillis() - startedAt) + " ms).");
+                }
 
                 // Re-apply any identity we already had for mods whose file content is
                 // unchanged (same SHA-1), so the freshly-scanned entries keep their name/
@@ -2665,10 +2940,25 @@ public class Main extends JFrame {
                 List<ModEntry> unidentified = list.stream().filter(m -> m.modrinthId == null).toList();
                 if (!unidentified.isEmpty()) {
                     service.identifyMods(unidentified, msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
+                    // identifyMods only fills in identity (name/version/loaders) — without
+                    // also calling checkUpdates here, every mod newly identified on this
+                    // scan would be stuck showing "Checking…" forever, since nothing else
+                    // in this refresh path ever resolves it to "Up to date"/"Update
+                    // available". Mods that were already identified before this scan keep
+                    // their prior status via the known-hash carry-over above, so it's safe
+                    // (and avoids redundant API calls) to only check updates for the
+                    // newly-identified subset here.
+                    String loaderName = inst.modLoader != null && inst.modLoader != ModLoaderType.VANILLA
+                            ? inst.modLoader.name().toLowerCase()
+                            : null;
+                    service.checkUpdates(unidentified, inst.mcVersion, loaderName,
+                            msg -> SwingUtilities.invokeLater(() -> setStatus(msg)));
                 }
-                long identified = list.stream().filter(m -> m.modrinthId != null).count();
-                log("Identified " + identified + " of " + list.size() + " mod(s) on Modrinth in "
-                        + (System.currentTimeMillis() - startedAt) + " ms total.");
+                if (shouldLog) {
+                    long identified = list.stream().filter(m -> m.modrinthId != null).count();
+                    log("Identified " + identified + " of " + list.size() + " mod(s) on Modrinth in "
+                            + (System.currentTimeMillis() - startedAt) + " ms total.");
+                }
                 SwingUtilities.invokeLater(() -> {
                     currentModEntries = list;
                     filterMods();
@@ -2678,6 +2968,7 @@ public class Main extends JFrame {
                 SwingUtilities.invokeLater(() -> notifications.error("Mod scan failed", ex.getMessage()));
             } finally {
                 modsScanInProgress = false;
+                if (onComplete != null) SwingUtilities.invokeLater(onComplete);
             }
         }, "mod-scan").start();
     }
@@ -3181,27 +3472,9 @@ public class Main extends JFrame {
         selectNone.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(false)));
         bottomBar.add(selectNone);
 
-        // Save location path holder
-        final Path[] savePath = { null };
-        JLabel savePathLbl = new JLabel("No location chosen");
-        savePathLbl.setFont(new Font("SansSerif", Font.ITALIC, 11));
-        savePathLbl.setForeground(new Color(156, 163, 175));
-
-        JButton chooseLocBtn = new JButton("📂  Choose Save Location");
-        chooseLocBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
-        chooseLocBtn.setMargin(new Insets(6, 14, 6, 14));
-        chooseLocBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
-        chooseLocBtn.addActionListener(ev -> {
-            String safeName = inst.name.replaceAll("[\\\\/:*?\"<>|]", "_");
-            File f = com.launcher.util.NativeFileChooser.saveFile(this, "Save Mod List As", safeName + "_mods.json", "JSON Files", "json");
-            if (f != null) {
-                if (!f.getName().endsWith(".json")) f = new File(f.getAbsolutePath() + ".json");
-                savePath[0] = f.toPath();
-                savePathLbl.setText(f.getAbsolutePath());
-            }
-        });
-        bottomBar.add(chooseLocBtn);
-
+        // Save location is now picked at Export time (native save dialog), same
+        // flow as the Settings export in the About tab — no separate "choose
+        // location" step beforehand.
         JButton exportBtn = new JButton("✔  Export");
         exportBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
         exportBtn.setForeground(Color.WHITE);
@@ -3209,10 +3482,6 @@ public class Main extends JFrame {
         exportBtn.setMargin(new Insets(8, 20, 8, 20));
         exportBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
         exportBtn.addActionListener(ev -> {
-            if (savePath[0] == null) {
-                notifications.warning("No save location", "Please choose where to save the file first.");
-                return;
-            }
             List<ModEntry> selected = new ArrayList<>();
             for (JCheckBox cb : checkboxes) {
                 if (cb.isSelected()) {
@@ -3223,6 +3492,13 @@ public class Main extends JFrame {
                 notifications.warning("Nothing selected", "Select at least one mod to export.");
                 return;
             }
+
+            String safeName = inst.name.replaceAll("[\\\\/:*?\"<>|]", "_");
+            File f = com.launcher.util.NativeFileChooser.saveFile(this, "Save Mod List As", safeName + "_mods.json", "JSON Files", "json");
+            if (f == null) return;
+            if (!f.getName().endsWith(".json")) f = new File(f.getAbsolutePath() + ".json");
+            Path savePath = f.toPath();
+
             // Build JSON
             JsonObject root = new JsonObject();
             root.addProperty("launcherVersion", "Zero Launcher");
@@ -3244,9 +3520,9 @@ public class Main extends JFrame {
             root.add("mods", modsArr);
 
             try {
-                Files.writeString(savePath[0], JsonUtil.GSON.toJson(root));
+                Files.writeString(savePath, JsonUtil.GSON.toJson(root));
                 notifications.success("Mods exported",
-                        "Exported " + selected.size() + " mod(s) to " + savePath[0].getFileName());
+                        "Exported " + selected.size() + " mod(s) to " + savePath.getFileName());
                 animateOverlayHide(exportOverlay);
             } catch (Exception ex) {
                 notifications.error("Export failed", ex.getMessage());
@@ -3254,12 +3530,7 @@ public class Main extends JFrame {
         });
         bottomBar.add(exportBtn);
 
-        JPanel bottomWrap = new JPanel(new BorderLayout());
-        bottomWrap.setOpaque(false);
-        bottomWrap.add(savePathLbl, BorderLayout.WEST);
-        bottomWrap.add(bottomBar, BorderLayout.EAST);
-        bottomWrap.setBorder(new EmptyBorder(0, 18, 0, 0));
-        exportOverlay.add(bottomWrap, BorderLayout.SOUTH);
+        exportOverlay.add(bottomBar, BorderLayout.SOUTH);
 
         // Position and animate
         positionModOverlay(exportOverlay);
@@ -3591,6 +3862,350 @@ public class Main extends JFrame {
         // Position and animate
         positionModOverlay(exportPresetOverlay);
         animateOverlayShow(exportPresetOverlay);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // EXPORT SETTINGS OVERLAY — About tab. Lets the user pick which settings
+    // categories/fields to include, same "checkbox list + Select All/None" pattern
+    // as the preset/mod export overlays above.
+    // ══════════════════════════════════════════════════════════════════════════
+    private void showExportSettingsOverlay() {
+        if (exportSettingsOverlay != null) {
+            layeredPane.remove(exportSettingsOverlay);
+            layeredPane.repaint();
+        }
+
+        exportSettingsOverlay = new RoundedPanel(18, new Color(20, 20, 26, 250), new Color(255, 255, 255, 34));
+        exportSettingsOverlay.putClientProperty("keepCustomBg", Boolean.TRUE);
+        exportSettingsOverlay.setLayout(new BorderLayout());
+        exportSettingsOverlay.setFrostedGlass(layeredPane, 8, new Color(12, 12, 16, 150));
+
+        Color teal = new Color(20, 184, 166);
+
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(14, 18, 10, 12));
+
+        JLabel title = new JLabel("📤  Export Settings");
+        title.setFont(new Font("SansSerif", Font.BOLD, 17));
+        title.setForeground(teal);
+        header.add(title, BorderLayout.CENTER);
+
+        JButton closeBtn = new JButton("✕");
+        closeBtn.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
+        closeBtn.setFocusPainted(false);
+        closeBtn.setContentAreaFilled(false);
+        closeBtn.setBorderPainted(false);
+        closeBtn.setOpaque(false);
+        closeBtn.setMargin(new Insets(4, 10, 4, 10));
+        closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeBtn.addActionListener(ev -> animateOverlayHide(exportSettingsOverlay));
+        header.add(closeBtn, BorderLayout.EAST);
+
+        exportSettingsOverlay.add(header, BorderLayout.NORTH);
+
+        // ── Grouped checkbox list ──
+        JPanel listPanel = new JPanel();
+        listPanel.setOpaque(false);
+        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
+        listPanel.setBorder(new EmptyBorder(4, 18, 4, 18));
+
+        List<JCheckBox> checkboxes = new ArrayList<>();
+        for (Map.Entry<String, String[]> group : SETTINGS_EXPORT_GROUPS.entrySet()) {
+            List<JCheckBox> groupBoxes = new ArrayList<>();
+
+            JPanel groupHeader = new JPanel(new BorderLayout());
+            groupHeader.setOpaque(false);
+            groupHeader.setBorder(new EmptyBorder(8, 0, 2, 0));
+
+            JLabel groupLbl = new JLabel(group.getKey());
+            groupLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
+            groupLbl.setForeground(teal);
+            groupHeader.add(groupLbl, BorderLayout.WEST);
+
+            JPanel groupBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+            groupBtns.setOpaque(false);
+            JButton groupAllBtn = smallLinkButton("All", teal);
+            JButton groupNoneBtn = smallLinkButton("None", teal);
+            groupBtns.add(groupAllBtn);
+            groupBtns.add(groupNoneBtn);
+            groupHeader.add(groupBtns, BorderLayout.EAST);
+            listPanel.add(groupHeader);
+
+            for (String fieldName : group.getValue()) {
+                JCheckBox cb = new JCheckBox(humanizeFieldName(fieldName), true);
+                cb.setOpaque(false);
+                cb.setForeground(Color.WHITE);
+                cb.setFont(new Font("SansSerif", Font.PLAIN, 12));
+                cb.putClientProperty("fieldName", fieldName);
+                checkboxes.add(cb);
+                groupBoxes.add(cb);
+                listPanel.add(cb);
+            }
+
+            groupAllBtn.addActionListener(ev -> groupBoxes.forEach(cb -> cb.setSelected(true)));
+            groupNoneBtn.addActionListener(ev -> groupBoxes.forEach(cb -> cb.setSelected(false)));
+        }
+
+        JScrollPane scroll = new JScrollPane(listPanel,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        com.launcher.ui.SmoothScroll.install(scroll);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        scroll.setPreferredSize(new Dimension(420, 420));
+        exportSettingsOverlay.add(scroll, BorderLayout.CENTER);
+
+        // ── Bottom bar: Select All/None, Choose Location, Export ──
+        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        bottomBar.setOpaque(false);
+        bottomBar.setBorder(new EmptyBorder(6, 18, 14, 18));
+
+        JButton selectAll = new JButton("Select All");
+        selectAll.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectAll.setMargin(new Insets(6, 14, 6, 14));
+        selectAll.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectAll.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(true)));
+        bottomBar.add(selectAll);
+
+        JButton selectNone = new JButton("Select None");
+        selectNone.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectNone.setMargin(new Insets(6, 14, 6, 14));
+        selectNone.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectNone.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(false)));
+        bottomBar.add(selectNone);
+
+        JButton exportBtn = new JButton("✔  Export");
+        exportBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        exportBtn.setForeground(Color.WHITE);
+        exportBtn.setBackground(teal);
+        exportBtn.setMargin(new Insets(8, 20, 8, 20));
+        exportBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        exportBtn.addActionListener(ev -> {
+            List<String> selectedFields = new ArrayList<>();
+            for (JCheckBox cb : checkboxes) {
+                if (cb.isSelected()) selectedFields.add((String) cb.getClientProperty("fieldName"));
+            }
+            if (selectedFields.isEmpty()) {
+                notifications.warning("Nothing selected", "Select at least one setting to export.");
+                return;
+            }
+
+            File file = com.launcher.util.NativeFileChooser.saveFile(this, "Export Zero Launcher Settings",
+                    "zero_launcher_settings.json", "Zero Launcher settings (*.json)", "json");
+            if (file == null) return;
+
+            try {
+                com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
+                JsonObject fullSettings = JsonUtil.GSON.toJsonTree(settings).getAsJsonObject();
+
+                JsonObject out = new JsonObject();
+                out.addProperty("launcherVersion", "Zero Launcher");
+                out.addProperty("exportType", "settings");
+                JsonObject values = new JsonObject();
+                for (String fieldName : selectedFields) {
+                    if (fullSettings.has(fieldName)) {
+                        values.add(fieldName, fullSettings.get(fieldName));
+                    }
+                }
+                out.add("settings", values);
+
+                Files.writeString(file.toPath(), JsonUtil.GSON.toJson(out));
+                notifications.success("Settings exported",
+                        selectedFields.size() + " setting(s) exported to " + file.getName());
+                animateOverlayHide(exportSettingsOverlay);
+            } catch (Exception ex) {
+                notifications.error("Export failed", ex.getMessage());
+            }
+        });
+        bottomBar.add(exportBtn);
+
+        exportSettingsOverlay.add(bottomBar, BorderLayout.SOUTH);
+
+        positionModOverlay(exportSettingsOverlay);
+        animateOverlayShow(exportSettingsOverlay);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // IMPORT SETTINGS OVERLAY — About tab. Only offers checkboxes for fields that
+    // are both known to this launcher version AND actually present in the chosen
+    // file, so importing an export made by a different version doesn't crash on
+    // missing/unexpected keys.
+    // ══════════════════════════════════════════════════════════════════════════
+    private void showImportSettingsOverlay(JsonObject fileRoot, String fileName) {
+        JsonObject values = fileRoot.has("settings") && fileRoot.get("settings").isJsonObject()
+                ? fileRoot.getAsJsonObject("settings")
+                : fileRoot; // tolerate a bare {"fieldName": value, ...} file too
+
+        if (importSettingsOverlay != null) {
+            layeredPane.remove(importSettingsOverlay);
+            layeredPane.repaint();
+        }
+
+        importSettingsOverlay = new RoundedPanel(18, new Color(20, 20, 26, 250), new Color(255, 255, 255, 34));
+        importSettingsOverlay.putClientProperty("keepCustomBg", Boolean.TRUE);
+        importSettingsOverlay.setLayout(new BorderLayout());
+        importSettingsOverlay.setFrostedGlass(layeredPane, 8, new Color(12, 12, 16, 150));
+
+        Color amber = new Color(245, 158, 11);
+
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(14, 18, 10, 12));
+
+        JLabel title = new JLabel("📥  Import Settings — " + fileName);
+        title.setFont(new Font("SansSerif", Font.BOLD, 17));
+        title.setForeground(amber);
+        header.add(title, BorderLayout.CENTER);
+
+        JButton closeBtn = new JButton("✕");
+        closeBtn.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
+        closeBtn.setFocusPainted(false);
+        closeBtn.setContentAreaFilled(false);
+        closeBtn.setBorderPainted(false);
+        closeBtn.setOpaque(false);
+        closeBtn.setMargin(new Insets(4, 10, 4, 10));
+        closeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeBtn.addActionListener(ev -> animateOverlayHide(importSettingsOverlay));
+        header.add(closeBtn, BorderLayout.EAST);
+
+        importSettingsOverlay.add(header, BorderLayout.NORTH);
+
+        JPanel listPanel = new JPanel();
+        listPanel.setOpaque(false);
+        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
+        listPanel.setBorder(new EmptyBorder(4, 18, 4, 18));
+
+        List<JCheckBox> checkboxes = new ArrayList<>();
+        for (Map.Entry<String, String[]> group : SETTINGS_EXPORT_GROUPS.entrySet()) {
+            List<String> presentInGroup = new ArrayList<>();
+            for (String fieldName : group.getValue()) {
+                if (values.has(fieldName)) presentInGroup.add(fieldName);
+            }
+            if (presentInGroup.isEmpty()) continue; // nothing from this group in the file — skip the header too
+
+            List<JCheckBox> groupBoxes = new ArrayList<>();
+
+            JPanel groupHeader = new JPanel(new BorderLayout());
+            groupHeader.setOpaque(false);
+            groupHeader.setBorder(new EmptyBorder(8, 0, 2, 0));
+
+            JLabel groupLbl = new JLabel(group.getKey());
+            groupLbl.setFont(new Font("SansSerif", Font.BOLD, 12));
+            groupLbl.setForeground(amber);
+            groupHeader.add(groupLbl, BorderLayout.WEST);
+
+            JPanel groupBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+            groupBtns.setOpaque(false);
+            JButton groupAllBtn = smallLinkButton("All", amber);
+            JButton groupNoneBtn = smallLinkButton("None", amber);
+            groupBtns.add(groupAllBtn);
+            groupBtns.add(groupNoneBtn);
+            groupHeader.add(groupBtns, BorderLayout.EAST);
+            listPanel.add(groupHeader);
+
+            for (String fieldName : presentInGroup) {
+                JCheckBox cb = new JCheckBox(humanizeFieldName(fieldName), true);
+                cb.setOpaque(false);
+                cb.setForeground(Color.WHITE);
+                cb.setFont(new Font("SansSerif", Font.PLAIN, 12));
+                cb.putClientProperty("fieldName", fieldName);
+                checkboxes.add(cb);
+                groupBoxes.add(cb);
+                listPanel.add(cb);
+            }
+
+            groupAllBtn.addActionListener(ev -> groupBoxes.forEach(cb -> cb.setSelected(true)));
+            groupNoneBtn.addActionListener(ev -> groupBoxes.forEach(cb -> cb.setSelected(false)));
+        }
+
+        if (checkboxes.isEmpty()) {
+            JLabel emptyLbl = new JLabel("This file doesn't contain any settings this version recognizes.");
+            emptyLbl.setForeground(new Color(156, 163, 175));
+            emptyLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+            listPanel.add(emptyLbl);
+        }
+
+        JScrollPane scroll = new JScrollPane(listPanel,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        com.launcher.ui.SmoothScroll.install(scroll);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.setOpaque(false);
+        scroll.getViewport().setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        scroll.setPreferredSize(new Dimension(420, 420));
+        importSettingsOverlay.add(scroll, BorderLayout.CENTER);
+
+        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        bottomBar.setOpaque(false);
+        bottomBar.setBorder(new EmptyBorder(6, 18, 14, 18));
+
+        JButton selectAll = new JButton("Select All");
+        selectAll.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectAll.setMargin(new Insets(6, 14, 6, 14));
+        selectAll.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectAll.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(true)));
+        bottomBar.add(selectAll);
+
+        JButton selectNone = new JButton("Select None");
+        selectNone.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        selectNone.setMargin(new Insets(6, 14, 6, 14));
+        selectNone.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        selectNone.addActionListener(ev -> checkboxes.forEach(cb -> cb.setSelected(false)));
+        bottomBar.add(selectNone);
+
+        JButton importBtn = new JButton("✔  Import");
+        importBtn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        importBtn.setForeground(Color.WHITE);
+        importBtn.setBackground(amber);
+        importBtn.setMargin(new Insets(8, 20, 8, 20));
+        importBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        importBtn.setEnabled(!checkboxes.isEmpty());
+        importBtn.addActionListener(ev -> {
+            List<String> selectedFields = new ArrayList<>();
+            for (JCheckBox cb : checkboxes) {
+                if (cb.isSelected()) selectedFields.add((String) cb.getClientProperty("fieldName"));
+            }
+            if (selectedFields.isEmpty()) {
+                notifications.warning("Nothing selected", "Select at least one setting to import.");
+                return;
+            }
+
+            com.launcher.manager.SettingsManager mgr = com.launcher.manager.SettingsManager.getInstance();
+            com.launcher.model.LauncherSettings settings = mgr.getSettings();
+            int applied = 0;
+            for (String fieldName : selectedFields) {
+                try {
+                    java.lang.reflect.Field field = com.launcher.model.LauncherSettings.class.getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    Object converted = JsonUtil.GSON.fromJson(values.get(fieldName), field.getType());
+                    field.set(settings, converted);
+                    applied++;
+                } catch (Exception ignored) {
+                    // Skip fields that don't exist on this launcher version or won't
+                    // convert cleanly — never let one bad field abort the whole import.
+                }
+            }
+
+            mgr.save();
+            applyTheme();
+            try {
+                com.launcher.manager.DiscordRpcManager.getInstance().reapplyPresence();
+            } catch (Throwable ignored) {
+                // Discord RPC settings weren't necessarily part of this import.
+            }
+
+            notifications.success("Settings imported",
+                    applied + " setting(s) applied. Some changes (RAM limits, thread counts, fonts) may need a restart.");
+            animateOverlayHide(importSettingsOverlay);
+        });
+        bottomBar.add(importBtn);
+
+        importSettingsOverlay.add(bottomBar, BorderLayout.SOUTH);
+
+        positionModOverlay(importSettingsOverlay);
+        animateOverlayShow(importSettingsOverlay);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -5212,40 +5827,127 @@ public class Main extends JFrame {
         private int cachePaletteVersion = -1;
 
         private static class Particle {
-            float x, y, size, alpha, alphaVelocity, yVelocity;
+            float x, y, size, alpha, alphaVelocity, yVelocity, driftX, baseX;
+            float swayPhase, swaySpeed, swayAmount;
             public Particle(int width, int height) {
                 respawn(width, height, true);
             }
             void respawn(int width, int height, boolean randomY) {
                 x = (float) (Math.random() * width);
+                baseX = x;
                 y = randomY ? (float) (Math.random() * height) : height + 10;
-                size = (float) (Math.random() * 4 + 2);
+                size = (float) (Math.random() * 3.5 + 1.5);
                 alpha = 0f;
-                alphaVelocity = (float) (Math.random() * 0.01 + 0.005);
-                yVelocity = (float) (Math.random() * 0.5 + 0.2);
+                alphaVelocity = (float) (Math.random() * 0.012 + 0.004);
+                yVelocity = (float) (Math.random() * 0.45 + 0.15);
+                driftX = (float) (Math.random() * 0.4 - 0.2);
+                swayPhase = (float) (Math.random() * Math.PI * 2);
+                swaySpeed = (float) (0.01 + Math.random() * 0.02);
+                swayAmount = (float) (8 + Math.random() * 18);
             }
-            void update(int width, int height) {
-                y -= yVelocity;
-                alpha += alphaVelocity;
-                if (alpha > 0.6f) alphaVelocity = -Math.abs(alphaVelocity);
+            /** Rising motes that gently sway side to side as they drift upward — the "Particles" style.
+             *  {@code speed} is the user's "Animation Speed" multiplier (1.0 = original pace); it scales
+             *  how far the particle moves per tick, independent of how many ticks/sec (FPS) we get. */
+            void updateRising(int width, int height, float speed) {
+                y -= yVelocity * speed;
+                swayPhase += swaySpeed * speed;
+                baseX += driftX * 0.1f * speed;
+                x = baseX + (float) Math.sin(swayPhase) * swayAmount;
+                alpha += alphaVelocity * speed;
+                if (alpha > 0.7f) alphaVelocity = -Math.abs(alphaVelocity);
                 if (y < -10 || alpha < 0f) respawn(width, height, false);
+            }
+            /** Wandering, pulsing flicker in place — the "Fireflies" style. See updateRising for what
+             *  {@code speed} does. */
+            void updateFlicker(int width, int height, float speed) {
+                swayPhase += swaySpeed * speed;
+                baseX += driftX * 0.2f * speed;
+                x = baseX + (float) Math.sin(swayPhase) * swayAmount;
+                y += (float) Math.cos(swayPhase * 0.7f) * 0.3f * speed;
+                alpha += alphaVelocity * speed;
+                if (alpha > 0.85f || alpha < 0.05f) alphaVelocity = -alphaVelocity;
+                if (x < -20 || x > width + 20 || y < -20 || y > height + 20) respawn(width, height, true);
+            }
+        }
+
+        /** A few large, soft, slowly-drifting glows — the "Orbs" style. */
+        private static class Orb {
+            final float baseXFrac, baseYFrac, radius, phase, speed;
+            Orb() {
+                baseXFrac = (float) Math.random();
+                baseYFrac = (float) Math.random();
+                radius = (float) (80 + Math.random() * 100);
+                phase = (float) (Math.random() * Math.PI * 2);
+                speed = (float) (0.35 + Math.random() * 0.45);
             }
         }
         
         private final java.util.List<Particle> particles = new java.util.ArrayList<>();
+        private final java.util.List<Orb> orbs = new java.util.ArrayList<>();
         private javax.swing.Timer particleTimer;
+        private boolean animationEnabled = true;
+        /** "Particles", "Fireflies", "Waves", or "Orbs". */
+        private String animationStyle = "Waves";
+        private float wavePhase = 0f;
+        /** User-configurable "Animation Speed" multiplier from Settings (1.0 = original pace).
+         *  This scales per-tick motion, not the tick rate — see updateRising/updateFlicker/wavePhase. */
+        private float animationSpeed = 1.0f;
+        /** User-configurable target FPS for the ambient background timer, from Settings.
+         *  0/unset means "use the built-in per-style default" (see updateTimerDelay below). */
+        private int animationFps = 0;
 
         GradientBackgroundPane() {
             setOpaque(true);
             for (int i = 0; i < 40; i++) particles.add(new Particle(1920, 1080));
+            for (int i = 0; i < 5; i++) orbs.add(new Orb());
             particleTimer = new javax.swing.Timer(16, e -> {
+                if (!animationEnabled) return;
                 int w = getWidth(), h = getHeight();
                 if (w > 0 && h > 0) {
-                    for (Particle p : particles) p.update(w, h);
+                    switch (animationStyle) {
+                        case "Fireflies" -> { for (Particle p : particles) p.updateFlicker(w, h, animationSpeed); }
+                        case "Waves", "Orbs" -> wavePhase += 0.02f * animationSpeed;
+                        default -> { for (Particle p : particles) p.updateRising(w, h, animationSpeed); } // "Particles"
+                    }
                     repaint();
                 }
             });
             particleTimer.start();
+        }
+
+        /** Turns the ambient background animation on/off and picks which style paints.
+         *  {@code speed} scales how far each frame's motion travels (1.0 = original pace).
+         *  {@code fps} sets the timer's target frame rate; pass 0 (or &lt;=0) to fall back to the
+         *  built-in per-style default (30fps for the heavier Waves/Orbs styles, 60fps otherwise). */
+        void setAnimationSettings(boolean enabled, String style, float speed, int fps) {
+            animationEnabled = enabled;
+            animationStyle = (style == null || style.isBlank()) ? "Waves" : style;
+            animationSpeed = speed <= 0f ? 1.0f : speed;
+            animationFps = fps;
+            updateTimerDelay();
+            if (animationEnabled) {
+                if (!particleTimer.isRunning()) particleTimer.start();
+            } else if (particleTimer.isRunning()) {
+                particleTimer.stop();
+            }
+            repaint();
+        }
+
+        /** Recomputes the timer delay from the user's FPS setting (if any) or the per-style default. */
+        private void updateTimerDelay() {
+            int fps;
+            if (animationFps > 0) {
+                fps = animationFps;
+            } else {
+                // Waves/Orbs are slow, large-area drifts that read just as smoothly at a
+                // lower frame rate, and each frame is more expensive to paint (full-width
+                // fills) than the small particle/firefly dots, so throttle their timer
+                // instead of redrawing at 60fps for no visible benefit.
+                boolean heavyStyle = "Waves".equals(animationStyle) || "Orbs".equals(animationStyle);
+                fps = heavyStyle ? 25 : 60;
+            }
+            fps = Math.max(5, Math.min(fps, 144)); // sanity clamp — avoid runaway timers either direction
+            particleTimer.setDelay(Math.max(1, 1000 / fps));
         }
 
         /**
@@ -5654,15 +6356,100 @@ public class Main extends JFrame {
                 g2.setComposite(old);
             }
             
-            // Draw ambient particles
-            for (Particle p : particles) {
-                if (p.alpha > 0) {
-                    g2.setColor(new Color(glowColor.getRed(), glowColor.getGreen(), glowColor.getBlue(), (int) (Math.min(1f, p.alpha) * 255)));
-                    g2.fill(new java.awt.geom.Ellipse2D.Float(p.x, p.y, p.size, p.size));
+            // Draw the selected ambient background animation, if enabled
+            if (animationEnabled) {
+                switch (animationStyle) {
+                    case "Fireflies" -> drawFireflies(g2);
+                    case "Waves" -> drawWaves(g2);
+                    case "Orbs" -> drawOrbs(g2);
+                    default -> drawParticles(g2);
                 }
             }
             
             g2.dispose();
+        }
+
+        private void drawParticles(Graphics2D g2) {
+            for (Particle p : particles) {
+                if (p.alpha > 0) {
+                    int coreA = (int) (Math.min(1f, p.alpha) * 255);
+                    float haloSize = p.size * 2.6f;
+                    g2.setColor(new Color(glowColor.getRed(), glowColor.getGreen(), glowColor.getBlue(), coreA / 3));
+                    g2.fill(new java.awt.geom.Ellipse2D.Float(p.x - haloSize / 2f, p.y - haloSize / 2f, haloSize, haloSize));
+                    g2.setColor(new Color(255, 255, 255, coreA));
+                    g2.fill(new java.awt.geom.Ellipse2D.Float(p.x, p.y, p.size, p.size));
+                }
+            }
+        }
+
+        private void drawFireflies(Graphics2D g2) {
+            for (Particle p : particles) {
+                if (p.alpha > 0) {
+                    int a = (int) (Math.min(1f, p.alpha) * 255);
+                    float glowSize = p.size * 3.4f;
+                    g2.setColor(new Color(255, 240, 170, a / 2));
+                    g2.fill(new java.awt.geom.Ellipse2D.Float(p.x - glowSize / 2f, p.y - glowSize / 2f, glowSize, glowSize));
+                    g2.setColor(new Color(255, 240, 170, a));
+                    g2.fill(new java.awt.geom.Ellipse2D.Float(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2));
+                    g2.setColor(new Color(255, 253, 225, Math.min(255, a + 70)));
+                    g2.fill(new java.awt.geom.Ellipse2D.Float(p.x, p.y, p.size, p.size));
+                }
+            }
+        }
+
+        private void drawWaves(Graphics2D g2) {
+            int w = getWidth(), h = getHeight();
+            if (w <= 0 || h <= 0) return;
+            // Antialiasing + per-pixel gradients on a full-width fill, redone every
+            // frame, is what made this style laggy — flat colors with AA off cost a
+            // fraction as much and are indistinguishable at this alpha/blur level.
+            Object oldAA = g2.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+            Color top = mix(glowColor, Color.WHITE, 0.15);
+            int step = Math.max(24, w / 50); // fewer path points on wide windows
+            for (int i = 0; i < 2; i++) {
+                float baseY = h * (0.4f + i * 0.22f);
+                float amp = 16f + i * 10f;
+                float freq = 0.006f + i * 0.002f;
+                float dir = (i % 2 == 0) ? 1f : -1f;
+                float speed = wavePhase * (0.6f + i * 0.35f) * dir;
+                java.awt.geom.GeneralPath path = new java.awt.geom.GeneralPath();
+                path.moveTo(0, h);
+                path.lineTo(0, baseY);
+                for (int x = 0; x <= w; x += step) {
+                    float y = baseY + (float) Math.sin(x * freq + speed) * amp;
+                    path.lineTo(x, y);
+                }
+                float lastY = baseY + (float) Math.sin(w * freq + speed) * amp;
+                path.lineTo(w, lastY);
+                path.lineTo(w, h);
+                path.closePath();
+                int bandAlpha = Math.max(6, 16 - i * 5);
+                g2.setColor(new Color(top.getRed(), top.getGreen(), top.getBlue(), bandAlpha));
+                g2.fill(path);
+            }
+            if (oldAA != null) g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, oldAA);
+        }
+
+        private void drawOrbs(Graphics2D g2) {
+            int w = getWidth(), h = getHeight();
+            for (Orb o : orbs) {
+                float t = wavePhase * o.speed + o.phase;
+                float x = o.baseXFrac * w + (float) Math.sin(t) * 60f + (float) Math.sin(t * 0.37f) * 20f;
+                float y = o.baseYFrac * h + (float) Math.cos(t * 0.8f) * 42f + (float) Math.cos(t * 0.29f) * 16f;
+                float breathe = 0.85f + 0.15f * (float) Math.sin(t * 1.3f);
+                float r = o.radius * breathe;
+                int a = (int) (46 * breathe);
+                RadialGradientPaint rp = new RadialGradientPaint(
+                        new java.awt.geom.Point2D.Float(x, y), r,
+                        new float[] { 0f, 0.6f, 1f },
+                        new Color[] {
+                                new Color(glowColor.getRed(), glowColor.getGreen(), glowColor.getBlue(), a),
+                                new Color(glowColor.getRed(), glowColor.getGreen(), glowColor.getBlue(), a / 2),
+                                new Color(glowColor.getRed(), glowColor.getGreen(), glowColor.getBlue(), 0) });
+                g2.setPaint(rp);
+                g2.fill(new java.awt.geom.Ellipse2D.Float(x - r, y - r, r * 2, r * 2));
+            }
         }
     }
 
@@ -6604,6 +7391,16 @@ public class Main extends JFrame {
 
     // ── Search ──────────────────────────────────────────────────────────────
     private void performDiscoverSearch() {
+        performDiscoverSearch(null);
+    }
+
+    /**
+     * @param onComplete optional, invoked on the EDT once the search request (success
+     *                   or failure) has finished updating the results pane — used at
+     *                   startup so the loading overlay can wait for the Discover tab to
+     *                   actually have content instead of dismissing on a flat timer.
+     */
+    private void performDiscoverSearch(Runnable onComplete) {
         String query = discoverSearchField.getText().trim();
         boolean isPack = discoverPacksToggle.isSelected();
         String projectType = isPack ? "resourcepack" : "mod";
@@ -6649,6 +7446,7 @@ public class Main extends JFrame {
 
                     updateDiscoverPagination();
                     discoverSearchBtn.setEnabled(true);
+                    if (onComplete != null) onComplete.run();
                 });
 
             } catch (Exception ex) {
@@ -6659,6 +7457,7 @@ public class Main extends JFrame {
                     discoverResultsPane.revalidate();
                     discoverResultsPane.repaint();
                     discoverSearchBtn.setEnabled(true);
+                    if (onComplete != null) onComplete.run();
                 });
             }
         }, "modrinth-search").start();
@@ -8093,6 +8892,86 @@ public class Main extends JFrame {
         addSettingsRow(appearanceCard, "Background Style", bgStyleBox, gbc);
         addSettingsRow(appearanceCard, "Notification Style", notifStyleCombo, gbc);
 
+        // ── Background animation ────────────────────────────────────────────
+        CustomToggle enableBgAnimCb = new CustomToggle("Enable background animation");
+        enableBgAnimCb.setSelected(s.enableBackgroundAnimation);
+
+        CustomComboBox<String> bgAnimStyleBox = new CustomComboBox<>(
+                new String[] { "Particles", "Fireflies", "Waves", "Orbs" });
+        bgAnimStyleBox.setSelectedItem(
+                s.backgroundAnimationStyle == null || s.backgroundAnimationStyle.isBlank()
+                        ? "Waves"
+                        : s.backgroundAnimationStyle);
+        bgAnimStyleBox.setEnabled(s.enableBackgroundAnimation);
+
+        enableBgAnimCb.addActionListener(e -> {
+            s.enableBackgroundAnimation = enableBgAnimCb.isSelected();
+            bgAnimStyleBox.setEnabled(s.enableBackgroundAnimation);
+            mgr.save();
+            applyTheme();
+        });
+        addSettingsRow(appearanceCard, "Background Animation", enableBgAnimCb, gbc);
+
+        bgAnimStyleBox.addActionListener(e -> {
+            s.backgroundAnimationStyle = (String) bgAnimStyleBox.getSelectedItem();
+            mgr.save();
+            applyTheme();
+        });
+        addSettingsRow(appearanceCard, "Animation Style", bgAnimStyleBox, gbc);
+
+        // ── Background animation speed ──────────────────────────────────────
+        // Stored as a percentage (10-300%) in the UI but applied as a 0.1-3.0x
+        // multiplier on the animation's per-frame motion (see GradientBackgroundPane.
+        // updateRising/updateFlicker and the Waves/Orbs wavePhase increment). This is
+        // deliberately independent of FPS below: speed changes how far things move,
+        // FPS changes how often we redraw.
+        JSlider bgAnimSpeedSlider = new JSlider(10, 300, (int) Math.round(s.backgroundAnimationSpeed * 100));
+        JLabel bgAnimSpeedValLabel = new JLabel(bgAnimSpeedSlider.getValue() + "%");
+        bgAnimSpeedValLabel.setForeground(Color.LIGHT_GRAY);
+        bgAnimSpeedSlider.setEnabled(s.enableBackgroundAnimation);
+        bgAnimSpeedSlider.addChangeListener(e -> {
+            s.backgroundAnimationSpeed = bgAnimSpeedSlider.getValue() / 100.0;
+            bgAnimSpeedValLabel.setText(bgAnimSpeedSlider.getValue() + "%");
+            if (!bgAnimSpeedSlider.getValueIsAdjusting()) mgr.save();
+            applyTheme();
+        });
+        JPanel bgAnimSpeedPane = new JPanel(new BorderLayout(8, 0));
+        bgAnimSpeedPane.setOpaque(false);
+        bgAnimSpeedPane.add(bgAnimSpeedSlider, BorderLayout.CENTER);
+        bgAnimSpeedPane.add(bgAnimSpeedValLabel, BorderLayout.EAST);
+        addSettingsRow(appearanceCard, "Animation Speed", bgAnimSpeedPane, gbc);
+
+        // ── Background animation FPS ────────────────────────────────────────
+        // Caps the ambient background timer's tick rate. Lower = less CPU/GPU spent
+        // repainting the background pane; higher = smoother motion, most noticeable on
+        // the small-dot "Particles"/"Fireflies" styles. "Waves"/"Orbs" already default
+        // to a lower internal rate since they read smoothly even throttled (see
+        // GradientBackgroundPane.updateTimerDelay) — this slider overrides that default
+        // once touched.
+        JSlider bgAnimFpsSlider = new JSlider(5, 60,
+                s.backgroundAnimationFps > 0 ? s.backgroundAnimationFps : 30);
+        JLabel bgAnimFpsValLabel = new JLabel(bgAnimFpsSlider.getValue() + " fps");
+        bgAnimFpsValLabel.setForeground(Color.LIGHT_GRAY);
+        bgAnimFpsSlider.setEnabled(s.enableBackgroundAnimation);
+        bgAnimFpsSlider.addChangeListener(e -> {
+            s.backgroundAnimationFps = bgAnimFpsSlider.getValue();
+            bgAnimFpsValLabel.setText(bgAnimFpsSlider.getValue() + " fps");
+            if (!bgAnimFpsSlider.getValueIsAdjusting()) mgr.save();
+            applyTheme();
+        });
+        JPanel bgAnimFpsPane = new JPanel(new BorderLayout(8, 0));
+        bgAnimFpsPane.setOpaque(false);
+        bgAnimFpsPane.add(bgAnimFpsSlider, BorderLayout.CENTER);
+        bgAnimFpsPane.add(bgAnimFpsValLabel, BorderLayout.EAST);
+        addSettingsRow(appearanceCard, "Animation FPS", bgAnimFpsPane, gbc);
+
+        // Enabling/disabling the animation toggle should also gray out these two new
+        // controls, same as it already does for the style dropdown above.
+        enableBgAnimCb.addActionListener(e -> {
+            bgAnimSpeedSlider.setEnabled(s.enableBackgroundAnimation);
+            bgAnimFpsSlider.setEnabled(s.enableBackgroundAnimation);
+        });
+
         // ── Font family ───────────────────────────────────────────────────────
         // Only sans-serif fonts, the bundled Minecraft font, and any user-added custom
         // fonts are offered here — see FontManager for exactly how that list is built.
@@ -8246,15 +9125,6 @@ public class Main extends JFrame {
         JPanel sizeCard = createCard("Window");
         gbc = createGbc();
 
-        CustomToggle customTitleBarCb = new CustomToggle("Use custom in-app title bar (hide the OS window frame)");
-        customTitleBarCb.setSelected(s.useCustomTitleBar);
-        customTitleBarCb.addActionListener(e -> {
-            s.useCustomTitleBar = customTitleBarCb.isSelected();
-            mgr.save();
-            promptRestartForTitleBarChange();
-        });
-        addSettingsRow(sizeCard, "", customTitleBarCb, gbc);
-
         CustomToggle startMaximizedCb = new CustomToggle("Always launch maximized");
         startMaximizedCb.setSelected(s.startMaximized);
         startMaximizedCb.addActionListener(e -> {
@@ -8300,6 +9170,91 @@ public class Main extends JFrame {
         mainPanel.add(sizeCard);
         mainPanel.add(Box.createVerticalStrut(12));
 
+        // ── 3b. STORAGE CARD ──────────────────────────────────────────────────
+        JPanel storageCard = createCard("Storage");
+        gbc = createGbc();
+
+        JLabel mcDirHintLbl = new JLabel(
+                "Where instances, versions, libraries, and assets are stored by default.");
+        mcDirHintLbl.setForeground(Color.LIGHT_GRAY);
+        mcDirHintLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        addSettingsRow(storageCard, "", mcDirHintLbl, gbc);
+
+        String savedMcDir = s.defaultMinecraftDir != null ? s.defaultMinecraftDir.trim() : "";
+        CustomTextField mcDirField = new CustomTextField(
+                !savedMcDir.isEmpty() ? savedMcDir : com.launcher.manager.LauncherPaths.computeOsDefaultMinecraftPath().toString());
+        mcDirField.setForeground(savedMcDir.isEmpty() ? Color.GRAY : Color.WHITE);
+
+        JButton mcDirBrowseBtn = new JButton("Browse…");
+        JButton mcDirResetBtn = new JButton("Reset to Default");
+        mcDirBrowseBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        mcDirResetBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+
+        Runnable applyMcDirChange = () -> {
+            mgr.save();
+            notifications.info("Default Minecraft Directory changed",
+                    "Restart the launcher for this to fully apply everywhere.");
+        };
+
+        // Commits whatever is currently typed in the field. Blank (or exactly matching the
+        // computed OS default) is treated as "use the platform default" rather than stored
+        // verbatim, so the setting stays smart about following the OS default if it ever changes.
+        Runnable commitMcDirField = () -> {
+            String typed = mcDirField.getText() != null ? mcDirField.getText().trim() : "";
+            String osDefault = com.launcher.manager.LauncherPaths.computeOsDefaultMinecraftPath().toString();
+            boolean isDefault = typed.isEmpty() || typed.equalsIgnoreCase(osDefault);
+            String before = s.defaultMinecraftDir != null ? s.defaultMinecraftDir : "";
+            s.defaultMinecraftDir = isDefault ? "" : typed;
+            mcDirField.setForeground(isDefault ? Color.GRAY : Color.WHITE);
+            if (isDefault) {
+                mcDirField.setText(osDefault);
+            }
+            if (!before.equals(s.defaultMinecraftDir)) {
+                applyMcDirChange.run();
+            }
+        };
+
+        mcDirField.addActionListener(e -> commitMcDirField.run());
+        mcDirField.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                commitMcDirField.run();
+            }
+        });
+
+        mcDirBrowseBtn.addActionListener(e -> {
+            File chosen = com.launcher.util.NativeFileChooser.openDirectory(this, "Choose Default Minecraft Directory");
+            if (chosen != null) {
+                mcDirField.setText(chosen.getAbsolutePath());
+                commitMcDirField.run();
+                log("Default Minecraft directory set to " + chosen.getAbsolutePath() + ".");
+            }
+        });
+
+        mcDirResetBtn.addActionListener(e -> {
+            mcDirField.setText(com.launcher.manager.LauncherPaths.computeOsDefaultMinecraftPath().toString());
+            mcDirField.setForeground(Color.GRAY);
+            boolean wasCustom = s.defaultMinecraftDir != null && !s.defaultMinecraftDir.isBlank();
+            s.defaultMinecraftDir = "";
+            if (wasCustom) {
+                applyMcDirChange.run();
+                log("Default Minecraft directory reset to the platform default.");
+            }
+        });
+
+        JPanel mcDirRow = new JPanel(new BorderLayout(8, 0));
+        mcDirRow.setOpaque(false);
+        mcDirRow.add(mcDirField, BorderLayout.CENTER);
+        JPanel mcDirButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        mcDirButtons.setOpaque(false);
+        mcDirButtons.add(mcDirBrowseBtn);
+        mcDirButtons.add(mcDirResetBtn);
+        mcDirRow.add(mcDirButtons, BorderLayout.EAST);
+        addSettingsRow(storageCard, "Default Minecraft Directory", mcDirRow, gbc);
+
+        mainPanel.add(storageCard);
+        mainPanel.add(Box.createVerticalStrut(12));
+
         // ── 4. PERFORMANCE CARD ───────────────────────────────────────────────
         JPanel performanceCard = createCard("Performance");
         gbc = createGbc();
@@ -8312,6 +9267,41 @@ public class Main extends JFrame {
             log("Default RAM set to " + s.defaultRamGb + " GB.");
         });
         addSettingsRow(performanceCard, "Default RAM (GB)", ramSpinner, gbc);
+
+        // ── Download Threads (parallel downloads for libraries/assets/modpack files) ──
+        SpinnerModel downloadThreadsModel = new SpinnerNumberModel(
+                s.downloadThreads > 0 ? s.downloadThreads : 8,
+                com.launcher.util.DownloadConcurrency.MIN_THREADS,
+                com.launcher.util.DownloadConcurrency.MAX_THREADS, 1);
+        CustomSpinner downloadThreadsSpinner = new CustomSpinner(downloadThreadsModel);
+        downloadThreadsSpinner.setEnabled(!s.downloadThreadsAuto);
+        downloadThreadsSpinner.addChangeListener(e -> {
+            s.downloadThreads = com.launcher.util.DownloadConcurrency.clamp((int) downloadThreadsSpinner.getValue());
+            mgr.save();
+            log("Download threads set to " + s.downloadThreads + ".");
+        });
+
+        CustomToggle downloadThreadsAutoCb = new CustomToggle("Auto (scale with CPU cores)");
+        downloadThreadsAutoCb.setSelected(s.downloadThreadsAuto);
+        downloadThreadsAutoCb.addActionListener(e -> {
+            s.downloadThreadsAuto = downloadThreadsAutoCb.isSelected();
+            downloadThreadsSpinner.setEnabled(!s.downloadThreadsAuto);
+            mgr.save();
+            log(s.downloadThreadsAuto
+                    ? "Download threads set to Auto."
+                    : "Download threads fixed at " + s.downloadThreads + ".");
+        });
+
+        addSettingsRow(performanceCard, "Download Threads", downloadThreadsAutoCb, gbc);
+        addSettingsRow(performanceCard, "Fixed Thread Count", downloadThreadsSpinner, gbc);
+        JLabel downloadThreadsHint = new JLabel(
+                "<html><div style='width:340px'>Controls how many files (mod jars, libraries, assets) "
+                        + "download at once during installs and updates. Higher = faster installs on fast "
+                        + "connections, but can trip rate limits on some CDNs or slow things down on weak/limited "
+                        + "connections.</div></html>");
+        downloadThreadsHint.setFont(downloadThreadsHint.getFont().deriveFont(Font.PLAIN, 11f));
+        downloadThreadsHint.setForeground(new Color(150, 150, 160));
+        addSettingsRow(performanceCard, "", downloadThreadsHint, gbc);
 
         CustomTextField extraJvmField = new CustomTextField(s.extraJvmArgs != null ? s.extraJvmArgs : "");
         extraJvmField.addActionListener(e -> {
@@ -8339,6 +9329,10 @@ public class Main extends JFrame {
         javaInstallDropdown.setEnabled(false);
         javaInstallDropdown.setAlignmentX(Component.LEFT_ALIGNMENT);
         javaInstallDropdown.setMaximumSize(new Dimension(Integer.MAX_VALUE, javaInstallDropdown.getPreferredSize().height));
+        javaInstallDropdown.setToolTipText("<html>Smart Java Selection leaves the launcher-wide Java path empty and lets it "
+                + "pick automatically per launch: a Java already on your PATH if one exists, an installed/auto-downloaded "
+                + "Java 8 runtime for legacy pre-1.13 versions that need LWJGL 2, or a freshly downloaded matching JDK if "
+                + "nothing suitable is found. Pick a specific runtime below to always use it instead.</html>");
 
         CustomTextField javaPathField = new CustomTextField(s.javaPath != null ? s.javaPath : "");
         javaPathField.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -8348,7 +9342,7 @@ public class Main extends JFrame {
 
         // Map of dropdown display label -> resolved executable path for the detected installs.
         final Map<String, String> detectedJavaPaths = new LinkedHashMap<>();
-        final String useSystemDefaultLabel = "Use system default (java on PATH)";
+        final String useSystemDefaultLabel = "Smart Java Selection (Recommended)";
         final String customPathLabel = "Custom path (set below)";
 
         javaInstallDropdown.addActionListener(e -> {
@@ -8659,6 +9653,64 @@ public class Main extends JFrame {
         addSettingsRow(resetCard, "", resetAllBtn, gbc);
 
         mainPanel.add(resetCard);
+        mainPanel.add(Box.createVerticalStrut(12));
+
+        // ── 9. ABOUT CARD ──────────────────────────────────────────────────
+        JPanel aboutCard = createCard("About");
+        gbc = createGbc();
+
+        JLabel versionLbl = new JLabel("Zero Launcher v" + APP_VERSION);
+        versionLbl.setForeground(Color.LIGHT_GRAY);
+        versionLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        addSettingsRow(aboutCard, "Version", versionLbl, gbc);
+
+        JLabel bootloaderVersionLbl = new JLabel(bootloaderVersion);
+        bootloaderVersionLbl.setForeground(Color.LIGHT_GRAY);
+        bootloaderVersionLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        addSettingsRow(aboutCard, "Bootloader Version", bootloaderVersionLbl, gbc);
+
+        JButton openLauncherFolderBtn = new JButton("Open Launcher Folder");
+        openLauncherFolderBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        openLauncherFolderBtn.addActionListener(e -> {
+            File dirFile = com.launcher.manager.LauncherPaths.launcherRoot().toFile();
+            boolean opened = com.launcher.util.NativeFileChooser.openFolder(dirFile);
+            if (!opened) {
+                JOptionPane.showMessageDialog(this,
+                        "Couldn't open the launcher folder automatically. It's located at:\n" + dirFile.getAbsolutePath(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        addSettingsRow(aboutCard, "Data Folder", openLauncherFolderBtn, gbc);
+
+        JPanel settingsIoPane = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        settingsIoPane.setOpaque(false);
+
+        JButton exportSettingsBtn = new JButton("📤  Export Settings");
+        exportSettingsBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        exportSettingsBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        exportSettingsBtn.addActionListener(e -> showExportSettingsOverlay());
+        settingsIoPane.add(exportSettingsBtn);
+
+        JButton importSettingsBtn = new JButton("📥  Import Settings");
+        importSettingsBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        importSettingsBtn.putClientProperty("JButton.arc", ROUNDED_BUTTON_ARC);
+        importSettingsBtn.addActionListener(e -> {
+            File file = com.launcher.util.NativeFileChooser.openFile(this, "Import Zero Launcher Settings",
+                    "Zero Launcher settings (*.json)", "json");
+            if (file == null) return;
+            try {
+                String content = Files.readString(file.toPath());
+                JsonObject root = JsonUtil.parse(content).getAsJsonObject();
+                showImportSettingsOverlay(root, file.getName());
+            } catch (Exception ex) {
+                notifications.error("Import failed", "Couldn't read that file: " + ex.getMessage());
+            }
+        });
+        settingsIoPane.add(importSettingsBtn);
+
+        addSettingsRow(aboutCard, "Settings Backup", settingsIoPane, gbc);
+
+        mainPanel.add(aboutCard);
 
         JScrollPane scroll = new JScrollPane(mainPanel);
         com.launcher.ui.SmoothScroll.install(scroll);
@@ -9746,12 +10798,33 @@ public class Main extends JFrame {
 
     private void refreshInstances() {
         boolean showHidden = com.launcher.manager.SettingsManager.getInstance().getSettings().showHiddenInstances;
+
+        // Rebuilding the list model (below) clears the JList's selection, which used
+        // to leave the instance selector empty every time an instance was created or
+        // edited (both flows call refreshInstances() right before switching back to
+        // MAIN_VIEW). Remember whichever instance was selected going into this
+        // refresh — falling back to the last-selected instance from settings if none
+        // was selected yet — and re-select it once the model is repopulated.
+        Instance previouslySelected = instanceList.getSelectedValue();
+        String idToReselect = previouslySelected != null ? previouslySelected.id
+                : com.launcher.manager.SettingsManager.getInstance().getSettings().lastSelectedInstanceId;
+
         instanceListModel.clear();
         for (Instance i : instanceManager.getInstances()) {
             if (showHidden || !i.hidden) {
                 instanceListModel.addElement(i);
             }
         }
+
+        if (idToReselect != null && !idToReselect.isBlank()) {
+            for (int i = 0; i < instanceListModel.size(); i++) {
+                if (idToReselect.equals(instanceListModel.get(i).id)) {
+                    instanceList.setSelectedIndex(i);
+                    break;
+                }
+            }
+        }
+
         refreshDiscoverInstances();
     }
 
@@ -9925,7 +10998,37 @@ public class Main extends JFrame {
                         versionJson = nfi.loadGeneratedVersionJson(gameDir, vid);
 
                     } else {
-                        // FORGE
+                        // FORGE — the official installer is guided by hand rather than
+                        // driven headlessly, since its internals change too often across
+                        // Minecraft versions to automate reliably.
+                        //
+                        // Forge's installer (and, for legacy versions, the game itself)
+                        // expects the vanilla client jar/libraries/assets to already be
+                        // present under gameDir before it runs — otherwise it either fails
+                        // outright or silently produces a broken install. So make sure
+                        // vanilla Minecraft is downloaded first.
+                        log("Making sure vanilla Minecraft " + instance.mcVersion + " is downloaded first…");
+                        SwingUtilities.invokeLater(() -> setStatus("Downloading Minecraft " + instance.mcVersion + "…"));
+                        JsonObject vanillaJson = null;
+                        Path localVanillaJson = LauncherPaths.findLocalVersionJson(instance.mcVersion, gameDir);
+                        if (localVanillaJson != null) {
+                            try {
+                                vanillaJson = JsonUtil.parse(Files.readString(localVanillaJson)).getAsJsonObject();
+                            } catch (Exception ex) {
+                                log("Local vanilla JSON unreadable, fetching from network.");
+                            }
+                        }
+                        if (vanillaJson == null) {
+                            var vanillaUrls = manifestService.fetchVersionUrls();
+                            String vanillaUrl = vanillaUrls.get(instance.mcVersion);
+                            if (vanillaUrl == null) {
+                                throw new RuntimeException("Unknown Minecraft version: " + instance.mcVersion);
+                            }
+                            vanillaJson = manifestService.fetchVersionJson(vanillaUrl);
+                        }
+                        installer.installAndResolve(vanillaJson, gameDir, nativesDir, this::log);
+                        log("Vanilla Minecraft " + instance.mcVersion + " ready. Installing Forge on top…");
+
                         ForgeInstaller fi = new ForgeInstaller();
                         String fv = instance.modLoaderVersion;
                         if ("Recommended".equals(fv) || "Latest".equals(fv)) {
@@ -9941,7 +11044,32 @@ public class Main extends JFrame {
                                         promoEx);
                             }
                         }
-                        String vid = fi.installClient(instance.mcVersion, fv, gameDir, this::log);
+                        final String finalFv = fv;
+
+                        if (fi.isInstalled(gameDir, instance.mcVersion, finalFv)) {
+                            log("Forge " + instance.mcVersion + "-" + finalFv + " already installed, skipping installer.");
+                        } else {
+                            log("Waiting for Forge " + instance.mcVersion + "-" + finalFv + " to be installed…");
+                            SwingUtilities.invokeLater(() -> setStatus("Waiting for Forge installer…"));
+                            boolean[] userCompleted = new boolean[1];
+                            try {
+                                SwingUtilities.invokeAndWait(() -> {
+                                    com.launcher.ui.ForgeInstallGuideDialog guide =
+                                            new com.launcher.ui.ForgeInstallGuideDialog(Main.this, instance.mcVersion, finalFv, gameDir);
+                                    guide.setVisible(true);
+                                    userCompleted[0] = guide.isCompleted();
+                                });
+                            } catch (Exception invokeEx) {
+                                throw new RuntimeException("Forge install guide failed: " + invokeEx.getMessage(), invokeEx);
+                            }
+                            if (!userCompleted[0] || !fi.isInstalled(gameDir, instance.mcVersion, finalFv)) {
+                                throw new RuntimeException(
+                                        "Forge installation was cancelled or not detected. Run the Forge installer "
+                                                + "for " + instance.mcVersion + "-" + finalFv + " and try again.");
+                            }
+                        }
+
+                        String vid = fi.detectVersionId(gameDir, instance.mcVersion, finalFv);
                         versionJson = fi.loadGeneratedVersionJson(gameDir, vid);
                     }
 
@@ -10164,9 +11292,19 @@ public class Main extends JFrame {
                     // Try to guess the fabric/forge directory name
                     if (instance.modLoader == ModLoaderType.FABRIC)
                         targetId = "fabric-loader-" + instance.modLoaderVersion + "-" + instance.mcVersion;
-                    else if (instance.modLoader == ModLoaderType.FORGE)
-                        targetId = instance.mcVersion + "-forge-" + instance.modLoaderVersion;
-                    else if (instance.modLoader == ModLoaderType.NEOFORGE)
+                    else if (instance.modLoader == ModLoaderType.FORGE) {
+                        // Old Forge builds (e.g. 1.8.9) don't actually use the modern
+                        // "<mc>-forge-<forgeVersion>" folder naming - they produce something like
+                        // "1.8.9-forge1.8.9-11.15.1.2318-1.8.9" instead. Ask ForgeInstaller to
+                        // autodetect whatever folder is actually on disk rather than guessing a
+                        // name and silently falling back to plain vanilla when the guess misses.
+                        try {
+                            targetId = new ForgeInstaller().detectVersionId(gameDir, instance.mcVersion,
+                                    instance.modLoaderVersion);
+                        } catch (IOException notFound) {
+                            targetId = instance.mcVersion + "-forge-" + instance.modLoaderVersion; // last resort
+                        }
+                    } else if (instance.modLoader == ModLoaderType.NEOFORGE)
                         targetId = "neoforge-" + instance.modLoaderVersion;
                     else if (instance.modLoader == ModLoaderType.QUILT)
                         targetId = "quilt-loader-" + instance.modLoaderVersion + "-" + instance.mcVersion;
@@ -10258,6 +11396,115 @@ public class Main extends JFrame {
     // Fixed translucency amount used when Transparency is enabled.
     private static final double FIXED_TRANSPARENCY_ALPHA = 0.55;
 
+    // ── Linux taskbar icon (sourced from the installed .desktop entry) ─────────
+
+    private static boolean isLinux() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        return os.contains("nux") || os.contains("nix");
+    }
+
+    /**
+     * GNOME resolves the taskbar/dash icon purely by matching the window's X11
+     * WM_CLASS against an installed .desktop file's {@code StartupWMClass=} (falling
+     * back to matching against the .desktop file's id/filename if that key is
+     * missing), then paints that file's {@code Icon=}. It ignores
+     * {@code setIconImage()}/{@code Taskbar.setIconImage()} completely — those only
+     * help other desktop environments (KDE, XFCE, etc.), which is why the icon-image
+     * approach below didn't fix GNOME on its own.
+     * <p>
+     * AWT/X11 picks WM_CLASS once, at Toolkit init, from the main class name (dots
+     * become dashes) — so the only way to influence it is to poke the toolkit's
+     * internal {@code awtAppClassName} field via reflection *before* any window or
+     * Toolkit call happens. We set it to whatever "Zero Launcher.desktop" (built
+     * elsewhere, we only read it) actually expects, so GNOME matches our real window
+     * to that entry and shows its icon. No-op on non-Linux, and best-effort: if the
+     * JDK's X11 toolkit doesn't expose this field, we silently fall back to the
+     * setIconImage()/Taskbar path in the constructor, which still helps everywhere
+     * except GNOME.
+     */
+    private static void applyLinuxWmClassFix() {
+        if (!isLinux()) return;
+        try {
+            String wmClass = readStartupWmClassFromDesktopEntry();
+            if (wmClass == null || wmClass.isBlank()) return;
+            Toolkit toolkit = Toolkit.getDefaultToolkit();
+            java.lang.reflect.Field field = toolkit.getClass().getDeclaredField("awtAppClassName");
+            field.setAccessible(true);
+            field.set(toolkit, wmClass);
+        } catch (Throwable ignored) {
+            // Non-X11 toolkit (Wayland-only backend, different JDK internals, etc.) —
+            // nothing more we can do here.
+        }
+    }
+
+    /**
+     * Reads {@code StartupWMClass=} from "Zero Launcher.desktop"; if that key is
+     * absent, falls back to the file's own id (its filename without ".desktop"),
+     * since GNOME Shell's window tracker also matches against that when
+     * StartupWMClass isn't set. Returns null if the file doesn't exist/isn't
+     * readable.
+     */
+    private static String readStartupWmClassFromDesktopEntry() {
+        try {
+            java.nio.file.Path desktopFile = java.nio.file.Paths.get(
+                    System.getProperty("user.home"), ".local", "share", "applications", "Zero Launcher.desktop");
+            if (!java.nio.file.Files.isReadable(desktopFile)) return null;
+
+            for (String line : java.nio.file.Files.readAllLines(desktopFile, java.nio.charset.StandardCharsets.UTF_8)) {
+                String trimmed = line.strip();
+                if (trimmed.startsWith("StartupWMClass=")) {
+                    String value = trimmed.substring("StartupWMClass=".length()).strip();
+                    if (!value.isBlank()) return value;
+                    break;
+                }
+            }
+
+            String fileName = desktopFile.getFileName().toString();
+            return fileName.endsWith(".desktop") ? fileName.substring(0, fileName.length() - ".desktop".length()) : fileName;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Reads {@code ~/.local/share/applications/Zero Launcher.desktop} — which is
+     * generated elsewhere, not by us — and loads the image its {@code Icon=} line
+     * points at. Returns null on anything unexpected (missing file, missing/invalid
+     * Icon= line, unreadable image) so callers can just fall back to the bundled icon.
+     * Note: this alone does not fix GNOME's taskbar/dash icon — see
+     * {@link #applyLinuxWmClassFix()} for that; this still helps set the window's own
+     * icon (title bar, alt-tab on some DEs, etc.) to match the .desktop entry.
+     */
+    private static Image loadIconFromDesktopEntry() {
+        try {
+            java.nio.file.Path desktopFile = java.nio.file.Paths.get(
+                    System.getProperty("user.home"), ".local", "share", "applications", "Zero Launcher.desktop");
+            if (!java.nio.file.Files.isReadable(desktopFile)) return null;
+
+            String iconValue = null;
+            for (String line : java.nio.file.Files.readAllLines(desktopFile, java.nio.charset.StandardCharsets.UTF_8)) {
+                String trimmed = line.strip();
+                if (trimmed.startsWith("Icon=")) {
+                    iconValue = trimmed.substring("Icon=".length()).strip();
+                    break; // first Icon= in the [Desktop Entry] section is the one that matters
+                }
+            }
+            if (iconValue == null || iconValue.isBlank()) return null;
+
+            // Icon= is either an absolute path to an image, or a bare icon-theme name
+            // that needs to be resolved against the theme (e.g. hicolor). We only handle
+            // the absolute-path case here, since that's what a self-authored .desktop
+            // generator for this app would realistically point at.
+            java.nio.file.Path iconPath = java.nio.file.Paths.get(iconValue);
+            if (!iconPath.isAbsolute() || !java.nio.file.Files.isReadable(iconPath)) return null;
+
+            Image img = javax.imageio.ImageIO.read(iconPath.toFile());
+            return img;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static double transparencyAlpha(com.launcher.model.LauncherSettings settings) {
         return FIXED_TRANSPARENCY_ALPHA;
     }
@@ -10294,6 +11541,8 @@ public class Main extends JFrame {
             layeredPane.setImageTint(settings.backgroundImageTint);
             layeredPane.setImageVignette(settings.backgroundImageVignette);
             layeredPane.setBlur(settings.enableBlurEffect, settings.blurStrength);
+            layeredPane.setAnimationSettings(settings.enableBackgroundAnimation, settings.backgroundAnimationStyle,
+                    (float) settings.backgroundAnimationSpeed, settings.backgroundAnimationFps);
         }
 
         // Transparency: blend the content pane (and, recursively, plain panels within
@@ -10332,11 +11581,6 @@ public class Main extends JFrame {
         // setting
         // looked like it did nothing everywhere else).
         applyPanelBackgroundRecursively(cardPanel, panelBg);
-
-        // Re-style the custom title bar, if in use, to match the theme.
-        if (customTitleBar != null) {
-            customTitleBar.applyColors(panelBg, text);
-        }
 
         // Re-style the console log area with the configured colors.
         if (logArea != null) {
@@ -10543,37 +11787,6 @@ public class Main extends JFrame {
     }
 
     /**
-     * Switching between the custom title bar and the OS one requires an
-     * undecorated-state change, which Swing only allows on a non-displayable frame
-     * — so this offers to restart the window immediately.
-     */
-    private void promptRestartForTitleBarChange() {
-        showConfirmOverlay("Restart Required",
-                "Changing the title bar style requires restarting the launcher window.<br>Restart now?",
-                "Restart", () -> restartLauncherWindow());
-    }
-
-    /**
-     * Recreates the main window in place, e.g. after toggling the custom-title-bar
-     * setting. Any running game keeps running, since it's a separate process.
-     */
-    private void restartLauncherWindow() {
-        Point loc = getLocation();
-        Dimension size = getSize();
-        int extendedState = getExtendedState();
-        dispose();
-        SwingUtilities.invokeLater(() -> {
-            Main next = new Main();
-            if ((extendedState & JFrame.MAXIMIZED_BOTH) == 0) {
-                next.setLocation(loc);
-                next.setSize(size);
-                next.normalBounds = next.getBounds();
-            }
-            next.setVisible(true);
-        });
-    }
-
-    /**
      * Records the current bounds as the "normal" (restored) bounds, but only while
      * the window
      * is actually in plain NORMAL state — never while maximized or minimized, so we
@@ -10610,6 +11823,7 @@ public class Main extends JFrame {
     public void endWindowAdjust() {
         userAdjustingWindow = false;
         captureNormalBoundsIfApplicable();
+        triggerUiRefreshBurst();
     }
 
     /**
@@ -10890,7 +12104,7 @@ public class Main extends JFrame {
         StyleConstants.setForeground(logAttrDefault, text);
 
         logAttrBracket = new SimpleAttributeSet();
-        StyleConstants.setForeground(logAttrBracket, new Color(148, 163, 184)); // muted slate — timestamps/tags
+        StyleConstants.setForeground(logAttrBracket, new Color(148, 163, 184)); // muted slate — timestamps/generic tags
         StyleConstants.setItalic(logAttrBracket, true);
 
         logAttrError = new SimpleAttributeSet();
@@ -10899,18 +12113,27 @@ public class Main extends JFrame {
 
         logAttrWarn = new SimpleAttributeSet();
         StyleConstants.setForeground(logAttrWarn, new Color(251, 191, 36)); // amber
+        StyleConstants.setBold(logAttrWarn, true);
 
         logAttrDebug = new SimpleAttributeSet();
-        StyleConstants.setForeground(logAttrDebug, new Color(148, 163, 184)); // muted slate
+        StyleConstants.setForeground(logAttrDebug, new Color(100, 116, 139)); // dimmer slate — debug/trace is noise, not signal
 
-        logAttrInfo = new SimpleAttributeSet();
-        StyleConstants.setForeground(logAttrInfo, accent); // accent-colored INFO lines pop a bit
+        // INFO tags now just use the normal text color (like the rest of the line) instead of
+        // an accent tint - it's the default/expected level, not something that needs to stand out.
+        logAttrInfoBracket = new SimpleAttributeSet();
+        StyleConstants.setForeground(logAttrInfoBracket, text);
+
+        // INFO is what ~95% of a normal Minecraft log consists of, so tinting every INFO
+        // line's whole body in the accent color (as this used to do) just makes the entire
+        // console one solid color and buries the WARN/ERROR lines that actually matter.
+        // INFO line bodies now use the plain text color; only the level tag itself is tinted.
+        logAttrInfo = logAttrDefault;
     }
 
     /**
-     * Picks which color a whole log line should render in based on any level
-     * keyword it
-     * contains (ERROR/WARN/DEBUG/etc.), falling back to the plain text color.
+     * Picks which color a whole log line's body should render in based on any level keyword
+     * it contains (ERROR/WARN/DEBUG/etc.), falling back to the plain text color. INFO
+     * deliberately maps to the same plain color as default — see {@link #buildLogStyles}.
      */
     private SimpleAttributeSet detectLogLevelAttr(String line) {
         String upper = line.toUpperCase(Locale.ROOT);
@@ -10924,20 +12147,37 @@ public class Main extends JFrame {
         if (upper.contains("DEBUG") || upper.contains("TRACE")) {
             return logAttrDebug;
         }
-        if (upper.contains("INFO")) {
-            return logAttrInfo;
-        }
         return logAttrDefault;
+    }
+
+    /** Picks the color for one bracketed tag (e.g. {@code [18:32:01]} or
+     *  {@code [Server thread/WARN]}) based on the level keyword inside *that specific tag*,
+     *  rather than the whole line - so a WARN tag stays amber and an ERROR tag stays red even
+     *  on an otherwise plain line, and a plain timestamp tag next to an ERROR message doesn't
+     *  incorrectly turn red too. */
+    private SimpleAttributeSet detectBracketAttr(String bracketText) {
+        String upper = bracketText.toUpperCase(Locale.ROOT);
+        if (upper.contains("ERROR") || upper.contains("SEVERE") || upper.contains("FATAL")) {
+            return logAttrError;
+        }
+        if (upper.contains("WARN")) {
+            return logAttrWarn;
+        }
+        if (upper.contains("DEBUG") || upper.contains("TRACE")) {
+            return logAttrDebug;
+        }
+        if (upper.contains("INFO")) {
+            return logAttrInfoBracket;
+        }
+        return logAttrBracket;
     }
 
     /**
      * Appends one log line to the console, colorizing bracketed tags (timestamps,
-     * thread
-     * names, log-level tags like "[Server thread/INFO]") in a dimmed tone and the
-     * rest of the
-     * line in a color chosen from any level keyword present — giving the console a
-     * modern,
-     * syntax-highlighted look instead of flat monochrome text.
+     * thread names, log-level tags like "[Server thread/INFO]") by their own level and the
+     * rest of the line in a color chosen from any level keyword present — giving the console a
+     * modern, syntax-highlighted look that makes WARN/ERROR lines actually jump out instead of
+     * everything blending into one flat (or one uniformly over-tinted) color.
      */
     private void appendStyledLogLine(String line) {
         StyledDocument doc = logArea.getStyledDocument();
@@ -10949,7 +12189,7 @@ public class Main extends JFrame {
                 if (m.start() > last) {
                     doc.insertString(doc.getLength(), line.substring(last, m.start()), lineAttr);
                 }
-                doc.insertString(doc.getLength(), m.group(), logAttrBracket);
+                doc.insertString(doc.getLength(), m.group(), detectBracketAttr(m.group()));
                 last = m.end();
             }
             if (last < line.length()) {
@@ -11060,13 +12300,53 @@ public class Main extends JFrame {
         com.launcher.model.LauncherSettings s = com.launcher.manager.SettingsManager.getInstance().getSettings();
         if (!s.redactPaths)
             return message;
-        String user = System.getProperty("user.name");
-        if (user == null || user.isBlank())
-            return message;
-        // Case-insensitive replace so Windows paths (which don't always match the
-        // OS-reported username's exact casing) are redacted too, not just an exact
-        // match.
-        return message.replaceAll("(?i)" + java.util.regex.Pattern.quote(user), "******");
+
+        // Redact every distinct candidate "username" we can find, not just System.getProperty
+        // ("user.name"): that property can diverge from the folder name that actually shows up
+        // in filesystem paths (e.g. Microsoft/AD accounts where user.name is an email/UPN but the
+        // home folder is a short local name, or macOS home folders named after the full display
+        // name). Using the home directory's own last path segment as well catches these cases,
+        // which matters here since paths under the (possibly custom) default Minecraft directory
+        // are exactly what this is meant to protect.
+        java.util.LinkedHashSet<String> candidates = new java.util.LinkedHashSet<>();
+        String userName = System.getProperty("user.name");
+        if (userName != null && !userName.isBlank())
+            candidates.add(userName);
+        try {
+            String home = System.getProperty("user.home");
+            if (home != null && !home.isBlank()) {
+                String folderName = java.nio.file.Paths.get(home).getFileName() != null
+                        ? java.nio.file.Paths.get(home).getFileName().toString()
+                        : null;
+                if (folderName != null && !folderName.isBlank())
+                    candidates.add(folderName);
+            }
+        } catch (Exception ignored) {
+        }
+        // On Windows, %APPDATA% is normally under the same user profile folder, but can point
+        // somewhere entirely custom (redirected profiles) — worth checking too since it's what
+        // the platform-default Minecraft directory is built from.
+        try {
+            String appData = System.getenv("APPDATA");
+            if (appData != null && !appData.isBlank()) {
+                java.nio.file.Path parent = java.nio.file.Paths.get(appData).getParent();
+                if (parent != null && parent.getFileName() != null) {
+                    String folderName = parent.getFileName().toString();
+                    if (!folderName.isBlank())
+                        candidates.add(folderName);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        String result = message;
+        for (String candidate : candidates) {
+            // Case-insensitive replace so Windows paths (which don't always match the
+            // OS-reported username's exact casing) are redacted too, not just an exact
+            // match.
+            result = result.replaceAll("(?i)" + java.util.regex.Pattern.quote(candidate), "******");
+        }
+        return result;
     }
 
     public static Color hexToColor(String hex, Color fallback) {
@@ -11085,35 +12365,28 @@ public class Main extends JFrame {
      */
     private static final String RELAUNCH_FLAG = "zerolauncher.ramLimited";
 
+    /**
+     * Value passed in via the custom "--BLVersion <value>" JVM/launch argument,
+     * shown in Settings > About as "Bootloader Version". Stays "Unknown" if the
+     * argument was never supplied.
+     */
+    private static String bootloaderVersion = "Unknown";
+
     public static void main(String[] args) {
+        // Must run before any AWT/Swing/Toolkit call — see applyLinuxWmClassFix() for why.
+        applyLinuxWmClassFix();
+
+        for (int i = 0; i < args.length; i++) {
+            if ("--BLVersion".equals(args[i]) && i + 1 < args.length) {
+                String message = args[i + 1];
+                bootloaderVersion = message;
+            }
+        }
+
         if (relaunchWithConfiguredRamLimit(args)) {
             // A new JVM process has been spawned with the configured -Xmx; this process
             // exits.
             return;
-        }
-
-        // ── GNOME taskbar icon fix ──────────────────────────────────────────
-        // GNOME Shell looks up the taskbar/dash icon by matching the window's
-        // WM_CLASS against an installed .desktop file's StartupWMClass, then uses
-        // that file's Icon=. It ignores setIconImage() entirely (KDE/XFCE read the
-        // icon straight off the window instead, which is why it worked there).
-        //
-        // AWT auto-derives WM_CLASS from the main class name (here:
-        // "com.launcher.MainWrapper" -> "com-launcher-MainWrapper"). Overriding
-        // that at runtime requires reflection into a JDK-internal field that the
-        // module system blocks by default (no --add-opens without a special JVM
-        // flag), so instead of fighting Java over it, ensureDesktopEntryInstalled()
-        // below just writes a .desktop file whose StartupWMClass matches the name
-        // Java already uses.
-
-        // Silently (re)install the .desktop entry + icon GNOME needs to resolve the
-        // taskbar icon. No user action required; this just writes a couple of small
-        // files under the user's own home directory the first time (and whenever the
-        // installed copy is missing or stale).
-        try {
-            ensureDesktopEntryInstalled();
-        } catch (Throwable ignored) {
-            // Never let this block startup — worst case the icon issue persists.
         }
 
         try {
@@ -11225,119 +12498,6 @@ public class Main extends JFrame {
             m.toFront();
             m.requestFocus();
         });
-    }
-
-    /**
-     * Self-installs the .desktop entry + icon that GNOME needs to show the real
-     * taskbar/dash icon. GNOME resolves the icon by matching a window's WM_CLASS
-     * to an installed .desktop file's StartupWMClass, then reads that file's
-     * Icon= — it ignores setIconImage(). KDE/XFCE don't need this; they read the
-     * icon straight off the window.
-     * <p>
-     * AWT derives WM_CLASS from the main class name automatically
-     * ("com.launcher.MainWrapper" becomes "com-launcher-MainWrapper"); trying to
-     * override that at runtime needs a JDK-internal field the module system
-     * blocks without a special startup flag, so instead this just matches the
-     * .desktop file to the name Java already uses.
-     * <p>
-     * This writes into the current user's own XDG data dirs
-     * (~/.local/share/...), so it needs no elevated permissions, no download, and
-     * no action from the user beyond just running the app once. It's a no-op
-     * (skips the write and the cache refresh) once the installed copy already
-     * matches, so it doesn't do any extra work on subsequent launches.
-     */
-    private static void ensureDesktopEntryInstalled() {
-        if (!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("linux")) {
-            return; // Only relevant on Linux desktops.
-        }
-
-        String home = System.getProperty("user.home");
-        if (home == null || home.isBlank()) {
-            return;
-        }
-
-        java.io.File desktopDir = new java.io.File(home, ".local/share/applications");
-        java.io.File iconDir = new java.io.File(home, ".local/share/icons/hicolor/128x128/apps");
-        java.io.File desktopFile = new java.io.File(desktopDir, "zerolauncher.desktop");
-        java.io.File iconFile = new java.io.File(iconDir, "zerolauncher.png");
-
-        // Reconstruct how this JVM was actually launched (java binary + jvm args +
-        // main class/jar + program args) so the .desktop entry relaunches the app
-        // the same way, whether it's `java -jar X.jar`, a module launch, etc.
-        String execLine;
-        try {
-            ProcessHandle.Info info = ProcessHandle.current().info();
-            StringBuilder sb = new StringBuilder();
-            sb.append(info.command().orElse("java"));
-            for (String arg : info.arguments().orElse(new String[0])) {
-                // Quote defensively in case any path/arg contains spaces.
-                sb.append(' ').append(arg.contains(" ") ? "\"" + arg + "\"" : arg);
-            }
-            execLine = sb.toString();
-        } catch (Throwable t) {
-            execLine = "java -jar ZeroLauncher.jar";
-        }
-
-        String desiredDesktopContent = "[Desktop Entry]\n" +
-                "Type=Application\n" +
-                "Name=Zero Launcher\n" +
-                "Comment=Minecraft launcher\n" +
-                "Exec=" + execLine + " %U\n" +
-                "Icon=zerolauncher\n" +
-                "Terminal=false\n" +
-                "Categories=Game;\n" +
-                "StartupWMClass=com-launcher-MainWrapper\n" +
-                "StartupNotify=true\n";
-
-        try {
-            boolean desktopUpToDate = desktopFile.isFile()
-                    && desiredDesktopContent.equals(java.nio.file.Files.readString(desktopFile.toPath()));
-            boolean iconUpToDate = iconFile.isFile() && iconFile.length() > 0;
-
-            if (desktopUpToDate && iconUpToDate) {
-                return; // Already installed correctly — nothing to do.
-            }
-
-            java.nio.file.Files.createDirectories(desktopDir.toPath());
-            java.nio.file.Files.createDirectories(iconDir.toPath());
-
-            if (!iconUpToDate) {
-                try (java.io.InputStream in = Main.class.getResourceAsStream("/com/launcher/ZeroLauncherIcon.png")) {
-                    if (in != null) {
-                        java.nio.file.Files.copy(in, iconFile.toPath(),
-                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    }
-                }
-            }
-
-            if (!desktopUpToDate) {
-                java.nio.file.Files.writeString(desktopFile.toPath(), desiredDesktopContent);
-                try {
-                    java.nio.file.Files.setPosixFilePermissions(desktopFile.toPath(),
-                            java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
-                } catch (Throwable ignored) {
-                    // Non-POSIX filesystem — fine, execute bit isn't required for GNOME's lookup.
-                }
-            }
-
-            // Nudge GNOME/desktop caches to pick up the change immediately rather than
-            // waiting for its own periodic rescan. Both are best-effort/optional.
-            runQuietly("update-desktop-database", desktopDir.getAbsolutePath());
-            runQuietly("gtk-update-icon-cache", new java.io.File(home, ".local/share/icons/hicolor").getAbsolutePath());
-        } catch (Throwable ignored) {
-            // Never block startup on this being unavailable (e.g. read-only home, sandboxed env).
-        }
-    }
-
-    private static void runQuietly(String command, String arg) {
-        try {
-            new ProcessBuilder(command, arg)
-                    .redirectErrorStream(true)
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                    .start();
-        } catch (Throwable ignored) {
-            // Command may not exist on this system (e.g. non-GNOME) — harmless to skip.
-        }
     }
 
     /**

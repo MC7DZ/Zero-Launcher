@@ -78,7 +78,24 @@
   </dependencies>
 
   <build>
-    <finalName>zero-launcher-1.0.0</finalName>
+    <finalName>zero-launcher-1.0.17</finalName>
+
+    <resources>
+      <!-- Regular resources: copied as-is, unfiltered (icons, fonts, presets, etc. — must
+           NOT be text-filtered since many are binary). -->
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>false</filtering>
+      </resource>
+      <!-- version.properties: filtered so ${project.version} above is substituted in at
+           build time. Kept in its own directory so filtering never touches the binary
+           resources above. Read at runtime via Main.APP_VERSION. -->
+      <resource>
+        <directory>src/main/resources-version</directory>
+        <filtering>true</filtering>
+      </resource>
+    </resources>
+
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

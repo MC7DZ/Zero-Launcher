@@ -80,7 +80,8 @@ public class CreateInstancePanel extends JPanel {
         JLabel iconView = new JLabel();
         loadDefaultIcon(iconView);
 
-        CustomTextField nameField = new CustomTextField("My Instance");
+        CustomTextField nameField = new CustomTextField();
+        nameField.setPlaceholder("{LOADER} {VERSION}");
         nameField.setFont(new Font("SansSerif", Font.BOLD, 14));
         nameField.setBorder(new EmptyBorder(4, 4, 4, 10));
 
@@ -475,10 +476,16 @@ public class CreateInstancePanel extends JPanel {
             String ver = (String) versionBox.getSelectedItem();
             ModLoaderType lType = selectedLoader[0];
             String lVer = lType == ModLoaderType.VANILLA ? null : (String) loaderVerBox.getSelectedItem();
-            
+
             boolean invalidMcVer = (ver == null || ver.contains("load") || ver.contains("Load") || ver.contains("Fail"));
             boolean invalidLoaderVer = (lType != ModLoaderType.VANILLA && (lVer == null || lVer.contains("load") || lVer.contains("Load") || lVer.contains("Fail")));
-            
+
+            if (name.isEmpty() && !invalidMcVer) {
+                // Nothing typed — fall back to a generated "{Loader} {Version}" name
+                // (mirroring the field's placeholder) instead of blocking creation.
+                name = (lType == ModLoaderType.VANILLA ? "Vanilla" : prettyLoaderName(lType)) + " " + ver;
+            }
+
             if (name.isEmpty() || invalidMcVer || invalidLoaderVer) {
                 JOptionPane.showMessageDialog(this, "Please choose a valid Instance name, MC version, and Loader version.", "Error",
                         JOptionPane.ERROR_MESSAGE);
@@ -924,8 +931,7 @@ public class CreateInstancePanel extends JPanel {
     // ── Filesystem / metadata helpers (unchanged behavior from the original) ─
     private static String resolveDefaultModpackPath() {
         try {
-            Path home = Path.of(System.getProperty("user.home", "."));
-            return home.resolve(".minecraft").resolve("ModPacks").toAbsolutePath().toString();
+            return com.launcher.manager.LauncherPaths.getDefaultMinecraftPath().resolve("ModPacks").toAbsolutePath().toString();
         } catch (Exception e) {
             return DEFAULT_MODPACK_BASE;
         }

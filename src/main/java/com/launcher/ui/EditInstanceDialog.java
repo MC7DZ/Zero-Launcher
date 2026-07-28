@@ -533,8 +533,7 @@ public class EditInstanceDialog extends JDialog {
 
     private static String resolveDefaultModpackPath() {
         try {
-            return Path.of(System.getProperty("user.home", "."))
-                       .resolve(".minecraft").resolve("ModPacks").toAbsolutePath().toString();
+            return com.launcher.manager.LauncherPaths.getDefaultMinecraftPath().resolve("ModPacks").toAbsolutePath().toString();
         } catch (Exception e) { return ".minecraft/ModPacks"; }
     }
 

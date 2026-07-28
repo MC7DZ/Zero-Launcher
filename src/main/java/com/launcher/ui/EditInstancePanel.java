@@ -19,6 +19,7 @@ import java.awt.*;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
@@ -131,6 +132,11 @@ public class EditInstancePanel extends JPanel {
         javaInstallDropdown.addItem("Scanning for Java installations…");
         javaInstallDropdown.setEnabled(false);
         javaInstallDropdown.setAlignmentX(Component.LEFT_ALIGNMENT);
+        javaInstallDropdown.setToolTipText("<html>\"Settings default\" leaves this instance's Java path empty and uses "
+                + "whatever the launcher's global Java setting is (Settings &gt; Performance &gt; Java Executable Path - "
+                + "by default that's \"Smart Java Selection\", which auto-picks a Java on PATH, swaps to Java 8 for "
+                + "legacy pre-1.13 versions that need LWJGL 2, or downloads a matching JDK automatically). Pick a "
+                + "specific runtime below to override that and always use it for this instance.</html>");
 
         CustomTextField javaPathField = new CustomTextField(
                 instanceToEdit.javaPath != null ? instanceToEdit.javaPath : "");
@@ -140,7 +146,7 @@ public class EditInstancePanel extends JPanel {
         GhostButton rescanJavaBtn = new GhostButton("Rescan");
 
         final Map<String, String> detectedJavaPaths = new LinkedHashMap<>();
-        final String useDefaultLabel = "Use launcher default";
+        final String useDefaultLabel = "Settings default";
         final String customPathLabel = "Custom path (set below)";
 
         javaInstallDropdown.addActionListener(e -> {
@@ -458,7 +464,13 @@ public class EditInstancePanel extends JPanel {
             
             boolean invalidMcVer = (ver == null || ver.contains("load") || ver.contains("Load") || ver.contains("Fail"));
             boolean invalidLoaderVer = (lType != ModLoaderType.VANILLA && (lVer == null || lVer.contains("load") || lVer.contains("Load") || lVer.contains("Fail")));
-            
+
+            if (name.isEmpty() && !invalidMcVer) {
+                // Nothing typed — fall back to a generated "{Loader} {Version}" name
+                // (mirroring the field's placeholder), same as instance creation.
+                name = (lType == ModLoaderType.VANILLA ? "Vanilla" : prettyLoaderName(lType)) + " " + ver;
+            }
+
             if (name.isEmpty() || invalidMcVer || invalidLoaderVer) {
                 JOptionPane.showMessageDialog(this, "Please choose a valid Instance name, MC version, and Loader version.", "Error",
                         JOptionPane.ERROR_MESSAGE);
@@ -582,9 +594,8 @@ public class EditInstancePanel extends JPanel {
                     ? java.nio.file.Path.of(instanceToEdit.customDirectoryPath)
                     : LauncherPaths.getDefaultMinecraftPath();
             File dirFile = dir.toFile();
-            if (!dirFile.exists()) dirFile.mkdirs();
-            if (Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().open(dirFile);
+            if (!com.launcher.util.NativeFileChooser.openFolder(dirFile)) {
+                throw new IOException("no file manager available");
             }
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Couldn't open the instance folder: " + ex.getMessage(),

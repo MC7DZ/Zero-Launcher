@@ -143,7 +143,7 @@ public class CreateInstanceDialog extends JDialog {
 
         addSectionHeader(generalPanel, "General", row++, gbc, textColor);
 
-        JTextField nameField = new JTextField("My Instance");
+        JTextField nameField = new JTextField("");
         gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1; gbc.weightx = 0;
         generalPanel.add(fieldLabel("Name", textColor), gbc);
         gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
@@ -553,8 +553,7 @@ public class CreateInstanceDialog extends JDialog {
 
     private static String resolveDefaultModpackPath() {
         try {
-            Path home = Path.of(System.getProperty("user.home", "."));
-            return home.resolve(".minecraft").resolve("ModPacks").toAbsolutePath().toString();
+            return com.launcher.manager.LauncherPaths.getDefaultMinecraftPath().resolve("ModPacks").toAbsolutePath().toString();
         } catch (Exception e) {
             return DEFAULT_MODPACK_BASE;
         }

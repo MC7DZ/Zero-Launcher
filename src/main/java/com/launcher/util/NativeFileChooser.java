@@ -337,4 +337,66 @@ public final class NativeFileChooser {
         }
         return (fc.showSaveDialog(parent) == JFileChooser.APPROVE_OPTION) ? fc.getSelectedFile() : null;
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  OPEN FOLDER IN THE OS FILE MANAGER
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Opens {@code folder} in the OS's file manager (Explorer / Finder / whatever the
+     * Linux desktop provides). {@link java.awt.Desktop#open} alone is unreliable — it's
+     * frequently unsupported (e.g. many Linux desktops/JDK combos report
+     * {@code isDesktopSupported()==false}, or throw when no file association exists for
+     * a directory) so it fails silently from a caller's point of view. This tries
+     * {@code Desktop} first and falls back to the platform's own "reveal folder" command,
+     * the same layered strategy used by the rest of this class for pickers.
+     * Returns true if a folder-manager open was actually attempted successfully.
+     */
+    public static boolean openFolder(File folder) {
+        if (folder == null) return false;
+        try {
+            if (!folder.exists()) folder.mkdirs();
+        } catch (Exception ignored) {}
+        if (!folder.isDirectory()) return false;
+
+        // 1) java.awt.Desktop — works fine on most Windows/macOS setups.
+        try {
+            if (java.awt.Desktop.isDesktopSupported()
+                    && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.OPEN)) {
+                java.awt.Desktop.getDesktop().open(folder);
+                return true;
+            }
+        } catch (Exception ignored) {
+            // fall through to the OS-specific command below
+        }
+
+        // 2) OS-specific "reveal in file manager" command.
+        try {
+            ProcessBuilder pb;
+            if (IS_WINDOWS) {
+                pb = new ProcessBuilder("explorer.exe", folder.getAbsolutePath());
+            } else if (IS_MAC) {
+                pb = new ProcessBuilder("open", folder.getAbsolutePath());
+            } else {
+                pb = new ProcessBuilder("xdg-open", folder.getAbsolutePath());
+            }
+            pb.redirectErrorStream(true);
+            pb.start();
+            return true;
+        } catch (Exception ignored) {
+            // fall through to the last-resort attempt below
+        }
+
+        // 3) Last resort on Linux: try common file managers directly in case xdg-open
+        // itself isn't installed (minimal/headless-ish setups).
+        if (!IS_WINDOWS && !IS_MAC) {
+            for (String fm : new String[] { "nautilus", "dolphin", "nemo", "thunar", "pcmanfm" }) {
+                try {
+                    new ProcessBuilder(fm, folder.getAbsolutePath()).redirectErrorStream(true).start();
+                    return true;
+                } catch (Exception ignored) {}
+            }
+        }
+        return false;
+    }
 }

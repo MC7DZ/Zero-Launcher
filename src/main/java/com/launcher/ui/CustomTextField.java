@@ -25,6 +25,7 @@ public class CustomTextField extends JTextField {
     private static final int ARC = 10;
 
     private boolean focused = false;
+    private String placeholder = null;
 
     public CustomTextField() {
         this("");
@@ -54,6 +55,22 @@ public class CustomTextField extends JTextField {
                 repaint();
             }
         });
+    }
+
+    /**
+     * Sets hint text painted in a dimmed color whenever the field is empty
+     * (regardless of focus). Unlike passing text into the constructor, this is
+     * purely a visual cue: getText() stays "" until the user actually types
+     * something, so the hint never leaks out as real data (e.g. becoming an
+     * instance's saved name).
+     */
+    public void setPlaceholder(String placeholder) {
+        this.placeholder = placeholder;
+        repaint();
+    }
+
+    public String getPlaceholder() {
+        return placeholder;
     }
 
     private Color textColor() {
@@ -91,6 +108,20 @@ public class CustomTextField extends JTextField {
 
         g2.dispose();
         super.paintComponent(g);
+
+        if (placeholder != null && !placeholder.isEmpty() && getText().isEmpty()) {
+            Graphics2D pg = (Graphics2D) g.create();
+            pg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            pg.setFont(getFont());
+            Color base = textColor();
+            pg.setColor(new Color(base.getRed(), base.getGreen(), base.getBlue(), 110));
+            Insets in = getInsets();
+            FontMetrics fm = pg.getFontMetrics();
+            int x = in.left;
+            int y = (getHeight() - fm.getHeight()) / 2 + fm.getAscent();
+            pg.drawString(placeholder, x, y);
+            pg.dispose();
+        }
     }
 
     /**

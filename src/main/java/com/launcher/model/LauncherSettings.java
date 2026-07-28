@@ -22,6 +22,18 @@ public class LauncherSettings {
     /** Which preset gradient backdrop to paint behind the UI. One of: Default, Midnight,
      *  Sunset, Forest, Ocean, Monochrome, Accent Glow. */
     public String backgroundStyle  = "Default";
+    public boolean enableBackgroundAnimation = true;
+    /** "Particles", "Fireflies", "Waves", or "Orbs". */
+    /** "Particles", "Fireflies", "Waves", or "Orbs". */
+    public String backgroundAnimationStyle = "Waves";
+    /** Multiplier applied to the ambient background animation's motion — 1.0 is the
+     *  original/default pace. Kept separate from FPS: this changes how FAR things move
+     *  each tick, not how OFTEN they're redrawn. */
+    public double backgroundAnimationSpeed = 1.0;
+    /** Frames per second for the ambient background animation timer. Lower values save
+     *  CPU/GPU (fewer repaints); the "Waves"/"Orbs" styles default lower on their own
+     *  since they read smoothly even at a reduced rate (see GradientBackgroundPane). */
+    public int backgroundAnimationFps = 30;
     public String headerBgColor         = "#111116";
     public String searchBgColor         = "#1a1a24";
     public String notificationBgColor   = "#13131A";
@@ -83,14 +95,25 @@ public class LauncherSettings {
     public String extraJvmArgs          = "";
     public String javaPath              = "";
     public String jvmArgs               = "";
+    /** When true (default), the number of parallel download threads used for library/asset/modpack
+     *  file downloads is picked automatically from the system's CPU core count. When false,
+     *  downloadThreads below is used as an exact fixed count instead. */
+    public boolean downloadThreadsAuto  = true;
+    /** Fixed parallel download thread count, used only when downloadThreadsAuto is false.
+     *  Clamped to 1-32 wherever it's read - see DownloadConcurrency. */
+    public int downloadThreads          = 8;
 
     // Window size (0 = use defaults 960×660)
     public int launcherWidth            = 0;
     public int launcherHeight           = 0;
-    /** Use a custom in-app title bar (frameless window) instead of the OS window decorations. */
-    public boolean useCustomTitleBar    = true;
     /** Always launch the launcher window maximized instead of at the saved/default size. */
     public boolean startMaximized       = true;
+
+    /** Where the launcher looks for/installs the "default" Minecraft directory that instances
+     *  without a custom directory use, and that libraries/assets/versions are shared from. Blank
+     *  means "use the platform default" (%APPDATA%/.minecraft on Windows, ~/.minecraft on Linux,
+     *  ~/Library/Application Support/minecraft on macOS) — see LauncherPaths.getDefaultMinecraftPath(). */
+    public String defaultMinecraftDir   = "";
 
     // Privacy & Security
     public boolean hideUsername         = false;
@@ -106,7 +129,7 @@ public class LauncherSettings {
     public boolean rpcShowInstanceName  = true;
     public boolean rpcShowMinecraftVersion = true;
     public boolean rpcShowServerIp      = false;
-    public boolean rpcShowGameState     = true;
+    public boolean rpcShowGameState     = false;
     public String  rpcCustomStateText   = "In Zero Launcher";
     // ── Launcher tab visibility ──
     public boolean rpcShowLauncherActivity = true;

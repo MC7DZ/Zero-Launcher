@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.zip.ZipEntry;
@@ -175,8 +174,22 @@ public class GameInstaller {
     public ResolvedVersion installAndResolve(JsonObject versionJson, Path gameDir, Path nativesDir, Consumer<String> log)
             throws IOException, InterruptedException {
 
+        String id = versionJson.has("id") ? versionJson.get("id").getAsString() : "unknown";
+
+        // Fast path: if we already fully resolved this exact version once before and every file
+        // it points at (client jar + every library on the classpath) is still present on disk,
+        // reuse that result instead of re-walking/re-checking the whole "libraries" array again.
+        // This is what turns every subsequent launch of an already-installed instance from a
+        // full library scan back into a couple of stat() calls.
+        ResolvedVersion cached = loadCachedResolved(gameDir, id);
+        if (cached != null && cachedResolvedStillValid(cached, versionJson)) {
+            log.accept("Using cached resolved version for \"" + id + "\" (" + cached.classpath.size()
+                    + " classpath entries) \u2014 skipping library re-scan.");
+            return cached;
+        }
+
         ResolvedVersion resolved = new ResolvedVersion();
-        resolved.id = versionJson.has("id") ? versionJson.get("id").getAsString() : "unknown";
+        resolved.id = id;
         if (!versionJson.has("mainClass") || versionJson.get("mainClass").isJsonNull()) {
             throw new IOException("Version JSON for '" + resolved.id
                     + "' is missing a \"mainClass\" entry. The downloaded/cached version file is incomplete or "
@@ -222,7 +235,7 @@ public class GameInstaller {
             // time down drastically. resolved.classpath is a plain ArrayList, so additions to it
             // (and native-jar extraction, which touches shared files) are synchronized.
             List<Exception> libraryErrors = java.util.Collections.synchronizedList(new ArrayList<>());
-            ExecutorService libraryPool = Executors.newFixedThreadPool(8);
+            ExecutorService libraryPool = com.launcher.util.DownloadConcurrency.newDownloadPool("lib-dl", toProcess.size());
             for (JsonObject lib : toProcess) {
                 libraryPool.submit(() -> {
                     try {
@@ -263,7 +276,123 @@ public class GameInstaller {
             resolved.legacyMinecraftArguments = versionJson.get("minecraftArguments").getAsString();
         }
 
+        saveResolvedCache(gameDir, resolved);
         return resolved;
+    }
+
+    /** Where the cached, already-resolved classpath for a version id lives. Kept next to the
+     *  version JSON itself so it travels with the instance and is easy to blow away by hand
+     *  (delete the file, or the whole version folder) if something ever looks stale. */
+    private Path resolvedCachePath(Path gameDir, String versionId) {
+        return LauncherPaths.versionsDir(gameDir).resolve(versionId).resolve(versionId + ".resolved-cache.json");
+    }
+
+    private void saveResolvedCache(Path gameDir, ResolvedVersion resolved) {
+        try {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("id", resolved.id);
+            obj.addProperty("mainClass", resolved.mainClass);
+            if (resolved.assetIndexId != null) obj.addProperty("assetIndexId", resolved.assetIndexId);
+            if (resolved.legacyMinecraftArguments != null) {
+                obj.addProperty("legacyMinecraftArguments", resolved.legacyMinecraftArguments);
+            }
+            JsonArray cp = new JsonArray();
+            for (Path p : resolved.classpath) cp.add(p.toAbsolutePath().toString());
+            obj.add("classpath", cp);
+            JsonArray gameArgs = new JsonArray();
+            for (String s : resolved.extraGameArgs) gameArgs.add(s);
+            obj.add("extraGameArgs", gameArgs);
+            JsonArray jvmArgs = new JsonArray();
+            for (String s : resolved.extraJvmArgs) jvmArgs.add(s);
+            obj.add("extraJvmArgs", jvmArgs);
+
+            Path cachePath = resolvedCachePath(gameDir, resolved.id);
+            Files.createDirectories(cachePath.getParent());
+            Files.writeString(cachePath, JsonUtil.GSON.toJson(obj), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            // Caching is a pure optimization - never let a failure to write it fail the launch.
+        }
+    }
+
+    private ResolvedVersion loadCachedResolved(Path gameDir, String versionId) {
+        try {
+            Path cachePath = resolvedCachePath(gameDir, versionId);
+            if (!Files.exists(cachePath)) return null;
+            JsonObject obj = JsonUtil.parse(Files.readString(cachePath)).getAsJsonObject();
+
+            ResolvedVersion resolved = new ResolvedVersion();
+            resolved.id = obj.has("id") ? obj.get("id").getAsString() : versionId;
+            if (!obj.has("mainClass")) return null;
+            resolved.mainClass = obj.get("mainClass").getAsString();
+            if (obj.has("assetIndexId")) resolved.assetIndexId = obj.get("assetIndexId").getAsString();
+            if (obj.has("legacyMinecraftArguments")) {
+                resolved.legacyMinecraftArguments = obj.get("legacyMinecraftArguments").getAsString();
+            }
+            if (obj.has("classpath")) {
+                for (var el : obj.getAsJsonArray("classpath")) {
+                    resolved.classpath.add(Path.of(el.getAsString()));
+                }
+            }
+            if (obj.has("extraGameArgs")) {
+                for (var el : obj.getAsJsonArray("extraGameArgs")) resolved.extraGameArgs.add(el.getAsString());
+            }
+            if (obj.has("extraJvmArgs")) {
+                for (var el : obj.getAsJsonArray("extraJvmArgs")) resolved.extraJvmArgs.add(el.getAsString());
+            }
+            return resolved;
+        } catch (Exception e) {
+            return null; // corrupt/unreadable cache - fall through to a full resolve
+        }
+    }
+
+    /** A cached resolve is only trustworthy if (a) every file it points at is still there, and
+     *  (b) it actually contains as many classpath entries as the version JSON currently declares.
+     *  (b) matters because a cache written before a library-resolution bug was fixed (e.g. a
+     *  library that silently failed to download and got skipped) would otherwise look "valid"
+     *  forever - every entry it *does* reference exists on disk, it's just missing one it should
+     *  have had. Recomputing the expected count from the version JSON itself (no I/O, no
+     *  downloads) and comparing catches that case and forces a real re-resolve instead. */
+    private boolean cachedResolvedStillValid(ResolvedVersion resolved, JsonObject versionJson) {
+        if (resolved.classpath.isEmpty()) return false;
+        for (Path p : resolved.classpath) {
+            try {
+                if (!Files.exists(p) || Files.size(p) == 0) return false;
+            } catch (IOException e) {
+                return false;
+            }
+        }
+        int expected = expectedClasspathEntryCount(versionJson);
+        return resolved.classpath.size() >= expected;
+    }
+
+    /** Counts how many classpath entries the version JSON *should* resolve to: the client jar
+     *  (if one is declared/expected) plus every library that isn't a natives-only classifier
+     *  entry and whose rules allow it on this OS. Pure JSON inspection, no filesystem/network. */
+    private int expectedClasspathEntryCount(JsonObject versionJson) {
+        int count = 0;
+        boolean hasClientDownload = versionJson.has("downloads")
+                && versionJson.getAsJsonObject("downloads").has("client");
+        // Every version we resolve either has its own client jar entry or inherits one via
+        // clientJarId - either way exactly one client jar belongs on the classpath.
+        if (hasClientDownload || versionJson.has("clientJarId") || versionJson.has("id")) count += 1;
+
+        if (versionJson.has("libraries")) {
+            for (var el : versionJson.getAsJsonArray("libraries")) {
+                JsonObject lib = el.getAsJsonObject();
+                if (!rulesAllow(lib)) continue;
+
+                if (lib.has("downloads")) {
+                    JsonObject downloads = lib.getAsJsonObject("downloads");
+                    if (downloads.has("artifact")) count += 1;
+                    // classifiers-only entries (natives) contribute 0 to the classpath
+                } else if (lib.has("name") && !lib.get("name").isJsonNull()) {
+                    String[] parts = lib.get("name").getAsString().split(":");
+                    boolean isNativeClassifier = parts.length > 3 && parts[3].startsWith("natives-");
+                    if (!isNativeClassifier) count += 1;
+                }
+            }
+        }
+        return count;
     }
 
     private void collectStringArgs(JsonObject args, String key, List<String> out) {
@@ -290,10 +419,9 @@ public class GameInstaller {
                 } else {
                     String path = artifact.get("path").getAsString();
                     String url = artifact.get("url").getAsString();
+                    String expectedSha1 = artifact.has("sha1") ? artifact.get("sha1").getAsString() : null;
                     Path dest = LauncherPaths.librariesDir(gameDir).resolve(path);
-                    if (!Files.exists(dest) || Files.size(dest) == 0) {
-                        HttpUtil.downloadToFile(url, dest);
-                    }
+                    ensureValidLibraryFile(dest, url, expectedSha1, log);
                     synchronized (resolved.classpath) {
                         resolved.classpath.add(dest);
                     }
@@ -302,18 +430,17 @@ public class GameInstaller {
 
             if (downloads.has("classifiers")) {
                 String classifierKey = nativeClassifierKeyForCurrentOs();
-                JsonObject classifiers = downloads.getAsJsonObject(classifierKey);
-                if (classifierKey != null && classifiers.has(classifierKey)) {
+                JsonObject classifiers = downloads.getAsJsonObject("classifiers");
+                if (classifierKey != null && classifiers != null && classifiers.has(classifierKey)) {
                     JsonObject nativeArtifact = classifiers.getAsJsonObject(classifierKey);
                     if (!nativeArtifact.has("path") || !nativeArtifact.has("url")) {
                         log.accept("WARNING: Skipping a native library with an incomplete classifier entry (missing path/url).");
                     } else {
                         String path = nativeArtifact.get("path").getAsString();
                         String url = nativeArtifact.get("url").getAsString();
+                        String expectedSha1 = nativeArtifact.has("sha1") ? nativeArtifact.get("sha1").getAsString() : null;
                         Path dest = LauncherPaths.librariesDir(gameDir).resolve(path);
-                        if (!Files.exists(dest) || Files.size(dest) == 0) {
-                            HttpUtil.downloadToFile(url, dest);
-                        }
+                        ensureValidLibraryFile(dest, url, expectedSha1, log);
                         extractNatives(dest, nativesDir);
                     }
                 }
@@ -333,13 +460,11 @@ public class GameInstaller {
             String downloadUrl = baseUrl + path;
 
             Path dest = LauncherPaths.librariesDir(gameDir).resolve(path);
-            if (!Files.exists(dest) || Files.size(dest) == 0) {
-                log.accept("Downloading library: " + name);
-                try {
-                    HttpUtil.downloadToFile(downloadUrl, dest);
-                } catch (Exception e) {
-                    log.accept("Failed to download library: " + name + " from " + downloadUrl + ". Error: " + e.getMessage());
-                }
+            try {
+                ensureValidLibraryFile(dest, downloadUrl, null, log);
+            } catch (IOException e) {
+                throw new IOException("Failed to obtain a valid copy of library: " + name + " from " + downloadUrl
+                        + ". Error: " + e.getMessage(), e);
             }
 
             // Extract natives if it is a native library classifier
@@ -354,6 +479,65 @@ public class GameInstaller {
                 }
             }
         }
+    }
+
+    /** Makes sure {@code dest} is an intact copy of the library before we ever hand it back to
+     *  be put on the classpath. This is the fix for a nasty failure mode: a jar left behind
+     *  half-written by an earlier crashed/interrupted install (nonzero size, but truncated or
+     *  otherwise corrupt) used to pass the old "exists and is non-empty" check forever and get
+     *  silently reused - added to the classpath, but unreadable by the JVM's URLClassLoader,
+     *  producing a bare NoClassDefFoundError at game launch with nothing in the install log to
+     *  explain why. Now: if we have a known-good sha1, trust that; otherwise fall back to
+     *  actually opening the file as a zip. Either way, a bad existing file gets deleted and
+     *  redownloaded (once) instead of silently poisoning the classpath. */
+    private void ensureValidLibraryFile(Path dest, String url, String expectedSha1, Consumer<String> log)
+            throws IOException, InterruptedException {
+        if (Files.exists(dest) && Files.size(dest) > 0 && isValidLibraryFile(dest, expectedSha1)) {
+            return; // already have a good copy, nothing to do
+        }
+        if (Files.exists(dest)) {
+            log.accept("Existing library file looks corrupt/incomplete, redownloading: " + dest.getFileName());
+            Files.deleteIfExists(dest);
+        }
+        HttpUtil.downloadToFile(url, dest);
+        if (!Files.exists(dest) || Files.size(dest) == 0) {
+            throw new IOException("Library download produced no file: " + dest);
+        }
+        if (!isValidLibraryFile(dest, expectedSha1)) {
+            Files.deleteIfExists(dest);
+            throw new IOException("Downloaded library failed integrity check (corrupt download or bad mirror): " + url);
+        }
+    }
+
+    private boolean isValidLibraryFile(Path file, String expectedSha1) {
+        if (expectedSha1 != null && !expectedSha1.isBlank()) {
+            try {
+                String actual = sha1Hex(file);
+                return expectedSha1.equalsIgnoreCase(actual);
+            } catch (Exception e) {
+                return false;
+            }
+        }
+        // No checksum to compare against (common for bare Maven-coordinate libraries) - the best
+        // we can do without one is confirm it's actually a readable zip/jar, which is enough to
+        // catch the truncated/half-written-file case that caused the silent classpath poisoning.
+        try (ZipFile zip = new ZipFile(file.toFile())) {
+            return zip.entries().hasMoreElements() || zip.size() >= 0;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private String sha1Hex(Path file) throws IOException, java.security.NoSuchAlgorithmException {
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-1");
+        try (var in = Files.newInputStream(file)) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) digest.update(buf, 0, n);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (byte b : digest.digest()) sb.append(String.format("%02x", b));
+        return sb.toString();
     }
 
     private String mavenToPath(String name) {
@@ -431,8 +615,10 @@ public class GameInstaller {
             });
         }
 
-        // Modest parallelism - asset CDN handles concurrent downloads fine, and this is the slowest step.
-        ExecutorService pool = Executors.newFixedThreadPool(8);
+        // Parallelism is now configurable (Settings > Performance > Download Threads) instead
+        // of a hardcoded pool size, so slower connections/machines or people on metered/limited
+        // bandwidth can turn it down, and people on fast fiber + NVMe can turn it up.
+        ExecutorService pool = com.launcher.util.DownloadConcurrency.newDownloadPool("asset-dl", tasks.size());
         for (Runnable t : tasks) pool.submit(t);
         pool.shutdown();
         try {

@@ -235,13 +235,36 @@ public class CustomDropdown<T> extends JPanel {
         
         layeredPane.add(popover, JLayeredPane.POPUP_LAYER);
         
-        layeredPane.addMouseListener(new MouseAdapter() {
+        installOutsideClickListener();
+    }
+
+    /**
+     * Closes the popover on a mouse press anywhere outside it - including on top of other
+     * components (buttons, panels, other dropdowns, etc.), not just empty layeredPane space.
+     * A listener on layeredPane alone only fires when the click lands directly on the
+     * layeredPane itself; clicks that hit a child component (which is almost always the case)
+     * never reach it. A global AWT event listener sees every mouse press in the application
+     * regardless of which component consumes it, so "click anywhere else" reliably closes it.
+     */
+    private void installOutsideClickListener() {
+        Toolkit.getDefaultToolkit().addAWTEventListener(new AWTEventListener() {
             @Override
-            public void mousePressed(MouseEvent e) {
-                if (popover != null && popover.isVisible() && !popover.getBounds().contains(e.getPoint())) {
+            public void eventDispatched(AWTEvent event) {
+                if (!(event instanceof MouseEvent me) || me.getID() != MouseEvent.MOUSE_PRESSED) return;
+                if (popover == null || !popover.isVisible()) return;
+                Component source = me.getComponent();
+                if (source == null) return;
+                // Let the dropdown's own toggle button handle its own clicks (it already
+                // opens/closes via togglePopover()) so we don't close it here and have it
+                // immediately reopen from the button's mouseClicked handler.
+                if (source == CustomDropdown.this || SwingUtilities.isDescendingFrom(source, CustomDropdown.this)) {
+                    return;
+                }
+                Point onLayeredPane = SwingUtilities.convertPoint(source, me.getPoint(), layeredPane);
+                if (!popover.getBounds().contains(onLayeredPane)) {
                     hidePopover();
                 }
             }
-        });
+        }, AWTEvent.MOUSE_EVENT_MASK);
     }
 }

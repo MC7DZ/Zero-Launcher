@@ -58,7 +58,8 @@ public class ModpackExtractor {
     /**
      * Creates a new extractor with default settings:
      * <ul>
-     *   <li>Max concurrent downloads: 6</li>
+     *   <li>Max concurrent downloads: from Settings &gt; Performance &gt; Download Threads
+     *       (auto-scaled to CPU cores by default) - see {@link com.launcher.util.DownloadConcurrency}</li>
      *   <li>Max retries: 3</li>
      *   <li>Retry base delay: 1 second</li>
      *   <li>Download timeout: 30 seconds</li>
@@ -66,7 +67,7 @@ public class ModpackExtractor {
      * </ul>
      */
     public ModpackExtractor() {
-        this(6, 3, Duration.ofSeconds(1), Duration.ofSeconds(30), true);
+        this(com.launcher.util.DownloadConcurrency.resolveThreadCount(), 3, Duration.ofSeconds(1), Duration.ofSeconds(30), true);
     }
 
     /**
