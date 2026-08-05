@@ -262,6 +262,12 @@ pub struct LauncherSettings {
     /// default until it's more reliable; people can opt in from Settings.
     #[serde(default)]
     pub enable_crash_analysis: bool,
+
+    // Setup Wizard
+    #[serde(default, rename = "Finished_setup")]
+    pub finished_setup_upper: bool,
+    #[serde(default)]
+    pub setup_finished: bool,
 }
 
 fn default_true() -> bool { true }
@@ -414,6 +420,9 @@ impl Default for LauncherSettings {
             music_disabled_tracks: Vec::new(),
 
             enable_crash_analysis: false,
+
+            finished_setup_upper: false,
+            setup_finished: false,
         }
     }
 }

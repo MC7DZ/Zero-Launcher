@@ -202,6 +202,17 @@ html, body {
   color: #fff;
   letter-spacing: 2px;
 }
+.brand-beta {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
 .brand-launcher {
   font-weight: 700;
   font-size: 9px;
@@ -2549,8 +2560,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 /* Per-type accent color, resolved once and reused by every part of the
-   toast (stripe, badge, icon, progress bar, glow) so styles/types stay
-   perfectly in sync. */
+   toast (badge, icon, progress bar, glow) so styles/types stay perfectly
+   in sync. */
 .toast-success { --toast-color: var(--accent); --toast-color-rgb: 16, 185, 129; }
 .toast-error   { --toast-color: #ef4444;       --toast-color-rgb: 239, 68, 68; }
 .toast-warning { --toast-color: #f59e0b;       --toast-color-rgb: 245, 158, 11; }
@@ -2560,13 +2571,13 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   background: rgba(var(--notif-bg-rgb, 19, 19, 26), 0.94);
   backdrop-filter: blur(var(--blur-amount, 18px));
   -webkit-backdrop-filter: blur(var(--blur-amount, 18px));
   border: 1px solid rgba(var(--overlay-rgb), 0.18);
   border-radius: 18px;
-  padding: 14px 16px 12px 18px;
+  padding: 14px 16px 12px 16px;
   width: 100%;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
   transform-origin: 100% 0%;
@@ -2584,25 +2595,20 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   box-shadow: 0 22px 60px rgba(0, 0, 0, 0.34), 0 0 26px rgba(var(--toast-color-rgb), 0.14);
 }
 
-/* Entrance: slide + settle in from the right with a soft spring overshoot,
-   plus a gentle 3D tilt that un-rotates as it lands. */
+/* Entrance: slide + settle in from the right with a soft spring overshoot */
 @keyframes toastSlideIn {
   0% {
     opacity: 0;
     transform: translateX(64px) translateY(-4px) scale(0.88) rotateY(8deg);
   }
-  55% {
-    opacity: 1;
-  }
+  55% { opacity: 1; }
   100% {
     opacity: 1;
     transform: translateX(0) translateY(0) scale(1) rotateY(0deg);
   }
 }
 
-/* A quick one-shot ring of color that flashes outward from the toast the
-   moment it lands, so a new notification is impossible to miss even out
-   of the corner of your eye. */
+/* Quick one-shot ring of color that flashes outward from the toast */
 .toast::after {
   content: '';
   position: absolute;
@@ -2617,23 +2623,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   100% { box-shadow: 0 0 0 14px rgba(var(--toast-color-rgb), 0); }
 }
 
-.toast-accent-stripe {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  border-radius: 18px 0 0 18px;
-  background: var(--toast-color);
-  transform: scaleY(0);
-  transform-origin: top;
-  animation: toastStripeGrow 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both;
-  transition: all 0.18s ease;
-}
-@keyframes toastStripeGrow {
-  from { transform: scaleY(0); }
-  to   { transform: scaleY(1); }
-}
+/* ─── No stripe element ─── The .toast-accent-stripe is kept in HTML for
+   compat but hidden by default in all new styles */
+.toast-accent-stripe { display: none; }
 
 .toast-main {
   display: grid;
@@ -2650,6 +2642,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   place-items: center;
   flex-shrink: 0;
   background: rgba(var(--toast-color-rgb), 0.14);
+  border: 1px solid rgba(var(--toast-color-rgb), 0.2);
   transition: all 0.18s ease;
   animation: toastIconPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;
 }
@@ -2658,8 +2651,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   60%  { transform: scale(1.18) rotate(6deg); opacity: 1; }
   100% { transform: scale(1) rotate(0deg); opacity: 1; }
 }
-/* Error/warning keep a soft breathing glow going the whole time they're
-   visible — urgency without being obnoxious. */
+/* Error/warning keep a soft breathing glow going the whole time */
 .toast-error .toast-icon-badge,
 .toast-warning .toast-icon-badge {
   animation: toastIconPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both,
@@ -2761,7 +2753,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: 999px;
   background: rgba(var(--overlay-rgb), 0.08);
   overflow: hidden;
-  margin-left: 2px;
   opacity: 0;
   animation: toastTextIn 0.35s ease 0.3s both;
 }
@@ -2774,8 +2765,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   transition: width 0.1s linear;
   overflow: hidden;
 }
-/* A faint traveling shine along the progress bar so the countdown itself
-   feels alive rather than a static shrinking block. */
+/* Traveling shine along the progress bar */
 .toast-progress-bar::after {
   content: '';
   position: absolute;
@@ -2798,107 +2788,169 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   to   { opacity: 0; transform: translateY(-10px) scale(0.94); }
 }
 
-/* ─── Notification style variations ───────────────────────────────────
-   Each style changes more than just color: it reshapes the accent stripe,
-   the icon badge, blur, and shadow so the three options actually read as
-   different presentation modes rather than three shades of the same card.
-   All rely on --notif-bg / --notif-bg-rgb / --overlay-rgb / --text(-muted),
-   which are re-derived on every theme change, so each style automatically
-   adapts to light and dark mode. ─────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   NOTIFICATION STYLE VARIATIONS
+   5 premium styles — Glass (default), Neon, Solid Card, Pill, Minimal
+   No accent stripe in any style.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Minimal Outline — nearly transparent, no blur, thin colored edge, no
-   filled badge. The lightest-weight, least intrusive presentation. */
-.toast-style-minimal-outline {
-  background: rgba(var(--notif-bg-rgb, 19, 19, 26), 0.32) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  border: 1px solid rgba(var(--toast-color-rgb), 0.45) !important;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18) !important;
+/* ── 1. GLASS (default) ─────────────────────────────────────────────────────
+   Heavy frosted glass, glowing colored shadow, rounded card. Premium & clean. */
+.toast-style-glass {
+  background: rgba(var(--notif-bg-rgb, 18, 18, 28), 0.55) !important;
+  backdrop-filter: blur(32px) saturate(1.5) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(1.5) !important;
+  border: 1px solid rgba(var(--toast-color-rgb), 0.22) !important;
+  border-radius: 20px !important;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(var(--toast-color-rgb), 0.08),
+    0 0 40px rgba(var(--toast-color-rgb), 0.10) !important;
 }
-.toast-style-minimal-outline .toast-icon-badge {
-  background: transparent;
-  border: 1.5px solid rgba(var(--toast-color-rgb), 0.5);
-}
-.toast-style-minimal-outline .toast-progress {
-  background: rgba(var(--toast-color-rgb), 0.12);
-}
-
-/* Frosted Glass — heavy blur, translucent, soft glowing shadow, extra
-   rounded, plus a single diagonal light sweep across the glass as it
-   lands, like light catching a pane of frosted glass. */
-.toast-style-frosted-glass {
-  background: rgba(var(--notif-bg-rgb, 28, 28, 38), 0.5) !important;
-  backdrop-filter: blur(28px) saturate(1.4) !important;
-  -webkit-backdrop-filter: blur(28px) saturate(1.4) !important;
-  border: 1px solid rgba(var(--overlay-rgb), 0.22) !important;
-  border-radius: 22px !important;
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(var(--toast-color-rgb), 0.08),
-    0 0 32px rgba(var(--toast-color-rgb), 0.12) !important;
-}
-.toast-style-frosted-glass .toast-accent-stripe {
-  border-radius: 22px 0 0 22px;
-}
-.toast-style-frosted-glass .toast-icon-badge {
-  background: rgba(var(--toast-color-rgb), 0.18);
-  box-shadow: inset 0 0 0 1px rgba(var(--toast-color-rgb), 0.2);
-}
-.toast-style-frosted-glass::before {
+.toast-style-glass::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(115deg, transparent 20%, rgba(255, 255, 255, 0.22) 35%, transparent 50%);
+  background: linear-gradient(115deg, transparent 15%, rgba(255, 255, 255, 0.18) 30%, transparent 50%);
   background-size: 250% 250%;
   background-position: 150% -50%;
   pointer-events: none;
   animation: toastGlassSheen 1s ease-out 0.12s both;
+  z-index: 1;
 }
 @keyframes toastGlassSheen {
   from { background-position: 150% -50%; opacity: 1; }
   to   { background-position: -50% 150%; opacity: 0; }
 }
+.toast-style-glass .toast-icon-badge {
+  background: rgba(var(--toast-color-rgb), 0.18);
+  border: 1px solid rgba(var(--toast-color-rgb), 0.28);
+  box-shadow: 0 4px 14px rgba(var(--toast-color-rgb), 0.2);
+  border-radius: 12px;
+}
+.toast-style-glass .toast-progress {
+  background: rgba(var(--toast-color-rgb), 0.08);
+}
 
-/* Solid — fully opaque card, no blur, hard shadow, filled color badge and
-   a full-width top bar (that grows in like a loading bar) instead of a
-   side stripe. The boldest, most "notification banner"-like presentation. */
-.toast-style-solid {
-  background: var(--notif-bg, #181820) !important;
+/* ── 2. NEON ────────────────────────────────────────────────────────────────
+   Deep dark card, vivid glowing border + inner color halo. Futuristic. */
+.toast-style-neon {
+  background: rgba(8, 8, 14, 0.92) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  border: 1px solid rgba(var(--overlay-rgb), 0.1) !important;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4) !important;
-  padding-top: 16px !important;
+  border: 1px solid rgba(var(--toast-color-rgb), 0.6) !important;
+  border-radius: 16px !important;
+  box-shadow:
+    0 0 0 1px rgba(var(--toast-color-rgb), 0.15),
+    0 0 20px rgba(var(--toast-color-rgb), 0.25),
+    0 0 60px rgba(var(--toast-color-rgb), 0.10),
+    0 16px 40px rgba(0, 0, 0, 0.5) !important;
+  animation: toastSlideIn 0.55s cubic-bezier(0.16, 1.35, 0.34, 1) both,
+             neonBorderPulse 2.5s ease-in-out 0.8s infinite;
 }
-.toast-style-solid .toast-accent-stripe {
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: auto;
-  width: 100%;
-  height: 3px;
-  border-radius: 18px 18px 0 0;
-  transform: scaleX(0) scaleY(1);
-  transform-origin: left;
-  animation: toastBarGrow 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+@keyframes neonBorderPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgba(var(--toast-color-rgb), 0.15),
+                0 0 20px rgba(var(--toast-color-rgb), 0.25),
+                0 0 60px rgba(var(--toast-color-rgb), 0.10),
+                0 16px 40px rgba(0,0,0,0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(var(--toast-color-rgb), 0.25),
+                0 0 30px rgba(var(--toast-color-rgb), 0.40),
+                0 0 80px rgba(var(--toast-color-rgb), 0.18),
+                0 16px 40px rgba(0,0,0,0.5);
+  }
 }
-@keyframes toastBarGrow {
-  from { transform: scaleX(0) scaleY(1); }
-  to   { transform: scaleX(1) scaleY(1); }
+.toast-style-neon .toast-icon-badge {
+  background: rgba(var(--toast-color-rgb), 0.12);
+  border: 1px solid rgba(var(--toast-color-rgb), 0.5);
+  border-radius: 10px;
+  box-shadow: 0 0 12px rgba(var(--toast-color-rgb), 0.4),
+              inset 0 0 8px rgba(var(--toast-color-rgb), 0.1);
 }
-.toast-style-solid .toast-icon-badge {
-  background: var(--toast-color);
-  box-shadow: 0 4px 12px rgba(var(--toast-color-rgb), 0.35);
+.toast-style-neon .toast-icon {
+  text-shadow: 0 0 12px rgba(var(--toast-color-rgb), 0.9);
 }
-.toast-style-solid .toast-icon {
-  color: #fff;
+.toast-style-neon .toast-title {
+  color: rgba(var(--toast-color-rgb), 1);
+  text-shadow: 0 0 10px rgba(var(--toast-color-rgb), 0.4);
+}
+.toast-style-neon .toast-progress {
+  background: rgba(var(--toast-color-rgb), 0.1);
+}
+.toast-style-neon .toast-progress-bar {
+  background: rgba(var(--toast-color-rgb), 1);
+  box-shadow: 0 0 8px rgba(var(--toast-color-rgb), 0.6);
 }
 
-/* Respect reduced-motion preferences: keep the toasts fully functional but
-   drop the decorative choreography. */
+/* ── 3. SOLID CARD ──────────────────────────────────────────────────────────
+   Fully opaque card with bold colored top border. Clean & modern. */
+.toast-style-solid-card {
+  background: var(--notif-bg, #14141e) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(var(--overlay-rgb), 0.12) !important;
+  border-top: 3px solid rgba(var(--toast-color-rgb), 1) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45) !important;
+}
+.toast-style-solid-card .toast-icon-badge {
+  background: var(--toast-color);
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(var(--toast-color-rgb), 0.35);
+}
+.toast-style-solid-card .toast-icon { color: #fff; }
+.toast-style-solid-card .toast-progress { background: rgba(var(--overlay-rgb), 0.1); }
+.toast-style-solid-card .toast-progress-bar { background: var(--toast-color); }
+
+/* ── 4. PILL ────────────────────────────────────────────────────────────────
+   Compact fully-rounded pill. Color-tinted bg. Playful & compact. */
+.toast-style-pill {
+  background: rgba(var(--toast-color-rgb), 0.08) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(var(--toast-color-rgb), 0.25) !important;
+  border-radius: 999px !important;
+  padding: 10px 18px !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.25), 0 0 0 1px rgba(var(--toast-color-rgb), 0.1) !important;
+}
+.toast-style-pill .toast-main { align-items: center; }
+.toast-style-pill .toast-icon-badge {
+  width: 34px; height: 34px;
+  border-radius: 999px;
+  background: rgba(var(--toast-color-rgb), 0.2);
+  border: 1px solid rgba(var(--toast-color-rgb), 0.3);
+}
+.toast-style-pill .toast-close { border-radius: 999px; }
+.toast-style-pill .toast-progress { border-radius: 999px; }
+
+/* ── 5. MINIMAL ─────────────────────────────────────────────────────────────
+   Ultra-clean: barely-there glass with thin accent-colored border only. */
+.toast-style-minimal {
+  background: rgba(var(--notif-bg-rgb, 19, 19, 26), 0.28) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(var(--toast-color-rgb), 0.38) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2) !important;
+}
+.toast-style-minimal .toast-icon-badge {
+  background: transparent;
+  border: 1.5px solid rgba(var(--toast-color-rgb), 0.5);
+  border-radius: 10px;
+  box-shadow: none;
+}
+.toast-style-minimal .toast-progress { background: rgba(var(--toast-color-rgb), 0.1); }
+
+/* Respect reduced-motion preferences */
 @media (prefers-reduced-motion: reduce) {
-  .toast, .toast::after, .toast::before, .toast-accent-stripe, .toast-icon-badge,
+  .toast, .toast::after, .toast::before, .toast-icon-badge,
   .toast-title, .toast-message, .toast-close, .toast-progress, .toast-progress-bar::after,
-  .toast-error .toast-icon-badge, .toast-warning .toast-icon-badge {
+  .toast-error .toast-icon-badge, .toast-warning .toast-icon-badge,
+  .toast-style-neon {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
@@ -3569,3 +3621,233 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .crash-fix-mod-row.crash-fix-mod-done .crash-fix-mod-name { color: var(--text-muted); text-decoration: line-through; }
 .crash-fix-mod-row.crash-fix-mod-done button { pointer-events: none; opacity: 0.6; }
 .crash-fix-group .crash-fix-action { align-self: flex-start; }
+
+/* ═══ Setup Wizard Full Tab Page ═══ */
+#tab-setup {
+  padding: 30px 40px;
+}
+
+.setup-page-container {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.setup-hero {
+  text-align: center;
+  animation: setupHeroIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes setupHeroIn {
+  from { opacity: 0; transform: translateY(-12px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.setup-hero-icon {
+  margin: 0 auto 12px;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-dim);
+  border: 1px solid rgba(var(--accent-rgb, 16, 185, 129), 0.3);
+  border-radius: 50%;
+  box-shadow: 0 0 24px var(--accent-glow);
+}
+
+.setup-hero-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+
+.setup-hero-brand {
+  color: var(--accent);
+  background: linear-gradient(135deg, var(--accent), #60a5fa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.setup-hero-desc {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Stepper Bar */
+.setup-stepper-bar {
+  position: relative;
+  margin: 10px 0;
+  padding: 0 20px;
+}
+
+.setup-stepper-track {
+  position: absolute;
+  top: 17px;
+  left: 60px;
+  right: 60px;
+  height: 3px;
+  background: rgba(var(--overlay-rgb), 0.12);
+  border-radius: 2px;
+  z-index: 1;
+}
+
+.setup-stepper-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), #60a5fa);
+  border-radius: 2px;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.setup-stepper-dots {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  z-index: 5;
+}
+
+.setup-sdot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+
+.setup-sdot-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #14141a;
+  border: 2px solid rgba(var(--overlay-rgb), 0.2);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 6;
+}
+
+.setup-sdot.active .setup-sdot-circle {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 16px var(--accent-glow);
+  transform: scale(1.1);
+}
+
+.setup-sdot.completed .setup-sdot-circle {
+  background: var(--bg-solid, #13131a);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.setup-sdot-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  transition: color 0.3s ease;
+}
+
+.setup-sdot.active .setup-sdot-label {
+  color: var(--accent);
+}
+
+/* Card & Pages */
+.setup-card {
+  background: var(--panel, rgba(19, 19, 26, 0.65));
+  backdrop-filter: blur(var(--blur-amount, 20px));
+  -webkit-backdrop-filter: blur(var(--blur-amount, 20px));
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
+  border-radius: 18px;
+  padding: 28px 32px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.setup-step-page {
+  display: none;
+}
+
+.setup-step-page.active {
+  display: block;
+}
+
+.setup-card-appear {
+  animation: setupCardFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes setupCardFadeIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.setup-card-title {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setup-card-desc {
+  margin: 0 0 24px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Form Layout */
+.setup-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.setup-account-box {
+  background: rgba(var(--overlay-rgb), 0.04);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+/* Bottom Actions Bar */
+.setup-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: rgba(var(--overlay-rgb), 0.04);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  border-radius: 14px;
+}
+
+.setup-bottom-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setup-btn-animate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.setup-btn-animate:hover {
+  transform: translateY(-2px);
+}
+
+

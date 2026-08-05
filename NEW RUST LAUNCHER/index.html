@@ -24,7 +24,10 @@
     <!-- ═══ Top Bar Header ═══ -->
     <header id="top-bar">
       <div class="brand">
-        <span class="brand-zero">ZERO</span>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="brand-zero">ZERO</span>
+          <span class="brand-beta">BETA</span>
+        </div>
         <span class="brand-launcher">LAUNCHER</span>
       </div>
 
@@ -200,8 +203,8 @@
             <div class="bento-tile bento-tile-loader">
               <label class="bento-tile-label">Mod Loader</label>
               <select id="inst-loader" class="input-field">
+                <option value="Fabric" selected>Fabric</option>
                 <option value="Vanilla">Vanilla</option>
-                <option value="Fabric">Fabric</option>
                 <option value="Forge">Forge</option>
                 <option value="Quilt">Quilt</option>
                 <option value="NeoForge">NeoForge</option>
@@ -576,6 +579,7 @@
                   <option value="Particles">Particles</option>
                   <option value="Fireflies">Fireflies</option>
                   <option value="Orbs">Orbs</option>
+                  <option value="Nothing">Nothing (no animation)</option>
                 </select>
               </div>
             </div>
@@ -682,9 +686,11 @@
               <div class="form-group">
                 <label>Notification Style</label>
                 <select id="setting-notif-style" class="input-field">
-                  <option value="Minimal Outline">Minimal Outline</option>
-                  <option value="Frosted Glass">Frosted Glass</option>
-                  <option value="Solid">Solid</option>
+                  <option value="Glass" selected>Glass (Default)</option>
+                  <option value="Neon">Neon</option>
+                  <option value="Solid Card">Solid Card</option>
+                  <option value="Pill">Pill</option>
+                  <option value="Minimal">Minimal</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1024,154 +1030,239 @@
             </div>
           </div>
 
+          <!-- About & Setup -->
+          <div class="glass-card settings-card">
+            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>About & Initial Setup</h3>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <p class="settings-hint" style="margin:0; opacity:0.85; font-size:12.5px; line-height:1.5;">
+                Zero Launcher is a modern, lightweight Minecraft launcher. Re-run the initial onboarding wizard at any time to reconfigure appearance, default account, or first instance.
+              </p>
+              <div style="display:flex; align-items:center; gap:10px; margin-top:4px;">
+                <button type="button" id="btn-reopen-setup" class="btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                  </svg>
+                  Reopen Setup Wizard
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ── Setup Wizard Tab (hidden from nav bar, opened programmatically) ── -->
+      <section id="tab-setup" class="tab-page">
+        <div class="setup-page-container">
+
+          <!-- Hero Header -->
+          <div class="setup-hero">
+            <div class="setup-hero-icon">
+              <svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="24" cy="24" r="20" opacity="0.15" fill="var(--accent)"/>
+                <path d="M24 14v10l7 4"/>
+                <circle cx="24" cy="24" r="14"/>
+              </svg>
+            </div>
+            <h1 class="setup-hero-title">Welcome to <span class="setup-hero-brand">Zero Launcher</span></h1>
+            <p class="setup-hero-desc" id="setup-step-subtitle">Step 1 of 3 — Appearance</p>
+          </div>
+
+          <!-- Stepper -->
+          <div class="setup-stepper-bar">
+            <div class="setup-stepper-track">
+              <div class="setup-stepper-fill" id="setup-stepper-fill"></div>
+            </div>
+            <div class="setup-stepper-dots">
+              <div class="setup-sdot active" data-step="1">
+                <div class="setup-sdot-circle">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z"/></svg>
+                </div>
+                <span class="setup-sdot-label">Appearance</span>
+              </div>
+              <div class="setup-sdot" data-step="2">
+                <div class="setup-sdot-circle">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <span class="setup-sdot-label">Account</span>
+              </div>
+              <div class="setup-sdot" data-step="3">
+                <div class="setup-sdot-circle">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                </div>
+                <span class="setup-sdot-label">Instance</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step Pages -->
+          <div class="setup-step-pages">
+
+            <!-- Step 1: Appearance -->
+            <div class="setup-step-page active" id="setup-step-1">
+              <div class="setup-card setup-card-appear">
+                <h3 class="setup-card-title">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z"/></svg>
+                  Customize Appearance
+                </h3>
+                <p class="setup-card-desc">Tweak your theme, colors, and background — changes apply live so you can see them instantly.</p>
+
+                <div class="setup-form-grid">
+                  <div class="form-group">
+                    <label>Theme Mode</label>
+                    <select id="setup-theme-mode" class="input-field">
+                      <option value="system">Match System (Auto)</option>
+                      <option value="dark" selected>Dark</option>
+                      <option value="light">Light</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Notification Style</label>
+                    <select id="setup-notif-style" class="input-field">
+                      <option value="Glass" selected>Glass (Default)</option>
+                      <option value="Neon">Neon</option>
+                      <option value="Solid Card">Solid Card</option>
+                      <option value="Pill">Pill</option>
+                      <option value="Minimal">Minimal</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; grid-column: span 2;">
+                    <label style="margin:0;">Accent Color (Dark Theme)</label>
+                    <input type="color" id="setup-accent-dark" class="color-picker-box" value="#10b981" />
+                  </div>
+                  <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; grid-column: span 2;">
+                    <label style="margin:0;">Accent Color (Light Theme)</label>
+                    <input type="color" id="setup-accent-light" class="color-picker-box" value="#059669" />
+                  </div>
+
+                  <div class="form-group">
+                    <label>Background Style</label>
+                    <select id="setup-bg-style" class="input-field">
+                      <option value="Default" selected>Default</option>
+                      <option value="Midnight">Midnight</option>
+                      <option value="Sunset">Sunset</option>
+                      <option value="Forest">Forest</option>
+                      <option value="Ocean">Ocean</option>
+                      <option value="Monochrome">Monochrome</option>
+                      <option value="Accent Glow">Accent Glow</option>
+                      <option value="Nothing">Nothing (flat gray)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Animation Style</label>
+                    <select id="setup-bg-anim-style" class="input-field">
+                      <option value="Waves" selected>Waves</option>
+                      <option value="Particles">Particles</option>
+                      <option value="Fireflies">Fireflies</option>
+                      <option value="Orbs">Orbs</option>
+                      <option value="Nothing">Nothing (no animation)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 2: Account -->
+            <div class="setup-step-page" id="setup-step-2">
+              <div class="setup-card setup-card-appear">
+                <h3 class="setup-card-title">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  Add First Account
+                </h3>
+                <p class="setup-card-desc">Create an offline account to play with. You can add more later from the top-right account menu.</p>
+
+                <div class="setup-account-box">
+                  <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="setup-username" class="input-field" placeholder="Player1" maxlength="16" />
+                  </div>
+                  <div id="setup-account-existing-msg" class="hidden" style="margin-top:12px; padding:10px 14px; border-radius:8px; background:var(--accent-dim); border:1px solid var(--accent); font-size:13px; color:var(--accent); display:flex; align-items:center; gap:8px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg>
+                    An account is already set up!
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 3: First Instance -->
+            <div class="setup-step-page" id="setup-step-3">
+              <div class="setup-card setup-card-appear">
+                <h3 class="setup-card-title">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                  Create First Instance
+                </h3>
+                <p class="setup-card-desc">Set up your initial Minecraft installation to start playing.</p>
+
+                <div class="setup-form-grid">
+                  <div class="form-group" style="grid-column: span 2;">
+                    <label>Instance Name</label>
+                    <input type="text" id="setup-inst-name" class="input-field" placeholder="My First Instance" />
+                  </div>
+                  <div class="form-group">
+                    <label>Minecraft Version</label>
+                    <select id="setup-inst-mc-version" class="input-field">
+                      <option>Loading…</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Mod Loader</label>
+                    <select id="setup-inst-loader" class="input-field">
+                      <option value="Fabric" selected>Fabric</option>
+                      <option value="Vanilla">Vanilla</option>
+                      <option value="Forge">Forge</option>
+                      <option value="Quilt">Quilt</option>
+                      <option value="NeoForge">NeoForge</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group" style="grid-column: span 2; margin-top: 8px;">
+                    <label>Install Location</label>
+                    <div class="bento-radio-group" style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+                      <label class="bento-radio-row">
+                        <input type="radio" name="setup-inst-dir-choice" id="setup-inst-dir-default" checked />
+                        <span>Use default Minecraft directory <span class="bento-tile-hint">(~/.minecraft)</span></span>
+                      </label>
+                      <label class="bento-radio-row">
+                        <input type="radio" name="setup-inst-dir-choice" id="setup-inst-dir-separated" />
+                        <span>Separated folder <span class="bento-tile-hint">(keeps this instance's mods, saves, and config on their own)</span></span>
+                      </label>
+                      <label class="bento-radio-row">
+                        <input type="radio" name="setup-inst-dir-choice" id="setup-inst-dir-custom" />
+                        <span>Use a custom directory</span>
+                      </label>
+                    </div>
+                    <div id="setup-inst-dir-path-row" class="hidden bento-dir-path-row" style="margin-top:10px; display:flex; gap:8px;">
+                      <input type="text" id="setup-inst-dir-path" class="input-field" placeholder="/path/to/folder" style="flex:1;" />
+                      <button id="setup-inst-dir-browse" class="btn-secondary" type="button">Browse…</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Footer Buttons -->
+          <div class="setup-bottom-bar">
+            <button type="button" id="btn-setup-skip-all" class="btn-ghost btn-sm setup-btn-animate">Skip All Setup</button>
+            <div class="setup-bottom-right">
+              <button type="button" id="btn-setup-skip-step" class="btn-secondary btn-sm setup-btn-animate">Skip This Step</button>
+              <button type="button" id="btn-setup-prev" class="btn-secondary btn-sm setup-btn-animate hidden">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                Back
+              </button>
+              <button type="button" id="btn-setup-next" class="btn-accent btn-sm setup-btn-animate">
+                Next Step
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            </div>
+          </div>
+
         </div>
       </section>
 
     </main>
-  </div>
-
-  <!-- ═══ Floating Download Progress Widget (bottom-left) ═══
-       Shows every in-progress download/install (instance installs, mod
-       downloads/updates, dependency installs, Java runtime downloads,
-       etc.) as its own card in dl-widget-panel > #dl-cards, so several can
-       be visible and individually cancellable at once. -->
-  <div id="dl-widget" class="dl-widget hidden">
-    <button id="dl-widget-btn" class="dl-widget-btn">
-      <span id="dl-widget-ring" class="dl-widget-ring">
-        <svg viewBox="0 0 36 36" class="dl-ring-svg">
-          <circle class="dl-ring-track" cx="18" cy="18" r="15.5"></circle>
-          <circle id="dl-ring-fill" class="dl-ring-fill" cx="18" cy="18" r="15.5"></circle>
-        </svg>
-        <span id="dl-widget-icon" class="dl-widget-icon">⭳</span>
-        <span id="dl-widget-count" class="dl-widget-count hidden">1</span>
-      </span>
-      <span class="dl-widget-text">
-        <span id="dl-widget-title">Installing…</span>
-        <span id="dl-widget-sub">Starting…</span>
-      </span>
-    </button>
-
-    <div id="dl-widget-panel" class="dl-widget-panel hidden">
-      <div class="dl-panel-heading">
-        <span>Downloads</span>
-      </div>
-      <div id="dl-cards" class="dl-cards"></div>
-    </div>
-  </div>
-
-  <!-- Template for a single download card, cloned per active download. -->
-  <template id="dl-card-template">
-    <div class="dl-card">
-      <div class="dl-card-header">
-        <div>
-          <div class="dl-card-title">Title</div>
-          <div class="dl-card-stage">Preparing…</div>
-        </div>
-        <span class="dl-card-status-pill">Downloading</span>
-      </div>
-
-      <div class="dl-card-track">
-        <div class="dl-card-bar" style="width:0%"></div>
-      </div>
-
-      <div class="dl-card-file">—</div>
-
-      <div class="dl-card-stats">
-        <div class="dl-stat">
-          <span class="dl-stat-label">Progress</span>
-          <span class="dl-card-stat-percent dl-stat-value">0%</span>
-        </div>
-        <div class="dl-stat">
-          <span class="dl-stat-label">Speed</span>
-          <span class="dl-card-stat-speed dl-stat-value">—</span>
-        </div>
-        <div class="dl-stat">
-          <span class="dl-stat-label">ETA</span>
-          <span class="dl-card-stat-eta dl-stat-value">—</span>
-        </div>
-        <div class="dl-stat">
-          <span class="dl-stat-label">Downloaded</span>
-          <span class="dl-card-stat-downloaded dl-stat-value">—</span>
-        </div>
-      </div>
-
-      <div class="dl-card-actions">
-        <button class="btn-secondary btn-sm dl-card-pause">⏸ Pause</button>
-        <button class="btn-danger-outline btn-sm dl-card-cancel">✕ Cancel</button>
-      </div>
-    </div>
-  </template>
-
-  <!-- Music Library overlay -->
-  <div id="music-library-overlay" class="overlay hidden">
-    <div class="overlay-card music-library-card">
-      <div class="overlay-header">
-        <h3>Music Library</h3>
-        <button class="overlay-close" id="btn-close-music-library">✕</button>
-      </div>
-      <div id="music-library-hint" style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
-        Drop audio files into <code>Zero Launcher/music/</code> — toggle which ones play below.
-      </div>
-      <div id="music-library-list" class="instance-list music-library-list"></div>
-      <div class="overlay-actions" style="justify-content: center;">
-        <button type="button" id="btn-refresh-music-library" class="btn-secondary">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">
-            <path d="M23 4v6h-6"></path>
-            <path d="M1 20v-6h6"></path>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
-          Refresh
-        </button>
-        <button type="button" id="btn-open-music-folder" class="btn-secondary">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">
-            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path>
-          </svg>
-          Open Music Folder
-        </button>
-        <button type="button" id="btn-close-music-library-2" class="btn-ghost">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Background music player — not shown, driven entirely from JS -->
-  <audio id="bg-music-player" preload="auto"></audio>
-
-  <!-- Crash dialog — styled like a real OS-level "program has stopped working"
-       error window. Populated entirely from JS (crash-report.js) when the
-       backend emits a "game-crashed" event with a diagnosis. -->
-  <div id="crash-overlay" class="overlay hidden">
-    <div class="crash-window">
-      <div class="crash-titlebar">
-        <span class="crash-titlebar-icon">⚠</span>
-        <span class="crash-titlebar-text" id="crash-titlebar-text">Zero Launcher</span>
-        <button class="crash-titlebar-close" id="btn-crash-close" title="Close">✕</button>
-      </div>
-      <div class="crash-body">
-        <div class="crash-icon-col">
-          <div class="crash-icon">✕</div>
-        </div>
-        <div class="crash-content-col">
-          <div class="crash-heading" id="crash-heading">Instance has stopped working</div>
-          <div class="crash-subheading" id="crash-subheading">
-            A problem caused the program to stop working correctly. Windows will close the program and notify you if a solution is available.
-          </div>
-          <div class="crash-signature-label">Problem signature:</div>
-          <pre class="crash-signature" id="crash-signature"></pre>
-          <div class="crash-disclaimer" style="margin:6px 0 2px; padding:8px 10px; border-radius:8px; background:rgba(255,180,60,0.10); border:1px solid rgba(255,180,60,0.25); font-size:12px; line-height:1.5; color:var(--text-muted);">
-            ⚠ This is an automated, best-effort guess (still experimental) — it can misread the real cause or suggest a fix
-            that doesn't actually help. If it's wrong, check the full log yourself, or turn this analysis off in
-            <strong>Settings → Experimental</strong>.
-          </div>
-          <div class="crash-fixes-label" id="crash-fixes-label">Suggested fixes:</div>
-          <div class="crash-fixes" id="crash-fixes"></div>
-        </div>
-      </div>
-      <div class="crash-footer">
-        <button type="button" class="btn-secondary btn-sm" id="btn-crash-view-log">View full log</button>
-        <button type="button" class="btn-secondary btn-sm" id="btn-crash-relaunch">Relaunch instance</button>
-        <button type="button" class="btn-primary btn-sm" id="btn-crash-dismiss">Close program</button>
-      </div>
-    </div>
   </div>
 
   <!-- Toast container -->

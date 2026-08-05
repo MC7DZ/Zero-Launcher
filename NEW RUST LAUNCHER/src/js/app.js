@@ -279,9 +279,19 @@ function spawnToast(message, type, title, actions) {
   const iconMap = { success: '\u2714', error: '\u2715', warning: '\u26A0', info: '\u2139' };
   const icon = iconMap[type] || iconMap.info;
 
-  const styleClass = (settings && settings.notification_style)
-    ? 'toast-style-' + settings.notification_style.toLowerCase().replace(/\s+/g, '-')
-    : 'toast-style-minimal-outline';
+  const styleMap = {
+    'glass':      'toast-style-glass',
+    'neon':       'toast-style-neon',
+    'solid card': 'toast-style-solid-card',
+    'pill':       'toast-style-pill',
+    'minimal':    'toast-style-minimal',
+    // legacy compat
+    'minimal outline': 'toast-style-minimal',
+    'frosted glass':   'toast-style-glass',
+    'solid':           'toast-style-solid-card',
+  };
+  const rawStyle = (settings && settings.notification_style) ? settings.notification_style.toLowerCase() : 'glass';
+  const styleClass = styleMap[rawStyle] || 'toast-style-glass';
 
   const t = document.createElement('div');
   t.className = `toast toast-${type} ${styleClass}`;
@@ -4457,7 +4467,7 @@ function populateSettingsUI() {
   const accentLightInp = document.getElementById('setting-accent-color-light');
   if (accentLightInp) accentLightInp.value = settings.accent_color_light || ACCENT_THEME_DEFAULTS.light;
 
-  document.getElementById('setting-notif-style').value = settings.notification_style || 'Minimal Outline';
+  document.getElementById('setting-notif-style').value = settings.notification_style || 'Glass';
 
   // Background & Animation
   document.getElementById('setting-bg-style').value = settings.background_style || 'Default';
@@ -4732,6 +4742,8 @@ let _settingsSaveTimer = null;
 
 function collectSettingsFromUI() {
   if (!settings) return;
+  const prevFinishedSetup = settings.Finished_setup;
+  const prevSetupFinished = settings.setup_finished;
   // Appearance: Theme
   const themeModeSel = document.getElementById('setting-theme-mode');
   if (themeModeSel) settings.theme_mode = themeModeSel.value;
@@ -4849,6 +4861,10 @@ function collectSettingsFromUI() {
   // Experimental
   const crashAnalysisChk = document.getElementById('setting-crash-analysis');
   if (crashAnalysisChk) settings.enable_crash_analysis = crashAnalysisChk.checked;
+
+  // Preserve Setup Wizard status
+  if (prevFinishedSetup !== undefined) settings.Finished_setup = prevFinishedSetup;
+  if (prevSetupFinished !== undefined) settings.setup_finished = prevSetupFinished;
 }
 
 async function saveSettingsNow() {
@@ -5192,6 +5208,14 @@ function initSettings() {
 
   // Hidden instances (Settings → Performance & Java)
   renderHiddenInstancesSettings();
+
+  // Reopen Setup Wizard
+  const reopenSetupBtn = document.getElementById('btn-reopen-setup');
+  if (reopenSetupBtn) {
+    reopenSetupBtn.addEventListener('click', () => {
+      openSetupWizard(true);
+    });
+  }
 
   // Reset All Settings
   const resetBtn = document.getElementById('btn-reset-settings');
@@ -5742,7 +5766,7 @@ const BG = {
     }
 
     // ── Animations ──
-    if (enabled) {
+    if (enabled && animStyle !== 'Nothing') {
       this.phase += 0.015 * speed;
 
       if (animStyle === 'Waves') {
@@ -6245,6 +6269,350 @@ function populateMusicSettingsUI() {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// FIRST-TIME SETUP WIZARD
+// ══════════════════════════════════════════════════════════════════
+let currentSetupStep = 1;
+
+function initSetupWizard() {
+  const prevBtn = document.getElementById('btn-setup-prev');
+  const nextBtn = document.getElementById('btn-setup-next');
+  const skipStepBtn = document.getElementById('btn-setup-skip-step');
+  const skipAllBtn = document.getElementById('btn-setup-skip-all');
+
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      if (currentSetupStep > 1) {
+        showSetupStep(currentSetupStep - 1);
+      }
+    });
+  }
+
+  if (nextBtn) {
+    nextBtn.addEventListener('click', async () => {
+      try {
+        const success = await handleSetupStepSubmit(currentSetupStep);
+        if (success) {
+          if (currentSetupStep < 3) {
+            showSetupStep(currentSetupStep + 1);
+          } else {
+            await finishSetupWizard();
+          }
+        }
+      } catch (err) {
+        console.error('Setup error:', err);
+        showToast('Setup error: ' + (err.message || err), 'error');
+      }
+    });
+  }
+
+  if (skipStepBtn) {
+    skipStepBtn.addEventListener('click', async () => {
+      try {
+        if (currentSetupStep < 3) {
+          showSetupStep(currentSetupStep + 1);
+        } else {
+          await finishSetupWizard();
+        }
+      } catch (err) {
+        showToast('Setup error: ' + (err.message || err), 'error');
+      }
+    });
+  }
+
+  if (skipAllBtn) {
+    skipAllBtn.addEventListener('click', async () => {
+      try {
+        await finishSetupWizard();
+      } catch (err) {
+        showToast('Setup error: ' + (err.message || err), 'error');
+      }
+    });
+  }
+
+  // Live listeners for Step 1 fields
+  const liveThemeInputs = [
+    'setup-theme-mode',
+    'setup-notif-style',
+    'setup-accent-dark',
+    'setup-accent-light',
+    'setup-bg-style',
+    'setup-bg-anim-style'
+  ];
+
+  liveThemeInputs.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      const handler = () => {
+        if (!settings) settings = {};
+        settings.theme_mode = document.getElementById('setup-theme-mode').value;
+        const newNotif = document.getElementById('setup-notif-style').value;
+        const notifChanged = settings.notification_style !== newNotif;
+        settings.notification_style = newNotif;
+        settings.accent_color_dark = document.getElementById('setup-accent-dark').value;
+        settings.accent_color_light = document.getElementById('setup-accent-light').value;
+        settings.background_style = document.getElementById('setup-bg-style').value;
+        settings.background_animation_style = document.getElementById('setup-bg-anim-style').value;
+
+        applyThemeFromSettings();
+        populateSettingsUI();
+        saveSettingsDebounced();
+
+        if (notifChanged && id === 'setup-notif-style') {
+          showToast(`Notification style changed to ${newNotif}!`, 'info');
+        }
+      };
+      el.addEventListener('change', handler);
+      if (el.tagName === 'INPUT') el.addEventListener('input', handler);
+    }
+  });
+
+  // Step 3 Install Location Radio logic
+  const radioDefault = document.getElementById('setup-inst-dir-default');
+  const radioSeparated = document.getElementById('setup-inst-dir-separated');
+  const radioCustom = document.getElementById('setup-inst-dir-custom');
+  const pathRow = document.getElementById('setup-inst-dir-path-row');
+  const pathInput = document.getElementById('setup-inst-dir-path');
+  const browseBtn = document.getElementById('setup-inst-dir-browse');
+
+  const updateSetupDirUI = () => {
+    if (pathRow) {
+      pathRow.classList.toggle('hidden', !radioCustom || !radioCustom.checked);
+    }
+  };
+
+  if (radioDefault) radioDefault.addEventListener('change', updateSetupDirUI);
+  if (radioSeparated) radioSeparated.addEventListener('change', updateSetupDirUI);
+  if (radioCustom) radioCustom.addEventListener('change', updateSetupDirUI);
+
+  if (browseBtn) {
+    browseBtn.addEventListener('click', async () => {
+      try {
+        const picked = await window.__TAURI__.dialog.open({ directory: true });
+        if (picked && pathInput) {
+          pathInput.value = Array.isArray(picked) ? picked[0] : picked;
+        }
+      } catch (e) {
+        showToast('Could not open folder picker: ' + e, 'error');
+      }
+    });
+  }
+}
+
+async function openSetupWizard(force = false) {
+  const isFinished = settings && (settings.Finished_setup === true || settings.setup_finished === true || settings.finished_setup_upper === true);
+  if (!force && isFinished) return;
+
+  // Hide main navigation bar during setup process
+  const tabBar = document.getElementById('tab-bar');
+  if (tabBar) tabBar.classList.add('hidden');
+
+  // Switch tab page to setup
+  document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.pill-tab').forEach(b => b.classList.remove('active'));
+  const page = document.getElementById('tab-setup');
+  if (page) page.classList.add('active');
+
+  showSetupStep(1);
+
+  // Populate MC version dropdown using standard version loader
+  const mcVerSelect = document.getElementById('setup-inst-mc-version');
+  if (mcVerSelect) {
+    loadMcVersions(mcVerSelect);
+  }
+
+  // Populate current settings into step 1 inputs
+  if (settings) {
+    const themeSel = document.getElementById('setup-theme-mode');
+    if (themeSel) themeSel.value = settings.theme_mode || 'system';
+    const notifSel = document.getElementById('setup-notif-style');
+    if (notifSel) notifSel.value = settings.notification_style || 'Minimal Outline';
+    const darkCol = document.getElementById('setup-accent-dark');
+    if (darkCol) darkCol.value = settings.accent_color_dark || ACCENT_THEME_DEFAULTS.dark;
+    const lightCol = document.getElementById('setup-accent-light');
+    if (lightCol) lightCol.value = settings.accent_color_light || ACCENT_THEME_DEFAULTS.light;
+    const bgStyleSel = document.getElementById('setup-bg-style');
+    if (bgStyleSel) bgStyleSel.value = settings.background_style || 'Default';
+    const bgAnimSel = document.getElementById('setup-bg-anim-style');
+    if (bgAnimSel) bgAnimSel.value = settings.background_animation_style || 'Waves';
+  }
+
+  // Check existing accounts for step 2
+  try {
+    const accounts = await api.getAccounts();
+    const existingMsg = document.getElementById('setup-account-existing-msg');
+    if (existingMsg) {
+      if (accounts && accounts.length > 0) {
+        existingMsg.classList.remove('hidden');
+      } else {
+        existingMsg.classList.add('hidden');
+      }
+    }
+  } catch (e) {}
+}
+
+function showSetupStep(step) {
+  currentSetupStep = step;
+  const subtitleEl = document.getElementById('setup-step-subtitle');
+  const dots = document.querySelectorAll('.setup-sdot');
+  const pages = document.querySelectorAll('.setup-step-page');
+  const fillEl = document.getElementById('setup-stepper-fill');
+  const prevBtn = document.getElementById('btn-setup-prev');
+  const nextBtn = document.getElementById('btn-setup-next');
+
+  const subtitles = {
+    1: 'Step 1 of 3 — Appearance',
+    2: 'Step 2 of 3 — Account',
+    3: 'Step 3 of 3 — First Instance'
+  };
+  if (subtitleEl) subtitleEl.textContent = subtitles[step] || '';
+
+  if (fillEl) {
+    const pct = step === 1 ? 0 : step === 2 ? 50 : 100;
+    fillEl.style.width = pct + '%';
+  }
+
+  dots.forEach(dot => {
+    const dStep = parseInt(dot.dataset.step);
+    dot.classList.toggle('active', dStep === step);
+    dot.classList.toggle('completed', dStep < step);
+  });
+
+  pages.forEach((page, idx) => {
+    page.classList.toggle('active', idx + 1 === step);
+  });
+
+  if (prevBtn) prevBtn.classList.toggle('hidden', step === 1);
+  if (nextBtn) {
+    if (step === 3) {
+      nextBtn.innerHTML = `Finish Setup <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
+    } else {
+      nextBtn.innerHTML = `Next Step <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>`;
+    }
+  }
+}
+
+async function handleSetupStepSubmit(step) {
+  if (step === 1) {
+    if (!settings) settings = {};
+    settings.theme_mode = document.getElementById('setup-theme-mode').value;
+    settings.notification_style = document.getElementById('setup-notif-style').value;
+    settings.accent_color_dark = document.getElementById('setup-accent-dark').value;
+    settings.accent_color_light = document.getElementById('setup-accent-light').value;
+    settings.background_style = document.getElementById('setup-bg-style').value;
+    settings.background_animation_style = document.getElementById('setup-bg-anim-style').value;
+
+    populateSettingsUI();
+    applyThemeFromSettings();
+    await saveSettingsNow();
+    return true;
+  }
+
+  if (step === 2) {
+    const usernameInp = document.getElementById('setup-username');
+    const username = usernameInp ? usernameInp.value.trim() : '';
+
+    // Check if an account already exists
+    let hasExistingAccount = false;
+    try {
+      const accounts = await api.getAccounts();
+      if (accounts && accounts.length > 0) hasExistingAccount = true;
+    } catch (e) {}
+
+    if (!username && !hasExistingAccount) {
+      showToast('Please enter a username to create your first account', 'warning');
+      return false;
+    }
+
+    if (username) {
+      if (username.length > 16) {
+        showToast('Username must be 16 characters or less', 'warning');
+        return false;
+      }
+      try {
+        await api.addOfflineAccount(username);
+        await refreshAccountUI();
+        showToast(`Account "${username}" created!`, 'success');
+      } catch (err) {
+        showToast('Failed to create account: ' + err, 'error');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (step === 3) {
+    const nameInp = document.getElementById('setup-inst-name');
+    const name = nameInp ? nameInp.value.trim() : 'My First Instance';
+    const mcVerEl = document.getElementById('setup-inst-mc-version');
+    const mcVersion = mcVerEl ? mcVerEl.value : '';
+    const loader = document.getElementById('setup-inst-loader').value;
+
+    if (!mcVersion || mcVersion.includes('Loading') || mcVersion.includes('Fetching') || mcVersion.includes('No versions')) {
+      showToast('Please select a valid Minecraft version to proceed', 'warning');
+      return false;
+    }
+
+    let gameDir = null;
+    const radioSeparated = document.getElementById('setup-inst-dir-separated');
+    const radioCustom = document.getElementById('setup-inst-dir-custom');
+    if (radioSeparated && radioSeparated.checked) {
+      gameDir = 'separated';
+    } else if (radioCustom && radioCustom.checked) {
+      gameDir = document.getElementById('setup-inst-dir-path').value.trim() || null;
+    }
+
+    // Start instance installation in background so setup finishes instantly
+    if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall('setup-instance', mcVersion);
+    showToast(`Installing ${name}…`, 'info');
+
+    api.installVersion(mcVersion, loader, '', gameDir, name, null)
+      .then(async (result) => {
+        if (result && result.version_id) {
+          try { await api.unhideInstance(result.version_id); } catch (e) {}
+        }
+        await refreshInstances();
+        renderInstanceList();
+        showToast(`Instance "${name}" installed!`, 'success');
+      })
+      .catch((err) => {
+        if (dlWidgetGeneric) dlWidgetGeneric.failInstanceInstall('setup-instance', String(err));
+        showToast('Failed to create instance: ' + err, 'error');
+      });
+
+    return true;
+  }
+
+  return true;
+}
+
+async function finishSetupWizard() {
+  try {
+    if (!settings) settings = {};
+    settings.Finished_setup = true;
+    settings.setup_finished = true;
+    await api.updateSettings(settings);
+  } catch (e) {
+    console.error('Failed to save setup completion state:', e);
+    showToast('Warning: Failed to save setup status: ' + e, 'warning');
+  }
+
+  // Restore navigation bar
+  const tabBar = document.getElementById('tab-bar');
+  if (tabBar) tabBar.classList.remove('hidden');
+
+  // Switch to Instances tab
+  document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.pill-tab').forEach(b => b.classList.remove('active'));
+
+  const instTabBtn = document.querySelector('.pill-tab[data-tab="instances"]');
+  const instPage = document.getElementById('tab-instances');
+  if (instTabBtn) instTabBtn.classList.add('active');
+  if (instPage) instPage.classList.add('active');
+
+  showToast('Setup complete! Welcome to Zero Launcher.', 'success');
+}
+
+// ══════════════════════════════════════════════════════════════════
 // BOOT
 // ══════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
@@ -6260,6 +6628,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initMusicSettings();
   initRunningInstancesWidget();
   initApplyPresetOverlayEvents();
+  initSetupWizard();
 
   // Load initial data
   try {
@@ -6284,6 +6653,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const favId = getFavoriteInstance();
     const favInstance = favId ? getInstances().find(inst => inst.version_id === favId) : null;
     selectInstance(favInstance ? favInstance.version_id : getInstances()[0].version_id);
+  }
+
+  // Auto-open Setup Wizard on first launch if Finished_setup is not true
+  const isFinished = settings && (settings.Finished_setup === true || settings.setup_finished === true || settings.finished_setup_upper === true);
+  if (!isFinished) {
+    openSetupWizard(false);
   }
 
   // Check the currently selected instance for mod updates in the background
