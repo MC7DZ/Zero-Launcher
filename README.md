@@ -4,24 +4,23 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-2ea44f?style=for-the-badge" alt="Platform">
-  <img src="https://img.shields.io/badge/Built%20With-Java%20(Swing%2FAWT)-f89820?style=for-the-badge" alt="Java">
+  <img src="https://img.shields.io/badge/Built%20With-Tauri%20%26%20Rust-24c8ce?style=for-the-badge" alt="Built With">
   <img src="https://img.shields.io/badge/Status-In%20Development-8b5cf6?style=for-the-badge" alt="Status">
-  <img src="https://img.shields.io/badge/Future-Rust-ce422b?style=for-the-badge" alt="Rust">
 </p>
 
 <p align="center">
-A modern, lightweight, and highly customizable Minecraft launcher built entirely with Java (Swing/AWT), designed for both Windows and Linux.
+A modern, lightweight, and highly customizable Minecraft launcher built entirely with rust (Tauri), designed for both Windows and Linux.
 </p>
 
 ---
 
 > [!NOTE]
 >
-> **Zero Launcher** is my primary project and will continue to receive updates until it reaches the level of quality I have in mind.
+> **Zero Launcher** has switched to Rust & Tauri!
 >
-> Once that milestone is reached, development will begin on **Zero Launcher RUST**—a complete rewrite of the launcher using **Rust** while preserving the same philosophy, features, and user experience.
+> The project hasn't officially released yet, but the full source code is available to explore.
 >
-> The goal isn't simply to switch programming languages. It's to build an even faster, more reliable, and more maintainable launcher on a modern foundation while keeping everything users already enjoy about Zero Launcher.
+> The goal isn't simply to switch programming languages. It's to build a faster, lighter, and more reliable launcher on a modern foundation—while preserving everything users already enjoy about Zero Launcher.
 
 ## Why Rust?
 
@@ -216,11 +215,11 @@ Every feature is built with maintainability, flexibility, and responsiveness in 
 
 > [!NOTE]
 >
-> **زيرو لانشر** هو المشروع الأساسي الذي أعمل عليه حالياً، وسيستمر في الحصول على تحديثات وتحسينات حتى يصل إلى المستوى الذي أطمح إليه.
+> تم تحويل زيرو لانشر رسمياً وبشكل كامل إلى Rust & Tauri!
 >
-> بعد ذلك سأبدأ العمل على **Zero Launcher RUST**، وهي إعادة بناء كاملة للانشر باستخدام **Rust** مع الحفاظ على نفس الفكرة والميزات وتجربة الاستخدام.
+> النسخة لم تُطلق رسمياً بعد، ولكن يمكنك إلقاء نظرة على الكود المصدري المتاح حالياً.
 >
-> الهدف ليس مجرد تغيير لغة البرمجة، بل إنشاء نسخة أسرع وأكثر استقراراً وأسهل في التطوير والتوسع مستقبلاً، مع الحفاظ على هوية Zero Launcher.
+> الهدف ليس مجرد تغيير لغة البرمجة، بل إنشاء نسخة أسرع، وأكثر استقراراً، وأسهل في التطوير والتوسع مستقبلاً، مع الحفاظ على هوية وتجربة استخدام Zero Launcher.
 
 ## لماذا Rust؟
 
