@@ -6,7 +6,7 @@
 
   <groupId>com.launcher</groupId>
   <artifactId>zero-launcher</artifactId>
-  <version>1.0.15</version>
+  <version>1.0.19</version>
   <packaging>jar</packaging>
 
   <properties>
@@ -78,7 +78,7 @@
   </dependencies>
 
   <build>
-    <finalName>zero-launcher-1.0.17</finalName>
+    <finalName>zero-launcher-1.0.19</finalName>
 
     <resources>
       <!-- Regular resources: copied as-is, unfiltered (icons, fonts, presets, etc. — must

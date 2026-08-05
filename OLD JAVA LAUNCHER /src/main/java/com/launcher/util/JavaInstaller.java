@@ -147,7 +147,7 @@ public final class JavaInstaller {
                     .header("Accept", "application/json")
                     .timeout(Duration.ofSeconds(15))
                     .GET().build();
-            HttpResponse<String> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp = WindowDebug.loggedSend(CLIENT, req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() / 100 != 2) {
                 throw new IOException("Azul metadata API returned HTTP " + resp.statusCode());
             }
@@ -170,7 +170,7 @@ public final class JavaInstaller {
                 .header("User-Agent", "zerolauncher/1.0")
                 .timeout(Duration.ofMinutes(10))
                 .GET().build();
-        HttpResponse<InputStream> resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofInputStream());
+        HttpResponse<InputStream> resp = WindowDebug.loggedSend(CLIENT, req, HttpResponse.BodyHandlers.ofInputStream());
         if (resp.statusCode() / 100 != 2) {
             throw new IOException("Failed to download Java runtime: HTTP " + resp.statusCode());
         }

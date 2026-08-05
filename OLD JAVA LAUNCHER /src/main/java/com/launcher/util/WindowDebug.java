@@ -13,17 +13,22 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Temporary diagnostic helper for tracking down the "Show Launcher" /
- * minimize-to-tray invisible-window bug.
+ * Central diagnostic logger, gated by "Debug Mode" in Settings > Developer.
  * <p>
- * Every call logs a timestamped line to stderr AND to
- * {@code <launcherRoot>/window-debug.log}, so the state can be inspected even
- * when the window itself is invisible/unreachable and there's no console
- * attached (e.g. launched by double-clicking the jar).
+ * Started out purely for tracking down the "Show Launcher" / minimize-to-tray
+ * invisible-window bug (hence the class name and the window-specific
+ * {@link #dumpState}), and has since become the general-purpose debug logger
+ * for the whole launcher — networking (every HTTP request/response/retry,
+ * download start/finish/failure — see HttpUtil), rendering/visuals (Java2D
+ * pipeline configuration, screen/graphics device info, UI-scale and theme
+ * changes — see UiScaleManager and Main.applyTheme), and window state.
  * <p>
- * Safe to leave in permanently — it's cheap and only writes on the handful of
- * show/hide transitions, not every frame. Can be ripped out once the bug is
- * confirmed fixed.
+ * Every call logs a timestamped line to stderr (only when Debug Mode is on —
+ * see {@link #isEnabled()}) AND to {@code <launcherRoot>/debug.log}
+ * (always, so a report can be pulled after the fact even if the user forgot
+ * to enable Debug Mode before hitting an issue), so state can be inspected
+ * even when the window itself is invisible/unreachable and there's no
+ * console attached (e.g. launched by double-clicking the jar).
  */
 public final class WindowDebug {
 
@@ -37,7 +42,15 @@ public final class WindowDebug {
      * Read live (not cached) so toggling the setting takes effect immediately
      * without needing a restart. Defensive against SettingsManager not being
      * initialized yet (e.g. very early startup logging).
+     * <p>
+     * Public so hot paths (e.g. per-HTTP-request logging) can skip building a
+     * log message entirely when debugging is off, instead of paying for the
+     * string work and then throwing it away inside write().
      */
+    public static boolean isEnabled() {
+        return isDebugModeEnabled();
+    }
+
     private static boolean isDebugModeEnabled() {
         try {
             return com.launcher.manager.SettingsManager.getInstance().getSettings().debugMode;
@@ -50,12 +63,12 @@ public final class WindowDebug {
         if (logFile == null) {
             try {
                 Path root = com.launcher.manager.LauncherPaths.launcherRoot();
-                logFile = root.resolve("window-debug.log");
+                logFile = root.resolve("debug.log");
             } catch (Exception e) {
                 // Fall back to a temp-dir file if launcherRoot() itself is broken —
                 // we especially don't want the debug logger to be the reason nothing
                 // gets logged.
-                logFile = Path.of(System.getProperty("java.io.tmpdir", "."), "zerolauncher-window-debug.log");
+                logFile = Path.of(System.getProperty("java.io.tmpdir", "."), "zerolauncher-debug.log");
             }
         }
         return logFile;
@@ -64,6 +77,51 @@ public final class WindowDebug {
     /** Logs a plain tagged message, e.g. WindowDebug.log("hideToTray", "called"). */
     public static void log(String tag, String message) {
         write("[" + tag + "] " + message);
+    }
+
+    /** Tagged convenience wrapper for networking diagnostics — requests, responses, retries, downloads. */
+    public static void network(String tag, String message) {
+        write("[net:" + tag + "] " + message);
+    }
+
+    /** Tagged convenience wrapper for rendering/visual diagnostics — pipeline config, UI scale, theme changes. */
+    public static void visual(String tag, String message) {
+        write("[gfx:" + tag + "] " + message);
+    }
+
+    /**
+     * Drop-in wrapper around {@link java.net.http.HttpClient#send} that logs the request/
+     * response (method, URL, status, elapsed time) to {@link #network} when Debug Mode is
+     * on, and is otherwise a plain passthrough. Lets call sites that build their own
+     * HttpClient directly (the mod-loader installers, which need per-instance retry/base-URL
+     * config) opt into the same network diagnostics as HttpUtil with a one-line change:
+     * {@code httpClient.send(req, handler)} -> {@code WindowDebug.loggedSend(httpClient, req, handler)}.
+     */
+    public static <T> java.net.http.HttpResponse<T> loggedSend(
+            java.net.http.HttpClient client, java.net.http.HttpRequest req,
+            java.net.http.HttpResponse.BodyHandler<T> handler) throws IOException, InterruptedException {
+        boolean debug = isEnabled();
+        long start = debug ? System.nanoTime() : 0L;
+        if (debug) {
+            network("request", req.method() + " " + req.uri());
+        }
+        try {
+            java.net.http.HttpResponse<T> resp = client.send(req, handler);
+            if (debug) {
+                long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+                network("response", req.method() + " " + req.uri()
+                        + " -> HTTP " + resp.statusCode() + " in " + elapsedMs + "ms");
+            }
+            return resp;
+        } catch (IOException | InterruptedException e) {
+            if (debug) {
+                long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+                network("error", req.method() + " " + req.uri()
+                        + " -> " + e.getClass().getSimpleName() + ": " + e.getMessage()
+                        + " after " + elapsedMs + "ms");
+            }
+            throw e;
+        }
     }
 
     /**

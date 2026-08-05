@@ -18,28 +18,24 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 /**
- * Talks to the Quilt Meta API – no separate installer jar needed, unlike Forge/NeoForge.
- * Quilt's profile JSON already contains an {@code inheritsFrom} pointing at the vanilla
- * version, so it plugs directly into the same {@link GameInstaller} chain used by Fabric.
+ * Talks to the Fabric Meta API – no separate installer jar needed.
  * <p>
  * Improved version with:
  * <ul>
  *   <li>Built‑in HTTP client with configurable timeouts</li>
  *   <li>Automatic retries with exponential backoff</li>
  *   <li>In‑memory caching of loader version lists</li>
- *   <li>Recommendation of the latest loader</li>
+ *   <li>Recommendation of the latest stable loader</li>
  *   <li>Proper error handling and logging</li>
  * </ul>
- *
- * Meta API docs: https://meta.quiltmc.org/v3
  */
-public class QuiltInstaller {
+public class FabricInstaller {
 
-    private static final Logger LOGGER = Logger.getLogger(QuiltInstaller.class.getName());
-    private static final String DEFAULT_META_BASE = "https://meta.quiltmc.org/v3";
+    private static final Logger LOGGER = Logger.getLogger(FabricInstaller.class.getName());
+    private static final String DEFAULT_BASE_URL = "https://meta.fabricmc.net/v2";
 
     private final HttpClient httpClient;
-    private final String metaBase;
+    private final String baseUrl;
     private final int maxRetries;
     private final Duration retryBaseDelay;
 
@@ -49,21 +45,21 @@ public class QuiltInstaller {
     /**
      * Creates a new installer with default settings:
      * <ul>
-     *   <li>Meta base URL: {@value DEFAULT_META_BASE}</li>
+     *   <li>Base URL: {@value DEFAULT_BASE_URL}</li>
      *   <li>Connect/read timeouts: 10 seconds</li>
      *   <li>Max retries: 3</li>
      *   <li>Base retry delay: 1 second</li>
      * </ul>
      */
-    public QuiltInstaller() {
-        this(DEFAULT_META_BASE);
+    public FabricInstaller() {
+        this(DEFAULT_BASE_URL);
     }
 
     /**
-     * Creates a new installer with a custom meta base URL.
+     * Creates a new installer with a custom base URL.
      */
-    public QuiltInstaller(String metaBase) {
-        this(metaBase,
+    public FabricInstaller(String baseUrl) {
+        this(baseUrl,
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(10))
                         .build(),
@@ -73,14 +69,9 @@ public class QuiltInstaller {
 
     /**
      * Full constructor for complete customisation.
-     *
-     * @param metaBase       base URL of the Quilt Meta API (e.g. "https://meta.quiltmc.org/v3")
-     * @param httpClient     the HTTP client to use
-     * @param maxRetries     number of retries on failure
-     * @param retryBaseDelay initial delay between retries (exponential backoff)
      */
-    public QuiltInstaller(String metaBase, HttpClient httpClient, int maxRetries, Duration retryBaseDelay) {
-        this.metaBase = Objects.requireNonNull(metaBase, "metaBase must not be null");
+    public FabricInstaller(String baseUrl, HttpClient httpClient, int maxRetries, Duration retryBaseDelay) {
+        this.baseUrl = Objects.requireNonNull(baseUrl, "baseUrl must not be null");
         this.httpClient = Objects.requireNonNull(httpClient, "httpClient must not be null");
         if (maxRetries < 0) throw new IllegalArgumentException("maxRetries must be >= 0");
         this.maxRetries = maxRetries;
@@ -92,73 +83,66 @@ public class QuiltInstaller {
     // ------------------------------------------------------------------------
 
     /**
-     * Returns the available Quilt Loader versions for the given Minecraft version,
-     * newest first (the API returns them newest-first already).
+     * Returns a list of all available loader versions for the given Minecraft version.
      * Results are cached for subsequent calls.
      *
      * @param mcVersion the Minecraft version (e.g. "1.20.1")
      * @return a non‑null, possibly empty list of loader version strings
-     * @throws QuiltApiException if the API request fails after all retries
+     * @throws FabricApiException if the API request fails after all retries
      * @throws IllegalArgumentException if mcVersion is null or blank
      */
-    public List<String> fetchLoaderVersions(String mcVersion) throws QuiltApiException {
+    public List<String> fetchLoaderVersions(String mcVersion) throws FabricApiException {
         if (mcVersion == null || mcVersion.isBlank()) {
             throw new IllegalArgumentException("mcVersion must not be null or blank");
         }
-        try {
-            return loaderCache.computeIfAbsent(mcVersion, v -> {
-                try {
-                    return fetchLoaderVersionsUncached(v);
-                } catch (QuiltApiException e) {
-                    // Wrap in RuntimeException because computeIfAbsent cannot throw checked exceptions;
-                    // unwrapped again below so callers still see the documented QuiltApiException.
-                    throw new RuntimeException(e);
-                }
-            });
-        } catch (RuntimeException e) {
-            if (e.getCause() instanceof QuiltApiException qae) {
-                throw qae;
-            }
-            throw e;
+        // Check cache first
+        List<String> cached = loaderCache.get(mcVersion);
+        if (cached != null) {
+            return cached;
         }
+        // Fetch and store
+        List<String> versions = fetchLoaderVersionsUncached(mcVersion);
+        loaderCache.put(mcVersion, versions);
+        return versions;
     }
 
     /**
-     * Fetches the ready-to-merge version profile JSON for a specific
-     * Minecraft + Quilt Loader combination.
-     * The returned object already has {@code "inheritsFrom": mcVersion}.
+     * Fetches the full version profile JSON for a specific loader version.
+     * The returned JSON already contains an "inheritsFrom" field pointing to {@code mcVersion}.
      *
      * @param mcVersion     the Minecraft version
-     * @param loaderVersion the Quilt Loader version
+     * @param loaderVersion the Fabric loader version
      * @return a {@link JsonObject} representing the profile
-     * @throws QuiltApiException if the API request fails
+     * @throws FabricApiException if the API request fails
      * @throws IllegalArgumentException if any argument is null or blank
      */
-    public JsonObject fetchProfileJson(String mcVersion, String loaderVersion) throws QuiltApiException {
+    public JsonObject fetchProfileJson(String mcVersion, String loaderVersion) throws FabricApiException {
         if (mcVersion == null || mcVersion.isBlank()) {
             throw new IllegalArgumentException("mcVersion must not be null or blank");
         }
         if (loaderVersion == null || loaderVersion.isBlank()) {
             throw new IllegalArgumentException("loaderVersion must not be null or blank");
         }
-        String url = metaBase + "/versions/loader/" + mcVersion + "/" + loaderVersion + "/profile/json";
+        String url = baseUrl + "/versions/loader/" + mcVersion + "/" + loaderVersion + "/profile/json";
         String json = fetchWithRetries(url);
         return JsonParser.parseString(json).getAsJsonObject();
     }
 
     /**
      * Recommends a loader version for the given Minecraft version.
-     * Returns the first (latest) version from the list.
+     * Currently returns the latest version from the API (last element in the list).
+     * Override this method to implement a more sophisticated recommendation strategy.
      *
      * @param mcVersion the Minecraft version
      * @return the recommended loader version string
-     * @throws QuiltApiException if no versions are available or the API fails
+     * @throws FabricApiException if no versions are available or the API fails
      */
-    public String fetchRecommendedLoaderVersion(String mcVersion) throws QuiltApiException {
+    public String fetchRecommendedLoaderVersion(String mcVersion) throws FabricApiException {
         List<String> versions = fetchLoaderVersions(mcVersion);
         if (versions.isEmpty()) {
-            throw new QuiltApiException("No loader versions found for Minecraft " + mcVersion);
+            throw new FabricApiException("No loader versions found for Minecraft " + mcVersion);
         }
+        // The API returns newest first, so the first is the latest.
         return versions.get(0);
     }
 
@@ -166,8 +150,8 @@ public class QuiltInstaller {
     // Internal helpers
     // ------------------------------------------------------------------------
 
-    private List<String> fetchLoaderVersionsUncached(String mcVersion) throws QuiltApiException {
-        String url = metaBase + "/versions/loader/" + mcVersion;
+    private List<String> fetchLoaderVersionsUncached(String mcVersion) throws FabricApiException {
+        String url = baseUrl + "/versions/loader/" + mcVersion;
         String json = fetchWithRetries(url);
         JsonArray array = JsonParser.parseString(json).getAsJsonArray();
         List<String> versions = StreamSupport.stream(array.spliterator(), false)
@@ -180,14 +164,14 @@ public class QuiltInstaller {
         return Collections.unmodifiableList(versions);
     }
 
-    private String fetchWithRetries(String url) throws QuiltApiException {
+    private String fetchWithRetries(String url) throws FabricApiException {
         int attempt = 0;
         while (true) {
             try {
                 return fetchOnce(url);
             } catch (IOException | InterruptedException e) {
                 if (attempt >= maxRetries) {
-                    throw new QuiltApiException("Failed to fetch " + url + " after " + (attempt + 1) + " attempts", e);
+                    throw new FabricApiException("Failed to fetch " + url + " after " + (attempt + 1) + " attempts", e);
                 }
                 long delay = retryBaseDelay.toMillis() * (long) Math.pow(2, attempt);
                 LOGGER.log(Level.WARNING, "Request to {0} failed (attempt {1}), retrying in {2}ms",
@@ -196,7 +180,7 @@ public class QuiltInstaller {
                     Thread.sleep(delay);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
-                    throw new QuiltApiException("Retry interrupted for " + url, ie);
+                    throw new FabricApiException("Retry interrupted for " + url, ie);
                 }
                 attempt++;
             }
@@ -210,7 +194,7 @@ public class QuiltInstaller {
                 .header("Accept", "application/json")
                 .GET()
                 .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = com.launcher.util.WindowDebug.loggedSend(httpClient, request, HttpResponse.BodyHandlers.ofString());
         int status = response.statusCode();
         if (status < 200 || status >= 300) {
             throw new IOException("HTTP " + status + " for " + url);
@@ -223,14 +207,14 @@ public class QuiltInstaller {
     // ------------------------------------------------------------------------
 
     /**
-     * Thrown when the Quilt Meta API cannot be reached or returns an unexpected response.
+     * Thrown when the Fabric Meta API cannot be reached or returns an unexpected response.
      */
-    public static class QuiltApiException extends Exception {
-        public QuiltApiException(String message) {
+    public static class FabricApiException extends Exception {
+        public FabricApiException(String message) {
             super(message);
         }
 
-        public QuiltApiException(String message, Throwable cause) {
+        public FabricApiException(String message, Throwable cause) {
             super(message, cause);
         }
     }
@@ -241,7 +225,7 @@ public class QuiltInstaller {
 
     public static void main(String[] args) {
         try {
-            QuiltInstaller installer = new QuiltInstaller();
+            FabricInstaller installer = new FabricInstaller();
             String mc = "1.20.1";
             String recommended = installer.fetchRecommendedLoaderVersion(mc);
             System.out.println("Recommended loader for " + mc + ": " + recommended);

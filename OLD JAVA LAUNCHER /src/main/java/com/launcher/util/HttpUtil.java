@@ -67,16 +67,49 @@ public final class HttpUtil {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(formBody))
                 .build();
-        return CLIENT.send(req, HttpResponse.BodyHandlers.ofString()).body();
+        return debugSend(req, HttpResponse.BodyHandlers.ofString(), false).body();
     }
 
     // --- Validation Logic ---
     private static <T> T sendAndValidate(HttpRequest req, HttpResponse.BodyHandler<T> handler) throws IOException, InterruptedException {
-        HttpResponse<T> resp = CLIENT.send(req, handler);
+        HttpResponse<T> resp = debugSend(req, handler, false);
         if (resp.statusCode() / 100 != 2) {
             throw new IOException("Request to " + req.uri() + " failed with HTTP " + resp.statusCode());
         }
         return resp.body();
+    }
+
+    /**
+     * Same as {@link HttpClient#send}, but logs the request/response (method, URL, status,
+     * elapsed time, and — for retried calls — which attempt this is) to WindowDebug.network()
+     * when Debug Mode is on. isEnabled() is checked before building any log strings so this is
+     * effectively free when debugging is off.
+     */
+    private static <T> HttpResponse<T> debugSend(HttpRequest req, HttpResponse.BodyHandler<T> handler, boolean isRetry)
+            throws IOException, InterruptedException {
+        boolean debug = WindowDebug.isEnabled();
+        long start = debug ? System.nanoTime() : 0L;
+        if (debug) {
+            WindowDebug.network("request", req.method() + " " + req.uri()
+                    + (isRetry ? " (retry)" : ""));
+        }
+        try {
+            HttpResponse<T> resp = CLIENT.send(req, handler);
+            if (debug) {
+                long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+                WindowDebug.network("response", req.method() + " " + req.uri()
+                        + " -> HTTP " + resp.statusCode() + " in " + elapsedMs + "ms");
+            }
+            return resp;
+        } catch (IOException | InterruptedException e) {
+            if (debug) {
+                long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+                WindowDebug.network("error", req.method() + " " + req.uri()
+                        + " -> " + e.getClass().getSimpleName() + ": " + e.getMessage()
+                        + " after " + elapsedMs + "ms");
+            }
+            throw e;
+        }
     }
 
     /** Same as {@link #sendAndValidate}, but retries a couple of times (with a short backoff) on
@@ -87,9 +120,17 @@ public final class HttpUtil {
         IOException lastError = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                return sendAndValidate(req, handler);
+                HttpResponse<T> resp = debugSend(req, handler, attempt > 1);
+                if (resp.statusCode() / 100 != 2) {
+                    throw new IOException("Request to " + req.uri() + " failed with HTTP " + resp.statusCode());
+                }
+                return resp.body();
             } catch (IOException e) {
                 lastError = e;
+                if (WindowDebug.isEnabled()) {
+                    WindowDebug.network("retry", req.method() + " " + req.uri()
+                            + " attempt " + attempt + "/" + maxAttempts + " failed: " + e.getMessage());
+                }
                 if (attempt == maxAttempts) break;
                 Thread.sleep(750L * attempt);
             }
@@ -117,6 +158,12 @@ public final class HttpUtil {
         Path tmp = target.resolveSibling(target.getFileName().toString()
                 + "." + java.util.UUID.randomUUID() + ".part");
 
+        boolean debug = WindowDebug.isEnabled();
+        long start = debug ? System.nanoTime() : 0L;
+        if (debug) {
+            WindowDebug.network("download", "start " + url + " -> " + target);
+        }
+
         for (int i = 0; i < 3; i++) {
             try {
                 HttpRequest req = baseRequestBuilder(url).timeout(Duration.ofSeconds(60)).GET().build();
@@ -125,9 +172,18 @@ public final class HttpUtil {
                 if (resp.statusCode() / 100 != 2) throw new IOException("HTTP " + resp.statusCode());
 
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+                if (debug) {
+                    long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+                    long bytes = Files.size(target);
+                    WindowDebug.network("download", "done " + url + " -> " + target
+                            + " (" + bytes + " bytes in " + elapsedMs + "ms, attempt " + (i + 1) + ")");
+                }
                 return;
             } catch (IOException e) {
                 Files.deleteIfExists(tmp);
+                if (debug) {
+                    WindowDebug.network("download", "failed " + url + " attempt " + (i + 1) + "/3: " + e.getMessage());
+                }
                 if (i == 2) throw e;
                 Thread.sleep(2000); // Wait longer between retries
             }

@@ -9013,6 +9013,51 @@ public class Main extends JFrame {
         fontPickerPane.add(addFontBtn, BorderLayout.EAST);
         addSettingsRow(appearanceCard, "Font Family", fontPickerPane, gbc);
 
+        // ── UI Scale (zoom) ─────────────────────────────────────────────────
+        // Independent of, and applied on top of, whatever HiDPI scaling FlatLaf/the OS
+        // already picked. Takes effect without a restart via UiScaleManager, which
+        // rescales the shared default font and asks every open window to reflow.
+        //
+        // The label updates on every tick for instant feedback, but the actual rescale
+        // (a full component-tree walk + repaint) is debounced via this timer instead of
+        // running once per pixel of drag — a fast drag would otherwise queue up dozens of
+        // redundant tree walks on the EDT and stutter. ~40ms is short enough to still
+        // read as "live" while collapsing a drag into a handful of applies.
+        JSlider uiScaleSlider = new JSlider(50, 300,
+                com.launcher.util.UiScaleManager.clamp(s.uiScalePercent));
+        uiScaleSlider.setMajorTickSpacing(50);
+        uiScaleSlider.setSnapToTicks(false);
+        JLabel uiScaleValLabel = new JLabel(uiScaleSlider.getValue() + "%");
+        uiScaleValLabel.setForeground(Color.LIGHT_GRAY);
+        javax.swing.Timer uiScaleDebounce = new javax.swing.Timer(40, null);
+        uiScaleDebounce.setRepeats(false);
+        uiScaleSlider.addChangeListener(e -> {
+            int percent = uiScaleSlider.getValue();
+            uiScaleValLabel.setText(percent + "%");
+            s.uiScalePercent = percent;
+
+            if (uiScaleSlider.getValueIsAdjusting()) {
+                // Still dragging — (re)start the debounce timer instead of applying now.
+                for (ActionListener l : uiScaleDebounce.getActionListeners()) {
+                    uiScaleDebounce.removeActionListener(l);
+                }
+                uiScaleDebounce.addActionListener(ev -> com.launcher.util.UiScaleManager.apply(percent));
+                uiScaleDebounce.restart();
+            } else {
+                // Drag released (or a discrete change, e.g. arrow keys) — apply and
+                // persist immediately, and cancel any pending debounced apply so it
+                // doesn't fire again with a stale value right after.
+                uiScaleDebounce.stop();
+                com.launcher.util.UiScaleManager.apply(percent);
+                mgr.save();
+            }
+        });
+        JPanel uiScalePane = new JPanel(new BorderLayout(8, 0));
+        uiScalePane.setOpaque(false);
+        uiScalePane.add(uiScaleSlider, BorderLayout.CENTER);
+        uiScalePane.add(uiScaleValLabel, BorderLayout.EAST);
+        addSettingsRow(appearanceCard, "UI Scale", uiScalePane, gbc);
+
         mainPanel.add(appearanceCard);
         mainPanel.add(Box.createVerticalStrut(12));
 
@@ -9608,7 +9653,8 @@ public class Main extends JFrame {
 
         JLabel debugModeNote = new JLabel(
                 "<html><body style='width:420px; color:#a0a0aa;'>Prints diagnostic/debug messages to the console " +
-                        "(window state, tray restore, etc). Takes effect immediately.</body></html>");
+                        "and to debug.log — window state, tray restore, network requests/downloads, and " +
+                        "rendering/UI-scale/theme changes. Takes effect immediately.</body></html>");
         addSettingsRow(developerCard, "", debugModeNote, gbc);
 
         mainPanel.add(developerCard);
@@ -11422,6 +11468,75 @@ public class Main extends JFrame {
      * setIconImage()/Taskbar path in the constructor, which still helps everywhere
      * except GNOME.
      */
+    /**
+     * Cross-platform HiDPI configuration, applied before the toolkit/LAF are touched.
+     *
+     * FlatLaf already auto-detects the OS scale factor on Windows/macOS and — on
+     * Linux/X11 — reads GDK_SCALE / GDK_DPI_SCALE / QT_SCALE_FACTOR and Xft.dpi. These
+     * properties make sure the JDK itself doesn't fight that detection or apply a
+     * conflicting/second scale pass (a common source of blurry or double-scaled UIs on
+     * Linux and mixed-DPI multi-monitor Windows setups), and that font rendering stays
+     * crisp once things are scaled up.
+     */
+    private static void configureHiDpiSystemProperties() {
+        // Automatic HiDPI scaling — cross-platform.
+        System.setProperty("sun.java2d.uiScale.enabled", "true");
+        // Respect the OS's reported scale even if a manifest/environment quirk would
+        // otherwise leave the JVM DPI-unaware (mainly relevant on Windows).
+        System.setProperty("sun.java2d.dpiaware", "true");
+        // Crisper text at fractional/scaled sizes — this is also what FlatLaf itself
+        // recommends for smooth, non-laggy font rendering (it doesn't need a separate
+        // "hardware acceleration" flag of its own; it rides on Java2D's own pipeline and
+        // just wants AA text + a correct DPI scale, both handled here).
+        System.setProperty("awt.useSystemAAFontSettings", "on");
+        System.setProperty("swing.aatext", "true");
+
+        if (isLinux()) {
+            // Forcing sun.java2d.opengl=false (an earlier version of this fix) drops
+            // Java2D all the way to pure software/CPU rendering, which is what caused the
+            // severe lag — OpenGL is left on its default (not force-disabled) here.
+            //
+            // The black-text/artifact glitches some Linux setups hit come from XRender
+            // being left unset (letting the JDK autodetect, which is what's flaky) and
+            // from pixmap-backed offscreen surfaces interacting badly with certain GPU
+            // drivers — not from XRender or GPU accel themselves. So instead of disabling
+            // acceleration, pin it to the known-stable configuration:
+            System.setProperty("sun.java2d.xrender", "true");     // explicit GPU-accelerated 2D pipeline, not autodetected
+            System.setProperty("sun.java2d.pmoffscreen", "false"); // avoids the pixmap offscreen surfaces that cause black-box artifacts
+            System.setProperty("sun.java2d.ddforcevram", "true");  // keeps accelerated surfaces resident in VRAM instead of being evicted
+        }
+    }
+
+    /**
+     * Logs the Java2D rendering pipeline properties actually in effect (as opposed to
+     * what we asked for — the JVM can silently fall back if a property isn't honored on
+     * a given system) plus every connected screen device's bounds/scale, so a "why does
+     * this look wrong / lag on my machine" report has the graphics config right there
+     * instead of needing to be asked for separately. Debug Mode only (Settings >
+     * Developer) — see WindowDebug.
+     */
+    private static void logGraphicsPipelineDiagnostics() {
+        if (!com.launcher.util.WindowDebug.isEnabled()) return;
+        com.launcher.util.WindowDebug.visual("pipeline", "os=" + System.getProperty("os.name")
+                + " opengl=" + System.getProperty("sun.java2d.opengl", "<unset>")
+                + " xrender=" + System.getProperty("sun.java2d.xrender", "<unset>")
+                + " pmoffscreen=" + System.getProperty("sun.java2d.pmoffscreen", "<unset>")
+                + " ddforcevram=" + System.getProperty("sun.java2d.ddforcevram", "<unset>")
+                + " uiScaleEnabled=" + System.getProperty("sun.java2d.uiScale.enabled", "<unset>")
+                + " dpiaware=" + System.getProperty("sun.java2d.dpiaware", "<unset>"));
+        try {
+            for (var device : java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices()) {
+                var conf = device.getDefaultConfiguration();
+                var xform = conf.getDefaultTransform();
+                com.launcher.util.WindowDebug.visual("screen", device.getIDstring()
+                        + " bounds=" + conf.getBounds()
+                        + " scaleX=" + xform.getScaleX() + " scaleY=" + xform.getScaleY());
+            }
+        } catch (Throwable t) {
+            com.launcher.util.WindowDebug.logException("screen-enum", t);
+        }
+    }
+
     private static void applyLinuxWmClassFix() {
         if (!isLinux()) return;
         try {
@@ -11511,6 +11626,15 @@ public class Main extends JFrame {
 
     private void applyTheme() {
         com.launcher.model.LauncherSettings settings = com.launcher.manager.SettingsManager.getInstance().getSettings();
+        if (com.launcher.util.WindowDebug.isEnabled()) {
+            com.launcher.util.WindowDebug.visual("theme", "accent=" + settings.accentColor
+                    + " bg=" + settings.bgColor + " panelBg=" + settings.panelBgColor
+                    + " font=" + settings.fontFamily + " bgStyle=" + settings.backgroundStyle
+                    + " bgAnim=" + settings.enableBackgroundAnimation + "/" + settings.backgroundAnimationStyle
+                    + " transparency=" + settings.enableTransparency
+                    + " blur=" + settings.enableBlurEffect + "(" + settings.blurStrength + ")"
+                    + " uiScale=" + settings.uiScalePercent + "%");
+        }
         Color bg = hexToColor(settings.bgColor, new Color(10, 10, 15));
         Color panelBg = hexToColor(settings.panelBgColor, new Color(19, 19, 26));
         Color text = hexToColor(settings.textColor, new Color(226, 226, 234));
@@ -12373,6 +12497,11 @@ public class Main extends JFrame {
     private static String bootloaderVersion = "Unknown";
 
     public static void main(String[] args) {
+        // Must run before ANY AWT/Swing/Toolkit call (including applyLinuxWmClassFix()
+        // below, which touches Toolkit.getDefaultToolkit()) — the JDK reads these DPI
+        // properties once, at toolkit init, so setting them any later is a no-op.
+        configureHiDpiSystemProperties();
+
         // Must run before any AWT/Swing/Toolkit call — see applyLinuxWmClassFix() for why.
         applyLinuxWmClassFix();
 
@@ -12419,6 +12548,16 @@ public class Main extends JFrame {
             UIManager.put("SplitPane.arc", 12);
             UIManager.put("PopupMenu.borderInsets", new Insets(6, 1, 6, 1));
             UIManager.put("ToolTip.background", new Color(28, 28, 38));
+
+            // Record the current (pre-user-scaling) default font as the 100% baseline,
+            // then re-apply whatever UI Scale the user last chose (Settings > Appearance
+            // > UI Scale) so it's already in effect before the main window is built —
+            // not just when the slider is next touched.
+            com.launcher.util.UiScaleManager.captureBaseline();
+            int savedScale = com.launcher.manager.SettingsManager.getInstance().getSettings().uiScalePercent;
+            com.launcher.util.UiScaleManager.apply(savedScale);
+
+            logGraphicsPipelineDiagnostics();
         } catch (Exception ignored) {
         }
         try {

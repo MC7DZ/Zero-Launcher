@@ -15,6 +15,13 @@ public class LauncherSettings {
     public String textColor        = "#e2e2ea";   // off-white text
     public String logBgColor       = "#060608";   // very dark console bg
     public String fontFamily       = "SansSerif";
+    /** Global UI scale, as a percentage (100 = normal size). Adjustable at runtime via
+     *  the "UI Scale" slider in Settings > Appearance; see com.launcher.util.UiScaleManager.
+     *  Kept separate from OS/monitor HiDPI auto-detection (which FlatLaf handles on its
+     *  own) — this is an additional user-controlled multiplier on top of that, useful for
+     *  Linux/X11 setups where the OS doesn't report a DPI scale at all, or where the
+     *  auto-detected scale still isn't quite right for a given user. Range: 50-300. */
+    public int uiScalePercent      = 100;
     /** Absolute paths to user-added custom font files (.ttf/.otf), comma-separated.
      *  Registered at startup and appended to the Font Family choices so they persist
      *  across restarts. */
@@ -148,7 +155,9 @@ public class LauncherSettings {
 
     // ── Developer ────────────────────────────────────────────────────────────
     public boolean unlockDevStuff       = false;
-    /** When on, verbose diagnostic messages (WindowDebug, etc.) are printed to the console. */
+    /** When on, verbose diagnostic messages — window state, network requests/downloads,
+     *  and rendering/UI-scale/theme changes — are printed to the console and appended to
+     *  {@code <launcherRoot>/debug.log}. See com.launcher.util.WindowDebug. */
     public boolean debugMode            = false;
     public String privateServersIps     = "";
     public String customDiscordRpcImage = "minecraft_image";

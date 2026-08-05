@@ -341,7 +341,7 @@ public class ModpackExtractor {
                 .GET()
                 .build();
 
-        HttpResponse<Path> response = httpClient.send(request,
+        HttpResponse<Path> response = com.launcher.util.WindowDebug.loggedSend(httpClient, request,
                 HttpResponse.BodyHandlers.ofFile(dest, StandardOpenOption.CREATE,
                         StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING));
 

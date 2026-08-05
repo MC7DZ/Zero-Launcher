@@ -302,7 +302,7 @@ public class ForgeInstaller {
                 .header("Accept", "application/java-archive")
                 .GET()
                 .build();
-        HttpResponse<Path> response = httpClient.send(request, HttpResponse.BodyHandlers.ofFile(target));
+        HttpResponse<Path> response = com.launcher.util.WindowDebug.loggedSend(httpClient, request, HttpResponse.BodyHandlers.ofFile(target));
         int status = response.statusCode();
         if (status < 200 || status >= 300) {
             Files.deleteIfExists(target);
@@ -455,7 +455,7 @@ public class ForgeInstaller {
                 .header("Accept", "application/json")
                 .GET()
                 .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = com.launcher.util.WindowDebug.loggedSend(httpClient, request, HttpResponse.BodyHandlers.ofString());
         int status = response.statusCode();
         if (status < 200 || status >= 300) {
             throw new IOException("HTTP " + status + " for " + url);
