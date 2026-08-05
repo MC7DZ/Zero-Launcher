@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Console</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/styles/main.css" />
+  <style>
+    html, body { height: 100%; }
+    body {
+      display: flex;
+      flex-direction: column;
+      padding: 14px;
+      gap: 12px;
+      background: transparent;
+      position: relative;
+    }
+    html {
+      /* Fixed console-window background, independent of the user's custom
+         theme colors: #e9eaed in light mode, #141416 in dark mode. Set as
+         a CSS var by console.js (applyTheme) so it tracks live theme
+         changes instead of only the initial load. */
+      background: var(--console-window-bg, #141416);
+    }
+    html[data-theme="light"] {
+      color: #16171a;
+    }
+    html[data-theme="light"] #console-viewer,
+    html[data-theme="light"] .log-entry {
+      color: #16171a;
+    }
+    #console-bg-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--console-window-bg, #141416);
+      z-index: -1;
+      pointer-events: none;
+    }
+    #console-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #console-title-wrap { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    #console-status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+      transition: background 0.2s ease, box-shadow 0.2s ease;
+    }
+    #console-status-dot.is-running {
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent-glow);
+      animation: console-pulse 2s ease-in-out infinite;
+    }
+    @keyframes console-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
+    }
+    #console-title {
+      font-weight: 800;
+      font-size: 16px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #console-subtitle { font-size: 12px; color: var(--text-muted); }
+    #console-header-actions { display: flex; align-items: center; gap: 8px; }
+
+    /* Toolbar: search + level filters + autoscroll */
+    #console-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    #console-search-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 160px;
+    }
+    #console-search-wrap::before {
+      content: '⌕';
+      position: absolute;
+      left: 11px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: 13px;
+      pointer-events: none;
+    }
+    #console-search {
+      width: 100%;
+      padding: 7px 10px 7px 30px;
+      border-radius: var(--radius-pill);
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font-size: 12.5px;
+      outline: none;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    #console-search:focus {
+      border-color: var(--accent);
+      background: rgba(255,255,255,0.06);
+    }
+    #console-level-filters { display: flex; gap: 6px; }
+    .lvl-chip {
+      padding: 6px 11px;
+      border-radius: var(--radius-pill);
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(255,255,255,0.04);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .lvl-chip:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+    .lvl-chip.active[data-level="INFO"]  { background: rgba(96,165,250,0.16); border-color: #60a5fa; color: #93c5fd; }
+    .lvl-chip.active[data-level="WARN"]  { background: rgba(251,191,36,0.16); border-color: #fbbf24; color: #fde68a; }
+    .lvl-chip.active[data-level="ERROR"] { background: rgba(239,68,68,0.16);  border-color: #ef4444; color: #fca5a5; }
+    .lvl-chip.active[data-level="DEBUG"] { background: rgba(156,163,175,0.16); border-color: #9ca3af; color: #d1d5db; }
+
+    /* Search box, chips, and active-chip text above are all tuned for a
+       dark surface (pale text, near-invisible white-tint borders) — give
+       light mode readable, darker-toned equivalents instead of leaving
+       pale-on-light contrast failures. */
+    [data-theme="light"] #console-search,
+    [data-theme="light"] .lvl-chip {
+      border-color: rgba(0,0,0,0.12);
+      background: rgba(0,0,0,0.03);
+    }
+    [data-theme="light"] #console-search:focus { background: rgba(0,0,0,0.05); }
+    [data-theme="light"] .lvl-chip:hover { background: rgba(0,0,0,0.06); }
+    [data-theme="light"] .lvl-chip.active[data-level="INFO"]  { color: #1d4ed8; }
+    [data-theme="light"] .lvl-chip.active[data-level="WARN"]  { color: #b45309; }
+    [data-theme="light"] .lvl-chip.active[data-level="ERROR"] { color: #dc2626; }
+    [data-theme="light"] .lvl-chip.active[data-level="DEBUG"] { color: #3f3f46; }
+
+    #console-autoscroll {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    #console-autoscroll input { accent-color: var(--accent); cursor: pointer; }
+
+    #console-viewer {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      /* .log-viewer (main.css) gives this a 4px accent-colored left
+         border by default — with a light/near-white accent color that
+         reads as a stray white line down the side of the console, so
+         drop it here; the console window doesn't need it. */
+      border-left: none !important;
+      /* .log-viewer (main.css) sets an opaque background so the video
+         behind this window never showed through — override it with a
+         translucent, blurred glass panel instead. */
+      background: rgba(10, 10, 14, 0.42) !important;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    [data-theme="light"] #console-viewer {
+      /* Was rgba(255,255,255,0.5) — over the new, deliberately light
+         #e9eaed window background that combination read as a blown-out,
+         low-contrast white void. A slightly darker, less transparent
+         panel plus a visible border gives the log surface actual
+         definition again. */
+      background: rgba(214, 216, 221, 0.65) !important;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+    }
+    #console-empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 12.5px;
+      pointer-events: none;
+    }
+    #console-empty.hidden { display: none; }
+
+    #console-jump-btn {
+      position: absolute;
+      bottom: 16px;
+      right: 16px;
+      padding: 7px 13px;
+      border-radius: var(--radius-pill);
+      background: var(--accent);
+      color: #fff;
+      font-size: 11.5px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+    #console-jump-btn.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+    .log-entry.log-hidden { display: none; }
+    .log-entry mark { background: rgba(255, 214, 0, 0.35); color: inherit; border-radius: 2px; }
+  </style>
+</head>
+
+<body>
+  <div id="console-bg-overlay"></div>
+
+  <div id="console-header">
+    <div id="console-title-wrap">
+      <span id="console-status-dot"></span>
+      <div>
+        <div id="console-title">Console</div>
+        <div id="console-subtitle">—</div>
+      </div>
+    </div>
+    <div id="console-header-actions">
+      <button id="btn-copy-console" class="btn-pill" title="Copy visible logs to clipboard">⧉ Copy</button>
+      <button id="btn-save-console" class="btn-pill" title="Save logs to a file">⇩ Save</button>
+      <button id="btn-clear-console" class="btn-pill btn-danger-pill">Clear</button>
+    </div>
+  </div>
+
+  <div id="console-toolbar">
+    <div id="console-search-wrap">
+      <input id="console-search" type="text" placeholder="Search logs…" autocomplete="off" />
+    </div>
+    <div id="console-level-filters">
+      <span class="lvl-chip active" data-level="INFO">INFO</span>
+      <span class="lvl-chip active" data-level="WARN">WARN</span>
+      <span class="lvl-chip active" data-level="ERROR">ERROR</span>
+      <span class="lvl-chip active" data-level="DEBUG">DEBUG</span>
+    </div>
+    <label id="console-autoscroll">
+      <input type="checkbox" id="console-autoscroll-toggle" checked />
+      Auto-scroll
+    </label>
+  </div>
+
+  <div id="console-viewer" class="log-viewer">
+    <div id="console-empty">No log output yet — waiting for the instance to write something.</div>
+    <button id="console-jump-btn">↓ Jump to latest</button>
+  </div>
+
+  <script type="module" src="/src/js/console.js"></script>
+</body>
+
+</html>

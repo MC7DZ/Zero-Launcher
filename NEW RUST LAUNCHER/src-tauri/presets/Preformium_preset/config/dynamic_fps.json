@@ -1,0 +1,34 @@
+{
+    "uncap_menu_frame_rate": true,
+    "idle": {
+        "timeout": 180
+    },
+    "volume_transition_speed": {
+        "up": 0.6
+    },
+    "states": {
+        "hovered": {
+            "frame_rate_target": 60
+        },
+        "unfocused": {
+            "volume_multipliers": {
+                "master": 0.3
+            },
+            "graphics_state": "reduced",
+            "run_garbage_collector": true
+        },
+        "invisible": {
+            "volume_multipliers": {
+                "master": 0.05
+            },
+            "graphics_state": "minimal",
+            "run_garbage_collector": true
+        },
+        "abandoned": {
+            "frame_rate_target": 10,
+            "volume_multipliers": {
+                "master": 0.8
+            }
+        }
+    }
+}

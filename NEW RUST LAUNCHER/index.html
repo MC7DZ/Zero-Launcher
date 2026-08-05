@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZeroLauncher</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/styles/main.css" />
+</head>
+
+<body>
+  <!-- Unified Background System -->
+  <div id="bg-container">
+    <div id="bg-image-layer"></div>
+    <div id="bg-overlay-dim"></div>
+    <div id="bg-overlay-vignette"></div>
+    <canvas id="bg-canvas"></canvas>
+  </div>
+  <div id="app">
+
+    <!-- ═══ Top Bar Header ═══ -->
+    <header id="top-bar">
+      <div class="brand">
+        <span class="brand-zero">ZERO</span>
+        <span class="brand-launcher">LAUNCHER</span>
+      </div>
+
+      <!-- Navigation Tabs in Top Bar -->
+      <nav id="tab-bar">
+        <button class="pill-tab active" data-tab="instances" title="View and launch your Minecraft instances">Instances</button>
+        <button class="pill-tab" data-tab="mods" title="Manage mods for an instance">Mods</button>
+        <button class="pill-tab" data-tab="discover" title="Search and install mods/resourcepacks from Modrinth">Discover</button>
+        <button class="pill-tab" data-tab="presets" title="Apply bundled mod/config presets to an instance">Presets</button>
+        <button class="pill-tab" data-tab="settings" title="Launcher settings and preferences">Settings</button>
+      </nav>
+
+      <button id="account-btn" class="account-button">
+        <span class="account-icon">◯</span>
+        <span id="account-name">No account</span>
+        <span class="account-arrow">▾</span>
+      </button>
+    </header>
+
+    <!-- ═══ Accounts Management Modal Overlay ═══ -->
+    <div id="account-modal-overlay" class="overlay hidden">
+      <div class="overlay-card" style="max-width: 520px; width: 90%;">
+        <div class="overlay-header">
+          <h3>Accounts Manager</h3>
+          <button class="overlay-close" id="btn-close-account-modal">✕</button>
+        </div>
+
+        <!-- Section 1: Select Active Account -->
+        <div style="margin-bottom: 20px;">
+          <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">Switch Account</label>
+          <div id="modal-account-list" style="display:flex; flex-direction:column; gap:8px; max-height: 200px; overflow-y: auto; padding-right: 4px;"></div>
+        </div>
+
+        <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+        <!-- Section 2: Create New Offline Account -->
+        <div>
+          <label style="font-size:12px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">Create Offline Account</label>
+          <div style="display:flex; gap:10px;">
+            <input type="text" id="modal-new-username" class="input-field" placeholder="Username (1-16 chars)" style="flex:1;" />
+            <button id="btn-modal-add-account" class="btn-accent">Create</button>
+          </div>
+        </div>
+
+        <div class="overlay-actions" style="margin-top:24px;">
+          <button id="btn-done-account-modal" class="btn-ghost" style="width:100%;">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vanilla-instance delete dependency warning -->
+    <div id="vanilla-delete-warning-overlay" class="overlay hidden">
+      <div class="overlay-card" style="max-width: 480px; width: 90%;">
+        <div class="overlay-header">
+          <h3>⚠ Other Instances Need This</h3>
+          <button class="overlay-close" id="btn-close-vanilla-delete-warning">✕</button>
+        </div>
+        <p id="vanilla-delete-warning-intro" style="color:var(--text-muted); font-size:13px; line-height:1.5;"></p>
+        <ul id="vanilla-delete-warning-list" style="margin:12px 0; padding-left:18px; font-size:13px; max-height:180px; overflow-y:auto;"></ul>
+        <p style="color:var(--text-muted); font-size:13px; line-height:1.5;">
+          If you delete it, those instances will automatically reinstall it the next time you launch them.
+          You can also just hide it instead — it stays fully installed, disappears from your Instances list,
+          and you can unhide it again anytime from Settings.
+        </p>
+        <div class="overlay-actions" style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+          <button id="btn-vanilla-delete-cancel" class="btn-ghost">Cancel</button>
+          <button id="btn-vanilla-delete-hide" class="btn-secondary">Hide</button>
+          <button id="btn-vanilla-delete-anyway" class="btn-danger-outline">Delete Anyway</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Crash / Troubleshoot window -->
+    <div id="crash-troubleshoot-overlay" class="overlay hidden">
+      <div class="overlay-card" style="max-width: 460px; width: 90%;">
+        <div class="overlay-header">
+          <h3>⚠ Something Went Wrong</h3>
+          <button class="overlay-close" id="btn-close-crash-troubleshoot">✕</button>
+        </div>
+        <p style="color:var(--text-muted); font-size:13px; line-height:1.6;">
+          <span id="crash-troubleshoot-instance-name" style="color:var(--text); font-weight:600;"></span>
+          failed to launch. We might be able to fix that by reinstalling this Minecraft version.
+        </p>
+        <div id="crash-troubleshoot-details" style="margin:10px 0; padding:10px 12px; border-radius:10px; background:rgba(var(--overlay-rgb),0.08); border:1px solid rgba(var(--overlay-rgb),0.12); font-size:12px; font-family:var(--mono-font, monospace); color:var(--text-muted); max-height:120px; overflow-y:auto; white-space:pre-wrap; word-break:break-word;"></div>
+        <div class="overlay-actions" style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+          <button id="btn-crash-troubleshoot-no" class="btn-ghost">No, I'll figure it out</button>
+          <button id="btn-crash-troubleshoot-yes" class="btn-accent">Yes, Troubleshoot</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Instance Troubleshoot window (opened via the 🔧 button on an instance card) -->
+    <div id="instance-troubleshoot-overlay" class="overlay hidden">
+      <div class="overlay-card" style="max-width: 420px; width: 90%;">
+        <div class="overlay-header">
+          <h3 style="display:flex; align-items:center; gap:8px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px; height:18px; flex-shrink:0;">
+              <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L2 19v3h3l7.3-7.3a4 4 0 0 0 5.4-5.4l-2.8 2.8-2-2 2.8-2.8z"></path>
+            </svg>
+            Troubleshoot - <span id="instance-troubleshoot-name"></span>
+          </h3>
+          <button class="overlay-close" id="btn-close-instance-troubleshoot">✕</button>
+        </div>
+        <div id="instance-troubleshoot-options" class="troubleshoot-options" style="margin-top:14px; display:flex; flex-direction:column; gap:6px;">
+          <button id="btn-instance-troubleshoot-reinstall" class="troubleshoot-option-btn">
+            <span>Reinstall Version</span>
+            <span class="troubleshoot-option-arrow">›</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Tab Content ═══ -->
+    <main id="tab-content">
+
+      <!-- ── Instances Tab ── -->
+      <section id="tab-instances" class="tab-page active">
+        <div class="instances-layout">
+          <!-- Left: instance list -->
+          <div class="instance-sidebar">
+            <button id="btn-new-instance" class="btn-accent btn-full" title="Install a new Minecraft instance">+ New Instance</button>
+            <div id="instance-list" class="instance-list"></div>
+          </div>
+          <!-- Right: details -->
+          <div class="instance-details">
+            <div id="detail-header" class="glass-card detail-header">
+              <div id="detail-icon" class="detail-icon"></div>
+              <div class="detail-header-text">
+                <div id="detail-name" class="detail-name">No instance selected</div>
+                <div id="detail-version" class="detail-badge"></div>
+              </div>
+            </div>
+            <div id="detail-info" class="glass-card detail-info">
+              <div class="info-row"><span class="info-label">Mod Loader</span><span id="info-loader"
+                  class="info-value">—</span></div>
+              <div class="info-row"><span class="info-label">Game Directory</span><span id="info-dir"
+                  class="info-value">—</span></div>
+            </div>
+
+            <!-- Running Instances buttons -->
+            <div id="ri-widget" class="ri-widget">
+              <div id="ri-buttons" class="ri-buttons"></div>
+            </div>
+
+            <div class="detail-actions">
+              <button id="btn-play" class="btn-play" disabled title="Launch the selected instance">▶ PLAY</button>
+              <button id="btn-edit-instance" class="btn-secondary" title="Rename or change the loader version of the selected instance">Edit</button>
+              <button id="btn-delete-instance" class="btn-danger-outline" title="Permanently delete the selected instance">Delete</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- New Instance Form (overlay) -->
+        <div id="new-instance-overlay" class="overlay hidden">
+          <div class="bento-modal">
+            <div class="bento-tile bento-tile-header">
+              <h3>Create New Instance</h3>
+              <button class="overlay-close" id="btn-cancel-new-instance">✕</button>
+            </div>
+
+            <div class="bento-tile bento-tile-name">
+              <label class="bento-tile-label">Name</label>
+              <input type="text" id="inst-name" class="input-field" placeholder="My Instance (blank = Loader + Version)" />
+            </div>
+
+            <div class="bento-tile bento-tile-version">
+              <label class="bento-tile-label">Minecraft Version</label>
+              <select id="inst-mc-version" class="input-field">
+                <option>Loading…</option>
+              </select>
+            </div>
+
+            <div class="bento-tile bento-tile-loader">
+              <label class="bento-tile-label">Mod Loader</label>
+              <select id="inst-loader" class="input-field">
+                <option value="Vanilla">Vanilla</option>
+                <option value="Fabric">Fabric</option>
+                <option value="Forge">Forge</option>
+                <option value="Quilt">Quilt</option>
+                <option value="NeoForge">NeoForge</option>
+              </select>
+            </div>
+
+            <div class="bento-tile bento-tile-loader-version" id="inst-loader-version-tile">
+              <label class="bento-tile-label">Loader Version <span class="bento-tile-hint">(blank = latest)</span></label>
+              <input type="text" id="inst-loader-version" class="input-field" placeholder="Latest" />
+            </div>
+
+            <div class="bento-tile bento-tile-location">
+              <label class="bento-tile-label">Install Location</label>
+              <div class="bento-radio-group">
+                <label class="bento-radio-row">
+                  <input type="radio" name="inst-dir-choice" id="inst-dir-default" />
+                  <span>Use default Minecraft directory <span id="inst-dir-default-path" class="bento-tile-hint">(~/.minecraft)</span></span>
+                </label>
+                <label class="bento-radio-row">
+                  <input type="radio" name="inst-dir-choice" id="inst-dir-separated" />
+                  <span>Separated folder <span id="inst-dir-separated-path" class="bento-tile-hint">(keeps this instance's mods, saves, and config on their own)</span></span>
+                </label>
+                <label class="bento-radio-row">
+                  <input type="radio" name="inst-dir-choice" id="inst-dir-custom" />
+                  <span>Use a custom directory</span>
+                </label>
+              </div>
+              <div id="inst-dir-path-row" class="hidden bento-dir-path-row">
+                <input type="text" id="inst-dir-path" class="input-field" placeholder="/path/to/folder" style="flex:1;" />
+                <button id="inst-dir-browse" class="btn-secondary" type="button">Browse…</button>
+              </div>
+            </div>
+
+            <div id="install-progress-wrap" class="bento-tile bento-tile-progress hidden">
+              <div class="progress-text" id="install-status">Starting install…</div>
+              <div class="progress-track">
+                <div class="progress-bar" id="install-bar"></div>
+              </div>
+            </div>
+
+            <div class="bento-tile bento-tile-actions">
+              <button id="btn-start-install" class="btn-accent">Install & Play</button>
+              <button id="btn-cancel-install-form" class="btn-ghost">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit Instance overlay -->
+        <div id="edit-instance-overlay" class="overlay hidden">
+          <div class="bento-modal">
+            <div class="bento-tile bento-tile-header">
+              <h3>Edit Instance</h3>
+              <button class="overlay-close" id="btn-cancel-edit-instance">✕</button>
+            </div>
+
+            <div class="bento-tile bento-tile-name">
+              <label class="bento-tile-label">Name</label>
+              <input type="text" id="edit-inst-name" class="input-field" placeholder="My Instance" />
+            </div>
+
+            <div class="bento-tile bento-tile-version">
+              <label class="bento-tile-label">Minecraft Version <span class="bento-tile-hint">(changing this reinstalls)</span></label>
+              <select id="edit-inst-mc-version" class="input-field">
+                <option>Loading…</option>
+              </select>
+            </div>
+
+            <div class="bento-tile bento-tile-loader">
+              <label class="bento-tile-label">Mod Loader <span class="bento-tile-hint">(changing this reinstalls)</span></label>
+              <select id="edit-inst-loader" class="input-field">
+                <option value="Vanilla">Vanilla</option>
+                <option value="Fabric">Fabric</option>
+                <option value="Forge">Forge</option>
+                <option value="Quilt">Quilt</option>
+                <option value="NeoForge">NeoForge</option>
+              </select>
+            </div>
+
+            <div class="bento-tile bento-tile-loader-version" id="edit-inst-loader-version-tile">
+              <label class="bento-tile-label">Loader Version <span class="bento-tile-hint">(blank = latest)</span></label>
+              <input type="text" id="edit-inst-loader-version" class="input-field" placeholder="Latest" />
+            </div>
+
+            <div class="bento-tile bento-tile-location">
+              <label class="bento-tile-label">Game Directory</label>
+              <div id="edit-inst-dir" class="bento-tile-static-value">—</div>
+            </div>
+
+            <div class="bento-tile bento-tile-actions">
+              <button id="btn-save-edit-instance" class="btn-accent">Save Changes</button>
+              <button id="btn-cancel-edit-instance-2" class="btn-ghost">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Mods Tab ── -->
+      <section id="tab-mods" class="tab-page">
+        <div class="mods-toolbar">
+          <div class="mods-toolbar-left">
+            <h2 class="section-title">Mods</h2>
+            <span id="mods-count" class="mods-count"></span>
+            <div class="mods-toolbar-actions">
+              <button id="btn-check-updates" class="btn-pill" title="Check every installed mod against Modrinth for a newer version">⟳ Check Updates</button>
+              <button id="btn-fix-mods-run" class="btn-pill" title="Install missing dependencies, remove duplicates, disable incompatible mods, then check for and install updates — all in one click">Fix Mods</button>
+              <div class="fix-mods-wrapper" style="position:relative; display:inline-flex; align-items:center;">
+                <button id="btn-fix-mods" class="btn-pill" aria-haspopup="true" aria-expanded="false" title="More fix options">▾</button>
+                <div id="fix-mods-inline" class="fix-mods-inline" aria-hidden="true">
+                  <button id="fix-install-deps" class="btn-ghost" title="Download any mods that are required but missing">Install Deps</button>
+                  <button id="fix-dedupe" class="btn-ghost" title="Delete duplicate copies of the same mod, keeping the newest version">Deduplicate</button>
+                  <button id="fix-disable-incompatible" class="btn-ghost" title="Disable mods built for a different mod loader than this instance">Disable Incompatible</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mods-toolbar-right">
+            <button id="btn-delete-selected-mods" class="btn-pill hidden" title="Delete the checked mods">🗑 Delete Selected</button>
+            <button id="btn-open-mods" class="btn-pill" title="Open this instance's mods folder">⌗ Open Folder</button>
+          </div>
+        </div>
+        
+        <div class="form-group mods-instance-row" style="margin-bottom:16px; display:flex; gap:8px; align-items:center;">
+          <input type="text" id="mods-search" class="input-field mods-search-input" placeholder="⌕ Search mods…" autocomplete="off" />
+          <select id="mods-instance-select" class="input-field mods-instance-inline">
+            <option value="">Select an instance…</option>
+          </select>
+          <button id="btn-update-all-mods" class="btn-update-all-pill" type="button" title="Update All Mods" disabled>
+            <span class="update-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6.5 11.5 12 17l5.5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          </button>
+        </div>
+
+        <!-- Drag .jar files anywhere onto this tab to add them — a full-window
+             overlay appears while dragging (see #mods-drag-overlay below). -->
+
+        <div id="mods-grid" class="mods-list"></div>
+
+        <!-- Full-tab overlay shown only while a file is actively being dragged over the window. -->
+        <div id="mods-drag-overlay" class="mods-drag-overlay" aria-hidden="true">
+          <div class="mods-drag-overlay-inner">
+            <span class="mods-drag-overlay-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" stroke-width="1.6" opacity="0.5"/>
+                <path d="M12 16V7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M7.5 11.5 12 7l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M6 16.5v1.2a2.3 2.3 0 0 0 2.3 2.3h7.4a2.3 2.3 0 0 0 2.3-2.3v-1.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <div class="mods-drag-overlay-title">Release to add mods</div>
+            <div class="mods-drag-overlay-sub">Each file is checked for a Fabric, Quilt, or Forge manifest first</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Presets Tab ── -->
+      <section id="tab-presets" class="tab-page">
+        <div class="logs-toolbar">
+          <h2 class="section-title">Presets</h2>
+        </div>
+        <div class="form-group mods-instance-row" style="margin-bottom:16px; display:flex; gap:8px; align-items:center;">
+          <select id="presets-instance-select" class="input-field mods-instance-inline">
+            <option value="">Select a target instance…</option>
+          </select>
+        </div>
+        <div id="presets-grid" class="presets-container"></div>
+      </section>
+
+      <!-- Apply Preset overlay -->
+      <div id="apply-preset-overlay" class="overlay hidden">
+        <div class="bento-modal bento-modal-preset">
+          <div class="bento-tile bento-tile-header">
+            <h3 id="apply-preset-title">Apply Preset</h3>
+            <button class="overlay-close" id="btn-close-apply-preset">✕</button>
+          </div>
+
+          <div class="bento-tile bento-tile-preset-info">
+            <div id="apply-preset-info" class="apply-preset-info"></div>
+          </div>
+
+          <div class="bento-tile bento-tile-preset-config hidden" id="apply-preset-config-row">
+            <label class="discover-filter-check-row">
+              <input type="checkbox" id="apply-preset-use-config" checked />
+              <span>Use the recommended mods config</span>
+            </label>
+          </div>
+
+          <div class="bento-tile bento-tile-preset-mods">
+            <div id="apply-preset-mod-list" class="apply-preset-mod-list"></div>
+          </div>
+
+          <div id="apply-preset-progress" class="bento-tile bento-tile-preset-progress hidden">
+            <div class="apply-preset-progress-label" id="apply-preset-progress-label">Applying…</div>
+          </div>
+
+          <div class="bento-tile bento-tile-actions bento-tile-preset-actions">
+            <div style="display:flex; gap:8px;">
+              <button class="btn-pill btn-sm" id="btn-preset-select-all" title="Check every mod in this preset">Select All</button>
+              <button class="btn-pill btn-sm" id="btn-preset-select-none" title="Uncheck every mod in this preset">Select None</button>
+            </div>
+            <button class="btn-accent" id="btn-apply-preset-confirm" title="Download the checked mods and apply this preset to the target instance">Apply Preset</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Discover Tab (Modrinth browser) ── -->
+      <section id="tab-discover" class="tab-page">
+        <div class="discover-toolbar">
+          <div class="discover-toolbar-top">
+            <h2 class="section-title">Discover</h2>
+            <div class="discover-type-toggle">
+              <button id="discover-type-mod" class="discover-segment active" data-type="mod">Mods</button>
+              <button id="discover-type-resourcepack" class="discover-segment" data-type="resourcepack">Resourcepacks</button>
+            </div>
+          </div>
+          <div class="discover-search-row">
+            <input type="text" id="discover-query" class="input-field" placeholder="Search Modrinth…" />
+            <select id="discover-target-instance" class="input-field" style="max-width:220px;">
+              <option value="">Any instance / version…</option>
+            </select>
+            <button id="discover-search-btn" class="btn-accent" title="Search Modrinth">Search</button>
+            <button id="discover-refresh-btn" class="btn-pill" title="Refresh">⟳</button>
+          </div>
+          <div class="discover-filter-chips">
+            <div class="discover-filter-group" id="discover-filter-group">
+              <div class="discover-filter">
+                <button class="discover-filter-btn" data-filter="version">Game Version <span class="discover-filter-count" hidden></span><svg class="discover-filter-caret" viewBox="0 0 10 6" width="10" height="6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <div class="discover-filter-panel" data-panel="version">
+                  <div class="discover-filter-panel-search">
+                    <input type="text" class="input-field" id="discover-version-search" placeholder="Filter versions…" />
+                  </div>
+                  <div class="discover-filter-panel-list" id="discover-version-list"></div>
+                </div>
+              </div>
+              <div class="discover-filter">
+                <button class="discover-filter-btn" data-filter="loader">Loader <span class="discover-filter-count" hidden></span><svg class="discover-filter-caret" viewBox="0 0 10 6" width="10" height="6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <div class="discover-filter-panel" data-panel="loader">
+                  <div class="discover-filter-panel-list" id="discover-loader-list"></div>
+                </div>
+              </div>
+              <div class="discover-filter">
+                <button class="discover-filter-btn" data-filter="category">Category <span class="discover-filter-count" hidden></span><svg class="discover-filter-caret" viewBox="0 0 10 6" width="10" height="6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <div class="discover-filter-panel" data-panel="category">
+                  <div class="discover-filter-panel-list discover-filter-panel-checklist" id="discover-category-list"></div>
+                  <div class="discover-filter-panel-footer">
+                    <button class="btn-pill btn-sm" id="discover-category-clear">Clear</button>
+                    <button class="btn-accent btn-sm" id="discover-category-apply">Apply</button>
+                  </div>
+                </div>
+              </div>
+              <div class="discover-filter">
+                <button class="discover-filter-btn" data-filter="environment">Environment <span class="discover-filter-count" hidden></span><svg class="discover-filter-caret" viewBox="0 0 10 6" width="10" height="6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <div class="discover-filter-panel" data-panel="environment">
+                  <div class="discover-filter-panel-list" id="discover-environment-list"></div>
+                </div>
+              </div>
+              <div class="discover-filter">
+                <button class="discover-filter-btn" data-filter="license">License <span class="discover-filter-count" hidden></span><svg class="discover-filter-caret" viewBox="0 0 10 6" width="10" height="6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <div class="discover-filter-panel" data-panel="license">
+                  <div class="discover-filter-panel-list" id="discover-license-list"></div>
+                </div>
+              </div>
+              <div class="discover-filter">
+                <button class="discover-filter-btn" data-filter="advanced">Advanced <span class="discover-filter-count" hidden></span><svg class="discover-filter-caret" viewBox="0 0 10 6" width="10" height="6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <div class="discover-filter-panel" data-panel="advanced">
+                  <label class="discover-filter-check-row">
+                    <input type="checkbox" id="discover-adv-opensource" />
+                    <span>Open source only</span>
+                  </label>
+                  <div class="discover-filter-panel-footer">
+                    <button class="btn-pill btn-sm" id="discover-adv-clear">Clear</button>
+                    <button class="btn-accent btn-sm" id="discover-adv-apply">Apply</button>
+                  </div>
+                </div>
+              </div>
+              <button class="discover-filter-reset-all" id="discover-filters-reset" hidden title="Reset all filters">Reset filters ✕</button>
+            </div>
+            <div class="discover-view-controls">
+              <div class="discover-pagesize-dropdown" id="discover-pagesize-dropdown">
+                <button type="button" class="discover-pagesize-btn" id="discover-pagesize-btn" title="Cards per page">
+                  <span id="discover-pagesize-label">20 / page</span>
+                  <svg class="discover-filter-caret" viewBox="0 0 10 6" width="10" height="6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="discover-pagesize-panel" id="discover-pagesize-panel">
+                  <button type="button" class="discover-pagesize-option" data-size="10">10 / page</button>
+                  <button type="button" class="discover-pagesize-option selected" data-size="20">20 / page</button>
+                  <button type="button" class="discover-pagesize-option" data-size="40">40 / page</button>
+                  <button type="button" class="discover-pagesize-option" data-size="60">60 / page</button>
+                  <button type="button" class="discover-pagesize-option" data-size="100">100 / page</button>
+                </div>
+              </div>
+              <div class="discover-view-toggle" role="group" aria-label="Card layout">
+                <button id="discover-view-grid" class="discover-view-btn active" data-view="grid" title="Grid view">
+                  <svg viewBox="0 0 16 16" width="15" height="15" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.2" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1.2" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1.2" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1.2" fill="currentColor"/></svg>
+                </button>
+                <button id="discover-view-list" class="discover-view-btn" data-view="list" title="List view">
+                  <svg viewBox="0 0 16 16" width="15" height="15" fill="none"><rect x="1" y="2" width="14" height="3" rx="1" fill="currentColor"/><rect x="1" y="6.5" width="14" height="3" rx="1" fill="currentColor"/><rect x="1" y="11" width="14" height="3" rx="1" fill="currentColor"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="discover-results" class="discover-grid"></div>
+
+        <div class="discover-pagination">
+          <button id="discover-prev-page" class="btn-pill" disabled title="Previous page of results">‹ Prev</button>
+          <span id="discover-page-info" class="discover-page-info">Page 1</span>
+          <button id="discover-next-page" class="btn-pill" disabled title="Next page of results">Next ›</button>
+        </div>
+      </section>
+
+      <!-- ── Settings Tab ── -->
+      <section id="tab-settings" class="tab-page">
+        <div class="logs-toolbar">
+          <h2 class="section-title">Settings</h2>
+          <button id="btn-reset-settings" class="btn-danger-outline btn-sm" title="Reset all settings to default">↺ Reset All</button>
+        </div>
+
+        <div class="settings-grid">
+          <!-- Appearance Settings -->
+          <div class="glass-card settings-card">
+            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="7.5" cy="10.5" r="1.3" fill="currentColor"/><circle cx="11.5" cy="7" r="1.3" fill="currentColor"/><circle cx="16" cy="8.5" r="1.3" fill="currentColor"/><circle cx="17" cy="13" r="1.3" fill="currentColor"/></svg>Appearance Settings</h3>
+
+            <!-- Theme Mode -->
+            <div class="form-row" style="margin-bottom: 14px;">
+              <div class="form-group">
+                <label>Theme</label>
+                <select id="setting-theme-mode" class="input-field">
+                  <option value="system">Match System (Auto)</option>
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+            <!-- Color Setting — each theme remembers its own accent color -->
+            <div class="form-row" style="margin-bottom: 14px;">
+              <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+                <label style="margin-bottom: 0;">Accent Color (Dark Theme)</label>
+                <input type="color" id="setting-accent-color-dark" class="color-picker-box" />
+              </div>
+            </div>
+            <div class="form-row" style="margin-bottom: 14px;">
+              <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+                <label style="margin-bottom: 0;">Accent Color (Light Theme)</label>
+                <input type="color" id="setting-accent-color-light" class="color-picker-box" />
+              </div>
+            </div>
+
+            <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+            <!-- Background Style & Animation -->
+            <div class="form-row">
+              <div class="form-group">
+                <label>Background Style</label>
+                <select id="setting-bg-style" class="input-field">
+                  <option value="Default">Default</option>
+                  <option value="Midnight">Midnight</option>
+                  <option value="Sunset">Sunset</option>
+                  <option value="Forest">Forest</option>
+                  <option value="Ocean">Ocean</option>
+                  <option value="Monochrome">Monochrome</option>
+                  <option value="Accent Glow">Accent Glow</option>
+                  <option value="Nothing">Nothing (flat gray)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Animation Style</label>
+                <select id="setting-bg-anim-style" class="input-field">
+                  <option value="Waves">Waves</option>
+                  <option value="Particles">Particles</option>
+                  <option value="Fireflies">Fireflies</option>
+                  <option value="Orbs">Orbs</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Animation Speed</label>
+                <input type="number" step="0.1" min="0.1" max="5.0" id="setting-bg-anim-speed" class="input-field" />
+              </div>
+              <div class="form-group">
+                <label>Animation FPS</label>
+                <input type="number" min="10" max="120" id="setting-bg-anim-fps" class="input-field" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Animation Intensity</label>
+                <input type="range" min="0.5" max="3.0" step="0.1" id="setting-bg-anim-intensity" class="input-range" />
+              </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-bg-anim-enable" />
+                <span class="toggle-slider"></span>
+                <span>Background Animations</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-transparency" />
+                <span class="toggle-slider"></span>
+                <span>Frosted Glass Transparency</span>
+              </label>
+            </div>
+
+            <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+            <!-- Background Image -->
+            <label class="toggle-row" style="margin-bottom:10px;">
+              <input type="checkbox" id="setting-use-bg-image" />
+              <span class="toggle-slider"></span>
+              <span>Use Background Image</span>
+            </label>
+
+            <div class="form-group">
+              <label>Background Image</label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input type="hidden" id="setting-bg-image-path" />
+                <div id="setting-bg-image-selected" class="input-field" style="flex:1; min-height:40px; display:flex; align-items:center; padding:0 12px; border-radius:14px; overflow:hidden; background: rgba(var(--overlay-rgb),0.08); border:1px solid rgba(var(--overlay-rgb),0.12); color: var(--text);">
+                  <span id="setting-bg-image-selected-text" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">No image selected</span>
+                </div>
+                <button id="btn-browse-bg-image" type="button" class="btn-pill" style="flex-shrink:0;">⌗ Browse…</button>
+                <button id="btn-clear-bg-image" type="button" class="btn-secondary btn-pill" style="flex-shrink:0;">Clear</button>
+              </div>
+              <div id="setting-bg-image-name" style="margin-top:8px; font-size:12px; color: var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Select an image to show a screenshot preview.</div>
+              <div id="setting-bg-image-preview" class="image-preview hidden" style="margin-top:10px; max-width:240px; border-radius:14px; overflow:hidden; border:1px solid rgba(var(--overlay-rgb),0.12); background:rgba(var(--overlay-rgb),0.08);">
+                <img id="setting-bg-image-thumbnail" alt="Background preview" style="width:100%; height:100%; object-fit:cover; display:block;" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Image Fit</label>
+                <select id="setting-bg-image-fit" class="input-field">
+                  <option value="Cover">Cover</option>
+                  <option value="Contain">Contain</option>
+                  <option value="Stretch">Stretch</option>
+                  <option value="Center">Center</option>
+                  <option value="Tile">Tile</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Dim Overlay (0-100)</label>
+                <input type="range" min="0" max="100" id="setting-bg-image-dim" class="input-range" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Image Brightness</label>
+                <input type="range" min="50" max="150" id="setting-bg-image-brightness" class="input-range" />
+              </div>
+              <div class="form-group">
+                <label>Image Blur</label>
+                <input type="range" min="0" max="20" id="setting-bg-image-blur" class="input-range" />
+              </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-bg-image-tint" />
+                <span class="toggle-slider"></span>
+                <span>Tint with Accent Color</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-bg-image-vignette" />
+                <span class="toggle-slider"></span>
+                <span>Vignette Effect</span>
+              </label>
+            </div>
+
+            <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+            <!-- Notification Style & Font -->
+            <div class="form-row">
+              <div class="form-group">
+                <label>Notification Style</label>
+                <select id="setting-notif-style" class="input-field">
+                  <option value="Minimal Outline">Minimal Outline</option>
+                  <option value="Frosted Glass">Frosted Glass</option>
+                  <option value="Solid">Solid</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Font Family</label>
+                <select id="setting-font-family" class="input-field">
+                  <option value="Inter">Inter</option>
+                  <option value="Roboto">Roboto</option>
+                  <option value="Outfit">Outfit</option>
+                  <option value="system-ui">System Default</option>
+                  <option value="monospace">Monospace</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+            <!-- Music -->
+            <label class="toggle-row" style="margin-bottom:14px;">
+              <input type="checkbox" id="setting-music-enabled" />
+              <span class="toggle-slider"></span>
+              <span>Background Music</span>
+            </label>
+
+            <div class="form-row" style="margin-bottom: 14px;">
+              <div class="form-group">
+                <label>Music Volume</label>
+                <input type="range" min="0" max="100" step="1" id="setting-music-volume" class="input-range" />
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 14px;">
+              <label>When switching to another window</label>
+              <select id="setting-music-switch-behavior" class="input-field">
+                <option value="pause">Pause music</option>
+                <option value="continue">Don't pause music</option>
+                <option value="lower">Don't pause music, but lower volume</option>
+              </select>
+            </div>
+
+            <div class="form-row" id="setting-music-lower-row" style="margin-bottom: 14px;">
+              <div class="form-group">
+                <label>Volume while unfocused</label>
+                <input type="range" min="0" max="100" step="1" id="setting-music-lower-percent" class="input-range" />
+              </div>
+            </div>
+
+            <button type="button" id="btn-open-music-library" class="btn-secondary">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">
+                <path d="M9 18V5l12-2v13"></path>
+                <circle cx="6" cy="18" r="3"></circle>
+                <circle cx="18" cy="16" r="3"></circle>
+              </svg>
+              Manage Music Library
+            </button>
+          </div>
+
+          <!-- Behavior -->
+          <div class="glass-card settings-card">
+            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="6" width="18" height="4.5" rx="2.25" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8.25" r="1.4" fill="currentColor"/><rect x="3" y="13.5" width="18" height="4.5" rx="2.25" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="15.75" r="1.4" fill="currentColor"/></svg>Behavior</h3>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-close-on-launch" />
+                <span class="toggle-slider"></span>
+                <span>Close launcher when game starts</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-minimize-on-launch" />
+                <span class="toggle-slider"></span>
+                <span>Minimize launcher while game is running</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-restore-on-close" />
+                <span class="toggle-slider"></span>
+                <span>Restore launcher when game closes</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-system-tray" />
+                <span class="toggle-slider"></span>
+                <span>Enable System Tray Icon</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-mod-updates-startup" />
+                <span class="toggle-slider"></span>
+                <span>Check mod updates on startup</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-confirm-destructive" />
+                <span class="toggle-slider"></span>
+                <span>Confirm before deleting items</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-auto-apply-instance-filters" />
+                <span class="toggle-slider"></span>
+                <span>Auto-select loader &amp; game version in Discover when picking an instance</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-smooth-scrolling" />
+                <span class="toggle-slider"></span>
+                <span>Smooth scrolling</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-notify-auto-mod-updates" />
+                <span class="toggle-slider"></span>
+                <span>Notify when the automatic mod update check finds updates</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Performance & Java -->
+          <div class="glass-card settings-card">
+            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 21a9 9 0 1 1 9-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12 12 8.5 8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12 12 15 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>Performance & Java</h3>
+            <div class="form-group">
+              <label>Minecraft Game Directory</label>
+              <input type="text" id="setting-game-dir" class="input-field" placeholder="Default (~/.minecraft)" />
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Min RAM (MB)</label><input type="number" id="setting-min-ram" class="input-field" /></div>
+              <div class="form-group"><label>Max RAM (MB)</label><input type="number" id="setting-max-ram" class="input-field" /></div>
+            </div>
+            <div class="form-group">
+              <label>Java Version</label>
+              <select id="setting-java-select" class="input-field">
+                <option value="">✦ Smart Java Detection (Recommended)</option>
+              </select>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+                <span id="java-select-hint" style="font-size:12px; opacity:0.7;">Automatically picks (or downloads) the right Java for each instance.</span>
+                <button type="button" id="btn-refresh-java" class="btn-secondary" style="padding:4px 10px; font-size:12px;">⟳ Refresh</button>
+              </div>
+            </div>
+            <div class="form-group"><label>JVM Arguments</label><input type="text" id="setting-jvm-args" class="input-field" placeholder="-XX:+UseG1GC" /></div>
+
+            <div class="dropdown-divider" style="margin: 14px 0;"></div>
+
+            <div class="form-group">
+              <label>Hidden Instances</label>
+              <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                <span id="hidden-instances-status" style="font-size:12px; opacity:0.7;">Instances you've hidden (e.g. a vanilla instance other instances still need) show up here. They stay fully installed on disk.</span>
+              </div>
+              <div id="hidden-instances-list" class="instance-list hidden-instances-list">
+                <div class="empty-state"><span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 12C3 9 7 5 12 5s9 4 10.5 7c-1.5 3-5.5 7-10.5 7S3 15 1.5 12Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.6"/></svg></span><span>No hidden instances</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Discord RPC -->
+          <div class="glass-card settings-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+              <h3><svg class="settings-icon" viewBox="0 -28.5 256 256" xmlns="http://www.w3.org/2000/svg"><path d="M216.856339,16.5966031 C200.285002,8.84328665 182.566144,3.2084988 164.041564,0 C161.766523,4.11318106 159.108624,9.64549908 157.276099,14.0464379 C137.583995,11.0849896 118.072967,11.0849896 98.7430163,14.0464379 C96.9108417,9.64549908 94.1925838,4.11318106 91.8971895,0 C73.3526068,3.2084988 55.6133949,8.86399117 39.0420583,16.6376612 C5.61752293,67.146514 -3.4433191,116.400813 1.08711069,164.955721 C23.2560196,181.510915 44.7403634,191.567697 65.8621325,198.148576 C71.0772151,190.971126 75.7283628,183.341335 79.7352139,175.300261 C72.104019,172.400575 64.7949724,168.822202 57.8887866,164.667963 C59.7209612,163.310589 61.5131304,161.891452 63.2445898,160.431257 C105.36741,180.133187 151.134928,180.133187 192.754523,160.431257 C194.506336,161.891452 196.298154,163.310589 198.110326,164.667963 C191.183787,168.842556 183.854737,172.420929 176.223542,175.320965 C180.230393,183.341335 184.861538,190.991831 190.096624,198.16893 C211.238746,191.588051 232.743023,181.531619 254.911949,164.955721 C260.227747,108.668201 245.831087,59.8662432 216.856339,16.5966031 Z M85.4738752,135.09489 C72.8290281,135.09489 62.4592217,123.290155 62.4592217,108.914901 C62.4592217,94.5396472 72.607595,82.7145587 85.4738752,82.7145587 C98.3405064,82.7145587 108.709962,94.5189427 108.488529,108.914901 C108.508531,123.290155 98.3405064,135.09489 85.4738752,135.09489 Z M170.525237,135.09489 C157.88039,135.09489 147.510584,123.290155 147.510584,108.914901 C147.510584,94.5396472 157.658606,82.7145587 170.525237,82.7145587 C183.391518,82.7145587 193.761324,94.5189427 193.539891,108.914901 C193.539891,123.290155 183.391518,135.09489 170.525237,135.09489 Z" fill="currentColor" fill-rule="nonzero"/></svg>Discord Rich Presence</h3>
+            </div>
+            
+            <!-- Master Toggle -->
+            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-enable-discord-rpc" />
+                <span class="toggle-slider"></span>
+                <span>Enable Discord RPC</span>
+              </label>
+            </div>
+
+            <div class="dropdown-divider" style="margin: 12px 0;"></div>
+
+            <!-- Section 1: General & Custom App ID -->
+            <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">General</h4>
+            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:12px;">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-rpc-show-in-launcher" />
+                <span class="toggle-slider"></span>
+                <span>Show RPC when in Zero Launcher</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-rpc-show-instance" />
+                <span class="toggle-slider"></span>
+                <span>Show Modpack / Instance Name</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-rpc-show-version" />
+                <span class="toggle-slider"></span>
+                <span>Show Minecraft Version</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-rpc-show-server-ip" />
+                <span class="toggle-slider"></span>
+                <span>Show Multiplayer Server IP</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-rpc-show-game-state" />
+                <span class="toggle-slider"></span>
+                <span>Show Game State (e.g., 'In Main Menu')</span>
+              </label>
+            </div>
+
+            <div class="form-group" style="margin-bottom:10px;">
+              <label>Icon Style</label>
+              <select id="setting-rpc-app-id" class="input-field">
+                <option value="1131048770109460500" selected>Vanilla Icon</option>
+                <option value="1528905372625146066">Modern Icon</option>
+                <option value="1528907493265375382">Classic Icon</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+
+            <div id="rpc-custom-appid-wrap" class="form-group hidden" style="margin-bottom:10px;">
+              <label>Custom Discord Application ID</label>
+              <input type="text" id="setting-rpc-custom-appid" class="input-field" placeholder="1131048770109460500" />
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px;">
+              <label>Custom status text (shown when in the launcher)</label>
+              <input type="text" id="setting-rpc-custom-state" class="input-field" placeholder="In Zero Launcher" />
+            </div>
+
+            <div class="dropdown-divider" style="margin: 12px 0;"></div>
+
+            <!-- Section 2: Launcher — Which tabs to show on Discord -->
+            <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">Launcher — Which tabs to show on Discord</h4>
+            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-rpc-show-launcher-activity" />
+                <span class="toggle-slider"></span>
+                <span>Show which tab I'm browsing</span>
+              </label>
+              <div style="display:flex; flex-direction:column; gap:8px; padding-left:16px;">
+                <label class="toggle-row">
+                  <input type="checkbox" id="setting-rpc-tab-instances" />
+                  <span class="toggle-slider"></span>
+                  <span>Instances</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" id="setting-rpc-tab-mods" />
+                  <span class="toggle-slider"></span>
+                  <span>Mods</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" id="setting-rpc-tab-settings" />
+                  <span class="toggle-slider"></span>
+                  <span>Settings</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" id="setting-rpc-tab-logs" />
+                  <span class="toggle-slider"></span>
+                  <span>Logs</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="dropdown-divider" style="margin: 12px 0;"></div>
+
+            <!-- Section 3: In-Game — Which states to show on Discord -->
+            <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">In-Game — Which states to show on Discord</h4>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-rpc-state-launching" />
+                <span class="toggle-slider"></span>
+                <span>Launching Game</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-rpc-state-main-menu" />
+                <span class="toggle-slider"></span>
+                <span>Main Menu</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-rpc-state-singleplayer" />
+                <span class="toggle-slider"></span>
+                <span>Singleplayer</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-rpc-state-multiplayer" />
+                <span class="toggle-slider"></span>
+                <span>Multiplayer</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Privacy & Developer -->
+          <div class="glass-card settings-card">
+            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3 4.5 5.6V11c0 5 3.2 8.4 7.5 10 4.3-1.6 7.5-5 7.5-10V5.6L12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12.2 11.2 14.3 15.3 9.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Privacy & Developer</h3>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-hide-username" />
+                <span class="toggle-slider"></span>
+                <span>Hide Username in UI</span>
+              </label>
+              <p class="settings-hint" style="margin:0 0 2px; opacity:0.7; font-size:12px; line-height:1.5;">
+                Masks your account name wherever it's shown in the launcher (header, account switcher) — the real name is still used to launch the game.
+              </p>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-clear-session-on-exit" />
+                <span class="toggle-slider"></span>
+                <span>Clear Account Session on Exit</span>
+              </label>
+              <p class="settings-hint" style="margin:0 0 2px; opacity:0.7; font-size:12px; line-height:1.5;">
+                Signs every account out when the launcher fully closes. Accounts stay saved — you'll just need to pick one again next launch.
+              </p>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-redact-tokens" />
+                <span class="toggle-slider"></span>
+                <span>Redact Auth Tokens in Logs</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-redact-paths" />
+                <span class="toggle-slider"></span>
+                <span>Redact Full File Paths in Logs</span>
+              </label>
+              <p class="settings-hint" style="margin:0 0 2px; opacity:0.7; font-size:12px; line-height:1.5;">
+                Replaces your home folder and game directory paths in logs with generic placeholders instead of showing them in full.
+              </p>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-hide-launch-command" />
+                <span class="toggle-slider"></span>
+                <span>Hide Launch Command from Logs</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-debug-mode" />
+                <span class="toggle-slider"></span>
+                <span>Debug Logging Mode</span>
+              </label>
+              <p class="settings-hint" style="margin:0; opacity:0.7; font-size:12px; line-height:1.5;">
+                Adds verbose DEBUG-level entries (like the exact launch command, subject to the settings above) to the log and console windows.
+              </p>
+            </div>
+          </div>
+
+          <!-- Experimental -->
+          <div class="glass-card settings-card">
+            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9.5 3h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.3 3.3v5.4L5.6 17a2 2 0 0 0 1.75 3h9.3a2 2 0 0 0 1.75-3l-4.7-8.3V3.3" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.6 14.5h8.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Experimental</h3>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-crash-analysis" />
+                <span class="toggle-slider"></span>
+                <span>Analyze crash logs automatically</span>
+              </label>
+              <p class="settings-hint" style="margin:0; opacity:0.7; font-size:12px; line-height:1.5;">
+                Shows a "likely cause" popup after a crash, based on pattern-matching the log — not a full rules
+                engine, so it can occasionally misread the real cause or suggest a fix that doesn't actually help.
+                Turn this off if it's giving you bad guesses; you can still read the raw log yourself either way.
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ═══ Floating Download Progress Widget (bottom-left) ═══
+       Shows every in-progress download/install (instance installs, mod
+       downloads/updates, dependency installs, Java runtime downloads,
+       etc.) as its own card in dl-widget-panel > #dl-cards, so several can
+       be visible and individually cancellable at once. -->
+  <div id="dl-widget" class="dl-widget hidden">
+    <button id="dl-widget-btn" class="dl-widget-btn">
+      <span id="dl-widget-ring" class="dl-widget-ring">
+        <svg viewBox="0 0 36 36" class="dl-ring-svg">
+          <circle class="dl-ring-track" cx="18" cy="18" r="15.5"></circle>
+          <circle id="dl-ring-fill" class="dl-ring-fill" cx="18" cy="18" r="15.5"></circle>
+        </svg>
+        <span id="dl-widget-icon" class="dl-widget-icon">⭳</span>
+        <span id="dl-widget-count" class="dl-widget-count hidden">1</span>
+      </span>
+      <span class="dl-widget-text">
+        <span id="dl-widget-title">Installing…</span>
+        <span id="dl-widget-sub">Starting…</span>
+      </span>
+    </button>
+
+    <div id="dl-widget-panel" class="dl-widget-panel hidden">
+      <div class="dl-panel-heading">
+        <span>Downloads</span>
+      </div>
+      <div id="dl-cards" class="dl-cards"></div>
+    </div>
+  </div>
+
+  <!-- Template for a single download card, cloned per active download. -->
+  <template id="dl-card-template">
+    <div class="dl-card">
+      <div class="dl-card-header">
+        <div>
+          <div class="dl-card-title">Title</div>
+          <div class="dl-card-stage">Preparing…</div>
+        </div>
+        <span class="dl-card-status-pill">Downloading</span>
+      </div>
+
+      <div class="dl-card-track">
+        <div class="dl-card-bar" style="width:0%"></div>
+      </div>
+
+      <div class="dl-card-file">—</div>
+
+      <div class="dl-card-stats">
+        <div class="dl-stat">
+          <span class="dl-stat-label">Progress</span>
+          <span class="dl-card-stat-percent dl-stat-value">0%</span>
+        </div>
+        <div class="dl-stat">
+          <span class="dl-stat-label">Speed</span>
+          <span class="dl-card-stat-speed dl-stat-value">—</span>
+        </div>
+        <div class="dl-stat">
+          <span class="dl-stat-label">ETA</span>
+          <span class="dl-card-stat-eta dl-stat-value">—</span>
+        </div>
+        <div class="dl-stat">
+          <span class="dl-stat-label">Downloaded</span>
+          <span class="dl-card-stat-downloaded dl-stat-value">—</span>
+        </div>
+      </div>
+
+      <div class="dl-card-actions">
+        <button class="btn-secondary btn-sm dl-card-pause">⏸ Pause</button>
+        <button class="btn-danger-outline btn-sm dl-card-cancel">✕ Cancel</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Music Library overlay -->
+  <div id="music-library-overlay" class="overlay hidden">
+    <div class="overlay-card music-library-card">
+      <div class="overlay-header">
+        <h3>Music Library</h3>
+        <button class="overlay-close" id="btn-close-music-library">✕</button>
+      </div>
+      <div id="music-library-hint" style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
+        Drop audio files into <code>Zero Launcher/music/</code> — toggle which ones play below.
+      </div>
+      <div id="music-library-list" class="instance-list music-library-list"></div>
+      <div class="overlay-actions" style="justify-content: center;">
+        <button type="button" id="btn-refresh-music-library" class="btn-secondary">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">
+            <path d="M23 4v6h-6"></path>
+            <path d="M1 20v-6h6"></path>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          Refresh
+        </button>
+        <button type="button" id="btn-open-music-folder" class="btn-secondary">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path>
+          </svg>
+          Open Music Folder
+        </button>
+        <button type="button" id="btn-close-music-library-2" class="btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Background music player — not shown, driven entirely from JS -->
+  <audio id="bg-music-player" preload="auto"></audio>
+
+  <!-- Crash dialog — styled like a real OS-level "program has stopped working"
+       error window. Populated entirely from JS (crash-report.js) when the
+       backend emits a "game-crashed" event with a diagnosis. -->
+  <div id="crash-overlay" class="overlay hidden">
+    <div class="crash-window">
+      <div class="crash-titlebar">
+        <span class="crash-titlebar-icon">⚠</span>
+        <span class="crash-titlebar-text" id="crash-titlebar-text">Zero Launcher</span>
+        <button class="crash-titlebar-close" id="btn-crash-close" title="Close">✕</button>
+      </div>
+      <div class="crash-body">
+        <div class="crash-icon-col">
+          <div class="crash-icon">✕</div>
+        </div>
+        <div class="crash-content-col">
+          <div class="crash-heading" id="crash-heading">Instance has stopped working</div>
+          <div class="crash-subheading" id="crash-subheading">
+            A problem caused the program to stop working correctly. Windows will close the program and notify you if a solution is available.
+          </div>
+          <div class="crash-signature-label">Problem signature:</div>
+          <pre class="crash-signature" id="crash-signature"></pre>
+          <div class="crash-disclaimer" style="margin:6px 0 2px; padding:8px 10px; border-radius:8px; background:rgba(255,180,60,0.10); border:1px solid rgba(255,180,60,0.25); font-size:12px; line-height:1.5; color:var(--text-muted);">
+            ⚠ This is an automated, best-effort guess (still experimental) — it can misread the real cause or suggest a fix
+            that doesn't actually help. If it's wrong, check the full log yourself, or turn this analysis off in
+            <strong>Settings → Experimental</strong>.
+          </div>
+          <div class="crash-fixes-label" id="crash-fixes-label">Suggested fixes:</div>
+          <div class="crash-fixes" id="crash-fixes"></div>
+        </div>
+      </div>
+      <div class="crash-footer">
+        <button type="button" class="btn-secondary btn-sm" id="btn-crash-view-log">View full log</button>
+        <button type="button" class="btn-secondary btn-sm" id="btn-crash-relaunch">Relaunch instance</button>
+        <button type="button" class="btn-primary btn-sm" id="btn-crash-dismiss">Close program</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+  <script type="module" src="/src/js/app.js"></script>
+</body>
+
+</html>

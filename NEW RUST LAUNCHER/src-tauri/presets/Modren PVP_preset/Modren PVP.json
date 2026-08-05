@@ -1,0 +1,160 @@
+{
+  "presetName": "1.21+ PVP Preset",
+  "presetType": "Quality Of Life",
+  "description": "Modren minecraft PVP Preset Mace/Crystale/Anything",
+  "modLoaders": [
+    "FABRIC"
+  ],
+  "mods": [
+    {
+      "name": "Better Hitreg",
+      "fileName": "BetterHitreg-1.0.6+1.21.11.jar",
+      "modrinthId": "MIKwzoiY",
+      "modrinthUrl": "https://modrinth.com/mod/MIKwzoiY"
+    },
+    {
+      "name": "Consumable Optimizer",
+      "fileName": "ConsumableOptimizer-2.2.2-26.1.jar",
+      "modrinthId": "4alTd2ag",
+      "modrinthUrl": "https://modrinth.com/mod/4alTd2ag"
+    },
+    {
+      "name": "Crosshair Addons Public",
+      "fileName": "CrosshairAddons-2.1.4-26.2.jar",
+      "modrinthId": "QrKEZXN9",
+      "modrinthUrl": "https://modrinth.com/mod/QrKEZXN9"
+    },
+    {
+      "name": "Silicon",
+      "fileName": "Silicon-26.1.X.jar",
+      "modrinthId": "MdNZOBlg",
+      "modrinthUrl": "https://modrinth.com/mod/MdNZOBlg"
+    },
+    {
+      "name": "Marlow\u0027s Crystal Optimizer",
+      "fileName": "Marlow Crystal Optimizer.jar",
+      "modrinthId": "ozpC8eDC",
+      "modrinthUrl": "https://modrinth.com/mod/ozpC8eDC"
+    },
+    {
+      "name": "Pearl Optimizer",
+      "fileName": "PearlOptimizer-26.1.X+26.2.jar",
+      "modrinthId": "aSymSNSe",
+      "modrinthUrl": "https://modrinth.com/mod/aSymSNSe"
+    },
+    {
+      "name": "Shield Fixes",
+      "fileName": "ShieldFixes-2.0.3+26.2.jar",
+      "modrinthId": "HfLFMeJe",
+      "modrinthUrl": "https://modrinth.com/mod/HfLFMeJe"
+    },
+    {
+      "name": "WalksyLib",
+      "fileName": "WalksyLib-1.0.12+26.2.jar",
+      "modrinthId": "7P86n6Vg",
+      "modrinthUrl": "https://modrinth.com/mod/7P86n6Vg"
+    },
+    {
+      "name": "AppleSkin",
+      "fileName": "appleskin-fabric-mc26.2-3.0.10.jar",
+      "modrinthId": "EsAfCjCV",
+      "modrinthUrl": "https://modrinth.com/mod/EsAfCjCV"
+    },
+    {
+      "name": "BactroMod",
+      "fileName": "bactromod-3.9.jar",
+      "modrinthId": "2Ok6dkOD",
+      "modrinthUrl": "https://modrinth.com/mod/2Ok6dkOD"
+    },
+    {
+      "name": "Cloth Config API",
+      "fileName": "cloth-config-26.2.155.jar",
+      "modrinthId": "9s6osm5g",
+      "modrinthUrl": "https://modrinth.com/mod/9s6osm5g"
+    },
+    {
+      "name": "Combat Hitboxes",
+      "fileName": "combat-hitbox-1.0.11.jar",
+      "modrinthId": "geGZinIB",
+      "modrinthUrl": "https://modrinth.com/mod/geGZinIB"
+    },
+    {
+      "name": "DropConfirm",
+      "fileName": "drop_confirm-6.1.1.jar",
+      "modrinthId": "I45rjF2F",
+      "modrinthUrl": "https://modrinth.com/mod/I45rjF2F"
+    },
+    {
+      "name": "Effect Timer Plus",
+      "fileName": "effecttimerplus-fabric-3.103.0+26.2.jar",
+      "modrinthId": "JIUF2Wb5",
+      "modrinthUrl": "https://modrinth.com/mod/JIUF2Wb5"
+    },
+    {
+      "name": "Fabric API",
+      "fileName": "fabric-api-0.154.2%2B26.2.jar",
+      "modrinthId": "P7dR8mSH",
+      "modrinthUrl": "https://modrinth.com/mod/P7dR8mSH"
+    },
+    {
+      "name": "Fabric Language Kotlin",
+      "fileName": "fabric-language-kotlin-1.13.12%2Bkotlin.2.4.0.jar",
+      "modrinthId": "Ha28R6CL",
+      "modrinthUrl": "https://modrinth.com/mod/Ha28R6CL"
+    },
+    {
+      "name": "Hero\u0027s Anchor Optimizer",
+      "fileName": "herosanchoroptimizer-1.1.4.jar",
+      "modrinthId": "5J1t3PV8",
+      "modrinthUrl": "https://modrinth.com/mod/5J1t3PV8"
+    },
+    {
+      "name": "Mod Menu",
+      "fileName": "modmenu-20.0.1.jar",
+      "modrinthId": "mOgUt4GM",
+      "modrinthUrl": "https://modrinth.com/mod/mOgUt4GM"
+    },
+    {
+      "name": "Text Placeholder API",
+      "fileName": "placeholder-api-3.1.0-beta.1+26.2.jar",
+      "modrinthId": "eXts2L7r",
+      "modrinthUrl": "https://modrinth.com/mod/eXts2L7r"
+    },
+    {
+      "name": "PVP Optimizer",
+      "fileName": "pvpoptimizer-1.3+mc1.21.1.jar",
+      "modrinthId": "jCWscvFw",
+      "modrinthUrl": "https://modrinth.com/mod/jCWscvFw"
+    },
+    {
+      "name": "ukulib",
+      "fileName": "ukulib-fabric-2.1.1+26.2.jar",
+      "modrinthId": "Y8uFrUil",
+      "modrinthUrl": "https://modrinth.com/mod/Y8uFrUil"
+    },
+    {
+      "name": "uku\u0027s Armor HUD",
+      "fileName": "ukus-armor-hud-fabric-0.12.0+mc26.2.jar",
+      "modrinthId": "wF189hn9",
+      "modrinthUrl": "https://modrinth.com/mod/wF189hn9"
+    },
+    {
+      "name": "YetAnotherConfigLib (YACL)",
+      "fileName": "yet_another_config_lib_v3-3.9.5%2B26.2-fabric.jar",
+      "modrinthId": "1eAoo2KR",
+      "modrinthUrl": "https://modrinth.com/mod/1eAoo2KR"
+    },
+    {
+      "name": "Zoomify (Zoom)",
+      "fileName": "zoomify-2.16.1+26.2.jar",
+      "modrinthId": "w7ThoJFB",
+      "modrinthUrl": "https://modrinth.com/mod/w7ThoJFB"
+    },
+    {
+      "name": "Shield Statuses",
+      "fileName": "ShieldStatus-4.1.2-1.21.11.jar",
+      "modrinthId": "GfoMZ9Ly",
+      "modrinthUrl": "https://modrinth.com/mod/GfoMZ9Ly"
+    }
+  ]
+}

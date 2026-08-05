@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "hideArrow": false,
+  "hideFireworks": false,
+  "hideItems": false,
+  "changeTargetColor": true,
+  "eyeColor": -65536,
+  "lookColor": -16776961,
+  "hitBoxColor": -1,
+  "targetBoxColor": -65536,
+  "hitBoxHurt": true,
+  "renderEyeHeight": true,
+  "renderLookDir": true,
+  "lineLookDir": true,
+  "hurtBoxColor": -65281,
+  "line1": 2.5,
+  "distFor2": 32.0,
+  "line2": 2.5,
+  "outlineEnabled": false,
+  "outlineColor": -16777216,
+  "outlineMultiplier": 2.0
+}
