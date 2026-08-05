@@ -208,7 +208,7 @@ Every feature is built with maintainability, flexibility, and responsiveness in 
 # زيرو لانشر
 
 <p align="center">
-لانشر ماينكرافت حديث وخفيف وقابل للتخصيص بشكل كبير، مبني بالكامل باستخدام Java (Swing/AWT)، ومصمم للعمل على **Windows** و **Linux**.
+لانشر ماينكرافت حديث وخفيف وقابل للتخصيص بشكل كبير، مبني بالكامل باستخدام Rust (Tauri)، ومصمم للعمل على Windows و Linux.
 </p>
 
 ---
