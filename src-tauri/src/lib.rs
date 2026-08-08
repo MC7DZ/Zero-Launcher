@@ -15,6 +15,18 @@ use tauri::image::Image;
 use tauri::WindowEvent;
 
 pub fn run() {
+    // WebKitGTK's DMA-BUF renderer is unreliable across many GPU/driver
+    // combinations (especially binaries built in a generic CI environment,
+    // like GitHub Actions runners) and can silently render a blank
+    // black/white window instead of the UI. Disabling it forces WebKit to
+    // fall back to a compositing path that works everywhere. Must be set
+    // before the webview is created, so this has to happen at the very
+    // start of run().
+    #[cfg(target_os = "linux")]
+    {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
