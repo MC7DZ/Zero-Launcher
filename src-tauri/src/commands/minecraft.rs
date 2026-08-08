@@ -1224,11 +1224,19 @@ pub async fn launch_minecraft(
     // saves/, resourcepacks/, mods/, logs/, config/, etc. relative to the
     // process's current directory, and those belong alongside `versions/`
     // at the instance root, not inside `versions/<id>/`.
-    let mut child = tokio::process::Command::new(&launch_cmd.executable)
+    let mut launch_command = tokio::process::Command::new(&launch_cmd.executable);
+    launch_command
         .args(&args)
         .current_dir(&game_dir)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        launch_command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = launch_command
         .spawn()
         .map_err(|e| format!("Failed to start game: {e}"))?;
 
@@ -1385,9 +1393,14 @@ pub async fn kill_instance(
     let pid = pid.ok_or_else(|| "No process id recorded for this instance".to_string())?;
 
     #[cfg(target_os = "windows")]
-    let kill_result = std::process::Command::new("taskkill")
-        .args(["/PID", &pid.to_string(), "/F", "/T"])
-        .output();
+    let kill_result = {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+    };
 
     #[cfg(not(target_os = "windows"))]
     let kill_result = std::process::Command::new("kill")

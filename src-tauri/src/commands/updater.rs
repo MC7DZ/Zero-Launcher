@@ -305,7 +305,15 @@ fn install_update_linux(downloaded_path: &std::path::Path) -> Result<(), String>
         let _ = std::fs::set_permissions(&current_exe, perms);
     }
 
-    std::process::Command::new(&current_exe)
+    #[allow(unused_mut)]
+    let mut relaunch_cmd = std::process::Command::new(&current_exe);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        relaunch_cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    relaunch_cmd
         .spawn()
         .map_err(|e| format!("Failed to relaunch after update: {e}"))?;
 

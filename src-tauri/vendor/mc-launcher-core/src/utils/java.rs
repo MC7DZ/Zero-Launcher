@@ -4,6 +4,24 @@ use std::{
     process::Command,
 };
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+/// Builds a `Command` that, on Windows, is prevented from popping up a
+/// console window (java.exe, taskkill, etc. are console subsystem binaries
+/// and will otherwise flash a cmd window even though this app has no
+/// console of its own).
+fn silent_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 use crate::types::JavaInformation;
 
 pub fn get_java_information(path: &Path) -> Result<JavaInformation, String> {
@@ -15,7 +33,7 @@ pub fn get_java_information(path: &Path) -> Result<JavaInformation, String> {
         return Err(format!("{} was not found", java_path.display()));
     }
 
-    let output = Command::new(&java_path)
+    let output = silent_command(&java_path)
         .arg("-showversion")
         .output()
         .map_err(|e| format!("Failed to execute Java: {}", e))?;

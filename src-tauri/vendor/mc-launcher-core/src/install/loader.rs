@@ -72,7 +72,15 @@ pub fn installer_command_args(invocation: &InstallerInvocation) -> Vec<String> {
 /// Returns [`crate::LauncherError`] if the installer process cannot be started
 /// or exits with a non-zero status.
 pub fn run_loader_installer(invocation: &InstallerInvocation) -> Result<()> {
-    let status = Command::new(&invocation.java_executable)
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(&invocation.java_executable);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let status = cmd
         .args(installer_command_args(invocation))
         .status()?;
 
