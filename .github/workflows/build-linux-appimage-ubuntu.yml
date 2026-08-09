@@ -1,28 +1,32 @@
-
 name: Build Zero Launcher
- 
 on:
   push:
     branches: [main]
   workflow_dispatch:
- 
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: debian:13
     steps:
+      - name: Install git and sudo (container runs as root without them)
+        run: |
+          apt-get update
+          apt-get install -y git sudo
+
       - name: Checkout repository
         uses: actions/checkout@v4
- 
+
       - name: Make build script executable
         run: chmod +x build.sh
- 
+
       - name: Install system dependencies
         run: ./build.sh --deps
         # Note: the script uses sudo internally, works fine on GitHub Actions runners.
- 
+
       - name: Build in release mode
         run: ./build.sh --release
- 
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -31,4 +35,3 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: warn
- 
