@@ -22,7 +22,9 @@ jobs:
 
       - name: Install system dependencies
         run: ./build.sh --deps
-        # Note: the script uses sudo internally, works fine on GitHub Actions runners.
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build in release mode
         run: ./build.sh --release
