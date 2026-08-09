@@ -6,14 +6,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    container: debian:13
+    runs-on: ubuntu-24.04
     steps:
-      - name: Install git and sudo (container runs as root without them)
-        run: |
-          apt-get update
-          apt-get install -y git sudo
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
