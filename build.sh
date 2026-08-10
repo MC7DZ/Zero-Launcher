@@ -85,6 +85,11 @@ build_app() {
     if [ "$mode" = "release" ]; then
         log "Building Zero Launcher (release)"
         npm run tauri build
+        if [ -f "src-tauri/scripts/patch-appimage-egl.sh" ]; then
+            log "Patching AppImage to avoid bundled-EGL host mismatch (EGL_BAD_PARAMETER fix)"
+            chmod +x src-tauri/scripts/patch-appimage-egl.sh
+            ./src-tauri/scripts/patch-appimage-egl.sh
+        fi
     elif [ "$mode" = "debug" ]; then
         log "Building Zero Launcher (debug)"
         npm run tauri build -- --debug
