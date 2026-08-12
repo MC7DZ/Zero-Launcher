@@ -190,17 +190,24 @@ fn stage_offset(stage: &mc_launcher_core::progress::InstallStage) -> f64 {
 /// Best-effort overall completion estimate (0-100), monotonically
 /// non-decreasing across a single install run.
 ///
-/// Within the current stage we blend "tasks finished in this stage" with the
-/// current file's own byte progress, then scale that fraction into the
-/// stage's fixed slice of the overall bar (see `stage_weight`). This keeps
-/// the bar moving at a believable, steady pace instead of jumping around
-/// as new tasks are discovered.
+/// Within the current stage we blend "tasks finished in this stage" with
+/// how far the files *currently* in flight have gotten, then scale that
+/// fraction into the stage's fixed slice of the overall bar (see
+/// `stage_weight`). This keeps the bar moving at a believable, steady pace
+/// instead of jumping around as new tasks are discovered.
+///
+/// `in_flight_frac_sum` is the sum of `received / total` across every file
+/// currently downloading whose size is known (0 for files still waiting on
+/// a `Content-Length`, and 0 overall if none of them have reported a size
+/// yet) — with several files downloading at once, this is a sum rather
+/// than a single file's fraction, so multiple large in-flight files each
+/// still visibly nudge the bar instead of only the most recently-started
+/// one mattering.
 fn overall_percent(
     stage: &mc_launcher_core::progress::InstallStage,
     tasks_started: u64,
     tasks_done: u64,
-    current_received: u64,
-    current_total: Option<u64>,
+    in_flight_frac_sum: f64,
 ) -> f64 {
     let weight = stage_weight(stage);
     let offset = stage_offset(stage);
@@ -209,14 +216,11 @@ fn overall_percent(
         0.0
     } else {
         let base = tasks_done as f64 / tasks_started as f64;
-        let current_frac = match current_total {
-            Some(total) if total > 0 => (current_received as f64 / total as f64).clamp(0.0, 1.0),
-            _ => 0.0,
-        };
-        // Blend in the in-flight file's progress as a fraction of "one more
-        // task", so large single files (e.g. the client jar) still move the
-        // bar smoothly instead of sitting still until the whole file lands.
-        (base + (current_frac.max(0.0) / (tasks_started.max(tasks_done + 1)) as f64)).clamp(0.0, 1.0)
+        // Blend in-flight files' progress as a fraction of "one more task"
+        // each, so large files (e.g. the client jar, a big mod loader
+        // installer) still move the bar smoothly instead of sitting still
+        // until they land.
+        (base + (in_flight_frac_sum.max(0.0) / (tasks_started.max(tasks_done + 1)) as f64)).clamp(0.0, 1.0)
     };
 
     (offset + stage_frac * weight).clamp(0.0, 99.5)
@@ -526,6 +530,7 @@ pub async fn install_minecraft(
                     loader: loader_type.clone(),
                     stage: "Completed".to_string(),
                     current_file: String::new(),
+                    active_files: Vec::new(),
                     downloaded_bytes: 0,
                     total_bytes: None,
                     percent: 100.0,
@@ -545,6 +550,7 @@ pub async fn install_minecraft(
                     directory: game_dir.to_string_lossy().to_string(),
                     minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
                     installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                    total_playtime_seconds: 0,
                 };
 
                 {
@@ -648,6 +654,17 @@ pub async fn install_minecraft(
         let mut current_task_received: u64 = 0;
         let mut current_task_total: Option<u64> = None;
         let mut per_label_last_received: HashMap<String, u64> = HashMap::new();
+        // Every file actively downloading right now (started, not yet
+        // finished), in start order — the parallel downloader can have up
+        // to its worker-pool size of these in flight at once. Paired with
+        // `label_display` to turn the download plan's internal `label`
+        // into the human-readable filename the UI actually shows.
+        let mut active_labels: Vec<String> = Vec::new();
+        let mut label_display: HashMap<String, String> = HashMap::new();
+        // Total byte size per active file, when the server reported one,
+        // so we can blend how far *all* in-flight files have gotten (not
+        // just the most recently-started one) into the percent estimate.
+        let mut per_label_total: HashMap<String, u64> = HashMap::new();
         let mut cumulative_bytes: u64 = 0;
         // Reset every time we enter a new stage, since each stage now owns
         // its own fixed slice of the overall bar (see `stage_weight`).
@@ -683,6 +700,21 @@ pub async fn install_minecraft(
             // Genuine pause: block this thread (the library's own download
             // loop) until resumed or cancelled, so no bytes move while paused.
             while app_state.download_paused.load(Ordering::Relaxed) {
+                let active_files_display: Vec<String> = active_labels
+                    .iter()
+                    .map(|l| label_display.get(l).cloned().unwrap_or_else(|| l.clone()))
+                    .collect();
+                let in_flight_frac_sum: f64 = active_labels
+                    .iter()
+                    .filter_map(|l| {
+                        let total = per_label_total.get(l)?;
+                        if *total == 0 {
+                            return None;
+                        }
+                        let received = per_label_last_received.get(l).copied().unwrap_or(0);
+                        Some((received as f64 / *total as f64).clamp(0.0, 1.0))
+                    })
+                    .sum();
                 let info = DownloadProgressInfo {
                     id: id_for_progress.clone(),
                     label: label_for_progress.clone(),
@@ -690,9 +722,10 @@ pub async fn install_minecraft(
                     loader: loader_for_progress.clone(),
                     stage: current_stage_label.clone(),
                     current_file: current_file.clone(),
+                    active_files: active_files_display,
                     downloaded_bytes: cumulative_bytes,
                     total_bytes: current_task_total,
-                    percent: best_percent.max(overall_percent(&current_stage, tasks_started, tasks_done, current_task_received, current_task_total)),
+                    percent: best_percent.max(overall_percent(&current_stage, tasks_started, tasks_done, in_flight_frac_sum)),
                     speed_bps: 0.0,
                     eta_seconds: None,
                     status: "paused".to_string(),
@@ -719,18 +752,26 @@ pub async fn install_minecraft(
                 }
                 PE::TaskStarted { label, path } => {
                     tasks_started += 1;
-                    current_file = path
+                    let display = path
                         .file_name()
                         .map(|f| f.to_string_lossy().to_string())
-                        .unwrap_or(label);
+                        .unwrap_or_else(|| label.clone());
+                    current_file = display.clone();
+                    label_display.insert(label.clone(), display);
+                    if !active_labels.contains(&label) {
+                        active_labels.push(label.clone());
+                    }
                     current_task_received = 0;
                     current_task_total = None;
                 }
                 PE::TaskSkipped { .. } => {
                     tasks_done += 1;
                 }
-                PE::TaskFinished { .. } => {
+                PE::TaskFinished { label } => {
                     tasks_done += 1;
+                    active_labels.retain(|l| l != &label);
+                    label_display.remove(&label);
+                    per_label_total.remove(&label);
                     current_task_received = 0;
                     current_task_total = None;
                 }
@@ -739,6 +780,9 @@ pub async fn install_minecraft(
                     let delta = received.saturating_sub(prev);
                     cumulative_bytes += delta;
                     total_bytes_downloaded.fetch_add(delta, Ordering::Relaxed);
+                    if let Some(t) = total {
+                        per_label_total.insert(label.clone(), t);
+                    }
                     current_task_received = received;
                     current_task_total = total;
                 }
@@ -759,7 +803,23 @@ pub async fn install_minecraft(
             }
             last_emit = now;
 
-            let raw_percent = overall_percent(&current_stage, tasks_started, tasks_done, current_task_received, current_task_total);
+            let active_files_display: Vec<String> = active_labels
+                .iter()
+                .map(|l| label_display.get(l).cloned().unwrap_or_else(|| l.clone()))
+                .collect();
+            let in_flight_frac_sum: f64 = active_labels
+                .iter()
+                .filter_map(|l| {
+                    let total = per_label_total.get(l)?;
+                    if *total == 0 {
+                        return None;
+                    }
+                    let received = per_label_last_received.get(l).copied().unwrap_or(0);
+                    Some((received as f64 / *total as f64).clamp(0.0, 1.0))
+                })
+                .sum();
+
+            let raw_percent = overall_percent(&current_stage, tasks_started, tasks_done, in_flight_frac_sum);
             // Never let the bar (or anything derived from it, like ETA)
             // move backwards — clamp to the best we've seen so far.
             best_percent = best_percent.max(raw_percent);
@@ -785,6 +845,7 @@ pub async fn install_minecraft(
                 loader: loader_for_progress.clone(),
                 stage: current_stage_label.clone(),
                 current_file: current_file.clone(),
+                active_files: active_files_display,
                 downloaded_bytes: cumulative_bytes,
                 total_bytes: current_task_total,
                 percent,
@@ -850,6 +911,7 @@ pub async fn install_minecraft(
                 loader: loader_type_outer.clone(),
                 stage: "Cancelled".to_string(),
                 current_file: String::new(),
+                active_files: Vec::new(),
                 downloaded_bytes: 0,
                 total_bytes: None,
                 percent: 0.0,
@@ -863,6 +925,17 @@ pub async fn install_minecraft(
             return Err("Installation cancelled".to_string());
         }
         Err(e) => {
+            // The frontend only ever shows a short toast/status line for
+            // install failures — the *reason* (installer output, network
+            // error, etc.) lives in `e` and would otherwise only reach the
+            // user if they thought to screenshot a tooltip. Put the full
+            // detail in the log (console + logs/latest.log) every time, so
+            // "check the logs" is always a real answer, not just for
+            // errors someone happened to also print elsewhere.
+            logger::error(&app, &state, "LAUNCHER", &format!(
+                "Install failed for {} {} ({}): {e}",
+                mc_version_outer, loader_type_outer, label
+            ));
             let info = DownloadProgressInfo {
                 id: download_id.clone(),
                 label: label.clone(),
@@ -870,6 +943,7 @@ pub async fn install_minecraft(
                 loader: loader_type_outer.clone(),
                 stage: "Error".to_string(),
                 current_file: String::new(),
+                active_files: Vec::new(),
                 downloaded_bytes: 0,
                 total_bytes: None,
                 percent: 0.0,
@@ -891,6 +965,7 @@ pub async fn install_minecraft(
             loader: loader_type_outer.clone(),
             stage: "Completed".to_string(),
             current_file: String::new(),
+            active_files: Vec::new(),
             downloaded_bytes: total_bytes_downloaded_outer.load(Ordering::Relaxed),
             total_bytes: None,
             percent: 100.0,
@@ -945,6 +1020,7 @@ pub async fn install_minecraft(
         directory: game_dir.to_string_lossy().to_string(),
         minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
         installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        total_playtime_seconds: 0,
     };
 
     // Save instance to state
@@ -1097,6 +1173,7 @@ pub async fn launch_minecraft(
             directory: game_dir.to_string_lossy().to_string(),
             minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
             installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            total_playtime_seconds: 0,
         };
 
         {
@@ -1234,7 +1311,26 @@ pub async fn launch_minecraft(
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        launch_command.creation_flags(CREATE_NO_WINDOW);
+        // CREATE_BREAKAWAY_FROM_JOB: some environments (including, in
+        // practice, some WebView2/Tauri setups) put the launcher process
+        // in a Windows Job Object that's configured to kill every process
+        // in the job when the job's last handle closes. Without breaking
+        // away, quitting the launcher could take the game process down
+        // with it even though we never asked it to. Breaking away means
+        // the game process is only ever ended by the OS/user/itself, not
+        // as a side effect of the launcher exiting.
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
+        launch_command.creation_flags(CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB);
+    }
+    #[cfg(unix)]
+    {
+        // Put the game in its own process group so it isn't tied to the
+        // launcher's — same intent as CREATE_BREAKAWAY_FROM_JOB above:
+        // the launcher quitting (or its window/session ending) shouldn't
+        // signal or take down the game process with it. tokio's
+        // `Command::process_group` is inherent (no extra trait import
+        // needed, unlike std's `CommandExt`).
+        launch_command.process_group(0);
     }
     let mut child = launch_command
         .spawn()
@@ -1263,7 +1359,33 @@ pub async fn launch_minecraft(
     }
     // Fresh console for this run.
     state.instance_logs.lock().unwrap().insert(version_id.clone(), Vec::new());
+    // Persist immediately: if the launcher is quit right after this (the
+    // game process itself keeps running, detached — see the spawn flags
+    // above), the next launch needs `running_instances.json` on disk to
+    // know this instance is still out there.
+    state.save_running_instances();
     let _ = app.emit("running-instances-changed", ());
+
+    // Settings → Window Behavior → "When launching a game". These were
+    // previously only ever saved/loaded from Settings and never actually
+    // applied anywhere.
+    {
+        let (close_on_launch, minimize_on_launch) = {
+            let s = state.settings.lock().unwrap();
+            (s.close_after_launch, s.minimize_on_launch)
+        };
+        if let Some(window) = app.get_webview_window("main") {
+            if close_on_launch {
+                // "Close" here means the launcher's own window goes away,
+                // same as the user closing it themselves — so it's still
+                // governed by the On Launcher Close setting (hide to tray
+                // vs. quit outright) rather than always force-quitting.
+                let _ = window.close();
+            } else if minimize_on_launch {
+                let _ = window.minimize();
+            }
+        }
+    }
 
     logger::info(&app, &state, "LAUNCHER", "Game process started!");
 
@@ -1321,10 +1443,24 @@ pub async fn launch_minecraft(
         let _ = app_done.emit("log-entry", &entry);
         let _ = app_done.emit("instance-log", &InstanceLogEvent { version_id: vid_done.clone(), entry });
 
-        // Flip this instance's running flag off (entry stays for history).
-        if let Some(info) = state_done.running_instances.lock().unwrap().get_mut(&vid_done) {
-            info.running = false;
+        // Flip this instance's running flag off (entry stays for history),
+        // and add this session's elapsed time to the instance's total
+        // playtime before we lose track of when it started.
+        let started_at_for_playtime = {
+            let mut running = state_done.running_instances.lock().unwrap();
+            let info = running.get_mut(&vid_done);
+            let started_at = info.as_ref().map(|i| i.started_at.clone());
+            if let Some(info) = info {
+                info.running = false;
+            }
+            started_at
+        };
+        if let Some(started_at) = started_at_for_playtime {
+            accumulate_playtime(&state_done, &vid_done, &started_at);
         }
+        // Drop it from the persisted file too — it's no longer something a
+        // future launch needs to rediscover.
+        state_done.save_running_instances();
         let _ = app_done.emit("running-instances-changed", ());
         let _ = app_done.emit("game-exited", &msg);
 
@@ -1338,7 +1474,7 @@ pub async fn launch_minecraft(
             .map(|entries| entries.iter().map(|e| e.message.clone()).collect())
             .unwrap_or_default();
 
-        if let Some(report) = crate::commands::crash_analysis::analyze(
+        let crashed = if let Some(report) = crate::commands::crash_analysis::analyze(
             &vid_done,
             &name_done,
             &game_dir_done,
@@ -1347,10 +1483,144 @@ pub async fn launch_minecraft(
             &log_lines,
         ) {
             let _ = app_done.emit("game-crashed", &report);
+            true
+        } else {
+            false
+        };
+
+        // Settings → Window Behavior → "On Minecraft Close". Skipped for
+        // the "quit" action specifically when the game crashed — closing
+        // the launcher out from under a crash report before the user's
+        // even seen it would defeat the point of showing one.
+        if !(crashed && state_done.settings.lock().unwrap().on_game_close == "quit") {
+            apply_on_game_close_action(&app_done);
         }
     });
 
     Ok(())
+}
+
+/// Add this session's elapsed time to an instance's cumulative
+/// `total_playtime_seconds` and persist `instances.json`. `started_at` is
+/// the `RunningInstanceInfo.started_at` timestamp recorded when the
+/// session began (format: `%Y-%m-%d %H:%M:%S`, local time). Called once,
+/// right as a session's game process is discovered to have exited —
+/// whichever launcher process happens to witness that (a live session's
+/// own wait, or a rehydrated pid watcher after a launcher restart).
+fn accumulate_playtime(state: &AppState, version_id: &str, started_at: &str) {
+    let started = match chrono::NaiveDateTime::parse_from_str(started_at, "%Y-%m-%d %H:%M:%S") {
+        Ok(dt) => dt,
+        Err(_) => return,
+    };
+    let elapsed_secs = (chrono::Local::now().naive_local() - started)
+        .num_seconds()
+        .max(0) as u64;
+    let mut instances = state.instances.lock().unwrap();
+    if let Some(inst) = instances.iter_mut().find(|i| i.version_id == version_id) {
+        inst.total_playtime_seconds = inst.total_playtime_seconds.saturating_add(elapsed_secs);
+    }
+    drop(instances);
+    state.save_instances();
+}
+
+/// Apply the Settings → Window Behavior "On Minecraft Close" action, once
+/// an instance's game process has actually exited. Called from both the
+/// normal in-session exit path (`launch_minecraft`'s background wait) and
+/// the rehydrated-pid watcher (`spawn_external_pid_watcher`), since a game
+/// closing should behave the same whichever launcher process happened to
+/// witness it.
+fn apply_on_game_close_action(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let action = state.settings.lock().unwrap().on_game_close.clone();
+    match action.as_str() {
+        "show" => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.unminimize();
+            }
+        }
+        "quit" => {
+            app.exit(0);
+        }
+        // "none" (or anything unrecognized): leave the window exactly as
+        // it is — don't show it if it was hidden, don't touch it if open.
+        _ => {}
+    }
+}
+
+/// True if a process with the given pid is currently alive. Used at startup
+/// to check which pids from a persisted `running_instances.json` (written
+/// by a previous, now-exited launcher process) are actually still running
+/// the detached game process versus stale leftovers from a game that has
+/// since closed.
+pub fn is_pid_running(pid: u32) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        match std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            Ok(out) => String::from_utf8_lossy(&out.stdout).contains(&pid.to_string()),
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Signal 0 doesn't actually send a signal — it just checks whether
+        // we're allowed to signal the pid, which fails distinctly if it
+        // doesn't exist.
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .map(|out| out.status.success())
+            .unwrap_or(false)
+    }
+}
+
+/// Poll a (not-our-child) pid until it exits, then flip its instance to
+/// `running: false` and update the persisted file/frontend accordingly.
+/// Used only for instances rehydrated from `running_instances.json` at
+/// startup, since those processes weren't spawned by *this* launcher
+/// process and so can't be awaited directly with `Child::wait`.
+pub fn spawn_external_pid_watcher(app: tauri::AppHandle, version_id: String, pid: u32) {
+    // `tokio::spawn` requires already being inside a running Tokio
+    // reactor. This is called from Tauri's `setup()` closure, which runs
+    // *before* Tauri has entered its async runtime on that thread, so
+    // `tokio::spawn` panics there ("there is no reactor running"). Tauri's
+    // own `async_runtime::spawn` is safe to call from anywhere — it hands
+    // the future to the runtime Tauri manages internally regardless of
+    // what context it's called from — so use that instead.
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            if !is_pid_running(pid) {
+                break;
+            }
+        }
+        let state = app.state::<AppState>();
+        let started_at_for_playtime = {
+            let mut running = state.running_instances.lock().unwrap();
+            let info = running.get_mut(&version_id);
+            let started_at = info.as_ref().map(|i| i.started_at.clone());
+            if let Some(info) = info {
+                info.running = false;
+            }
+            started_at
+        };
+        if let Some(started_at) = started_at_for_playtime {
+            accumulate_playtime(&state, &version_id, &started_at);
+        }
+        state.save_running_instances();
+        let _ = app.emit("running-instances-changed", ());
+        // No crash-report machinery here (this instance's console history
+        // isn't available to this launcher process — it was launched by a
+        // previous one), so just apply Window Behavior directly.
+        apply_on_game_close_action(&app);
+    });
 }
 
 /// List every instance launched this session — both currently running and

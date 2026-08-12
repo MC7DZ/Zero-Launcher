@@ -22,8 +22,14 @@ pub struct DownloadProgressInfo {
     pub loader: String,
     /// Coarse stage name, e.g. "Client", "Libraries", "Assets", "Natives", "Loader".
     pub stage: String,
-    /// Name of the file currently being processed.
+    /// Name of the file currently being processed (kept for older frontend
+    /// builds / backward compat — the most recently-started active file).
     pub current_file: String,
+    /// Every file actively downloading right now, in the order each one
+    /// started (up to the downloader's concurrency limit). With the
+    /// parallel downloader, several files are in flight at once — this is
+    /// the real list, `current_file` above only ever showed the latest one.
+    pub active_files: Vec<String>,
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
     /// Best-effort overall completion percentage (0-100).
@@ -42,6 +48,17 @@ pub struct DownloadProgressInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherSettings {
     pub game_directory: String,
+    /// "Auto Check For Launcher Updates (Recommended)" - off by default.
+    /// When off, the launcher shows a one-time-per-decision prompt on
+    /// startup asking the user to allow/deny it (unless they've ticked
+    /// "don't ask me again").
+    #[serde(default)]
+    pub auto_check_launcher_updates: bool,
+    /// Set once the user ticks "Don't ask me again" on the auto-update
+    /// prompt, regardless of which button they pressed - stops the
+    /// startup prompt from appearing again.
+    #[serde(default)]
+    pub update_prompt_dont_ask_again: bool,
     pub jvm_args: String,
     pub max_ram_mb: u32,
     pub min_ram_mb: u32,
@@ -123,12 +140,40 @@ pub struct LauncherSettings {
     // Behavior
     #[serde(default)]
     pub minimize_on_launch: bool,
+    /// Deprecated in favor of `on_game_close`, kept only so
+    /// `load_settings_with_migration` can carry an old value forward the
+    /// first time a pre-migration settings.json is read.
     #[serde(default = "default_true")]
     pub restore_launcher_on_game_close: bool,
     #[serde(default = "default_true")]
     pub enable_system_tray: bool,
     #[serde(default)]
     pub close_after_launch: bool,
+
+    // ── Window Behavior ─────────────────────────────────────────────────
+    // What the launcher does around a game instance's lifecycle and its
+    // own window, gathered in one place (surfaced in Settings as its own
+    // "Window Behavior" card).
+    /// What happens to the launcher window when a running Minecraft
+    /// instance closes: "show" (bring the launcher window back and focus
+    /// it), "quit" (quit the launcher too), or "none" (leave it as-is —
+    /// stays hidden if it was hidden, stays open if it was open).
+    #[serde(default = "default_on_game_close")]
+    pub on_game_close: String,
+    /// What happens when the user closes the launcher's main window:
+    /// "tray" (hide to the system tray icon instead of quitting — only
+    /// takes effect if `enable_system_tray` is also on) or "close" (quit
+    /// the launcher outright). Previously this only ever hid to tray, and
+    /// only while a game was running.
+    #[serde(default = "default_on_launcher_close")]
+    pub on_launcher_close: String,
+    /// When on, closing the main window always hides to tray (per
+    /// `on_launcher_close`) even when no game instance is running, so the
+    /// launcher stays quickly reachable in the background instead of only
+    /// doing that while a game is active.
+    #[serde(default)]
+    pub always_hide_to_tray: bool,
+
     #[serde(default = "default_true")]
     pub show_console_on_launch: bool,
     #[serde(default)]
@@ -149,6 +194,7 @@ pub struct LauncherSettings {
     pub auto_apply_instance_filters_in_discover: bool,
     #[serde(default = "default_true")]
     pub notify_on_auto_mod_updates: bool,
+
 
     // Performance
     #[serde(default = "default_ram_gb")]
@@ -279,6 +325,8 @@ pub struct LauncherSettings {
 }
 
 fn default_true() -> bool { true }
+fn default_on_game_close() -> String { "show".to_string() }
+fn default_on_launcher_close() -> String { "tray".to_string() }
 fn default_music_volume() -> u32 { 50 }
 fn default_music_switch_behavior() -> String { "pause".to_string() }
 fn default_music_lower_percent() -> u32 { 30 }
@@ -309,28 +357,54 @@ fn default_threads() -> u32 { 3 }
 fn default_rpc_custom_state() -> String { "In Zero Launcher".to_string() }
 fn default_rpc_app_id() -> String { "1131048770109460500".to_string() }
 
-/// Platform-aware default game directory.
+/// Platform-aware default game directory, used whenever the
+/// Settings → Performance & Java "Minecraft Game Directory" field is left
+/// blank.
 ///
 /// - Linux: `~/.minecraft` (the same path the vanilla/official launcher uses).
-/// - Windows/macOS/other: `~/Zero Launcher`.
+/// - Windows: `%appdata%/.minecraft` (same as the vanilla launcher).
+/// - macOS/other: `~/.minecraft` as a reasonable fallback.
 pub fn default_game_directory() -> std::path::PathBuf {
-    if cfg!(target_os = "linux") {
-        dirs::home_dir()
+    if cfg!(target_os = "windows") {
+        dirs::config_dir()
             .map(|d| d.join(".minecraft"))
             .unwrap_or_else(|| std::path::PathBuf::from(".minecraft"))
     } else {
         dirs::home_dir()
-            .map(|d| d.join("Zero Launcher"))
-            .unwrap_or_else(|| std::path::PathBuf::from("Zero Launcher"))
+            .map(|d| d.join(".minecraft"))
+            .unwrap_or_else(|| std::path::PathBuf::from(".minecraft"))
+    }
+}
+
+impl LauncherSettings {
+    /// The directory that actually holds `versions/`, `libraries/`,
+    /// `assets/`, etc. — i.e. `game_directory` if the user set one in
+    /// Settings → Performance & Java, otherwise the platform default
+    /// (`~/.minecraft` on Linux, `%appdata%/.minecraft` on Windows).
+    ///
+    /// `game_directory` itself is left blank by default and stays blank on
+    /// disk until the user explicitly picks a folder — this is only ever
+    /// used to resolve where to actually read/write files.
+    pub fn resolved_game_directory(&self) -> std::path::PathBuf {
+        let trimmed = self.game_directory.trim();
+        if trimmed.is_empty() || !std::path::Path::new(trimmed).is_absolute() {
+            default_game_directory()
+        } else {
+            std::path::PathBuf::from(trimmed)
+        }
     }
 }
 
 impl Default for LauncherSettings {
     fn default() -> Self {
-        let default_dir = default_game_directory();
-
         Self {
-            game_directory: default_dir.to_string_lossy().to_string(),
+            // Blank by default - resolved on demand via
+            // `resolved_game_directory()` so the Settings field shows an
+            // empty box (with the platform default as a placeholder)
+            // until the user chooses their own folder.
+            game_directory: String::new(),
+            auto_check_launcher_updates: false,
+            update_prompt_dont_ask_again: false,
             jvm_args: String::new(),
             max_ram_mb: 4096,
             min_ram_mb: 512,
@@ -370,6 +444,9 @@ impl Default for LauncherSettings {
             restore_launcher_on_game_close: true,
             enable_system_tray: true,
             close_after_launch: false,
+            on_game_close: default_on_game_close(),
+            on_launcher_close: default_on_launcher_close(),
+            always_hide_to_tray: false,
             show_console_on_launch: true,
             scan_on_startup: false,
             show_hidden_instances: false,
@@ -530,6 +607,15 @@ pub struct InstalledInstance {
     #[serde(default)]
     pub minecraft_directory: String,
     pub installed_at: String,
+    /// Cumulative time this instance's game process has actually been
+    /// running, in seconds, summed across every session (added to once
+    /// per session, when that session's process exits — see
+    /// `commands::minecraft::accumulate_playtime`). Does **not** include
+    /// time from a session that's still in progress; the frontend adds
+    /// that live, on top of this, for an instance that's currently
+    /// running.
+    #[serde(default)]
+    pub total_playtime_seconds: u64,
 }
 
 impl InstalledInstance {

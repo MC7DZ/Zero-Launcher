@@ -223,6 +223,7 @@ const api = {
     invoke('discover_download', { directory, projectType, fileUrl, fileName, downloadId: downloadId || null }),
   discoverGetGameVersions: () => invoke('discover_get_game_versions'),
   discoverGetCategories: (projectType) => invoke('discover_get_categories', { projectType }),
+  discoverGetResolutions: (projectType) => invoke('discover_get_resolutions', { projectType }),
   discoverGetLicenses: () => invoke('discover_get_licenses'),
   cacheModIcon: (url) => invoke('cache_mod_icon', { url }),
   identifyModsByHash: (hashes) => invoke('identify_mods_by_hash', { hashes }),
@@ -847,6 +848,7 @@ function initDownloadWidget() {
         filesBtn: el.querySelector('.dl-card-files'),
       },
       files: [], // [{ name, status: 'downloading'|'completed'|'failed' }] — shown in the Files window
+      activeFileNames: new Set(), // names currently in p.active_files, used to diff against the next event
     };
     card.refs.pauseBtn.addEventListener('click', async () => {
       if (!card.onPause) return;
@@ -909,6 +911,7 @@ function initDownloadWidget() {
     card.status = 'downloading';
     card.percent = null;
     card.files = [];
+    card.activeFileNames = new Set();
     card.el.classList.remove('dl-card-paused', 'dl-card-error', 'dl-card-cancelled');
     card.el.classList.remove('dl-card-no-pause', 'dl-card-no-stats');
     card.el.classList.add('dl-card-indeterminate');
@@ -952,26 +955,48 @@ function initDownloadWidget() {
     r.bar.style.width = pct + '%';
     r.percent.textContent = Math.round(pct) + '%';
 
+    // Real concurrent file list from the backend (several files download
+    // at once) — fall back to the single current_file for older payload
+    // shapes so this doesn't break if a stale build sends one.
+    const activeList = (p.active_files && p.active_files.length)
+      ? p.active_files
+      : (p.current_file ? [p.current_file] : []);
+
     card.titleText = paused ? 'Paused' : 'Installing…';
-    card.subText = p.current_file || p.stage || p.label;
+    card.subText = paused
+      ? (p.current_file || p.stage || p.label)
+      : activeList.length > 1
+        ? `Downloading ${activeList.length} files…`
+        : (activeList[0] || p.stage || p.label);
     r.title.textContent = `Minecraft ${p.label}`;
     r.stage.textContent = p.stage || '';
-    r.file.textContent = p.current_file || '—';
+    r.file.textContent = activeList.length === 0
+      ? '—'
+      : activeList.length === 1
+        ? activeList[0]
+        : `${activeList[0]} +${activeList.length - 1} more`;
     r.speed.textContent = paused ? '—' : fmtSpeed(p.speed_bps);
     r.eta.textContent = paused ? '—' : fmtEta(p.eta_seconds);
     r.downloaded.textContent = fmtBytes(p.downloaded_bytes);
     r.pill.textContent = paused ? 'Paused' : 'Downloading';
     r.pauseBtn.innerHTML = paused ? '▶ Resume' : '⏸ Pause';
 
-    // Track each distinct current_file as its own entry in the Files
-    // window — when the backend moves on to the next file, the previous
-    // one is marked completed.
-    if (p.current_file && p.status === 'downloading') {
-      const last = card.files[card.files.length - 1];
-      if (!last || last.name !== p.current_file) {
-        if (last && last.status === 'downloading') last.status = 'completed';
-        card.files.push({ name: p.current_file, status: 'downloading' });
-      }
+    // Reconcile the Files window against the real set of currently-active
+    // files: anything newly in active_files starts downloading, anything
+    // that dropped out (finished, whether via TaskFinished or TaskSkipped
+    // upstream) is marked completed. This replaces the old logic, which
+    // assumed only one file was ever downloading at a time and broke once
+    // the downloader started fetching several files in parallel.
+    if (p.status === 'downloading') {
+      const activeNow = new Set(activeList);
+      const activeBefore = card.activeFileNames || new Set();
+      activeNow.forEach((name) => {
+        if (!activeBefore.has(name)) fileStart(INSTANCE_INSTALL_CARD_ID, name);
+      });
+      activeBefore.forEach((name) => {
+        if (!activeNow.has(name)) fileDone(INSTANCE_INSTALL_CARD_ID, name, true);
+      });
+      card.activeFileNames = activeNow;
     }
     refreshFilesWindowIfOpen(INSTANCE_INSTALL_CARD_ID);
 
@@ -1411,6 +1436,48 @@ function renderInstanceList() {
 }
 
 
+function formatPlaytime(totalSecondsInput) {
+  let totalSeconds = Math.max(0, Math.floor(totalSecondsInput || 0));
+  const MINUTE = 60, HOUR = 3600, DAY = 86400, MONTH = 30 * DAY;
+  const months = Math.floor(totalSeconds / MONTH); totalSeconds -= months * MONTH;
+  const days = Math.floor(totalSeconds / DAY); totalSeconds -= days * DAY;
+  const hours = Math.floor(totalSeconds / HOUR); totalSeconds -= hours * HOUR;
+  const minutes = Math.floor(totalSeconds / MINUTE); totalSeconds -= minutes * MINUTE;
+  const seconds = totalSeconds;
+  const parts = [];
+  if (months) parts.push(`${months}mo`);
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (minutes) parts.push(`${minutes}m`);
+  // Always show seconds unless there's already a coarser unit and it'd
+  // just be visual noise on an otherwise-long duration.
+  if (seconds || parts.length === 0) parts.push(`${seconds}s`);
+  return parts.join(' ');
+}
+
+// Recomputes and displays the selected instance's Play Time, including —
+// if it's currently running — live elapsed time for the in-progress
+// session on top of its already-accumulated total (which only updates on
+// disk once that session actually ends).
+function updateSelectedInstancePlaytimeDisplay() {
+  const playtimeEl = document.getElementById('info-playtime');
+  if (!playtimeEl || !selectedInstanceId) return;
+  const inst = getInstances().find(i => i.version_id === selectedInstanceId);
+  if (!inst) return;
+  let seconds = inst.total_playtime_seconds || 0;
+  const running = (runningInstancesCache || []).find(r => r.version_id === selectedInstanceId && r.running);
+  if (running && running.started_at) {
+    // started_at is "YYYY-MM-DD HH:MM:SS" in the launcher's local time.
+    const startedMs = new Date(running.started_at.replace(' ', 'T')).getTime();
+    if (!isNaN(startedMs)) {
+      seconds += Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
+    }
+  }
+  playtimeEl.textContent = formatPlaytime(seconds) + (running ? ' (playing now)' : '');
+}
+
+setInterval(updateSelectedInstancePlaytimeDisplay, 1000);
+
 function selectInstance(id) {
   selectedInstanceId = id;
   renderInstanceList();
@@ -1419,6 +1486,7 @@ function selectInstance(id) {
   const verEl = document.getElementById('detail-version');
   const loaderEl = document.getElementById('info-loader');
   const dirEl = document.getElementById('info-dir');
+  const playtimeEl = document.getElementById('info-playtime');
   const playBtn = document.getElementById('btn-play');
   const iconEl = document.getElementById('detail-icon');
 
@@ -1427,6 +1495,7 @@ function selectInstance(id) {
     verEl.textContent = '';
     loaderEl.textContent = '—';
     dirEl.textContent = '—';
+    if (playtimeEl) playtimeEl.textContent = '—';
     playBtn.disabled = true;
     if (iconEl) iconEl.innerHTML = '';
     syncInstanceSelectionAcrossTabs().catch(() => {});
@@ -1438,6 +1507,7 @@ function selectInstance(id) {
   verEl.textContent = inst.version_id + (loaderStr ? '  •  ' + loaderStr : '');
   loaderEl.textContent = loaderStr || 'Vanilla';
   dirEl.textContent = inst.directory || (settings ? settings.game_directory : '—');
+  updateSelectedInstancePlaytimeDisplay();
   playBtn.disabled = !!inst.missing_jar;
   if (iconEl) iconEl.innerHTML = `<img src="${loaderIcon(inst.loader)}" alt="${loaderLabel(inst.loader)}" draggable="false" />`;
   // Refresh mod-update data for whatever instance is now selected — its
@@ -2686,6 +2756,12 @@ async function loadMods() {
     if (deleteSelectedBtn) deleteSelectedBtn.classList.toggle('hidden', mods.length === 0);
     updateModsCount();
     filterMods();
+    // Same off-screen "cull the blur, keep the listeners" treatment already
+    // used for the instance list, Discover grid, and Settings cards — the
+    // mods grid was the one long, blur-heavy list that didn't have it, so
+    // scrolling a big modlist repainted every card's backdrop-filter even
+    // for the ones off-screen.
+    enableCardCulling(grid, '.mod-card');
   } catch (e) {
     grid.innerHTML = `<div class="empty-state"><span style="color:var(--danger)">${e}</span></div>`;
     if (countEl) countEl.textContent = '';
@@ -3425,7 +3501,8 @@ let discoverState = {
   loader: 'any',
   gameVersion: '',        // '' = any
   categories: [],         // selected category slugs
-  environment: 'any',     // 'any' | 'client' | 'server'
+  environment: 'any',     // 'any' | 'client' | 'server' (mods only)
+  resolution: '',         // '' = any, else e.g. "16x-32x" (resourcepacks only)
   license: '',            // '' = any, else SPDX short id
   openSourceOnly: false,
   targetInstance: null, // { minecraft_version, loader } or null
@@ -3442,6 +3519,7 @@ let discoverState = {
 let discoverTagCache = {
   gameVersions: null,      // DiscoverGameVersion[]
   categoriesByType: {},    // { mod: DiscoverCategory[], resourcepack: DiscoverCategory[] }
+  resolutions: null,       // DiscoverCategory[] (resourcepacks only)
   licenses: null,          // DiscoverLicense[]
 };
 
@@ -4308,11 +4386,14 @@ function applyInstanceFiltersToDiscover(inst) {
 
   let changed = false;
 
-  const loaderValue = (inst.loader || 'vanilla').toLowerCase();
-  const nextLoader = DISCOVER_LOADERS.some(l => l.value === loaderValue) ? loaderValue : 'any';
-  if (discoverState.loader !== nextLoader) {
-    discoverState.loader = nextLoader;
-    changed = true;
+  // Loader isn't a resourcepack facet — only auto-set it while browsing mods.
+  if (discoverState.type === 'mod') {
+    const loaderValue = (inst.loader || 'vanilla').toLowerCase();
+    const nextLoader = DISCOVER_LOADERS.some(l => l.value === loaderValue) ? loaderValue : 'any';
+    if (discoverState.loader !== nextLoader) {
+      discoverState.loader = nextLoader;
+      changed = true;
+    }
   }
 
   const gameVersion = inst.minecraft_version || '';
@@ -4367,7 +4448,12 @@ async function performDiscoverSearch() {
   if (!grid) return;
   showDiscoverSkeletons();
 
-  const loaderFilter = discoverState.loader === 'any' ? null : discoverState.loader;
+  // Loader/Environment are mod-only facets on Modrinth's side (resourcepacks
+  // have neither) — never send them while browsing resourcepacks, even if
+  // stale state somehow lingers, or every resourcepack search would come
+  // back empty.
+  const isModSearch = discoverState.type === 'mod';
+  const loaderFilter = (isModSearch && discoverState.loader !== 'any') ? discoverState.loader : null;
   // Previously this silently fell back to the selected instance's exact
   // Minecraft version whenever no Game Version filter was explicitly chosen,
   // even though the Game Version filter button still showed "any" with no
@@ -4378,6 +4464,12 @@ async function performDiscoverSearch() {
   // search. The Game Version dropdown is the one place this filter should be
   // applied from now — respect only what's actually visible/selected there.
   const gameVersion = discoverState.gameVersion || null;
+  // Resolution is really just a category under a different header on
+  // Modrinth's side (see discover_get_resolutions), so it's sent as part
+  // of the same `categories` facet list rather than as its own param.
+  const categoriesFilter = discoverState.resolution
+    ? [...discoverState.categories, discoverState.resolution]
+    : discoverState.categories;
 
   try {
     const result = await api.discoverSearch(
@@ -4385,8 +4477,8 @@ async function performDiscoverSearch() {
       discoverState.type,
       loaderFilter,
       gameVersion,
-      discoverState.categories,
-      discoverState.environment === 'any' ? null : discoverState.environment,
+      categoriesFilter,
+      (isModSearch && discoverState.environment !== 'any') ? discoverState.environment : null,
       discoverState.license || null,
       discoverState.openSourceOnly,
       discoverState.page,
@@ -4535,18 +4627,42 @@ function buildDiscoverCard(hit, index = 0) {
   return card;
 }
 
+// A version is only judged against a target instance if one is actually
+// selected — with no target there's nothing to be incompatible *with*, so
+// everything is shown as compatible. Mods are checked against both game
+// version and loader; resourcepacks only have a game version to match
+// against (Modrinth resourcepacks aren't loader-specific).
+function isDiscoverVersionCompatible(version, hit, target) {
+  if (!target) return true;
+  if (target.minecraft_version && !version.game_versions.includes(target.minecraft_version)) {
+    return false;
+  }
+  if (hit.project_type === 'mod') {
+    const loader = (target.loader || 'vanilla').toLowerCase();
+    if (loader !== 'vanilla') {
+      const loaders = (version.loaders || []).map(l => l.toLowerCase());
+      if (loaders.length && !loaders.includes(loader)) return false;
+    }
+  }
+  return true;
+}
+
 async function loadDiscoverCardVersions(hit, versionSelect, downloadBtn, retryBtn) {
   const target = currentDiscoverTargetInstance();
-  const loaderFilter = discoverState.loader === 'any' ? null : discoverState.loader;
-  const loaderForQuery = hit.project_type === 'mod' ? (target ? target.loader : loaderFilter) : null;
-  const gameVersion = target ? target.minecraft_version : null;
-
+  // Always fetch the full version list rather than asking Modrinth to
+  // filter it down — filtering server-side made incompatible versions
+  // vanish from the dropdown entirely (so e.g. picking "Any version" in
+  // the search filter would surface a resourcepack, but its own version
+  // picker still only showed versions matching the target instance,
+  // often leaving nothing at all). Now every version is listed; ones that
+  // don't match the targeted instance are just labelled/colored instead
+  // of hidden, so they're still there to pick if the user wants them.
   if (retryBtn) retryBtn.classList.add('hidden');
 
   try {
-    const versions = await api.discoverGetVersions(hit.project_id, loaderForQuery, gameVersion);
+    const versions = await api.discoverGetVersions(hit.project_id, null, null);
     if (!versions || versions.length === 0) {
-      versionSelect.innerHTML = '<option value="">No compatible versions</option>';
+      versionSelect.innerHTML = '<option value="">No versions available</option>';
       downloadBtn.disabled = true;
       return;
     }
@@ -4556,11 +4672,25 @@ async function loadDiscoverCardVersions(hit, versionSelect, downloadBtn, retryBt
       if (!primaryFile) return;
       const opt = document.createElement('option');
       opt.value = v.id;
-      opt.textContent = `${v.version_number} (${v.game_versions[v.game_versions.length - 1] || ''})`;
+      const latestGameVersion = v.game_versions[v.game_versions.length - 1] || '';
+      const compatible = isDiscoverVersionCompatible(v, hit, target);
+      opt.textContent = compatible
+        ? `${v.version_number} (${latestGameVersion})`
+        : `${v.version_number} (${latestGameVersion}) — Incompatible`;
+      if (!compatible) {
+        opt.style.color = 'var(--danger)';
+        opt.dataset.incompatible = '1';
+      }
       opt.dataset.fileUrl = primaryFile.url;
       opt.dataset.fileName = primaryFile.filename;
       versionSelect.appendChild(opt);
     });
+    // Prefer a compatible version as the default selection when there is
+    // one, so the dropdown doesn't default to an incompatible version just
+    // because it happened to be newest — the user can still pick one of
+    // the (Incompatible) options manually if they want to.
+    const firstCompatible = Array.from(versionSelect.options).find(o => !o.dataset.incompatible);
+    if (firstCompatible) versionSelect.value = firstCompatible.value;
     downloadBtn.disabled = versionSelect.options.length === 0;
   } catch (e) {
     versionSelect.innerHTML = '<option value="">Failed to load versions</option>';
@@ -4578,6 +4708,12 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
   if (!opt || !opt.dataset.fileUrl) {
     showToast('No version selected', 'error');
     return;
+  }
+
+  if (opt.dataset.incompatible) {
+    const targetLabel = target ? (target.name || target.version_id) : 'the targeted instance';
+    const proceed = confirm(`This version doesn't match ${targetLabel} and is marked (Incompatible). Download it anyway?`);
+    if (!proceed) return;
   }
 
   downloadBtn.disabled = true;
@@ -4637,9 +4773,22 @@ function initDiscover() {
       btn.classList.add('active');
       discoverState.type = btn.dataset.type;
       discoverState.page = 1;
+      // Category options differ per project type (e.g. resourcepacks don't
+      // have Fabric/Forge-style categories), and Loader/Environment/
+      // Resolution simply don't apply to the type being switched away
+      // from, so clear all of it rather than carrying over filters that
+      // no longer mean anything for what's now selected.
       discoverState.categories = [];
+      discoverState.loader = 'any';
+      discoverState.environment = 'any';
+      discoverState.resolution = '';
+      discoverCloseAllPanels();
+      updateDiscoverFilterVisibility();
       updateDiscoverFilterButtonStates();
       renderDiscoverCategoryPanel(); // reload options for the new project type
+      // Same auto-fill mods already get: re-apply the targeted instance's
+      // Minecraft version to the Game Version filter for this type too.
+      applyInstanceFiltersToDiscover(currentDiscoverTargetInstance());
       performDiscoverSearch();
     });
   });
@@ -4767,15 +4916,28 @@ function updateDiscoverFilterButtonStates() {
   const loaderLabelText = DISCOVER_LOADERS.find(l => l.value === discoverState.loader);
   setCount('loader', discoverState.loader !== 'any', discoverState.loader !== 'any' ? (loaderLabelText ? loaderLabelText.label : discoverState.loader) : '');
   setCount('category', discoverState.categories.length > 0, discoverState.categories.length ? String(discoverState.categories.length) : '');
+  setCount('resolution', !!discoverState.resolution, discoverState.resolution || '');
   setCount('environment', discoverState.environment !== 'any', '');
   setCount('license', !!discoverState.license, '');
   setCount('advanced', discoverState.openSourceOnly, '');
 
   const anyActive = discoverState.gameVersion || discoverState.loader !== 'any' ||
     discoverState.categories.length > 0 || discoverState.environment !== 'any' ||
-    discoverState.license || discoverState.openSourceOnly;
+    discoverState.resolution || discoverState.license || discoverState.openSourceOnly;
   const resetBtn = document.getElementById('discover-filters-reset');
   if (resetBtn) resetBtn.hidden = !anyActive;
+}
+
+// Loader/Environment only make sense for mods (loaders load mods; a
+// resourcepack has no client/server-required split the way a mod does),
+// and Resolution only makes sense for resourcepacks (mods aren't shipped
+// in texture resolutions) — show only the filter chips that apply to
+// whichever project type is currently selected.
+function updateDiscoverFilterVisibility() {
+  document.querySelectorAll('.discover-filter[data-types]').forEach(el => {
+    const types = el.dataset.types.split(',');
+    el.hidden = !types.includes(discoverState.type);
+  });
 }
 
 async function renderDiscoverVersionPanel() {
@@ -4852,6 +5014,35 @@ async function renderDiscoverCategoryPanel() {
   });
 }
 
+async function renderDiscoverResolutionPanel() {
+  const list = document.getElementById('discover-resolution-list');
+  if (!list) return;
+  if (!discoverTagCache.resolutions) {
+    list.innerHTML = `<div class="discover-filter-option" style="opacity:.6;cursor:default;">Loading…</div>`;
+    try {
+      discoverTagCache.resolutions = await api.discoverGetResolutions('resourcepack');
+    } catch (e) {
+      list.innerHTML = `<div class="discover-filter-option" style="opacity:.6;cursor:default;">Failed to load resolutions</div>`;
+      return;
+    }
+  }
+  const rows = [{ name: '', label: 'Any resolution' }, ...discoverTagCache.resolutions.map(r => ({ name: r.name, label: r.name }))];
+  list.innerHTML = '';
+  rows.forEach(r => {
+    const btn = document.createElement('button');
+    btn.className = 'discover-filter-option' + (discoverState.resolution === r.name ? ' selected' : '');
+    btn.textContent = r.label;
+    btn.addEventListener('click', () => {
+      discoverState.resolution = r.name;
+      discoverState.page = 1;
+      updateDiscoverFilterButtonStates();
+      discoverCloseAllPanels();
+      performDiscoverSearch();
+    });
+    list.appendChild(btn);
+  });
+}
+
 function renderDiscoverEnvironmentPanel() {
   const list = document.getElementById('discover-environment-list');
   if (!list) return;
@@ -4917,6 +5108,7 @@ function initDiscoverFilters() {
       if (name === 'version') renderDiscoverVersionPanel();
       if (name === 'loader') renderDiscoverLoaderPanel();
       if (name === 'category') renderDiscoverCategoryPanel();
+      if (name === 'resolution') renderDiscoverResolutionPanel();
       if (name === 'environment') renderDiscoverEnvironmentPanel();
       if (name === 'license') renderDiscoverLicensePanel();
       // 'advanced' panel is static markup, nothing to render.
@@ -4964,6 +5156,7 @@ function initDiscoverFilters() {
     discoverState.gameVersion = '';
     discoverState.loader = 'any';
     discoverState.categories = [];
+    discoverState.resolution = '';
     discoverState.environment = 'any';
     discoverState.license = '';
     discoverState.openSourceOnly = false;
@@ -4973,6 +5166,7 @@ function initDiscoverFilters() {
     performDiscoverSearch();
   });
 
+  updateDiscoverFilterVisibility();
   updateDiscoverFilterButtonStates();
 }
 
@@ -5094,8 +5288,11 @@ function populateSettingsUI() {
   // Behavior
   document.getElementById('setting-close-on-launch').checked = !!settings.close_after_launch;
   document.getElementById('setting-minimize-on-launch').checked = !!settings.minimize_on_launch;
-  document.getElementById('setting-restore-on-close').checked = settings.restore_launcher_on_game_close !== false;
+  document.getElementById('setting-on-game-close').value = settings.on_game_close || 'show';
   document.getElementById('setting-system-tray').checked = settings.enable_system_tray !== false;
+  document.getElementById('setting-on-launcher-close').value = settings.on_launcher_close || 'tray';
+  document.getElementById('setting-always-hide-to-tray').checked = !!settings.always_hide_to_tray;
+  updateWindowBehaviorRowVisibility();
   document.getElementById('setting-mod-updates-startup').checked = settings.check_mod_updates_on_startup !== false;
   document.getElementById('setting-confirm-destructive').checked = settings.confirm_destructive_actions !== false;
   const autoApplyFiltersEl = document.getElementById('setting-auto-apply-instance-filters');
@@ -5104,10 +5301,20 @@ function populateSettingsUI() {
   if (smoothScrollingEl) smoothScrollingEl.checked = settings.smooth_scrolling !== false;
   const notifyAutoUpdatesEl = document.getElementById('setting-notify-auto-mod-updates');
   if (notifyAutoUpdatesEl) notifyAutoUpdatesEl.checked = settings.notify_on_auto_mod_updates !== false;
+  const autoCheckLauncherUpdatesEl = document.getElementById('setting-auto-check-launcher-updates');
+  if (autoCheckLauncherUpdatesEl) autoCheckLauncherUpdatesEl.checked = settings.auto_check_launcher_updates === true;
 
   // Performance & Java
   const elGameDir = document.getElementById('setting-game-dir');
-  if (elGameDir) elGameDir.value = settings.game_directory || '';
+  if (elGameDir) {
+    elGameDir.value = settings.game_directory || '';
+    // Blank = use the platform default (~/.minecraft on Linux,
+    // %appdata%/.minecraft on Windows) - show it as a placeholder so it's
+    // clear what's actually in effect without pre-filling the field.
+    api.getDefaultMcDir().then(dir => {
+      if (dir) elGameDir.placeholder = `Default (${dir})`;
+    }).catch(() => {});
+  }
   const elMinRam = document.getElementById('setting-min-ram');
   if (elMinRam) elMinRam.value = settings.min_ram_mb || 512;
   const elMaxRam = document.getElementById('setting-max-ram');
@@ -5198,12 +5405,18 @@ function applyThemeFromSettings() {
   const preset = THEME_PRESETS[effectiveTheme];
   root.setAttribute('data-theme', effectiveTheme);
 
-  // Colors — explicit per-field settings win if a picker for them ever gets
-  // added; until then these fall back to the resolved theme's preset.
+  // Colors — these fields have no picker UI anywhere in the app, so the
+  // backend always serializes them at their (dark-theme) defaults. Using
+  // `settings.X || preset.X` meant `settings.X` was never falsy and the
+  // resolved theme's preset never actually won, so panels/text/backgrounds
+  // stayed dark-themed even while on the light theme (most visible in the
+  // Setup Wizard, which — unlike .glass-card/.instance-card/etc — has no
+  // per-theme override of its own to compensate). Always derive from the
+  // resolved preset until per-field pickers exist.
   ensureAccentFields();
   root.style.setProperty('--accent', currentAccentColor());
-  root.style.setProperty('--bg', settings.bg_color || preset.bg_color);
-  root.style.setProperty('--bg-darker', darkenColor(settings.bg_color || preset.bg_color, effectiveTheme === 'light' ? 0.08 : 0.4));
+  root.style.setProperty('--bg', preset.bg_color);
+  root.style.setProperty('--bg-darker', darkenColor(preset.bg_color, effectiveTheme === 'light' ? 0.08 : 0.4));
 
   // Panel background with transparency option. The light theme needs a
   // higher floor than the dark theme — at the same low alpha the animated
@@ -5213,23 +5426,23 @@ function applyThemeFromSettings() {
   const panelAlpha = effectiveTheme === 'light'
     ? (settings.enable_transparency ? 0.82 : 0.97)
     : (settings.enable_transparency ? 0.45 : 0.95);
-  root.style.setProperty('--panel', hexToRgba(settings.panel_bg_color || preset.panel_bg_color, panelAlpha));
-  root.style.setProperty('--text', settings.text_color || preset.text_color);
-  root.style.setProperty('--text-muted', hexToRgba(settings.text_color || preset.text_color, 0.55));
+  root.style.setProperty('--panel', hexToRgba(preset.panel_bg_color, panelAlpha));
+  root.style.setProperty('--text', preset.text_color);
+  root.style.setProperty('--text-muted', hexToRgba(preset.text_color, 0.55));
 
   const headerAlpha = effectiveTheme === 'light'
     ? (settings.enable_transparency ? 0.82 : 0.97)
     : (settings.enable_transparency ? 0.45 : 0.95);
-  root.style.setProperty('--header-bg', hexToRgba(settings.header_bg_color || preset.header_bg_color, headerAlpha));
-  root.style.setProperty('--log-bg', settings.log_bg_color || preset.log_bg_color);
-  const notifHex = settings.notification_bg_color || preset.notification_bg_color;
+  root.style.setProperty('--header-bg', hexToRgba(preset.header_bg_color, headerAlpha));
+  root.style.setProperty('--log-bg', preset.log_bg_color);
+  const notifHex = preset.notification_bg_color;
   root.style.setProperty('--notif-bg', notifHex);
   root.style.setProperty('--notif-bg-rgb', hexToRgbTriplet(notifHex));
 
   // Near-opaque panel background for flyouts that need to stay legible over
   // content regardless of the transparency setting (dropdowns, modals,
   // popovers) — follows the same panel color the rest of the theme uses.
-  root.style.setProperty('--panel-solid', hexToRgba(settings.panel_bg_color || preset.panel_bg_color, 0.97));
+  root.style.setProperty('--panel-solid', hexToRgba(preset.panel_bg_color, 0.97));
 
   // Accent derived
   const accent = currentAccentColor();
@@ -5404,8 +5617,10 @@ function collectSettingsFromUI() {
   // Behavior
   settings.close_after_launch = document.getElementById('setting-close-on-launch').checked;
   settings.minimize_on_launch = document.getElementById('setting-minimize-on-launch').checked;
-  settings.restore_launcher_on_game_close = document.getElementById('setting-restore-on-close').checked;
+  settings.on_game_close = document.getElementById('setting-on-game-close').value;
   settings.enable_system_tray = document.getElementById('setting-system-tray').checked;
+  settings.on_launcher_close = document.getElementById('setting-on-launcher-close').value;
+  settings.always_hide_to_tray = document.getElementById('setting-always-hide-to-tray').checked;
   settings.check_mod_updates_on_startup = document.getElementById('setting-mod-updates-startup').checked;
   settings.confirm_destructive_actions = document.getElementById('setting-confirm-destructive').checked;
   const autoApplyFiltersElCollect = document.getElementById('setting-auto-apply-instance-filters');
@@ -5414,6 +5629,8 @@ function collectSettingsFromUI() {
   if (smoothScrollingElCollect) settings.smooth_scrolling = smoothScrollingElCollect.checked;
   const notifyAutoUpdatesElCollect = document.getElementById('setting-notify-auto-mod-updates');
   if (notifyAutoUpdatesElCollect) settings.notify_on_auto_mod_updates = notifyAutoUpdatesElCollect.checked;
+  const autoCheckLauncherUpdatesElCollect = document.getElementById('setting-auto-check-launcher-updates');
+  if (autoCheckLauncherUpdatesElCollect) settings.auto_check_launcher_updates = autoCheckLauncherUpdatesElCollect.checked;
 
   // Performance & Java
   const elGameDir = document.getElementById('setting-game-dir');
@@ -5593,10 +5810,11 @@ function initSettings() {
     'setting-bg-image-tint', 'setting-bg-image-vignette',
     'setting-font-family',
     'setting-close-on-launch', 'setting-minimize-on-launch',
-    'setting-restore-on-close', 'setting-system-tray',
+    'setting-on-game-close', 'setting-system-tray',
+    'setting-on-launcher-close', 'setting-always-hide-to-tray',
     'setting-mod-updates-startup', 'setting-confirm-destructive',
     'setting-auto-apply-instance-filters',
-    'setting-smooth-scrolling', 'setting-notify-auto-mod-updates',
+    'setting-smooth-scrolling', 'setting-notify-auto-mod-updates', 'setting-auto-check-launcher-updates',
     'setting-enable-discord-rpc',
     'setting-rpc-show-in-launcher', 'setting-rpc-show-instance', 'setting-rpc-show-version',
     'setting-rpc-show-server-ip', 'setting-rpc-show-game-state',
@@ -5889,7 +6107,14 @@ function initSettings() {
       try {
         // Send default settings
         settings = await api.getSettings();
-        // Reset by saving an empty object which defaults everything
+        // Reset by saving an empty object which defaults everything.
+        // NOTE: `game_directory` is deliberately NOT included here. It's
+        // not a UI preference, it's the on-disk location of the user's
+        // instances/mods (<game_directory>/versions/instances.json). If
+        // it were reset to '', save_settings() sees the directory as
+        // "changed" and reloads instances from the default .minecraft
+        // folder instead, making the user's real instances vanish from
+        // the UI (they're still on disk, just no longer pointed at).
         const defaultSettings = {
           theme_mode: 'system',
           accent_color_dark: ACCENT_THEME_DEFAULTS.dark,
@@ -5913,11 +6138,12 @@ function initSettings() {
           notification_style: 'Minimal Outline',
           close_after_launch: false,
           minimize_on_launch: false,
-          restore_launcher_on_game_close: true,
+          on_game_close: 'show',
           enable_system_tray: true,
+          on_launcher_close: 'tray',
+          always_hide_to_tray: false,
           check_mod_updates_on_startup: true,
           confirm_destructive_actions: true,
-          game_directory: '',
           min_ram_mb: 512,
           max_ram_mb: 4096,
           java_path: null,
@@ -6168,6 +6394,16 @@ async function refreshRunningInstances() {
   }
   renderRunningInstancesPanel();
   updatePlayButtonRunningState();
+  // A session ending is exactly when its accumulated total_playtime_seconds
+  // changes on disk — refresh the tracked instance list so the Play Time
+  // row picks that up instead of only reflecting whatever was cached at
+  // launch time.
+  try {
+    await refreshInstances();
+  } catch (e) {
+    console.error('Failed to refresh instances after running-instances change', e);
+  }
+  updateSelectedInstancePlaytimeDisplay();
 }
 
 async function openInstanceConsole(versionId, name) {
@@ -6208,15 +6444,43 @@ const BG = {
   particles: [],
   orbs: [],
 
+  // Set while a frame is scheduled via requestAnimationFrame, so callers
+  // (resize, settings changes, visibility) know whether they need to kick
+  // the loop back on or can just let the already-scheduled frame pick up
+  // the change.
+  _scheduled: false,
+
   init() {
     this.canvas = document.getElementById('bg-canvas');
     if (!this.canvas) return;
-    this.ctx = this.canvas.getContext('2d');
+    this.ctx = this.canvas.getContext('2d', { alpha: true, desynchronized: true });
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('resize', () => { this.resize(); this.requestRedraw(); });
+    // Pause entirely while the window is minimized/hidden/unfocused instead
+    // of continuing to redraw an animation nobody can see — this is the
+    // single biggest idle CPU/GPU cost the launcher had. Resume on return.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (this.animId) cancelAnimationFrame(this.animId);
+        this.animId = null;
+        this._scheduled = false;
+      } else {
+        this.requestRedraw();
+      }
+    });
     this.createParticles();
     this.createOrbs();
     this.loop(0);
+  },
+
+  // Ensures a frame is scheduled without stacking duplicate rAF loops —
+  // used after the loop has gone idle (static scene, or paused for
+  // visibility) and something needs to be redrawn once.
+  requestRedraw() {
+    if (document.hidden) return;
+    if (this._scheduled) return;
+    this._scheduled = true;
+    this.animId = requestAnimationFrame((t) => this.loop(t));
   },
 
   resize() {
@@ -6315,13 +6579,14 @@ const BG = {
   },
 
   loop(timestamp) {
+    this._scheduled = false;
     const s = settings || {};
     const enabled = s.enable_background_animation !== false;
     const ctx = this.ctx;
     const canvas = this.canvas;
 
     if (!ctx || !canvas) {
-      this.animId = requestAnimationFrame((t) => this.loop(t));
+      this.requestRedraw();
       return;
     }
 
@@ -6331,11 +6596,21 @@ const BG = {
     if (this.lastTime) {
       const dt = timestamp - this.lastTime;
       if (dt < interval) {
+        this._scheduled = true;
         this.animId = requestAnimationFrame((t) => this.loop(t));
         return;
       }
     }
     this.lastTime = timestamp;
+
+    // Nothing on screen actually moves this frame (animation disabled, or
+    // the "Nothing" animation style) — draw it once and stop rescheduling
+    // instead of clearing + repainting a static gradient at 60fps forever.
+    // Matches the same condition the "Animations" block below uses to
+    // decide whether it draws anything. requestRedraw() wakes the loop back
+    // up the moment anything relevant changes (resize, theme/settings, tab
+    // regaining focus).
+    const isStaticFrame = !enabled || (s.background_animation_style || 'Waves') === 'Nothing';
 
     const W = canvas.width;
     const H = canvas.height;
@@ -6376,59 +6651,79 @@ const BG = {
     ctx.clearRect(0, 0, W, H);
 
     if (!s.use_background_image) {
-      if (isNothing) {
-        // Flat solid fill, no gradient at all.
-        ctx.fillStyle = isLight ? '#e9eaed' : '#141416';
-        ctx.fillRect(0, 0, W, H);
-      } else {
-      // ── Base gradient ──
-      let grad;
-      if (isLight) {
-        // Diagonal, three-stop gradient with real contrast: a noticeably
-        // tinted accent corner, a near-white middle, and a cool gray corner
-        // — the two-stop pastel version was too close in lightness to read
-        // as a gradient at all.
-        grad = ctx.createLinearGradient(0, 0, W, H);
-        const mix = (amt) => [
-          Math.round(r + (255 - r) * amt),
-          Math.round(g + (255 - g) * amt),
-          Math.round(b + (255 - b) * amt),
-        ];
-        const [ar, ag, ab] = mix(0.22); // strong accent corner, not washed out
-        const [mr, mg, mb] = mix(0.62); // tinted midpoint — no flat white
-        grad.addColorStop(0, `rgb(${ar}, ${ag}, ${ab})`);
-        grad.addColorStop(0.55, `rgb(${mr}, ${mg}, ${mb})`);
-        grad.addColorStop(1, '#c7cedb');
-      } else {
-        grad = ctx.createLinearGradient(0, 0, 0, H);
-        grad.addColorStop(0, '#0a0a0f');
-        grad.addColorStop(1, '#060608');
-      }
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, H);
-      }
-    }
+      // The base gradient + glow(s) only actually change when size, theme,
+      // accent color, or background style change — not every frame. They
+      // were being rebuilt from scratch (1 linear + up to 2 radial
+      // gradients, each requiring color-stop math and a full-canvas fill)
+      // on every single animation frame even though the result was
+      // pixel-identical to the previous one nearly all the time. Now that
+      // static layer is rendered once into an offscreen canvas and just
+      // blitted with drawImage() — a plain pixel copy — until something it
+      // actually depends on changes. Same pixels on screen, far less canvas
+      // work per frame while an animation (Waves/Orbs/Fireflies/Particles)
+      // is running.
+      const staticKey = `${W}x${H}|${r},${g},${b}|${isLight}|${bgStyle}|${aBoost}|${isNothing}`;
+      if (this._staticKey !== staticKey) {
+        this._staticKey = staticKey;
+        if (!this._staticCanvas) this._staticCanvas = document.createElement('canvas');
+        const sc = this._staticCanvas;
+        if (sc.width !== W || sc.height !== H) { sc.width = W; sc.height = H; }
+        const sctx = sc.getContext('2d');
+        sctx.clearRect(0, 0, W, H);
 
-    // ── Background style glows (hidden when custom image background is active) ──
-    if (!s.use_background_image) {
-      let glows = [[0.18, -0.05, 0.9, 0.18]];
-      if (bgStyle === 'Midnight') glows = [[0.82, 1.05, 0.8, 0.21]];
-      else if (bgStyle === 'Sunset') glows = [[0.05, 0.15, 0.7, 0.22], [0.95, 0.85, 0.7, 0.16]];
-      else if (bgStyle === 'Forest') glows = [[0.5, 1.0, 1.1, 0.19]];
-      else if (bgStyle === 'Ocean') glows = [[0.5, -0.1, 1.3, 0.18]];
-      else if (bgStyle === 'Monochrome') glows = [];
-      else if (bgStyle === 'Nothing') glows = [];
-      else if (bgStyle === 'Accent Glow') glows = [[0.5, 0.4, 1.4, 0.32]];
+        if (isNothing) {
+          // Flat solid fill, no gradient at all.
+          sctx.fillStyle = isLight ? '#e9eaed' : '#141416';
+          sctx.fillRect(0, 0, W, H);
+        } else {
+          // ── Base gradient ──
+          let grad;
+          if (isLight) {
+            // Diagonal, three-stop gradient with real contrast: a noticeably
+            // tinted accent corner, a near-white middle, and a cool gray
+            // corner — the two-stop pastel version was too close in
+            // lightness to read as a gradient at all.
+            grad = sctx.createLinearGradient(0, 0, W, H);
+            const mix = (amt) => [
+              Math.round(r + (255 - r) * amt),
+              Math.round(g + (255 - g) * amt),
+              Math.round(b + (255 - b) * amt),
+            ];
+            const [ar, ag, ab] = mix(0.22); // strong accent corner, not washed out
+            const [mr, mg, mb] = mix(0.62); // tinted midpoint — no flat white
+            grad.addColorStop(0, `rgb(${ar}, ${ag}, ${ab})`);
+            grad.addColorStop(0.55, `rgb(${mr}, ${mg}, ${mb})`);
+            grad.addColorStop(1, '#c7cedb');
+          } else {
+            grad = sctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, '#0a0a0f');
+            grad.addColorStop(1, '#060608');
+          }
+          sctx.fillStyle = grad;
+          sctx.fillRect(0, 0, W, H);
 
-      glows.forEach(([xr, yr, rr, a]) => {
-        const cx = W * xr, cy = H * yr;
-        const rad = Math.max(W, H) * rr * 0.6;
-        const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-        rg.addColorStop(0, `rgba(${r},${g},${b},${Math.min(1, a * aBoost)})`);
-        rg.addColorStop(1, `rgba(${r},${g},${b},0)`);
-        ctx.fillStyle = rg;
-        ctx.fillRect(0, 0, W, H);
-      });
+          // ── Background style glows ──
+          let glows = [[0.18, -0.05, 0.9, 0.18]];
+          if (bgStyle === 'Midnight') glows = [[0.82, 1.05, 0.8, 0.21]];
+          else if (bgStyle === 'Sunset') glows = [[0.05, 0.15, 0.7, 0.22], [0.95, 0.85, 0.7, 0.16]];
+          else if (bgStyle === 'Forest') glows = [[0.5, 1.0, 1.1, 0.19]];
+          else if (bgStyle === 'Ocean') glows = [[0.5, -0.1, 1.3, 0.18]];
+          else if (bgStyle === 'Monochrome') glows = [];
+          else if (bgStyle === 'Nothing') glows = [];
+          else if (bgStyle === 'Accent Glow') glows = [[0.5, 0.4, 1.4, 0.32]];
+
+          glows.forEach(([xr, yr, rr, a]) => {
+            const cx = W * xr, cy = H * yr;
+            const rad = Math.max(W, H) * rr * 0.6;
+            const rg = sctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+            rg.addColorStop(0, `rgba(${r},${g},${b},${Math.min(1, a * aBoost)})`);
+            rg.addColorStop(1, `rgba(${r},${g},${b},0)`);
+            sctx.fillStyle = rg;
+            sctx.fillRect(0, 0, W, H);
+          });
+        }
+      }
+      ctx.drawImage(this._staticCanvas, 0, 0);
     }
 
     // ── Animations ──
@@ -6505,7 +6800,10 @@ const BG = {
       }
     }
 
-    this.animId = requestAnimationFrame((t) => this.loop(t));
+    if (!isStaticFrame) {
+      this._scheduled = true;
+      this.animId = requestAnimationFrame((t) => this.loop(t));
+    }
   },
 
   // ── Background Image Support ──
@@ -6551,6 +6849,12 @@ const BG = {
     if (vigLayer) {
       vigLayer.style.opacity = (s.use_background_image && s.background_image_vignette) ? '1' : '0';
     }
+
+    // Every settings/theme change routes through here, so this is the one
+    // place that needs to nudge the canvas loop awake if it had gone idle
+    // (static scene) — otherwise a color/style change made while animation
+    // is "Nothing" wouldn't repaint until something else woke it up.
+    this.requestRedraw();
   },
 };
 
@@ -6935,6 +7239,38 @@ function populateMusicSettingsUI() {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// WINDOW BEHAVIOR SETTINGS
+// ══════════════════════════════════════════════════════════════════
+
+// The "On Launcher Close" select and "Always hide to tray" toggle only
+// mean anything when the tray icon itself is enabled — hide them
+// otherwise instead of leaving controls on screen that silently do
+// nothing.
+function updateWindowBehaviorRowVisibility() {
+  const trayEnabled = document.getElementById('setting-system-tray').checked;
+  const closeRow = document.getElementById('setting-on-launcher-close-row');
+  const alwaysRow = document.getElementById('setting-always-hide-to-tray-row');
+  if (closeRow) closeRow.classList.toggle('hidden', !trayEnabled);
+  if (alwaysRow) alwaysRow.classList.toggle('hidden', !trayEnabled);
+}
+
+function initWindowBehaviorSettings() {
+  const trayEl = document.getElementById('setting-system-tray');
+  if (trayEl) {
+    trayEl.addEventListener('change', () => {
+      updateWindowBehaviorRowVisibility();
+      saveSettingsNow();
+    });
+  }
+  const onGameCloseEl = document.getElementById('setting-on-game-close');
+  if (onGameCloseEl) onGameCloseEl.addEventListener('change', saveSettingsNow);
+  const onLauncherCloseEl = document.getElementById('setting-on-launcher-close');
+  if (onLauncherCloseEl) onLauncherCloseEl.addEventListener('change', saveSettingsNow);
+  const alwaysHideEl = document.getElementById('setting-always-hide-to-tray');
+  if (alwaysHideEl) alwaysHideEl.addEventListener('change', saveSettingsNow);
+}
+
+// ══════════════════════════════════════════════════════════════════
 // FIRST-TIME SETUP WIZARD
 // ══════════════════════════════════════════════════════════════════
 let currentSetupStep = 1;
@@ -7216,6 +7552,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initDiscover();
   initSettings();
   initMusicSettings();
+  initWindowBehaviorSettings();
   initRunningInstancesWidget();
   initApplyPresetOverlayEvents();
   initExportModsOverlayEvents();
@@ -7260,7 +7597,62 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   initCrashDialog();
   initAutoUpdate();
+  initUpdateConsentPrompt();
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// AUTO-UPDATE CONSENT PROMPT
+//
+// Shown on startup only while "Auto Check For Launcher Updates" (off by
+// default) hasn't been turned on and the user hasn't ticked "don't ask
+// again". Allow turns the setting on; Deny leaves it off — either way,
+// checking "don't ask me again" stops the prompt from coming back.
+// ═══════════════════════════════════════════════════════════════════════
+function initUpdateConsentPrompt() {
+  if (!settings) return;
+  if (settings.auto_check_launcher_updates === true) return;
+  if (settings.update_prompt_dont_ask_again === true) return;
+  // Don't stack this on top of the first-run Setup Wizard — it's jarring
+  // to have an update-consent popup appear over onboarding. It'll show on
+  // the next normal launch once setup is finished instead.
+  const isSetupFinished = settings.Finished_setup === true || settings.setup_finished === true || settings.finished_setup_upper === true;
+  if (!isSetupFinished) return;
+
+  const overlay = document.getElementById('update-consent-overlay');
+  if (!overlay) return;
+
+  const dontAskEl = document.getElementById('update-consent-dont-ask');
+  const denyBtn = document.getElementById('btn-update-consent-deny');
+  const allowBtn = document.getElementById('btn-update-consent-allow');
+
+  const respond = async (allow) => {
+    const dontAskAgain = !!(dontAskEl && dontAskEl.checked);
+    settings.auto_check_launcher_updates = allow;
+    if (dontAskAgain) settings.update_prompt_dont_ask_again = true;
+    const elToggle = document.getElementById('setting-auto-check-launcher-updates');
+    if (elToggle) elToggle.checked = allow;
+    overlay.classList.add('hidden');
+    try {
+      await api.updateSettings(settings);
+    } catch (e) {
+      console.error('Failed to save update preference', e);
+    }
+    if (allow) {
+      // They just opted in — go ahead and run the check now instead of
+      // waiting for the next launch.
+      api.checkForUpdate().then((update) => {
+        if (update && typeof window.__ZL_showUpdatePrompt === 'function') {
+          window.__ZL_showUpdatePrompt(update);
+        }
+      }).catch(() => {});
+    }
+  };
+
+  denyBtn.addEventListener('click', () => respond(false));
+  allowBtn.addEventListener('click', () => respond(true));
+
+  overlay.classList.remove('hidden');
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // AUTO-UPDATE
@@ -7305,6 +7697,7 @@ function initAutoUpdate() {
     closeBtn.style.visibility = 'visible';
     overlay.classList.remove('hidden');
   };
+  window.__ZL_showUpdatePrompt = showUpdatePrompt;
 
   yesBtn.addEventListener('click', async () => {
     if (!pendingUpdate) return;
@@ -7346,16 +7739,21 @@ function initAutoUpdate() {
     }
   });
 
-  api.checkForUpdate()
-    .then((update) => {
-      if (!update) return;
-      showUpdatePrompt(update);
-    })
-    .catch((e) => {
-      // Silent — a failed background version check shouldn't interrupt
-      // startup (no internet, manifest URL not set up yet, etc.).
-      console.warn('Update check failed:', e);
-    });
+  // Only runs the silent background check if the user has actually
+  // opted in (Settings → Auto Check For Launcher Updates). The manual
+  // "Check for Updates" button below always works regardless.
+  if (settings && settings.auto_check_launcher_updates === true) {
+    api.checkForUpdate()
+      .then((update) => {
+        if (!update) return;
+        showUpdatePrompt(update);
+      })
+      .catch((e) => {
+        // Silent — a failed background version check shouldn't interrupt
+        // startup (no internet, manifest URL not set up yet, etc.).
+        console.warn('Update check failed:', e);
+      });
+  }
 
   // Manual "Check for Updates" button (Settings → About & Initial Setup),
   // with an inline status line for the result.

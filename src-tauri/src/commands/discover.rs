@@ -812,6 +812,36 @@ pub async fn discover_get_categories(project_type: String) -> Result<Vec<Discove
         .collect())
 }
 
+/// Returns resolution tags (16x-32x, 32x-48x, etc.) for the given project
+/// type. On Modrinth these are just regular categories grouped under a
+/// "resolutions" header for display, which `discover_get_categories`
+/// deliberately excludes — this is the counterpart that returns *only*
+/// that header, for resourcepacks' dedicated Resolution filter. The values
+/// this returns are still plain category names, so they're sent to
+/// `discover_search`'s `categories` facet the same way regular categories
+/// are.
+#[tauri::command]
+pub async fn discover_get_resolutions(project_type: String) -> Result<Vec<DiscoverCategory>, String> {
+    let resp = send_with_retry(|client| client.get(format!("{MODRINTH_API}/tag/category")))
+        .await
+        .map_err(|e| format!("Failed to reach Modrinth: {e} (source: {:?})", e.source()))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to fetch categories: HTTP {}", resp.status()));
+    }
+
+    let raw: Vec<RawCategory> = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse category list: {e}"))?;
+
+    Ok(raw
+        .into_iter()
+        .filter(|c| c.project_type == project_type && c.header == "resolutions")
+        .map(|c| DiscoverCategory { name: c.name, project_type: c.project_type, header: c.header })
+        .collect())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoverLicense {
     pub short: String,

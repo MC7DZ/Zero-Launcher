@@ -67,10 +67,18 @@ pub fn installer_command_args(invocation: &InstallerInvocation) -> Vec<String> {
 
 /// Runs a Java-based loader installer.
 ///
+/// Captures the installer's stdout and stderr (merged, in the order the
+/// process wrote them) instead of letting them go to the launcher's own
+/// inherited streams, so a failure comes back with the installer's actual
+/// diagnostic output attached — that's almost always what actually
+/// explains a Forge/NeoForge install failure (missing/incompatible Java,
+/// a corrupted download, a profile it doesn't like, etc.), not just the
+/// bare exit code.
+///
 /// # Errors
 ///
-/// Returns [`crate::LauncherError`] if the installer process cannot be started
-/// or exits with a non-zero status.
+/// Returns [`crate::LauncherError`] if the installer process cannot be
+/// started or exits with a non-zero status.
 pub fn run_loader_installer(invocation: &InstallerInvocation) -> Result<()> {
     #[allow(unused_mut)]
     let mut cmd = Command::new(&invocation.java_executable);
@@ -80,16 +88,40 @@ pub fn run_loader_installer(invocation: &InstallerInvocation) -> Result<()> {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    let status = cmd
-        .args(installer_command_args(invocation))
-        .status()?;
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
 
-    if status.success() {
+    let output = cmd.args(installer_command_args(invocation)).output()?;
+
+    if output.status.success() {
         Ok(())
     } else {
+        let mut combined = String::new();
+        combined.push_str(&String::from_utf8_lossy(&output.stdout));
+        combined.push_str(&String::from_utf8_lossy(&output.stderr));
+        let trimmed = combined.trim();
+
+        // Keep only the tail — installer logs can run long and the actual
+        // error is almost always in the last handful of lines — and format
+        // it so it reads naturally appended after the summary message.
+        const MAX_OUTPUT_CHARS: usize = 4000;
+        let tail: String = if trimmed.chars().count() > MAX_OUTPUT_CHARS {
+            let skip = trimmed.chars().count() - MAX_OUTPUT_CHARS;
+            format!("…{}", trimmed.chars().skip(skip).collect::<String>())
+        } else {
+            trimmed.to_string()
+        };
+
+        let formatted_output = if tail.is_empty() {
+            String::new()
+        } else {
+            format!("\n--- installer output ---\n{tail}")
+        };
+
         Err(LauncherError::InstallerFailed {
             loader: invocation.loader,
-            status: status.code(),
+            status: output.status.code(),
+            output: formatted_output,
         })
     }
 }

@@ -94,6 +94,20 @@ html.smooth-scroll,
 html.smooth-scroll * {
   scroll-behavior: smooth;
 }
+/* The long, frequently-scrolled lists (instances, mods, discover results)
+   are exactly where the smooth-scroll easing ramp is most noticeable as a
+   delay before a scroll "catches up" to the input — every wheel tick has to
+   animate into place instead of tracking the input directly, which is what
+   read as scrolling being slow to respond. These opt back out to instant,
+   directly-tracking scroll; the setting still applies everywhere else
+   (settings page, dropdowns, etc.) where it's a nice touch with no list to
+   drag behind it. */
+html.smooth-scroll #instance-list,
+html.smooth-scroll #hidden-instances-list,
+html.smooth-scroll #mods-grid,
+html.smooth-scroll #discover-results {
+  scroll-behavior: auto;
+}
 
 html, body {
   height: 100%;
@@ -762,6 +776,16 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   transition: all var(--transition);
   background: var(--panel);
   border: 1px solid transparent;
+  /* Skip layout/style/paint entirely for rows scrolled out of view instead
+     of just relying on the IntersectionObserver-driven blur toggle — this
+     is what actually removes the "first scroll is slow" stutter on long
+     instance lists, since it's handled natively during layout rather than
+     waiting on a JS callback to catch up. The intrinsic size is just an
+     estimate the browser uses before a row has ever been measured; it
+     self-corrects once each row is actually laid out, so it doesn't need
+     to be exact. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
 }
 .instance-card:hover { background: var(--panel-hover); }
 .instance-card.selected {
@@ -1727,6 +1751,11 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   backdrop-filter: blur(var(--blur-amount, 12px));
   -webkit-backdrop-filter: blur(var(--blur-amount, 12px));
   transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+  /* Same native "skip offscreen rendering work" treatment as the instance
+     list — the mods grid is usually the longest list in the app and the
+     one most likely to visibly stutter on the first scroll. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 132px;
 }
 .mod-card:hover { transform: translateY(-4px); box-shadow: 0 12px 36px rgba(0,0,0,0.35); background: var(--panel-hover); }
 .mod-card.disabled { opacity: 0.6; }
@@ -2365,6 +2394,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   transition: box-shadow 0.28s ease, border-color 0.28s ease, background 0.28s ease;
   will-change: box-shadow, border-color, background;
   transform: translateZ(0);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 190px;
 }
 /* Entrance fade/slide-in — a separate class applied only once at creation
    and removed after it finishes (see buildDiscoverCard), instead of being
@@ -2409,6 +2440,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
    scrolled out of view; content and listeners stay intact underneath. */
 .discover-card.is-culled,
 .instance-card.is-culled,
+.mod-card.is-culled,
 #tab-settings .glass-card.is-culled {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -2416,6 +2448,16 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   transition: none !important;
 }
 .discover-card.is-culled::before { display: none; }
+
+/* Same native "skip layout/paint entirely while offscreen" treatment as
+   .instance-card/.mod-card/.discover-card above, scoped to the Settings
+   tab specifically (the bare .glass-card class is reused in a lot of
+   one-off places — modals, small info boxes — that aren't long lists and
+   shouldn't get a content-visibility size guess forced on them). */
+#tab-settings .glass-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
 
 .discover-card-icon {
   width: 96px;
@@ -3968,7 +4010,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #14141a;
+  background: rgba(var(--overlay-rgb), 0.06);
   border: 2px solid rgba(var(--overlay-rgb), 0.2);
   color: var(--text-muted);
   display: flex;
@@ -3987,7 +4029,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .setup-sdot.completed .setup-sdot-circle {
-  background: var(--bg-solid, #13131a);
+  background: var(--panel-solid, rgba(var(--overlay-rgb), 0.06));
   border-color: var(--accent);
   color: var(--accent);
 }

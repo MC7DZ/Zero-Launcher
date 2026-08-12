@@ -77,6 +77,31 @@ pub async fn clear_logs(
     Ok(())
 }
 
+/// Absolute path to the `logs` folder (`<data_dir>/logs`), containing
+/// `latest.log` for the current run and gzip-compressed archives of past
+/// runs (`<date>-<n>.log.gz`). Used by the frontend to show the path and
+/// to build the "Open Logs Folder" button.
+#[tauri::command]
+pub async fn get_logs_folder_path(state: State<'_, AppState>) -> Result<String, String> {
+    Ok(crate::logger::logs_dir(&state.data_dir).to_string_lossy().to_string())
+}
+
+/// Opens `logs` folder in the OS file explorer.
+#[tauri::command]
+pub async fn open_logs_folder(state: State<'_, AppState>) -> Result<(), String> {
+    let dir = crate::logger::logs_dir(&state.data_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create logs folder: {e}"))?;
+    open::that(&dir).map_err(|e| format!("Failed to open logs folder: {e}"))
+}
+
+/// Full contents of `logs/latest.log` for the current run — everything the
+/// launcher has logged so far (installs, launches, Java, mods, downloads,
+/// crashes, etc.), independent of the in-memory ring buffer's cap.
+#[tauri::command]
+pub async fn get_latest_log_contents(state: State<'_, AppState>) -> Result<String, String> {
+    Ok(crate::logger::read_latest_log(&state.data_dir))
+}
+
 /// Export logs to a text file at the given path.
 #[tauri::command]
 pub async fn export_logs(

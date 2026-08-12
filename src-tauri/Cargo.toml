@@ -1,6 +1,6 @@
 [package]
 name = "ZeroLauncher"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 
 [lib]
@@ -14,12 +14,14 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
+url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "hickory-dns"] }
 mc-launcher-core = "0.1"
 open = "5.4.0"
@@ -28,6 +30,9 @@ discord-rich-presence = "1.1.0"
 sha1 = "0.10"
 flate2 = "1"
 tar = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+mslnk = "0.1"
 
 # Patched locally to download library/asset/client jars in parallel instead
 # of one file at a time (upstream `execute_plan` was fully sequential).

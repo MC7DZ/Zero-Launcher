@@ -85,12 +85,17 @@ pub enum LauncherError {
         version: String,
     },
     /// A Forge or NeoForge installer process failed.
-    #[error("{loader:?} installer failed with status {status:?}")]
+    #[error("{loader:?} installer failed with status {status:?}{output}")]
     InstallerFailed {
         /// Loader family whose installer failed.
         loader: LoaderKind,
         /// Process exit status code, if available.
         status: Option<i32>,
+        /// Captured stdout+stderr from the installer process, already
+        /// formatted as "\n--- installer output ---\n<...>" (or empty
+        /// string if nothing could be captured), so it reads naturally
+        /// appended straight onto the summary above.
+        output: String,
     },
     /// Required metadata was missing from a version/profile document.
     #[error("missing field {field} in {context}")]

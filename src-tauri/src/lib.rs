@@ -1,5 +1,6 @@
 mod commands;
 mod discord_rpc;
+mod first_run_setup;
 mod logger;
 mod models;
 mod state;
@@ -28,15 +29,72 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        // Must be the first plugin registered. If the launcher is opened
+        // again while it's already running, this fires in the *existing*
+        // process instead of a second instance starting up — we just show
+        // and focus the window that's already there.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.unminimize();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            // Very first thing on every launch: make sure the launcher is
+            // installed in its permanent home with a proper shortcut
+            // before anything else (tray, main window, state) is set up.
+            first_run_setup::run_first_time_setup(&app.handle().clone());
+
+            // Linux/macOS: ~/Zero Launcher
+            // Windows: %APPDATA%/Zero Launcher
+            // Must match `first_run_setup::install_dir()` and
+            // `commands::java::java_install_dir()`, which already split on
+            // platform this way — otherwise the exe/Java installs end up in
+            // %APPDATA% while settings/instances/accounts end up in the
+            // Windows user profile root, splitting the launcher's data
+            // across two unrelated folders.
+            #[cfg(target_os = "windows")]
+            let mut data_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+            #[cfg(not(target_os = "windows"))]
             let mut data_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
             data_dir.push("Zero Launcher");
             std::fs::create_dir_all(&data_dir).ok();
 
-            // Initialize app state with persistence in ~/Zero Launcher
-            let state = AppState::new(data_dir);
+            // Initialize app state with persistence in the platform data dir
+            let state = AppState::new(data_dir.clone());
+
+            // Rehydrate instances that were still running when a *previous*
+            // launcher process quit. Those game processes are spawned
+            // detached (see minecraft::launch_minecraft) specifically so
+            // they keep playing through a launcher restart — this is the
+            // other half of that: reading back what was persisted to
+            // running_instances.json and, for every pid that's actually
+            // still alive, restoring it as "running" and starting a
+            // watcher so we notice when it eventually does exit.
+            let persisted = state::AppState::load_persisted_running_instances(&data_dir);
+            {
+                let mut running = state.running_instances.lock().unwrap();
+                for info in persisted {
+                    if let Some(pid) = info.pid {
+                        if commands::minecraft::is_pid_running(pid) {
+                            let version_id = info.version_id.clone();
+                            running.insert(version_id.clone(), info);
+                            commands::minecraft::spawn_external_pid_watcher(
+                                app.handle().clone(),
+                                version_id,
+                                pid,
+                            );
+                        }
+                    }
+                }
+            }
+            // Drop any entries that turned out to be stale (process no
+            // longer alive) from the file itself.
+            state.save_running_instances();
+
             app.manage(state);
             app.manage(DiscordRpcState(Mutex::new(DiscordRpcManager::new())));
 
@@ -92,10 +150,27 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Closing the main window only hides it to the tray if a game
-            // instance is still running and tray behavior is enabled.
+            // What happens when the main window is closed is governed by
+            // Settings → Window Behavior ("On Launcher Close") — see the
+            // CloseRequested handler below.
             let app_handle = app.handle();
             if let Some(window) = app_handle.get_webview_window("main") {
+                // The window is declared in tauri.conf.json rather than
+                // built here, and on Linux (GTK) that path doesn't always
+                // pick up the bundle's app icon for the *window* itself —
+                // only for the packaged binary/.desktop entry. Window
+                // managers and things like GNOME's System Monitor / Task
+                // Manager that read the live window's icon (rather than
+                // resolving it through desktop-file/icon-theme lookup) fall
+                // back to a generic one in that case. Setting it explicitly
+                // at startup, the same icon already used for the tray and
+                // the bundle, makes sure the running process shows up with
+                // ZeroLauncher's actual icon and name everywhere, not just
+                // in places that happen to resolve it through the app's
+                // installed .desktop/exe metadata.
+                if let Ok(window_icon) = Image::from_bytes(include_bytes!("../icons/icon.png")) {
+                    let _ = window.set_icon(window_icon);
+                }
                 let window_clone = window.clone();
                 let app_handle_clone = app_handle.clone();
                 window.on_window_event(move |event| {
@@ -105,7 +180,16 @@ pub fn run() {
                         let running = state.running_instances.lock().unwrap()
                             .values()
                             .any(|info| info.running);
-                        if running && settings.enable_system_tray {
+                        // Window Behavior → "On Launcher Close": hide to
+                        // tray instead of quitting when either a game is
+                        // running (the classic case — don't lose track of
+                        // it), or "always hide to tray" is on regardless
+                        // of whether anything's running. Either way this
+                        // only applies if the tray icon actually exists.
+                        let should_hide = settings.enable_system_tray
+                            && settings.on_launcher_close == "tray"
+                            && (running || settings.always_hide_to_tray);
+                        if should_hide {
                             api.prevent_close();
                             let _ = window_clone.hide();
                         }
@@ -170,6 +254,7 @@ pub fn run() {
             commands::discover::discover_download,
             commands::discover::discover_get_game_versions,
             commands::discover::discover_get_categories,
+            commands::discover::discover_get_resolutions,
             commands::discover::discover_get_licenses,
             commands::discover::cache_mod_icon,
             commands::discover::identify_mods_by_hash,
@@ -189,6 +274,9 @@ pub fn run() {
             commands::logs::get_logs,
             commands::logs::clear_logs,
             commands::logs::export_logs,
+            commands::logs::get_logs_folder_path,
+            commands::logs::open_logs_folder,
+            commands::logs::get_latest_log_contents,
             commands::logs::resolve_background_path,
         ])
         .build(tauri::generate_context!())

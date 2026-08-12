@@ -38,6 +38,11 @@ pub struct AppState {
     /// can run and be cancelled independently, each shown as its own card
     /// in the downloads menu) and registers/checks its flag here.
     pub generic_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// Open handle to `<data_dir>/logs/latest.log`, appended to on every
+    /// log line for the lifetime of this run. `None` if the log file
+    /// couldn't be opened (never fatal — logging still works in-memory and
+    /// in the UI console, it just won't be persisted to disk that run).
+    pub log_file: Mutex<Option<std::fs::File>>,
 }
 
 const MAX_LOG_ENTRIES: usize = 10_000;
@@ -74,6 +79,8 @@ impl AppState {
         let hidden_instances = Self::load_json::<Vec<String>>(&versions_dir, "hidden_instances.json")
             .unwrap_or_default();
 
+        let log_file = crate::logger::init_log_file(&data_dir);
+
         Self {
             accounts: Mutex::new(accounts),
             settings: Mutex::new(settings),
@@ -86,6 +93,7 @@ impl AppState {
             download_paused: AtomicBool::new(false),
             download_cancelled: AtomicBool::new(false),
             generic_cancels: Mutex::new(HashMap::new()),
+            log_file: Mutex::new(log_file),
         }
     }
 
@@ -188,6 +196,41 @@ impl AppState {
         Self::save_json(&versions_dir, "hidden_instances.json", &*hidden);
     }
 
+    /// Persist the currently-running instances to
+    /// `<data_dir>/running_instances.json` (the "Zero Launcher" folder).
+    ///
+    /// This is what lets a running game survive the launcher fully quitting
+    /// and restarting: the game process itself is launched detached (see
+    /// `minecraft::launch_minecraft`), so it keeps running on its own, and
+    /// this file is how the *next* launcher process finds out it's there —
+    /// which instance, what pid, and when it started (so playtime can be
+    /// recalculated) — without any other IPC between the two.
+    ///
+    /// Only entries that are still actually `running` are written; ones
+    /// that have already exited are dropped from the file (their console
+    /// history only needs to live in-memory for the session that saw them
+    /// exit).
+    pub fn save_running_instances(&self) {
+        let running = self.running_instances.lock().unwrap();
+        let live: Vec<&RunningInstanceInfo> = running.values().filter(|i| i.running).collect();
+        let path = self.data_dir.join("running_instances.json");
+        match serde_json::to_string_pretty(&live) {
+            Ok(data) => {
+                let _ = std::fs::write(&path, data);
+            }
+            Err(_) => {}
+        }
+    }
+
+    /// Load whatever was last persisted to `running_instances.json`. Used
+    /// once at startup, before we know which (if any) of those pids are
+    /// still actually alive — the caller is responsible for checking that
+    /// and discarding stale entries.
+    pub fn load_persisted_running_instances(data_dir: &PathBuf) -> Vec<RunningInstanceInfo> {
+        Self::load_json::<Vec<RunningInstanceInfo>>(data_dir, "running_instances.json")
+            .unwrap_or_default()
+    }
+
     /// Re-load the tracked instance list from the current game directory's
     /// `versions/instances.json`. Call this after the game directory changes
     /// (e.g. the user updates it in Settings) so the instance list reflects
@@ -236,6 +279,27 @@ impl AppState {
                 if !LEGACY_DEFAULT_ACCENTS.contains(&legacy.as_str()) {
                     settings.accent_color_dark = settings.accent_color.clone();
                 }
+            }
+
+            // Migrate the old `restore_launcher_on_game_close` /
+            // `enable_system_tray` booleans into the new `on_game_close` /
+            // `on_launcher_close` Window Behavior fields, but only the
+            // first time a settings.json saved before those fields existed
+            // is read — once `on_game_close` is present on disk it's the
+            // source of truth and this is skipped entirely.
+            if raw.get("on_game_close").is_none() {
+                settings.on_game_close = if settings.restore_launcher_on_game_close {
+                    "show".to_string()
+                } else {
+                    "none".to_string()
+                };
+            }
+            if raw.get("on_launcher_close").is_none() {
+                settings.on_launcher_close = if settings.enable_system_tray {
+                    "tray".to_string()
+                } else {
+                    "close".to_string()
+                };
             }
         }
         settings
