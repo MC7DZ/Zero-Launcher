@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Default capabilities for ZeroLauncher","local":true,"windows":["main","console-*"],"permissions":["core:default","core:webview:allow-create-webview-window","dialog:default","shell:allow-open"]}}
