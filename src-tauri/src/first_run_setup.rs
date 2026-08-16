@@ -54,6 +54,31 @@ pub fn target_exe_name() -> &'static str {
     }
 }
 
+/// Removes old executable binaries from a directory, optionally keeping a specific destination file.
+fn remove_old_executables(dir: &Path, keep_file: Option<&Path>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(keep) = keep_file {
+                    if path == keep {
+                        continue;
+                    }
+                }
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                #[cfg(target_os = "linux")]
+                if name.ends_with(".AppImage") || name.contains(".AppImage") || name.ends_with(".old") {
+                    let _ = fs::remove_file(&path);
+                }
+                #[cfg(target_os = "windows")]
+                if name.ends_with(".exe") || name.ends_with(".exe.old") || name.ends_with(".old") {
+                    let _ = fs::remove_file(&path);
+                }
+            }
+        }
+    }
+}
+
 /// Checks if the running executable is running from the cache folder (or outside install_dir).
 /// If it is running from the cache folder:
 /// 1. Waits for any previous instance to release file locks on install_dir
@@ -77,28 +102,11 @@ pub fn handle_early_install_or_update() {
 
     let _ = fs::create_dir_all(&dir);
 
-    // Wait briefly (up to 3 seconds) for the previous instance to fully exit
+    // Wait briefly (up to 3 seconds) for any previous instance to fully exit and remove all old versions in install_dir
     for _ in 0..15 {
-        #[cfg(target_os = "linux")]
-        {
-            let _ = fs::remove_file(&dest);
-            if !dest.exists() {
-                break;
-            }
-        }
-        #[cfg(target_os = "windows")]
-        {
-            if !dest.exists() {
-                break;
-            }
-            let old_path = dest.with_extension("exe.old");
-            let _ = fs::remove_file(&old_path);
-            let _ = fs::rename(&dest, &old_path);
-            let _ = fs::remove_file(&dest);
-            let _ = fs::remove_file(&old_path);
-            if !dest.exists() {
-                break;
-            }
+        remove_old_executables(&dir, None);
+        if !dest.exists() {
+            break;
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
@@ -118,6 +126,9 @@ pub fn handle_early_install_or_update() {
             let _ = fs::set_permissions(&dest, perm);
         }
     }
+
+    // Ensure only the new dest file remains in install_dir
+    remove_old_executables(&dir, Some(&dest));
 
     // Update shortcuts
     #[cfg(target_os = "linux")]
@@ -146,10 +157,15 @@ pub fn handle_early_install_or_update() {
             .spawn();
     }
 
-    // Delete ourselves from the cache location
+    // Delete ourselves from the cache location and sweep cache directory
     #[cfg(target_os = "linux")]
     {
         let _ = fs::remove_file(&src);
+        if let Ok(entries) = fs::read_dir(cache_dir()) {
+            for entry in entries.flatten() {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
     }
     #[cfg(target_os = "windows")]
     {
@@ -169,10 +185,16 @@ pub fn handle_early_install_or_update() {
 
 #[cfg(target_os = "linux")]
 fn is_relevant_build() -> bool {
-    // APPIMAGE is only set by the AppImage runtime when it launches
-    // itself - a plain dev build or a `cargo run` won't have it, so we
-    // leave those alone.
-    std::env::var_os("APPIMAGE").is_some()
+    if std::env::var_os("APPIMAGE").is_some() {
+        return true;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let cache = cache_dir();
+        if exe.starts_with(&cache) || exe.to_string_lossy().contains(".AppImage") {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(target_os = "windows")]
@@ -192,7 +214,10 @@ fn source_exe_path() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
         if let Some(p) = std::env::var_os("APPIMAGE") {
-            return Some(PathBuf::from(p));
+            let path = PathBuf::from(p);
+            if path.exists() {
+                return Some(path);
+            }
         }
     }
     std::env::current_exe().ok()
