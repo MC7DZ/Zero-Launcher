@@ -1,0 +1,22 @@
+{
+  "windows": {
+    "version": "2.0.0",
+    "url": "https://github.com/MC7DZ/Zero-Launcher/releases/download/v2.0.0/Zero.Launcher.exe",
+    "size_mb": 24.1,
+    "changelog": [
+      "Fixed Minecraft install failing on network errors",
+      "Added a real per-file progress bar to the Files — Installing… window",
+      "Fixed missing legacy libraries during Fabric/Forge installs"
+    ]
+  },
+  "linux": {
+    "version": "2.0.0",
+    "url": "https://github.com/MC7DZ/Zero-Launcher/releases/download/v2.0.0/Zero.Launcher.AppImage",
+    "size_mb": 107,
+    "changelog": [
+      "Fixed Minecraft install failing on network errors",
+      "Added a real per-file progress bar to the Files — Installing… window",
+      "Fixed missing legacy libraries during Fabric/Forge installs"
+    ]
+  }
+}
