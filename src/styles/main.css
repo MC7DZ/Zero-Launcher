@@ -19,67 +19,11 @@
   --radius-pill: 999px;
   --font:       'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
   --transition: 0.2s ease;
-  /* Base RGB triplet the subtle borders/hovers/scrollbars are mixed from —
-     white on the dark theme, near-black on the light theme. Swapped by
-     [data-theme] below, kept in sync with the resolved theme from JS. */
+  /* Base RGB triplet the subtle borders/hovers/scrollbars are mixed from. */
   --overlay-rgb: 255, 255, 255;
   /* Recessed "well" background for inputs and small inset chips (input
-     fields, color rows, running-instance icons). Dark and subtle on the
-     dark theme; much softer on the light theme so it doesn't read as a
-     harsh black box sitting on a white panel. */
+     fields, color rows, running-instance icons). */
   --field-bg: rgba(0, 0, 0, 0.25);
-}
-
-/* ═══ Light theme overrides ═══
-   Most colors (bg/panel/text/log/etc.) already flow through CSS variables
-   set inline by applyThemeFromSettings(), so they follow the light preset
-   automatically. What's left here is the shared "white overlay" used for
-   subtle borders, hovers and scrollbars, which needs to flip to a dark
-   overlay once the background turns light, plus a couple of native-control
-   tweaks that don't take a CSS variable. */
-[data-theme="light"] {
-  --overlay-rgb: 15, 15, 20;
-  --field-bg: rgba(15, 15, 20, 0.05);
-}
-[data-theme="light"] .input-field,
-[data-theme="light"] .color-setting-row {
-  border-color: rgba(var(--overlay-rgb), 0.16);
-}
-[data-theme="light"] .glass-card,
-[data-theme="light"] .mod-card {
-  --text: #e2e2ea;
-  --text-muted: rgba(226, 226, 234, 0.55);
-  --overlay-rgb: 255, 255, 255;
-  background: rgba(68, 68, 68, 0.65);
-  background-image: none;
-  border-color: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-  box-shadow: none;
-}
-[data-theme="light"] .glass-card:hover,
-[data-theme="light"] .mod-card:hover {
-  border-color: var(--accent-dim);
-  box-shadow: 0 0 0 1px var(--accent-dim), 0 10px 26px rgba(0,0,0,0.18);
-}
-[data-theme="light"] #top-bar {
-  --text: #e2e2ea;
-  --text-muted: rgba(226, 226, 234, 0.55);
-  --overlay-rgb: 255, 255, 255;
-  background: rgba(68, 68, 68, 0.65);
-  color: var(--text);
-}
-[data-theme="light"] .instance-card {
-  --text: #e2e2ea;
-  --text-muted: rgba(226, 226, 234, 0.55);
-  --overlay-rgb: 255, 255, 255;
-  background: rgba(68, 68, 68, 0.65);
-  color: var(--text);
-}
-[data-theme="light"] .instance-card:hover {
-  background: rgba(90, 90, 90, 0.65);
-}
-[data-theme="light"] select.input-field {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23555' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6l3.5 4 3.5-4z'/%3E%3C/svg%3E");
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -199,9 +143,10 @@ html, body {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   padding: 12px 20px;
-  background: var(--header-bg, rgba(15, 15, 20, 0.45));
-  backdrop-filter: blur(var(--blur-amount, 12px));
-  -webkit-backdrop-filter: blur(var(--blur-amount, 12px));
+  /* Solid-ish background instead of backdrop-filter blur — blur is the
+     most expensive part of the old style and the main lag source, and
+     this bar is visible on every screen. */
+  background: var(--header-bg, #0f0f14);
   border-bottom: 1px solid rgba(var(--overlay-rgb),0.06);
   flex-shrink: 0;
 }
@@ -350,20 +295,13 @@ html, body {
   top: 56px;
   right: 20px;
   width: 300px;
-  background: rgba(22, 22, 32, 0.84);
-  backdrop-filter: blur(16px) saturate(130%);
-  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  background: rgba(22, 22, 32, 0.97);
   border: 1px solid rgba(var(--overlay-rgb), 0.12);
   border-radius: var(--radius);
   padding: 12px;
   z-index: 200;
   box-shadow: 0 16px 48px rgba(0,0,0,0.5);
   transform: translateZ(0);
-}
-[data-theme="light"] .dropdown-panel {
-  background: rgba(248, 249, 252, 0.88);
-  border-color: rgba(0,0,0,0.1);
-  box-shadow: 0 16px 48px rgba(0,0,0,0.15);
 }
 .dropdown-panel.hidden { display: none; }
 
@@ -518,7 +456,15 @@ html, body {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   animation: tabFadeIn 0.25s ease;
-  contain: layout;
+  contain: layout paint;
+  /* Promote the scroll container to its own compositor layer. Without
+     this, scrolling forces the browser to repaint the fixed background
+     canvas, top bar, and every card/shadow on the page each frame along
+     with the content — that repaint cost is what reads as scroll lag.
+     translateZ(0) is the cheapest way to isolate this element's paints
+     from the rest of the app so only its own content repaints. */
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 .tab-page.active { display: block; }
 
@@ -884,9 +830,13 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .instance-list {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  contain: layout paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .instance-card {
@@ -1412,9 +1362,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .overlay {
   position: absolute;
   inset: 0;
-  background: rgba(8, 8, 14, 0.42);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  /* Solid-ish scrim instead of backdrop-filter blur — this sits behind
+     every modal in the app, so blurring it was one of the biggest lag
+     sources. */
+  background: rgba(8, 8, 14, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1424,9 +1375,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .overlay.hidden { display: none; }
 
 .overlay-card {
-  background: rgba(22, 22, 32, 0.52);
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  background: rgba(22, 22, 32, 0.94);
   border: 1px solid rgba(var(--overlay-rgb), 0.12);
   border-radius: var(--radius);
   padding: 28px;
@@ -1438,11 +1387,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   backface-visibility: hidden;
 }
 
-[data-theme="light"] .overlay-card {
-  background: rgba(248, 249, 252, 0.55);
-  border: 1px solid rgba(0, 0, 0, 0.10);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
 .overlay-header {
   display: flex;
   justify-content: space-between;
@@ -1469,9 +1413,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   overflow: hidden;
   background: rgba(22, 22, 32, 0.42);
 }
-[data-theme="light"] .account-overlay-card {
-  background: rgba(248, 249, 252, 0.5);
-}
 .account-overlay-card::before {
   content: "";
   position: absolute;
@@ -1480,13 +1421,12 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background-repeat: no-repeat;
   background-position: center;
   background-size: 320px 320px;
-  filter: blur(30px);
-  opacity: 0.35;
+  /* Was filter: blur(30px) — a decorative glow behind the Microsoft logo.
+     Blurring a full-card layer is expensive for something purely
+     cosmetic, so it's dropped in favor of a flat, low-opacity tint. */
+  opacity: 0.12;
   z-index: 0;
   pointer-events: none;
-}
-[data-theme="light"] .account-overlay-card::before {
-  opacity: 0.22;
 }
 .account-overlay-card > * {
   position: relative;
@@ -1524,34 +1464,44 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   font-size: 14px;
 }
 
-/* ── Expired-session "broken glass" treatment ────────────────────────────
-   Applied as a background layer across the whole Microsoft account card
-   (not just the avatar) when its session needs re-auth: a cracked,
-   yellow-gradient glass texture sits behind the card content. Kept to a
-   single masked layer + one one-shot entrance animation (no blend modes,
-   no infinite loops, no filters) so it stays cheap to paint. */
+/* ── Expired-session treatment ────────────────────────────────────────
+   Applied to the whole Microsoft account card when its session needs
+   re-auth. Kept to opacity/transform-only animation on a thin accent
+   bar (compositor-only, no repaint, no filters/masks) so it stays cheap
+   to paint even with several accounts in the list. */
 .account-item-reauth {
-  border-color: rgba(245, 197, 24, 0.4) !important;
-  box-shadow: 0 0 0 1px rgba(245, 197, 24, 0.12) inset;
+  position: relative;
 }
-.account-item-crack {
+.account-item-reauth::before {
+  content: "";
   position: absolute;
-  inset: 0;
-  z-index: 0;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, #fde68a, #f5c518 55%, #b8860b);
+  z-index: 1;
   pointer-events: none;
-  opacity: 0.6;
-  background: linear-gradient(135deg, #fde68a, #f5c518 45%, #b8860b);
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cg fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 50 L34 28 M18 50 L32 66 M18 50 L4 36 M18 50 L2 62 M34 28 L46 6 M34 28 L54 20 M32 66 L42 90 M32 66 L52 74 M54 20 L72 12 M54 20 L64 2 M52 74 L70 84 M52 74 L64 96 M72 12 L90 18 M72 12 L84 0 M64 96 L86 98 M70 84 L92 80 M90 18 L98 32 M86 98 L98 84'/%3E%3C/g%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cg fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 50 L34 28 M18 50 L32 66 M18 50 L4 36 M18 50 L2 62 M34 28 L46 6 M34 28 L54 20 M32 66 L42 90 M32 66 L52 74 M54 20 L72 12 M54 20 L64 2 M52 74 L70 84 M52 74 L64 96 M72 12 L90 18 M72 12 L84 0 M64 96 L86 98 M70 84 L92 80 M90 18 L98 32 M86 98 L98 84'/%3E%3C/g%3E%3C/svg%3E");
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  animation: cardCrackIn 0.3s ease-out both;
+  transform-origin: center;
+  animation: reauthAccentPulse 1.8s ease-in-out infinite;
 }
-@keyframes cardCrackIn {
-  from { opacity: 0; }
-  to   { opacity: 0.6; }
+@keyframes reauthAccentPulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+/* ── Click-to-select account cards ───────────────────────────────────
+   Replaces the old "Select" button — the whole card is the hit target.
+   Only non-active-account cards get this class, so already-selected
+   accounts don't show a false affordance. transform/box-shadow-only,
+   compositor-friendly. */
+.account-item-clickable {
+  cursor: pointer;
+}
+.account-item-clickable:hover {
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 1px var(--accent-dim), 0 8px 20px rgba(0,0,0,0.22);
+}
+.account-item-clickable:active {
+  transform: scale(0.98) translateZ(0);
 }
 
 .account-reauth-tag {
@@ -1574,29 +1524,12 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   position: relative;
   background: rgba(22, 22, 32, 0.45);
 }
-[data-theme="light"] .update-overlay-card {
-  background: rgba(248, 249, 252, 0.5);
-}
 /* "Update Available" card is wider than the plain consent dialog — it has
    more content (changelog, size, progress bar) so it benefits from the
    extra room. */
 .update-available-card {
   width: 680px;
   max-width: 92vw;
-}
-[data-theme="light"] .update-overlay-card .update-title {
-  color: #1c1c22;
-}
-[data-theme="light"] .update-overlay-card .update-desc,
-[data-theme="light"] .update-overlay-card .update-size-row,
-[data-theme="light"] .update-overlay-card .btn-ghost {
-  color: #4a4a52;
-}
-[data-theme="light"] .update-overlay-card .update-progress-pct {
-  color: #1c1c22;
-}
-[data-theme="light"] .update-overlay-card .btn-ghost:hover {
-  color: #1c1c22;
 }
 .update-overlay-card .overlay-close {
   position: absolute;
@@ -1679,9 +1612,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   line-height: 1.6;
 }
 .update-changelog-list li { margin: 2px 0; }
-[data-theme="light"] .update-changelog { background: rgba(var(--overlay-rgb), 0.04); }
-[data-theme="light"] .update-changelog-title { color: var(--text-muted); }
-
 .update-ready-countdown {
   margin: 10px 0 0;
   font-size: 12px;
@@ -1735,10 +1665,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 6px 10px;
   font-size: 11.5px;
   gap: 5px;
-}
-[data-theme="light"] .update-trust-note {
-  background: var(--accent-dim);
-  border-color: var(--accent-dim);
 }
 .update-actions {
   justify-content: center;
@@ -1834,19 +1760,13 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .bento-tile {
   position: relative;
   border-radius: var(--radius);
-  background: rgba(22, 22, 32, 0.80);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(22, 22, 32, 0.95);
   border: 1px solid rgba(var(--overlay-rgb), 0.12);
   box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.06), 0 10px 26px rgba(0,0,0,0.16);
   padding: 16px 18px;
   transform: translateZ(0);
   backface-visibility: hidden;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
-}
-[data-theme="light"] .bento-tile {
-  background: rgba(248, 249, 252, 0.85);
-  border-color: rgba(0,0,0,0.08);
 }
 .bento-tile:hover {
   transform: translateY(-3px);
@@ -2028,9 +1948,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   z-index: 500;
   align-items: center;
   justify-content: center;
-  background: rgba(6, 6, 10, 0.6);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(6, 6, 10, 0.85);
   animation: modsDragFadeIn 0.15s ease;
   pointer-events: none;
 }
@@ -2325,10 +2243,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: var(--accent);
   color: var(--bg);
 }
-[data-theme="light"] .discover-segment.active {
-  color: #ffffff;
-}
-
 .discover-search-row {
   display: flex;
   gap: 10px;
@@ -2382,7 +2296,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 2px 5px;
   border-radius: 999px;
 }
-[data-theme="light"] .discover-filter-count { color: #fff; }
 .discover-filter-reset-all {
   border: none;
   background: transparent;
@@ -2580,9 +2493,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .discover-view-btn.active {
   background: var(--accent);
   color: var(--bg);
-}
-[data-theme="light"] .discover-view-btn.active {
-  color: #ffffff;
 }
 .discover-chip {
   border: 1px solid var(--panel-border);
@@ -3113,9 +3023,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .log-viewer.dark-mode {
   background: linear-gradient(180deg, rgba(var(--overlay-rgb), 0.16), rgba(var(--overlay-rgb), 0.09));
 }
-.log-viewer.light-mode {
-  background: linear-gradient(180deg, rgba(var(--overlay-rgb), 0.14), rgba(var(--overlay-rgb), 0.06));
-}
 .log-entry { padding: 6px 0; border-bottom: 1px solid rgba(var(--overlay-rgb),0.08); }
 .log-entry:last-child { border-bottom: none; }
 .log-entry { padding: 3px 0; border-bottom: 1px solid rgba(var(--overlay-rgb),0.02); }
@@ -3125,16 +3032,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .log-level-WARN  { color: #fbbf24; }
 .log-level-ERROR { color: #ef4444; }
 .log-level-DEBUG { color: #9ca3af; }
-
-/* The dark-tuned log colors above are too washed-out on the light theme's
-   near-white log surfaces (grey-on-white and light-purple-on-white both
-   fail basic contrast) — give light mode its own, darker palette. */
-[data-theme="light"] .log-time   { color: #52525b; }
-[data-theme="light"] .log-source { color: #7c3aed; }
-[data-theme="light"] .log-level-INFO  { color: #1d4ed8; }
-[data-theme="light"] .log-level-WARN  { color: #b45309; }
-[data-theme="light"] .log-level-ERROR { color: #dc2626; }
-[data-theme="light"] .log-level-DEBUG { color: #52525b; }
 
 /* ═══ Toast / Notification (lightweight — no blur, no infinite animations) ═══ */
 #toast-container {
@@ -3285,7 +3182,17 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   width: 100%;
   border-radius: 999px;
   background: rgba(var(--toast-color-rgb), 0.8);
-  transition: width 0.1s linear;
+  transform-origin: left center;
+  animation-name: toastProgressCountdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+.toast-progress-bar.toast-progress-paused {
+  animation-play-state: paused;
+}
+@keyframes toastProgressCountdown {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
 }
 /* Traveling shine removed — it was an infinite animation running for the
    full lifetime of every visible toast. */
@@ -3574,9 +3481,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
      downloads menu is a lightweight flyout rather than something that
      needs to stay legible over busy content, so it should follow the
      transparency setting like the collapsed widget button already does. */
-  background: var(--panel);
-  backdrop-filter: blur(var(--blur-amount, 24px));
-  -webkit-backdrop-filter: blur(var(--blur-amount, 24px));
+  background: var(--panel-solid, var(--panel));
   box-shadow: 0 16px 44px rgba(0,0,0,0.55);
   transform-origin: bottom left;
   animation: dl-panel-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
@@ -3899,10 +3804,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   gap: 10px;
   padding: 16px;
   border-radius: var(--radius);
-  background: var(--panel);
+  background: var(--panel-solid, var(--panel));
   border: 1px solid var(--panel-border);
-  backdrop-filter: blur(var(--blur-amount, 12px));
-  -webkit-backdrop-filter: blur(var(--blur-amount, 12px));
   transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
 }
 .preset-card:hover {
@@ -4341,9 +4244,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 /* Card & Pages */
 .setup-card {
-  background: var(--panel, rgba(19, 19, 26, 0.65));
-  backdrop-filter: blur(var(--blur-amount, 20px));
-  -webkit-backdrop-filter: blur(var(--blur-amount, 20px));
+  position: relative;
+  overflow: hidden;
+  background: var(--panel-solid, rgba(19, 19, 26, 0.96));
   border: 1px solid rgba(var(--overlay-rgb), 0.12);
   border-radius: 18px;
   padding: 28px 32px;
@@ -4353,6 +4256,30 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   backface-visibility: hidden;
 }
 
+.setup-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Step 2 (Add First Account): same blurred Microsoft-logo backdrop
+   used on the Accounts Manager overlay ──────────────────────────────── */
+#setup-step-2 .setup-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 23 23'><rect x='1' y='1' width='10' height='10' fill='%23f25022'/><rect x='12' y='1' width='10' height='10' fill='%237fba00'/><rect x='1' y='12' width='10' height='10' fill='%2300a4ef'/><rect x='12' y='12' width='10' height='10' fill='%23ffb900'/></svg>");
+  background-repeat: no-repeat;
+  background-position: center 40px;
+  background-size: 220px 220px;
+  /* Fades the logo out toward the edges instead of hard-cutting it off
+     against the card's title/description text, which is what made it
+     look like a stray graphic rather than a subtle watermark. */
+  -webkit-mask-image: radial-gradient(circle at center 40px, #000 0%, transparent 72%);
+  mask-image: radial-gradient(circle at center 40px, #000 0%, transparent 72%);
+  opacity: 0.14;
+  z-index: 0;
+  pointer-events: none;
+}
 .setup-step-page {
   display: none;
 }
@@ -4407,8 +4334,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  background: rgba(var(--overlay-rgb), 0.04);
-  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  background: var(--panel-solid, rgba(19, 19, 26, 0.96));
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
   border-radius: 14px;
 }
 
@@ -4416,6 +4343,15 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* Next Step / Finish Setup — match the size and corner radius of the
+   other footer buttons (Back, Skip This Step) instead of the small,
+   fully-pill accent style used elsewhere in the app. */
+.setup-bottom-bar .btn-accent {
+  padding: 10px 22px;
+  font-size: 13px;
+  border-radius: var(--radius);
 }
 
 .setup-btn-animate {
@@ -4509,14 +4445,19 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .setup-tour-finish-icon {
   font-size: 34px;
   display: inline-block;
-  animation: setupFinishBounce 1.6s ease-in-out 0.7s infinite;
+  /* Was `infinite` — a repeating rotate/translate animation running the
+     entire time this step is visible, on top of the always-running
+     background canvas raf loop, was the source of the reported lag on
+     this step. Play it once on entry instead. */
+  animation: setupFinishBounce 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.7s 1 both;
 }
 
 @keyframes setupFinishBounce {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  25% { transform: translateY(-6px) rotate(-8deg); }
-  50% { transform: translateY(0) rotate(0deg); }
-  75% { transform: translateY(-3px) rotate(6deg); }
+  0%   { transform: translateY(0) rotate(0deg); }
+  40%  { transform: translateY(-6px) rotate(-8deg); }
+  70%  { transform: translateY(0) rotate(0deg); }
+  85%  { transform: translateY(-3px) rotate(6deg); }
+  100% { transform: translateY(0) rotate(0deg); }
 }
 
 .setup-tour-finish h4 {
@@ -4541,19 +4482,11 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   flex-direction: column;
   padding: 22px;
-  background: rgba(22, 22, 32, 0.84);
-  backdrop-filter: blur(20px) saturate(130%);
-  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  background: rgba(22, 22, 32, 0.97);
   border: 1px solid rgba(var(--overlay-rgb), 0.12);
   border-radius: var(--radius);
   box-shadow: 0 32px 72px rgba(0, 0, 0, 0.6);
   transform: translateZ(0);
-}
-
-[data-theme="light"] .skin-viewer-modal {
-  background: rgba(248, 249, 252, 0.88);
-  border-color: rgba(0,0,0,0.1);
-  box-shadow: 0 32px 72px rgba(0, 0, 0, 0.15);
 }
 
 .skin-viewer-header {
@@ -4882,9 +4815,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   flex-direction: column;
   padding: 26px;
-  background: rgba(22, 22, 32, 0.84);
-  backdrop-filter: blur(20px) saturate(130%);
-  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  background: rgba(22, 22, 32, 0.97);
   border: 1px solid rgba(var(--overlay-rgb), 0.12);
   border-radius: var(--radius);
   box-shadow: 0 32px 72px rgba(0, 0, 0, 0.6);
@@ -4922,10 +4853,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: rgba(8, 8, 14, 0.72);
 }
 
-[data-theme="light"] .dressing-room-msa-lock {
-  background: rgba(20, 20, 28, 0.72);
-}
-
 .dressing-room-msa-lock-icon {
   width: 34px;
   height: 34px;
@@ -4946,12 +4873,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-muted);
-}
-
-[data-theme="light"] .dressing-room-modal {
-  background: rgba(248, 249, 252, 0.88);
-  border-color: rgba(0,0,0,0.1);
-  box-shadow: 0 32px 72px rgba(0, 0, 0, 0.15);
 }
 
 .dressing-room-header {

@@ -3,6 +3,17 @@ name = "ZeroLauncher"
 version = "2.0.0"
 edition = "2021"
 
+# Smaller AppImage: optimize for size, strip symbols, drop unwind tables.
+# `strip = true` also means the AppImage build's NO_STRIP=1 workaround
+# (for a linuxdeploy bug with modern ELF sections) no longer costs an
+# unstripped binary — Cargo strips it before linuxdeploy ever sees it.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
 [lib]
 name = "zero_launcher_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
@@ -17,7 +28,12 @@ tauri-plugin-shell = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["full"] }
+# Only what's actually used in src/: tokio::process (launching the JVM/
+# Minecraft process), tokio::io (AsyncBufReadExt/BufReader for streaming
+# process output), tokio::spawn / task::spawn_blocking (needs a
+# multi-thread runtime), tokio::time::sleep. "full" pulled in every
+# subsystem (signal handling, full net stack, etc.) unconditionally.
+tokio = { version = "1", features = ["rt-multi-thread", "process", "io-util", "time"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
@@ -25,7 +41,12 @@ url = "2"
 reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls", "hickory-dns"] }
 mc-launcher-core = { path = "vendor/mc-launcher-core" }
 open = "5.4.0"
-zip = "8.6.0"
+# The app only ever reads zips (ZipArchive, for jar/mod inspection and
+# Java archive extraction in commands/mods.rs and commands/java.rs) — it
+# never writes one (no ZipWriter anywhere in src/). Dropping default
+# features removes writer support and every non-deflate codec (bzip2,
+# zstd, aes encryption, etc.) that the default feature set bundles.
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 discord-rich-presence = "1.1.0"
 sha1 = "0.10"
 flate2 = "1"

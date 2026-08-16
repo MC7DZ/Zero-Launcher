@@ -943,31 +943,11 @@
             </div>
             <div class="settings-card-body">
               <div class="settings-card-body-inner">
-                <!-- Theme Mode -->
-                <div class="form-row" style="margin-bottom: 14px;">
-                  <div class="form-group">
-                    <label>Theme</label>
-                    <select id="setting-theme-mode" class="input-field">
-                      <option value="system">Match System (Auto)</option>
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div class="dropdown-divider" style="margin: 16px 0;"></div>
-
-                <!-- Color Setting — each theme remembers its own accent color -->
+                <!-- Color Setting -->
                 <div class="form-row" style="margin-bottom: 14px;">
                   <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
-                    <label style="margin-bottom: 0;">Accent Color (Dark Theme)</label>
-                    <input type="color" id="setting-accent-color-dark" class="color-picker-box" />
-                  </div>
-                </div>
-                <div class="form-row" style="margin-bottom: 14px;">
-                  <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
-                    <label style="margin-bottom: 0;">Accent Color (Light Theme)</label>
-                    <input type="color" id="setting-accent-color-light" class="color-picker-box" />
+                    <label style="margin-bottom: 0;">Accent Color</label>
+                    <input type="color" id="setting-accent-color" class="color-picker-box" />
                   </div>
                 </div>
 
@@ -1637,17 +1617,9 @@
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z"/></svg>
                   Customize Appearance
                 </h3>
-                <p class="setup-card-desc">Tweak your theme, colors, and background — changes apply live so you can see them instantly.</p>
+                <p class="setup-card-desc">Tweak your colors and background — changes apply live so you can see them instantly.</p>
 
                 <div class="setup-form-grid">
-                  <div class="form-group">
-                    <label>Theme Mode</label>
-                    <select id="setup-theme-mode" class="input-field">
-                      <option value="system">Match System (Auto)</option>
-                      <option value="dark" selected>Dark</option>
-                      <option value="light">Light</option>
-                    </select>
-                  </div>
                   <div class="form-group">
                     <label>Notification Style</label>
                     <select id="setup-notif-style" class="input-field">
@@ -1660,12 +1632,8 @@
                   </div>
 
                   <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; grid-column: span 2;">
-                    <label style="margin:0;">Accent Color (Dark Theme)</label>
-                    <input type="color" id="setup-accent-dark" class="color-picker-box" value="#10b981" />
-                  </div>
-                  <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; grid-column: span 2;">
-                    <label style="margin:0;">Accent Color (Light Theme)</label>
-                    <input type="color" id="setup-accent-light" class="color-picker-box" value="#059669" />
+                    <label style="margin:0;">Accent Color</label>
+                    <input type="color" id="setup-accent" class="color-picker-box" value="#B7B7B7" />
                   </div>
 
                   <div class="form-group">
@@ -1702,17 +1670,63 @@
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   Add First Account
                 </h3>
-                <p class="setup-card-desc">Create an offline account to play with. You can add more later from the top-right account menu.</p>
+                <p class="setup-card-desc">Add a Microsoft account or play offline for free — you can add more later from the top-right account menu.</p>
 
-                <div class="setup-account-box">
-                  <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" id="setup-username" class="input-field" placeholder="Player1" maxlength="16" />
+                <div id="setup-account-existing-msg" class="hidden" style="margin-bottom:14px; padding:10px 14px; border-radius:8px; background:var(--accent-dim); border:1px solid var(--accent); font-size:13px; color:var(--accent); display:flex; align-items:center; gap:8px;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg>
+                  An account is already set up! You can add another below, or just hit Next.
+                </div>
+
+                <!-- Choice: Microsoft vs. Offline -->
+                <div id="setup-account-choice" style="display:flex; flex-direction:column; gap:10px;">
+                  <button id="setup-btn-choice-msa" type="button" class="btn-secondary" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; font-size:14px;">
+                    <svg viewBox="0 0 23 23" width="18" height="18"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>
+                    Sign in with Microsoft
+                  </button>
+                  <button id="setup-btn-choice-offline" type="button" class="btn-secondary" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; font-size:14px;">
+                    <span style="width:18px; height:18px; border-radius:50%; background:var(--accent-dim); border:1px solid var(--accent); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; flex-shrink:0;">?</span>
+                    Play Offline for Free
+                  </button>
+                </div>
+
+                <!-- Microsoft sign-in (device code) -->
+                <div id="setup-account-msa-section" class="hidden">
+                  <button type="button" class="btn-ghost btn-sm setup-btn-back-to-choices" style="margin-bottom:12px;">← Back</button>
+
+                  <div id="setup-msa-method-choice" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;">
+                    <button id="setup-btn-msa-device-login" type="button" class="btn-secondary" style="white-space:nowrap; display:flex; align-items:center; justify-content:center; gap:6px; width:100%; padding:12px;">
+                      <svg viewBox="0 0 23 23" width="14" height="14"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>
+                      Sign In with Microsoft
+                    </button>
+                    <p style="font-size:11px; line-height:1.5; color:var(--text-muted); margin:2px 0 0;">
+                      You'll get a short code to enter at microsoft.com/link in your normal browser — this plays nicer with 2FA, family/child accounts, and passkeys than an embedded sign-in window.
+                    </p>
                   </div>
-                  <div id="setup-account-existing-msg" class="hidden" style="margin-top:12px; padding:10px 14px; border-radius:8px; background:var(--accent-dim); border:1px solid var(--accent); font-size:13px; color:var(--accent); display:flex; align-items:center; gap:8px;">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg>
-                    An account is already set up!
+
+                  <div id="setup-msa-device-panel" class="hidden">
+                    <div style="text-align:center; padding:16px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);">
+                      <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Your code</div>
+                      <div id="setup-msa-device-code" style="font-size:26px; font-weight:800; letter-spacing:3px; color:var(--accent); margin-bottom:12px;">— — — — —</div>
+                      <button id="setup-btn-msa-device-open" type="button" class="btn-accent btn-sm" style="margin-bottom:8px;">Open microsoft.com/link</button>
+                      <div id="setup-msa-device-status" style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; gap:6px;">
+                        <span class="msa-device-spinner" style="width:10px; height:10px; border-radius:50%; border:2px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span>
+                        Waiting for you to sign in…
+                      </div>
+                    </div>
+                    <button id="setup-btn-msa-device-cancel" type="button" class="btn-ghost btn-sm" style="width:100%; margin-top:10px;">Cancel</button>
                   </div>
+                </div>
+
+                <!-- Offline account -->
+                <div id="setup-account-offline-section" class="hidden">
+                  <button type="button" class="btn-ghost btn-sm setup-btn-back-to-choices" style="margin-bottom:12px;">← Back</button>
+                  <div class="setup-account-box">
+                    <div class="form-group">
+                      <label>Username</label>
+                      <input type="text" id="setup-username" class="input-field" placeholder="Player1" maxlength="16" />
+                    </div>
+                  </div>
+                  <button id="setup-btn-offline-create" type="button" class="btn-accent" style="width:100%; margin-top:12px;">Create Offline Account</button>
                 </div>
               </div>
             </div>
@@ -1797,7 +1811,7 @@
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
                 Back
               </button>
-              <button type="button" id="btn-setup-next" class="btn-accent btn-sm setup-btn-animate">
+              <button type="button" id="btn-setup-next" class="btn-accent setup-btn-animate">
                 Next Step
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
               </button>

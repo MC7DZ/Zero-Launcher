@@ -15,12 +15,8 @@ const displayName = params.get('name') || versionId;
 
 // ── Theme sync ──
 // This window loads main.css but is a separate document, so it needs its
-// own copy of the same dark/light resolution the main window does.
-const THEME_PRESETS = {
-  dark: { bg_color: '#0a0a0f', panel_bg_color: '#13131a', text_color: '#e2e2ea', log_bg_color: '#060608', header_bg_color: '#111116' },
-  light: { bg_color: '#f3f3f6', panel_bg_color: '#ffffff', text_color: '#1c1c22', log_bg_color: '#eef0f3', header_bg_color: '#ffffff' },
-};
-const systemThemeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+// own copy of the same theme setup the main window does.
+const THEME_PRESET = { bg_color: '#0a0a0f', panel_bg_color: '#13131a', text_color: '#e2e2ea', log_bg_color: '#060608', header_bg_color: '#111116' };
 
 function hexToRgba(hex, alpha) {
   hex = (hex || '').replace('#', '');
@@ -35,25 +31,15 @@ async function applyTheme() {
   let settings = {};
   try { settings = await invoke('get_settings'); } catch (e) { /* fall back to defaults */ }
 
-  const mode = (settings && settings.theme_mode) || 'system';
-  const effective = mode === 'light' ? 'light' : mode === 'dark' ? 'dark' : (systemThemeQuery && systemThemeQuery.matches ? 'light' : 'dark');
-  const preset = THEME_PRESETS[effective];
+  const preset = THEME_PRESET;
   const root = document.documentElement;
 
-  // Each theme has its own accent field; fall back to the legacy single
-  // field (older settings payloads) and then to a neutral default.
-  const accentDefaults = { light: '#1A1A1A', dark: '#B7B7B7' };
-  const accent = (effective === 'light'
-    ? (settings && settings.accent_color_light)
-    : (settings && settings.accent_color_dark))
-    || (settings && settings.accent_color)
-    || accentDefaults[effective];
+  const accent = (settings && settings.accent_color) || '#B7B7B7';
 
-  root.setAttribute('data-theme', effective);
-  root.style.setProperty('--overlay-rgb', effective === 'light' ? '15, 15, 20' : '255, 255, 255');
-  // Console window background is fixed per-theme (not user-customizable
-  // via bg_color) — #e9eaed in light mode, #141416 in dark mode.
-  root.style.setProperty('--console-window-bg', effective === 'light' ? '#e9eaed' : '#141416');
+  root.style.setProperty('--overlay-rgb', '255, 255, 255');
+  // Console window background is fixed (not user-customizable via
+  // bg_color).
+  root.style.setProperty('--console-window-bg', '#141416');
   root.style.setProperty('--accent', accent);
   root.style.setProperty('--accent-dim', hexToRgba(accent, 0.15));
   root.style.setProperty('--accent-glow', hexToRgba(accent, 0.35));
@@ -61,19 +47,14 @@ async function applyTheme() {
   root.style.setProperty('--panel', hexToRgba((settings && settings.panel_bg_color) || preset.panel_bg_color, 0.95));
   root.style.setProperty('--panel-solid', hexToRgba((settings && settings.panel_bg_color) || preset.panel_bg_color, 0.97));
   // Text color intentionally ignores settings.text_color here (unlike --bg
-  // above) and always uses the resolved theme's own preset. The console
-  // window's background is fixed per-theme regardless of the user's
-  // custom colors (see --console-window-bg below), so a custom text color
-  // tuned against a *different* background — e.g. a light color left over
-  // from dark mode — could land as unreadably-light text on the light
-  // theme's light background. Always-correct contrast beats color
-  // customization for this one window.
+  // above) and always uses the preset's own value, so the console window
+  // stays legible against its fixed background regardless of any custom
+  // text color set elsewhere.
   root.style.setProperty('--text', preset.text_color);
   root.style.setProperty('--text-muted', hexToRgba(preset.text_color, 0.55));
   root.style.setProperty('--log-bg', (settings && settings.log_bg_color) || preset.log_bg_color);
 }
 
-if (systemThemeQuery) systemThemeQuery.addEventListener('change', applyTheme);
 applyTheme();
 
 // All entries we've ever seen, kept around so search/level filters can be

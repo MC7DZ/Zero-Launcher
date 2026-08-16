@@ -121,18 +121,8 @@ pub struct LauncherSettings {
     pub java_path: Option<String>,
 
     // Appearance
-    #[serde(default = "default_theme_mode")]
-    pub theme_mode: String,
-    // Deprecated: superseded by accent_color_dark / accent_color_light below.
-    // Kept (with its old default) purely so the frontend can migrate a
-    // pre-existing single accent color into the new per-theme fields; the
-    // backend itself no longer reads it for rendering.
     #[serde(default = "default_accent_color")]
     pub accent_color: String,
-    #[serde(default = "default_accent_color_dark")]
-    pub accent_color_dark: String,
-    #[serde(default = "default_accent_color_light")]
-    pub accent_color_light: String,
     #[serde(default = "default_bg_color")]
     pub bg_color: String,
     #[serde(default = "default_panel_bg_color")]
@@ -407,10 +397,7 @@ fn default_on_launcher_close() -> String { "tray".to_string() }
 fn default_music_volume() -> u32 { 50 }
 fn default_music_switch_behavior() -> String { "pause".to_string() }
 fn default_music_lower_percent() -> u32 { 30 }
-fn default_theme_mode() -> String { "system".to_string() }
-fn default_accent_color() -> String { "#10b981".to_string() }
-fn default_accent_color_dark() -> String { "#B7B7B7".to_string() }
-fn default_accent_color_light() -> String { "#1A1A1A".to_string() }
+fn default_accent_color() -> String { "#B7B7B7".to_string() }
 fn default_bg_color() -> String { "#0a0a0f".to_string() }
 fn default_panel_bg_color() -> String { "#13131a".to_string() }
 fn default_text_color() -> String { "#e2e2ea".to_string() }
@@ -487,10 +474,7 @@ impl Default for LauncherSettings {
             min_ram_mb: 512,
             java_path: None,
 
-            theme_mode: default_theme_mode(),
             accent_color: default_accent_color(),
-            accent_color_dark: default_accent_color_dark(),
-            accent_color_light: default_accent_color_light(),
             bg_color: default_bg_color(),
             panel_bg_color: default_panel_bg_color(),
             text_color: default_text_color(),

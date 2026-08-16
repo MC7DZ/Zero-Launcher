@@ -268,10 +268,11 @@ impl AppState {
         serde_json::from_str(&data).ok()
     }
 
-    /// Loads settings.json, migrating a pre-existing single `accent_color`
-    /// into `accent_color_dark` the first time a file saved before the
-    /// dark/light split is read (each theme now keeps its own accent).
-    /// Files that already have `accent_color_dark` are left untouched.
+    /// Loads settings.json, migrating a pre-existing per-theme
+    /// `accent_color_dark` field (from when the launcher had separate
+    /// dark/light accent colors) back into the single `accent_color` field
+    /// now that there's only one theme. Files already on the single-field
+    /// format are left untouched.
     fn load_settings_with_migration(data_dir: &PathBuf) -> LauncherSettings {
         let path = data_dir.join("settings.json");
         let data = match std::fs::read_to_string(&path) {
@@ -283,12 +284,9 @@ impl AppState {
             Err(_) => return LauncherSettings::default(),
         };
         if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&data) {
-            let already_split = raw.get("accent_color_dark").is_some();
-            if !already_split {
-                const LEGACY_DEFAULT_ACCENTS: [&str; 3] = ["#10b981", "#1a1a1a", "#b7b7b7"];
-                let legacy = settings.accent_color.to_lowercase();
-                if !LEGACY_DEFAULT_ACCENTS.contains(&legacy.as_str()) {
-                    settings.accent_color_dark = settings.accent_color.clone();
+            if let Some(legacy_dark) = raw.get("accent_color_dark").and_then(|v| v.as_str()) {
+                if !legacy_dark.is_empty() {
+                    settings.accent_color = legacy_dark.to_string();
                 }
             }
 

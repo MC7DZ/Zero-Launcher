@@ -395,7 +395,7 @@ function spawnToast(message, type, title, actions) {
   `;
   c.appendChild(t);
 
-  const entry = { el: t, remaining: duration, total: duration, paused: false, removed: false };
+  const entry = { el: t, removed: false };
   activeToasts.push(entry);
 
   // Close button
@@ -413,41 +413,21 @@ function spawnToast(message, type, title, actions) {
     });
   }
 
-  // Hover pauses countdown
-  t.addEventListener('mouseenter', () => { entry.paused = true; });
-  t.addEventListener('mouseleave', () => { entry.paused = false; });
-
-  // Animate progress bar. Use a transform (scaleX) instead of animating
-  // `width` — width changes force a layout/reflow on every frame, transform
-  // is composited and much cheaper. Also throttle updates to ~10/sec since
-  // a countdown bar doesn't need to redraw 60 times a second.
+  // Progress bar: a single CSS animation (scaleX 1 -> 0 over `duration`),
+  // driven entirely by the compositor. The previous version stepped a
+  // JS-set `transform` every ~100ms with no transition between steps, so
+  // every step was a hard jump rather than smooth motion — on any main-
+  // thread hiccup that reads as stuttery, near-1fps movement. A plain
+  // CSS animation keeps running smoothly off the main thread regardless
+  // of JS load elsewhere, and needs zero per-frame script.
   const bar = t.querySelector('.toast-progress-bar');
-  bar.style.transformOrigin = 'left center';
-  bar.style.width = '100%';
-  let lastTime = performance.now();
-  let lastPaint = 0;
-  const PAINT_INTERVAL = 100; // ms
+  bar.style.animationDuration = `${duration}ms`;
+  bar.addEventListener('animationend', () => dismissToast(entry));
 
-  function tick(now) {
-    if (entry.removed) return;
-    const dt = now - lastTime;
-    lastTime = now;
-    if (!entry.paused) {
-      entry.remaining -= dt;
-      if (entry.remaining <= 0) {
-        bar.style.transform = 'scaleX(0)';
-        dismissToast(entry);
-        return;
-      }
-      if (now - lastPaint >= PAINT_INTERVAL) {
-        lastPaint = now;
-        const pct = Math.max(0, entry.remaining / entry.total);
-        bar.style.transform = `scaleX(${pct})`;
-      }
-    }
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
+  // Hover pauses the countdown — animation-play-state pauses/resumes
+  // exactly where it left off, no manual time bookkeeping needed.
+  t.addEventListener('mouseenter', () => { bar.classList.add('toast-progress-paused'); });
+  t.addEventListener('mouseleave', () => { bar.classList.remove('toast-progress-paused'); });
 }
 
 function dismissToast(entry) {
@@ -700,12 +680,14 @@ async function refreshAccountUI() {
       const headKey = encodeURIComponent(acc.mc_uuid || acc.username || 'MHF_Steve');
       const headUrl = `https://mc-heads.net/avatar/${headKey}/64`;
       const needsReauth = !!acc.needs_reauth;
-      // Expired sessions get a cracked-glass texture across the whole card
-      // background (yellow-gradient tinted) plus a matching "Sign-in
-      // expired" tag next to the account name.
+      // Expired sessions get a subtle animated amber accent (CSS-only,
+      // opacity/transform based so it stays cheap to paint) plus a
+      // matching "Sign-in expired" tag next to the account name — no more
+      // masked cracked-glass texture layer.
       item.classList.toggle('account-item-reauth', needsReauth);
+      item.classList.toggle('account-item-clickable', !acc.is_active);
+      item.dataset.id = acc.id;
       item.innerHTML = `
-        ${needsReauth ? '<div class="account-item-crack" aria-hidden="true"></div>' : ''}
         <div style="display:flex; align-items:center; gap:12px; position:relative; z-index:1;">
           <div class="account-avatar">
             <span class="account-avatar-fallback${useUnknownPic ? ' account-avatar-fallback-mc' : ''}">${useUnknownPic ? '?' : initial}</span>
@@ -724,19 +706,19 @@ async function refreshAccountUI() {
           </div>
         </div>
         <div style="display:flex; gap:6px; position:relative; z-index:1;">
-          ${!acc.is_active ? `<button class="btn-secondary btn-sm btn-select-account" data-id="${acc.id}">Select</button>` : ''}
           <button class="btn-danger-outline btn-sm btn-delete-account" data-id="${acc.id}" title="Remove Account">✕</button>
         </div>
       `;
       list.appendChild(item);
     });
 
-    // Event handlers for account item buttons
-    list.querySelectorAll('.btn-select-account').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
+    // Clicking anywhere on a non-active account's card selects it (the
+    // delete button stops propagation below, so it's excluded). Already-
+    // active cards aren't clickable — there's nothing to switch to.
+    list.querySelectorAll('.account-item-clickable').forEach(cardEl => {
+      cardEl.addEventListener('click', async () => {
         try {
-          await api.setActiveAccount(btn.dataset.id);
+          await api.setActiveAccount(cardEl.dataset.id);
           await refreshAccountUI();
           showToast('Switched account successfully', 'success');
         } catch (err) {
@@ -763,26 +745,12 @@ async function refreshAccountUI() {
   }
 }
 
-function initAccountDropdown() {
-  const accountBtn = document.getElementById('account-btn');
-  const modalOverlay = document.getElementById('account-modal-overlay');
-  const closeBtn = document.getElementById('btn-close-account-modal');
-  const doneBtn = document.getElementById('btn-done-account-modal');
-  const createBtn = document.getElementById('btn-modal-add-account');
-  const usernameInput = document.getElementById('modal-new-username');
-  const showAddBtn = document.getElementById('btn-show-add-account');
-  const choiceMsaBtn = document.getElementById('btn-choice-msa');
-  const choiceOfflineBtn = document.getElementById('btn-choice-offline');
-  const backBtns = document.querySelectorAll('.btn-back-to-choices');
-
-  // Device-code sign-in elements
-  const methodChoice = document.getElementById('msa-method-choice');
-  const devicePanel = document.getElementById('msa-device-panel');
-  const deviceLoginBtn = document.getElementById('btn-msa-device-login');
-  const deviceCodeEl = document.getElementById('msa-device-code');
-  const deviceOpenBtn = document.getElementById('btn-msa-device-open');
-  const deviceStatusEl = document.getElementById('msa-device-status');
-  const deviceCancelBtn = document.getElementById('btn-msa-device-cancel');
+// Reusable Microsoft device-code sign-in flow. Both the Accounts Manager
+// modal and the setup wizard's Account step need the exact same
+// request-code / poll / cancel behavior, just wired to different DOM
+// elements — this factory keeps that logic in one place instead of
+// duplicated per caller.
+function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, deviceStatusEl, onSuccess }) {
   let devicePollTimer = null;
   let deviceVerificationUri = '';
 
@@ -806,11 +774,9 @@ function initAccountDropdown() {
       const account = await api.microsoftDeviceCodePoll();
       if (account) {
         stopDevicePolling();
-        await refreshAccountUI();
-        showToast(`Signed in as ${account.username || 'Microsoft account'}!`, 'success');
+        await onSuccess(account);
         return;
       }
-      // Still pending — poll again after the server-specified interval.
       devicePollTimer = setTimeout(() => pollDeviceCode(intervalSeconds), intervalSeconds * 1000);
     } catch (e) {
       stopDevicePolling();
@@ -819,18 +785,18 @@ function initAccountDropdown() {
     }
   }
 
-  async function startDeviceCodeSignIn() {
-    if (!devicePanel) return;
-    methodChoice.classList.add('hidden');
-    devicePanel.classList.remove('hidden');
+  async function start() {
+    if (!devicePanelEl) return;
+    if (methodChoiceEl) methodChoiceEl.classList.add('hidden');
+    devicePanelEl.classList.remove('hidden');
     if (deviceCodeEl) deviceCodeEl.textContent = '— — — — —';
     setDeviceStatus('Requesting a code…', false);
     try {
-      const start = await api.microsoftDeviceCodeStart();
-      deviceVerificationUri = start.verification_uri || 'https://microsoft.com/link';
-      if (deviceCodeEl) deviceCodeEl.textContent = start.user_code;
+      const startRes = await api.microsoftDeviceCodeStart();
+      deviceVerificationUri = startRes.verification_uri || 'https://microsoft.com/link';
+      if (deviceCodeEl) deviceCodeEl.textContent = startRes.user_code;
       setDeviceStatus('Waiting for you to sign in…', false);
-      const interval = Math.max(start.interval || 5, 3);
+      const interval = Math.max(startRes.interval || 5, 3);
       devicePollTimer = setTimeout(() => pollDeviceCode(interval), interval * 1000);
     } catch (e) {
       setDeviceStatus(String(e), true);
@@ -838,13 +804,62 @@ function initAccountDropdown() {
     }
   }
 
-  function backToMethodChoice() {
+  function cancel() {
     stopDevicePolling();
     api.microsoftDeviceCodeCancel().catch(() => {});
-    if (devicePanel) devicePanel.classList.add('hidden');
-    if (methodChoice) methodChoice.classList.remove('hidden');
+    if (devicePanelEl) devicePanelEl.classList.add('hidden');
+    if (methodChoiceEl) methodChoiceEl.classList.remove('hidden');
   }
 
+  function openVerificationLink() {
+    const url = deviceVerificationUri || 'https://microsoft.com/link';
+    if (window.__TAURI__ && window.__TAURI__.shell && window.__TAURI__.shell.open) {
+      window.__TAURI__.shell.open(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  }
+
+  return { start, cancel, openVerificationLink, stopDevicePolling };
+}
+
+function initAccountDropdown() {
+  const accountBtn = document.getElementById('account-btn');
+  const modalOverlay = document.getElementById('account-modal-overlay');
+  const closeBtn = document.getElementById('btn-close-account-modal');
+  const doneBtn = document.getElementById('btn-done-account-modal');
+  const createBtn = document.getElementById('btn-modal-add-account');
+  const usernameInput = document.getElementById('modal-new-username');
+  const showAddBtn = document.getElementById('btn-show-add-account');
+  const choiceMsaBtn = document.getElementById('btn-choice-msa');
+  const choiceOfflineBtn = document.getElementById('btn-choice-offline');
+  const backBtns = document.querySelectorAll('.btn-back-to-choices');
+
+  // Device-code sign-in elements
+  const methodChoice = document.getElementById('msa-method-choice');
+  const devicePanel = document.getElementById('msa-device-panel');
+  const deviceLoginBtn = document.getElementById('btn-msa-device-login');
+  const deviceOpenBtn = document.getElementById('btn-msa-device-open');
+  const deviceCancelBtn = document.getElementById('btn-msa-device-cancel');
+
+  const deviceFlow = createDeviceSignInFlow({
+    methodChoiceEl: methodChoice,
+    devicePanelEl: devicePanel,
+    deviceCodeEl: document.getElementById('msa-device-code'),
+    deviceStatusEl: document.getElementById('msa-device-status'),
+    onSuccess: async (account) => {
+      await refreshAccountUI();
+      showToast(`Signed in as ${account.username || 'Microsoft account'}!`, 'success');
+    },
+  });
+
+  function startDeviceCodeSignIn() {
+    return deviceFlow.start();
+  }
+
+  function backToMethodChoice() {
+    deviceFlow.cancel();
+  }
   // Open modal on account top-bar button click
   if (accountBtn && modalOverlay) {
     accountBtn.addEventListener('click', () => {
@@ -886,14 +901,7 @@ function initAccountDropdown() {
   }
 
   if (deviceOpenBtn) {
-    deviceOpenBtn.addEventListener('click', async () => {
-      const url = deviceVerificationUri || 'https://microsoft.com/link';
-      if (window.__TAURI__ && window.__TAURI__.shell && window.__TAURI__.shell.open) {
-        await window.__TAURI__.shell.open(url);
-      } else {
-        window.open(url, '_blank');
-      }
-    });
+    deviceOpenBtn.addEventListener('click', () => deviceFlow.openVerificationLink());
   }
 
   if (deviceCancelBtn) {
@@ -902,7 +910,7 @@ function initAccountDropdown() {
 
   // Close modal functions
   const closeModal = () => {
-    stopDevicePolling();
+    deviceFlow.stopDevicePolling();
     stopAccountManagerAutoRefresh();
     if (modalOverlay) modalOverlay.classList.add('hidden');
   };
@@ -3039,6 +3047,11 @@ async function syncInstanceSelectionAcrossTabs() {
     applyInstanceFiltersToDiscover(currentDiscoverTargetInstance());
     performDiscoverSearch();
   }
+  if (getActiveTabId() === 'presets' && presetsState.loaded) {
+    presetsState.syncedInstanceId = selectedInstanceId;
+    populatePresetsInstanceSelect();
+    renderPresets();
+  }
 }
 
 // Actually deletes an instance's files + tracked entry (shared by the plain
@@ -5062,11 +5075,13 @@ function discoverEscape(str) {
 const presetsState = {
   loaded: false,
   presets: [],
+  syncedInstanceId: undefined,
 };
 
 let presetsInstanceSelectWired = false;
 
 function initPresetsTabIfNeeded() {
+  presetsState.syncedInstanceId = selectedInstanceId;
   populatePresetsInstanceSelect();
   if (!presetsInstanceSelectWired) {
     presetsInstanceSelectWired = true;
@@ -5081,23 +5096,30 @@ function initPresetsTabIfNeeded() {
   if (!presetsState.loaded) {
     presetsState.loaded = true;
     loadPresets();
+  } else if (presetsState.syncedInstanceId !== selectedInstanceId) {
+    // Already loaded from an earlier visit, but the selected instance may
+    // have changed while Presets wasn't the active tab (that live sync
+    // only runs for the active tab; see `syncInstanceSelectionAcrossTabs`)
+    // — this catches re-entering the tab after switching elsewhere.
+    renderPresets();
   }
 }
 
 function populatePresetsInstanceSelect() {
   const sel = document.getElementById('presets-instance-select');
   if (!sel) return;
-  const desired = sel.value;
   const instances = getInstances();
   sel.innerHTML = '<option value="">Select a target instance…</option>';
   instances.forEach(inst => {
     const opt = document.createElement('option');
     opt.value = inst.version_id;
     opt.textContent = inst.name || inst.version_id;
+    // Always follow the globally selected instance, same as Mods/Discover
+    // — Presets targets whatever instance is currently selected rather
+    // than remembering its own separate choice across visits.
+    if (inst.version_id === selectedInstanceId) opt.selected = true;
     sel.appendChild(opt);
   });
-  if (desired && instances.some(i => i.version_id === desired)) sel.value = desired;
-  else if (selectedInstanceId && instances.some(i => i.version_id === selectedInstanceId)) sel.value = selectedInstanceId;
 }
 
 async function loadPresets() {
@@ -6762,11 +6784,7 @@ function initDiscoverFilters() {
 // SETTINGS
 // ══════════════════════════════════════════════════════════════════
 
-// Color presets applied when the user picks Dark/Light (or when "System"
-// resolves to one of them). These only fill in the fields the appearance
-// UI doesn't expose its own picker for yet — bg/panel/text/log/notification/
-// header colors — so a real per-field picker added later would simply take
-// over via the `settings.x || preset.x` fallback in applyThemeFromSettings().
+// Color preset applied on load — dark is the only theme.
 const THEME_PRESETS = {
   dark: {
     bg_color: '#0a0a0f',
@@ -6776,52 +6794,26 @@ const THEME_PRESETS = {
     notification_bg_color: '#13131a',
     header_bg_color: '#111116',
   },
-  light: {
-    bg_color: '#f3f3f6',
-    panel_bg_color: '#eef0f3',
-    text_color: '#1c1c22',
-    log_bg_color: '#eef0f3',
-    notification_bg_color: '#ffffff',
-    header_bg_color: '#ffffff',
-  },
 };
 
-const systemThemeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
-
-// Each theme keeps its own independent accent color, stored in separate
-// settings fields (accent_color_dark / accent_color_light). Switching theme
-// swaps which one is active — it does not overwrite the other.
-const ACCENT_THEME_DEFAULTS = { light: '#1A1A1A', dark: '#B7B7B7' };
+const ACCENT_DEFAULT = '#B7B7B7';
 const KNOWN_LEGACY_DEFAULT_ACCENTS = new Set(['#10b981', '#1a1a1a', '#b7b7b7']);
 
-// One-time migration from the old single `accent_color` field to the new
-// per-theme fields, run whenever settings are loaded. Safe to call
-// repeatedly — it's a no-op once both fields exist.
+// One-time migration from the old single `accent_color` field (and the
+// former per-theme accent_color_dark field) to the single accent field.
+// Safe to call repeatedly — it's a no-op once the field exists.
 function ensureAccentFields() {
   if (!settings) return;
-  if (settings.accent_color_dark === undefined) {
-    const legacy = settings.accent_color;
+  if (settings.accent_color === undefined) {
+    const legacy = settings.accent_color_dark || settings.accent_color;
     const hadCustomAccent = legacy && !KNOWN_LEGACY_DEFAULT_ACCENTS.has(legacy.toLowerCase());
-    settings.accent_color_dark = hadCustomAccent ? legacy : ACCENT_THEME_DEFAULTS.dark;
-  }
-  if (settings.accent_color_light === undefined) {
-    settings.accent_color_light = ACCENT_THEME_DEFAULTS.light;
+    settings.accent_color = hadCustomAccent ? legacy : ACCENT_DEFAULT;
   }
 }
 
-// The accent field for whichever theme is currently in effect.
 function currentAccentColor() {
-  if (!settings) return ACCENT_THEME_DEFAULTS.dark;
-  const theme = resolveEffectiveTheme();
-  return (theme === 'light' ? settings.accent_color_light : settings.accent_color_dark)
-    || ACCENT_THEME_DEFAULTS[theme];
-}
-
-function resolveEffectiveTheme() {
-  const mode = (settings && settings.theme_mode) || 'system';
-  if (mode === 'light') return 'light';
-  if (mode === 'dark') return 'dark';
-  return systemThemeQuery && systemThemeQuery.matches ? 'light' : 'dark';
+  if (!settings) return ACCENT_DEFAULT;
+  return settings.accent_color || ACCENT_DEFAULT;
 }
 
 async function loadSettings() {
@@ -6836,17 +6828,12 @@ async function loadSettings() {
 
 function populateSettingsUI() {
   if (!settings) return;
-  // Theme Mode
-  const themeModeSel = document.getElementById('setting-theme-mode');
-  if (themeModeSel) themeModeSel.value = settings.theme_mode || 'system';
 
   ensureAccentFields();
 
-  // Accent Color — one picker per theme
-  const accentDarkInp = document.getElementById('setting-accent-color-dark');
-  if (accentDarkInp) accentDarkInp.value = settings.accent_color_dark || ACCENT_THEME_DEFAULTS.dark;
-  const accentLightInp = document.getElementById('setting-accent-color-light');
-  if (accentLightInp) accentLightInp.value = settings.accent_color_light || ACCENT_THEME_DEFAULTS.light;
+  // Accent Color
+  const accentInp = document.getElementById('setting-accent-color');
+  if (accentInp) accentInp.value = settings.accent_color || ACCENT_DEFAULT;
 
   document.getElementById('setting-notif-style').value = settings.notification_style || 'Glass';
 
@@ -6988,38 +6975,25 @@ function applyThemeFromSettings() {
   // is present (see .smooth-scroll in main.css).
   root.classList.toggle('smooth-scroll', settings.smooth_scrolling !== false);
 
-  const effectiveTheme = resolveEffectiveTheme();
-  const preset = THEME_PRESETS[effectiveTheme];
-  root.setAttribute('data-theme', effectiveTheme);
+  const preset = THEME_PRESETS.dark;
 
   // Colors — these fields have no picker UI anywhere in the app, so the
-  // backend always serializes them at their (dark-theme) defaults. Using
+  // backend always serializes them at their defaults. Using
   // `settings.X || preset.X` meant `settings.X` was never falsy and the
-  // resolved theme's preset never actually won, so panels/text/backgrounds
-  // stayed dark-themed even while on the light theme (most visible in the
-  // Setup Wizard, which — unlike .glass-card/.instance-card/etc — has no
-  // per-theme override of its own to compensate). Always derive from the
-  // resolved preset until per-field pickers exist.
+  // preset never actually won, so always derive from the preset until
+  // per-field pickers exist.
   ensureAccentFields();
   root.style.setProperty('--accent', currentAccentColor());
   root.style.setProperty('--bg', preset.bg_color);
-  root.style.setProperty('--bg-darker', darkenColor(preset.bg_color, effectiveTheme === 'light' ? 0.08 : 0.4));
+  root.style.setProperty('--bg-darker', darkenColor(preset.bg_color, 0.4));
 
-  // Panel background with transparency option. The light theme needs a
-  // higher floor than the dark theme — at the same low alpha the animated
-  // background shows through a white/gray panel far more visibly than it
-  // does through a dark one, which is what was reading as "dark" instead of
-  // a clean soft gray card.
-  const panelAlpha = effectiveTheme === 'light'
-    ? (settings.enable_transparency ? 0.82 : 0.97)
-    : (settings.enable_transparency ? 0.45 : 0.95);
+  // Panel background with transparency option.
+  const panelAlpha = settings.enable_transparency ? 0.45 : 0.95;
   root.style.setProperty('--panel', hexToRgba(preset.panel_bg_color, panelAlpha));
   root.style.setProperty('--text', preset.text_color);
   root.style.setProperty('--text-muted', hexToRgba(preset.text_color, 0.55));
 
-  const headerAlpha = effectiveTheme === 'light'
-    ? (settings.enable_transparency ? 0.82 : 0.97)
-    : (settings.enable_transparency ? 0.45 : 0.95);
+  const headerAlpha = settings.enable_transparency ? 0.45 : 0.95;
   root.style.setProperty('--header-bg', hexToRgba(preset.header_bg_color, headerAlpha));
   root.style.setProperty('--log-bg', preset.log_bg_color);
   const notifHex = preset.notification_bg_color;
@@ -7155,15 +7129,9 @@ function collectSettingsFromUI() {
   if (!settings) return;
   const prevFinishedSetup = settings.Finished_setup;
   const prevSetupFinished = settings.setup_finished;
-  // Appearance: Theme
-  const themeModeSel = document.getElementById('setting-theme-mode');
-  if (themeModeSel) settings.theme_mode = themeModeSel.value;
-
-  // Appearance: Colors — one accent per theme
-  const accentDarkEl = document.getElementById('setting-accent-color-dark');
-  if (accentDarkEl) settings.accent_color_dark = accentDarkEl.value;
-  const accentLightEl = document.getElementById('setting-accent-color-light');
-  if (accentLightEl) settings.accent_color_light = accentLightEl.value;
+  // Appearance: Colors
+  const accentEl = document.getElementById('setting-accent-color');
+  if (accentEl) settings.accent_color = accentEl.value;
   settings.notification_style = document.getElementById('setting-notif-style').value;
 
   // Appearance: Background & Animation
@@ -7388,7 +7356,6 @@ async function populateJavaDropdown(currentValue, showFeedback) {
 function initSettings() {
   // All checkboxes and selects save immediately on change
   const immediateIds = [
-    'setting-theme-mode',
     'setting-bg-style', 'setting-bg-anim-style', 'setting-notif-style',
     'setting-bg-anim-speed', 'setting-bg-anim-intensity', 'setting-bg-anim-fps',
     'setting-bg-anim-enable', 'setting-transparency',
@@ -7435,7 +7402,7 @@ function initSettings() {
 
   // Text, number, color, and range inputs use debounced save
   const debouncedIds = [
-    'setting-accent-color-dark', 'setting-accent-color-light',
+    'setting-accent-color',
     'setting-bg-anim-speed', 'setting-bg-anim-fps',
     'setting-bg-image-path',
     'setting-game-dir', 'setting-min-ram', 'setting-max-ram',
@@ -7619,37 +7586,10 @@ function initSettings() {
     }
   });
 
-  // Instant preview when switching Dark/Light/System — no need to wait for
-  // the debounced save round-trip to see the change.
-  const themeModeEl = document.getElementById('setting-theme-mode');
-  if (themeModeEl) {
-    themeModeEl.addEventListener('change', () => {
-      collectSettingsFromUI();
-      applyThemeFromSettings();
-    });
-  }
-
-  // If the user's on "System", follow the OS live — no restart needed when
-  // they flip their OS between light and dark. The active theme's accent
-  // (and everything derived from it) swaps automatically since
-  // applyThemeFromSettings() re-resolves the effective theme each time.
-  if (systemThemeQuery) {
-    systemThemeQuery.addEventListener('change', () => {
-      applyThemeFromSettings();
-    });
-  }
-
-  // Live-preview accent color as you drag either picker
-  const accentDarkEl = document.getElementById('setting-accent-color-dark');
-  if (accentDarkEl) {
-    accentDarkEl.addEventListener('input', () => {
-      collectSettingsFromUI();
-      applyThemeFromSettings();
-    });
-  }
-  const accentLightEl = document.getElementById('setting-accent-color-light');
-  if (accentLightEl) {
-    accentLightEl.addEventListener('input', () => {
+  // Live-preview accent color as you drag the picker
+  const accentEl = document.getElementById('setting-accent-color');
+  if (accentEl) {
+    accentEl.addEventListener('input', () => {
       collectSettingsFromUI();
       applyThemeFromSettings();
     });
@@ -7703,9 +7643,7 @@ function initSettings() {
         // folder instead, making the user's real instances vanish from
         // the UI (they're still on disk, just no longer pointed at).
         const defaultSettings = {
-          theme_mode: 'system',
-          accent_color_dark: ACCENT_THEME_DEFAULTS.dark,
-          accent_color_light: ACCENT_THEME_DEFAULTS.light,
+          accent_color: ACCENT_DEFAULT,
           font_family: 'JetBrains Mono, Fira Code, Consolas, Monaco, monospace',
           background_style: 'Default',
           background_animation_style: 'Waves',
@@ -8265,36 +8203,30 @@ const BG = {
     const bgStyle = s.background_style || 'Default';
     const animStyle = s.background_animation_style || 'Waves';
     const speed = s.background_animation_speed || 1.0;
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-    // "Nothing" is a flat, single-color background — no gradient — soft
-    // light gray in light mode / dark gray in dark mode. It only applies
-    // when there's no custom image background (that already has its own
-    // flat base and takes priority).
+    // "Nothing" is a flat, single-color background — no gradient — dark
+    // gray. It only applies when there's no custom image background (that
+    // already has its own flat base and takes priority).
     const isNothing = bgStyle === 'Nothing' && !s.use_background_image;
-    // Same shapes read as much fainter against a light background, so give
-    // every accent-colored overlay (glows/waves/orbs/particles) more alpha
-    // to punch through instead of nearly disappearing.
-    const baseBoost = isLight ? 2.2 : 1;
     const imageBgBoost = s.use_background_image ? 3.2 : 1;
     const intensity = s.background_animation_intensity ?? 1.0;
-    const aBoost = baseBoost * imageBgBoost * intensity;
+    const aBoost = imageBgBoost * intensity;
 
     // ── Clear Canvas ──
     ctx.clearRect(0, 0, W, H);
 
     if (!s.use_background_image) {
-      // The base gradient + glow(s) only actually change when size, theme,
-      // accent color, or background style change — not every frame. They
-      // were being rebuilt from scratch (1 linear + up to 2 radial
-      // gradients, each requiring color-stop math and a full-canvas fill)
-      // on every single animation frame even though the result was
-      // pixel-identical to the previous one nearly all the time. Now that
-      // static layer is rendered once into an offscreen canvas and just
-      // blitted with drawImage() — a plain pixel copy — until something it
-      // actually depends on changes. Same pixels on screen, far less canvas
-      // work per frame while an animation (Waves/Orbs/Fireflies/Particles)
-      // is running.
-      const staticKey = `${W}x${H}|${r},${g},${b}|${isLight}|${bgStyle}|${aBoost}|${isNothing}`;
+      // The base gradient + glow(s) only actually change when size, accent
+      // color, or background style change — not every frame. They were
+      // being rebuilt from scratch (1 linear + up to 2 radial gradients,
+      // each requiring color-stop math and a full-canvas fill) on every
+      // single animation frame even though the result was pixel-identical
+      // to the previous one nearly all the time. Now that static layer is
+      // rendered once into an offscreen canvas and just blitted with
+      // drawImage() — a plain pixel copy — until something it actually
+      // depends on changes. Same pixels on screen, far less canvas work
+      // per frame while an animation (Waves/Orbs/Fireflies/Particles) is
+      // running.
+      const staticKey = `${W}x${H}|${r},${g},${b}|${bgStyle}|${aBoost}|${isNothing}`;
       if (this._staticKey !== staticKey) {
         this._staticKey = staticKey;
         if (!this._staticCanvas) this._staticCanvas = document.createElement('canvas');
@@ -8305,32 +8237,13 @@ const BG = {
 
         if (isNothing) {
           // Flat solid fill, no gradient at all.
-          sctx.fillStyle = isLight ? '#e9eaed' : '#141416';
+          sctx.fillStyle = '#141416';
           sctx.fillRect(0, 0, W, H);
         } else {
           // ── Base gradient ──
-          let grad;
-          if (isLight) {
-            // Diagonal, three-stop gradient with real contrast: a noticeably
-            // tinted accent corner, a near-white middle, and a cool gray
-            // corner — the two-stop pastel version was too close in
-            // lightness to read as a gradient at all.
-            grad = sctx.createLinearGradient(0, 0, W, H);
-            const mix = (amt) => [
-              Math.round(r + (255 - r) * amt),
-              Math.round(g + (255 - g) * amt),
-              Math.round(b + (255 - b) * amt),
-            ];
-            const [ar, ag, ab] = mix(0.22); // strong accent corner, not washed out
-            const [mr, mg, mb] = mix(0.62); // tinted midpoint — no flat white
-            grad.addColorStop(0, `rgb(${ar}, ${ag}, ${ab})`);
-            grad.addColorStop(0.55, `rgb(${mr}, ${mg}, ${mb})`);
-            grad.addColorStop(1, '#c7cedb');
-          } else {
-            grad = sctx.createLinearGradient(0, 0, 0, H);
-            grad.addColorStop(0, '#0a0a0f');
-            grad.addColorStop(1, '#060608');
-          }
+          const grad = sctx.createLinearGradient(0, 0, 0, H);
+          grad.addColorStop(0, '#0a0a0f');
+          grad.addColorStop(1, '#060608');
           sctx.fillStyle = grad;
           sctx.fillRect(0, 0, W, H);
 
@@ -8968,11 +8881,128 @@ function initWindowBehaviorSettings() {
 // ══════════════════════════════════════════════════════════════════
 let currentSetupStep = 1;
 
+// Shows one of the setup wizard's Account-step sub-views: the
+// Microsoft/Offline choice, the Microsoft device-code panel, or the
+// offline username form. Mirrors showAccountView() but for the wizard's
+// own element ids (it can't reuse the modal's ids directly since both
+// can theoretically exist in the DOM at once).
+function showSetupAccountView(view) {
+  const map = {
+    choice: 'setup-account-choice',
+    msa: 'setup-account-msa-section',
+    offline: 'setup-account-offline-section',
+  };
+  Object.values(map).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  const target = document.getElementById(map[view]);
+  if (target) target.classList.remove('hidden');
+}
+
+let setupDeviceFlow = null;
+
 function initSetupWizard() {
   const prevBtn = document.getElementById('btn-setup-prev');
   const nextBtn = document.getElementById('btn-setup-next');
   const skipStepBtn = document.getElementById('btn-setup-skip-step');
   const skipAllBtn = document.getElementById('btn-setup-skip-all');
+
+  // ── Account step: Microsoft sign-in + offline account ──────────────
+  const setupChoiceMsaBtn = document.getElementById('setup-btn-choice-msa');
+  const setupChoiceOfflineBtn = document.getElementById('setup-btn-choice-offline');
+  const setupBackBtns = document.querySelectorAll('.setup-btn-back-to-choices');
+  const setupDeviceLoginBtn = document.getElementById('setup-btn-msa-device-login');
+  const setupDeviceOpenBtn = document.getElementById('setup-btn-msa-device-open');
+  const setupDeviceCancelBtn = document.getElementById('setup-btn-msa-device-cancel');
+  const setupOfflineCreateBtn = document.getElementById('setup-btn-offline-create');
+  const setupUsernameInput = document.getElementById('setup-username');
+
+  setupDeviceFlow = createDeviceSignInFlow({
+    methodChoiceEl: document.getElementById('setup-msa-method-choice'),
+    devicePanelEl: document.getElementById('setup-msa-device-panel'),
+    deviceCodeEl: document.getElementById('setup-msa-device-code'),
+    deviceStatusEl: document.getElementById('setup-msa-device-status'),
+    onSuccess: async (account) => {
+      await refreshAccountUI();
+      showToast(`Signed in as ${account.username || 'Microsoft account'}!`, 'success');
+      showSetupAccountView('choice');
+      updateSetupAccountExistingMsg();
+    },
+  });
+
+  if (setupChoiceMsaBtn) {
+    setupChoiceMsaBtn.addEventListener('click', () => {
+      showSetupAccountView('msa');
+    });
+  }
+
+  if (setupChoiceOfflineBtn) {
+    setupChoiceOfflineBtn.addEventListener('click', () => {
+      showSetupAccountView('offline');
+      if (setupUsernameInput) setupUsernameInput.focus();
+    });
+  }
+
+  setupBackBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      setupDeviceFlow.cancel();
+      showSetupAccountView('choice');
+    });
+  });
+
+  if (setupDeviceLoginBtn) {
+    setupDeviceLoginBtn.addEventListener('click', () => setupDeviceFlow.start());
+  }
+
+  if (setupDeviceOpenBtn) {
+    setupDeviceOpenBtn.addEventListener('click', () => setupDeviceFlow.openVerificationLink());
+  }
+
+  if (setupDeviceCancelBtn) {
+    setupDeviceCancelBtn.addEventListener('click', () => {
+      setupDeviceFlow.cancel();
+      showSetupAccountView('choice');
+    });
+  }
+
+  async function createSetupOfflineAccount() {
+    const username = setupUsernameInput ? setupUsernameInput.value.trim() : '';
+    if (!username) {
+      showToast('Please enter a username', 'warning');
+      return;
+    }
+    if (username.length > 16) {
+      showToast('Username must be 16 characters or less', 'warning');
+      return;
+    }
+    try {
+      await api.addOfflineAccount(username);
+      if (setupUsernameInput) setupUsernameInput.value = '';
+      await refreshAccountUI();
+      showToast(`Account "${username}" created!`, 'success');
+      showSetupAccountView('choice');
+      updateSetupAccountExistingMsg();
+    } catch (err) {
+      showToast('Failed to create account: ' + err, 'error');
+    }
+  }
+
+  if (setupOfflineCreateBtn) {
+    setupOfflineCreateBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      createSetupOfflineAccount();
+    });
+  }
+
+  if (setupUsernameInput) {
+    setupUsernameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        createSetupOfflineAccount();
+      }
+    });
+  }
 
   if (prevBtn) {
     prevBtn.addEventListener('click', () => {
@@ -9026,10 +9056,8 @@ function initSetupWizard() {
 
   // Live listeners for Step 1 fields
   const liveThemeInputs = [
-    'setup-theme-mode',
     'setup-notif-style',
-    'setup-accent-dark',
-    'setup-accent-light',
+    'setup-accent',
     'setup-bg-style',
     'setup-bg-anim-style'
   ];
@@ -9039,12 +9067,10 @@ function initSetupWizard() {
     if (el) {
       const handler = () => {
         if (!settings) settings = {};
-        settings.theme_mode = document.getElementById('setup-theme-mode').value;
         const newNotif = document.getElementById('setup-notif-style').value;
         const notifChanged = settings.notification_style !== newNotif;
         settings.notification_style = newNotif;
-        settings.accent_color_dark = document.getElementById('setup-accent-dark').value;
-        settings.accent_color_light = document.getElementById('setup-accent-light').value;
+        settings.accent_color = document.getElementById('setup-accent').value;
         settings.background_style = document.getElementById('setup-bg-style').value;
         settings.background_animation_style = document.getElementById('setup-bg-anim-style').value;
 
@@ -9081,21 +9107,22 @@ async function openSetupWizard(force = false) {
 
   // Populate current settings into step 1 inputs
   if (settings) {
-    const themeSel = document.getElementById('setup-theme-mode');
-    if (themeSel) themeSel.value = settings.theme_mode || 'system';
     const notifSel = document.getElementById('setup-notif-style');
     if (notifSel) notifSel.value = settings.notification_style || 'Minimal Outline';
-    const darkCol = document.getElementById('setup-accent-dark');
-    if (darkCol) darkCol.value = settings.accent_color_dark || ACCENT_THEME_DEFAULTS.dark;
-    const lightCol = document.getElementById('setup-accent-light');
-    if (lightCol) lightCol.value = settings.accent_color_light || ACCENT_THEME_DEFAULTS.light;
+    const accentCol = document.getElementById('setup-accent');
+    if (accentCol) accentCol.value = settings.accent_color || ACCENT_DEFAULT;
     const bgStyleSel = document.getElementById('setup-bg-style');
     if (bgStyleSel) bgStyleSel.value = settings.background_style || 'Default';
     const bgAnimSel = document.getElementById('setup-bg-anim-style');
     if (bgAnimSel) bgAnimSel.value = settings.background_animation_style || 'Waves';
   }
 
-  // Check existing accounts for step 2
+  // Reset step 2 to the choice screen and refresh its "already set up" message
+  showSetupAccountView('choice');
+  await updateSetupAccountExistingMsg();
+}
+
+async function updateSetupAccountExistingMsg() {
   try {
     const accounts = await api.getAccounts();
     const existingMsg = document.getElementById('setup-account-existing-msg');
@@ -9153,10 +9180,8 @@ function showSetupStep(step) {
 async function handleSetupStepSubmit(step) {
   if (step === 1) {
     if (!settings) settings = {};
-    settings.theme_mode = document.getElementById('setup-theme-mode').value;
     settings.notification_style = document.getElementById('setup-notif-style').value;
-    settings.accent_color_dark = document.getElementById('setup-accent-dark').value;
-    settings.accent_color_light = document.getElementById('setup-accent-light').value;
+    settings.accent_color = document.getElementById('setup-accent').value;
     settings.background_style = document.getElementById('setup-bg-style').value;
     settings.background_animation_style = document.getElementById('setup-bg-anim-style').value;
 
@@ -9167,34 +9192,21 @@ async function handleSetupStepSubmit(step) {
   }
 
   if (step === 2) {
-    const usernameInp = document.getElementById('setup-username');
-    const username = usernameInp ? usernameInp.value.trim() : '';
+    // Account creation is handled directly by the Microsoft sign-in flow
+    // and the "Create Offline Account" button now, not by this submit
+    // step — this just makes sure something was actually set up (or
+    // already existed) before moving on.
+    if (setupDeviceFlow) setupDeviceFlow.stopDevicePolling();
 
-    // Check if an account already exists
     let hasExistingAccount = false;
     try {
       const accounts = await api.getAccounts();
       if (accounts && accounts.length > 0) hasExistingAccount = true;
     } catch (e) {}
 
-    if (!username && !hasExistingAccount) {
-      showToast('Please enter a username to create your first account', 'warning');
+    if (!hasExistingAccount) {
+      showToast('Sign in with Microsoft or create an offline account first', 'warning');
       return false;
-    }
-
-    if (username) {
-      if (username.length > 16) {
-        showToast('Username must be 16 characters or less', 'warning');
-        return false;
-      }
-      try {
-        await api.addOfflineAccount(username);
-        await refreshAccountUI();
-        showToast(`Account "${username}" created!`, 'success');
-      } catch (err) {
-        showToast('Failed to create account: ' + err, 'error');
-        return false;
-      }
     }
     return true;
   }
@@ -9205,6 +9217,7 @@ async function handleSetupStepSubmit(step) {
 }
 
 async function finishSetupWizard() {
+  if (setupDeviceFlow) setupDeviceFlow.cancel();
   try {
     if (!settings) settings = {};
     settings.Finished_setup = true;
