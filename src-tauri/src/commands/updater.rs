@@ -254,16 +254,46 @@ pub fn open_current_exe_folder() -> Result<(), String> {
     open::that(dir).map_err(|e| format!("Failed to open folder: {e}"))
 }
 
+/// Cleans up leftover update temporary files and old executable backups.
+/// Should be called on app startup.
+pub fn cleanup_updater_leftovers(data_dir: &std::path::Path) {
+    let updates_dir = data_dir.join("updates");
+    if let Ok(entries) = std::fs::read_dir(&updates_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.ends_with(".old")
+                    || name.ends_with(".bak")
+                    || name.ends_with(".tmp")
+                    || name.contains("update_helper")
+                {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(parent) = current_exe.parent() {
+            let old_exe = parent.join(format!(
+                "{}.old",
+                current_exe.file_name().unwrap_or_default().to_string_lossy()
+            ));
+            if old_exe.is_file() {
+                let _ = std::fs::remove_file(old_exe);
+            }
+        }
+    }
+
+    let temp = std::env::temp_dir();
+    let _ = std::fs::remove_file(temp.join("zerolauncher_update_helper.ps1"));
+    let _ = std::fs::remove_file(temp.join("zerolauncher_update_helper.bat"));
+    let _ = std::fs::remove_file(temp.join("zerolauncher_update.bat"));
+}
+
 /// Replace the currently-running executable/AppImage with the downloaded
 /// update. `relaunch` controls whether the app starts itself back up
-/// afterwards — this is the "Relaunch after update installs" toggle in the
-/// update window, off by default. Note that on Windows the running process
-/// always has to exit for the file swap to happen (Windows won't let you
-/// overwrite a running .exe), so `relaunch: false` there still closes the
-/// app — it just skips the "start it back up" step. On Linux the file can
-/// be swapped while still running, so with `relaunch: false` the app simply
-/// keeps running on the old code in memory and returns normally; the new
-/// version takes effect next time it's launched.
+/// afterwards.
 #[tauri::command]
 pub fn install_update(downloaded_path: String, relaunch: bool) -> Result<(), String> {
     let downloaded_path = PathBuf::from(downloaded_path);
@@ -281,65 +311,113 @@ pub fn install_update(downloaded_path: String, relaunch: bool) -> Result<(), Str
     }
 }
 
-/// Windows can't overwrite a running .exe, so a tiny helper batch script is
-/// spawned (detached from us) that waits a moment for this process to fully
-/// exit, moves the downloaded file over the current exe, optionally
-/// relaunches it, then deletes itself. We exit right after spawning it
-/// either way, since the move can't happen until we're gone.
+/// Windows Update Helper: spawns a detached helper script (PowerShell + CMD fallback)
+/// that waits for this process to exit, safely swaps the executable (with retry and .old rename),
+/// relaunches the application if requested, and cleans up temporary files.
 #[cfg(target_os = "windows")]
 fn install_update_windows(downloaded_path: &std::path::Path, relaunch: bool) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
 
     let current_exe =
         std::env::current_exe().map_err(|e| format!("Failed to locate running exe: {e}"))?;
+    let current_pid = std::process::id();
 
-    let start_line = if relaunch {
-        format!("start \"\" \"{current}\"\r\n", current = current_exe.display())
-    } else {
-        String::new()
-    };
-    let script_path = std::env::temp_dir().join("zerolauncher_update.bat");
-    let script = format!(
-        "@echo off\r\n\
-         timeout /t 2 /nobreak > NUL\r\n\
-         move /Y \"{new}\" \"{current}\"\r\n\
-         {start_line}\
-         del \"%~f0\"\r\n",
-        new = downloaded_path.display(),
-        current = current_exe.display(),
-        start_line = start_line,
+    let updater_ps1 = std::env::temp_dir().join("zerolauncher_update_helper.ps1");
+    let updater_bat = std::env::temp_dir().join("zerolauncher_update_helper.bat");
+
+    let ps1_content = format!(
+        r#"param([int]$TargetPid, [string]$SourcePath, [string]$DestPath, [bool]$Relaunch)
+$ErrorActionPreference = 'SilentlyContinue'
+
+# Wait for parent process to exit
+if ($TargetPid -gt 0) {{
+    try {{
+        $proc = Get-Process -Id $TargetPid -ErrorAction SilentlyContinue
+        if ($proc) {{
+            $proc.WaitForExit(15000)
+        }}
+    }} catch {{}}
+}}
+Start-Sleep -Milliseconds 300
+
+# Retry replacement loop
+$success = $false
+for ($i = 0; $i -lt 30; $i++) {{
+    try {{
+        $oldPath = "$DestPath.old"
+        if (Test-Path -LiteralPath $oldPath) {{
+            Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue
+        }}
+        if (Test-Path -LiteralPath $DestPath) {{
+            Rename-Item -LiteralPath $DestPath -NewName (Split-Path $oldPath -Leaf) -Force -ErrorAction SilentlyContinue
+        }}
+        Move-Item -LiteralPath $SourcePath -Destination $DestPath -Force -ErrorAction Stop
+        $success = $true
+        break
+    }} catch {{
+        Start-Sleep -Milliseconds 300
+    }}
+}}
+
+# Remove backup if possible
+if (Test-Path -LiteralPath "$DestPath.old") {{
+    Remove-Item -LiteralPath "$DestPath.old" -Force -ErrorAction SilentlyContinue
+}}
+
+# Relaunch if requested and successful
+if ($Relaunch -and $success) {{
+    Start-Process -FilePath $DestPath
+}}
+
+# Clean up helper
+Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+"#,
     );
-    std::fs::write(&script_path, script)
-        .map_err(|e| format!("Failed to write updater script: {e}"))?;
+
+    std::fs::write(&updater_ps1, ps1_content)
+        .map_err(|e| format!("Failed to write update helper script: {e}"))?;
+
+    let bat_content = format!(
+        "@echo off\r\n\
+         powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{ps1}\" -TargetPid {pid} -SourcePath \"{src}\" -DestPath \"{dst}\" -Relaunch {relaunch}\r\n\
+         del \"%~f0\"\r\n",
+        ps1 = updater_ps1.display(),
+        pid = current_pid,
+        src = downloaded_path.display(),
+        dst = current_exe.display(),
+        relaunch = if relaunch { "$true" } else { "$false" }
+    );
+
+    std::fs::write(&updater_bat, bat_content)
+        .map_err(|e| format!("Failed to write update launcher batch: {e}"))?;
 
     const CREATE_NO_WINDOW: u32 = 0x08000000;
+    const DETACHED_PROCESS: u32 = 0x00000008;
     std::process::Command::new("cmd")
-        .args(["/C", &script_path.to_string_lossy()])
-        .creation_flags(CREATE_NO_WINDOW)
+        .args(["/C", &updater_bat.to_string_lossy()])
+        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
         .spawn()
-        .map_err(|e| format!("Failed to launch updater: {e}"))?;
+        .map_err(|e| format!("Failed to launch update helper: {e}"))?;
 
     std::process::exit(0);
 }
 
-/// Linux (including AppImage) allows replacing a file that's currently
-/// executing — the running process keeps its old inode open until it
-/// exits, and the path just points at the new file from then on. So we can
-/// swap the file directly with no helper script, and don't have to exit
-/// unless the caller actually asked to relaunch.
+/// Linux Update: unlinks the current executable/AppImage (preventing ETXTBSY errors),
+/// replaces it with the newly downloaded file, sets 0755 permissions, and if relaunch is
+/// requested, cleanly spawns the new process with cleared AppImage environment variables.
 #[cfg(not(target_os = "windows"))]
 fn install_update_linux(downloaded_path: &std::path::Path, relaunch: bool) -> Result<(), String> {
-    // Prefer $APPIMAGE (the real AppImage path) when running as an
-    // AppImage — `current_exe()` there resolves into the temporary
-    // squashfs mount, not the actual file on disk.
     let current_exe = std::env::var_os("APPIMAGE")
         .map(PathBuf::from)
         .or_else(|| std::env::current_exe().ok())
         .ok_or_else(|| "Failed to locate the running executable.".to_string())?;
 
-    // `rename` is atomic and works even while the old file is running, but
-    // only within the same filesystem — fall back to copy+remove for the
-    // (rarer) case where the update was downloaded to a different device.
+    // Unlink the current executable first. Linux allows unlinking a running
+    // file from directory entries without affecting the active in-memory process.
+    // This eliminates ETXTBSY ("Text file busy") errors when copying or renaming.
+    let _ = std::fs::remove_file(&current_exe);
+
+    // Rename is atomic within the same filesystem; fall back to copy+remove if across mounts.
     if std::fs::rename(downloaded_path, &current_exe).is_err() {
         std::fs::copy(downloaded_path, &current_exe)
             .map_err(|e| format!("Failed to replace current executable: {e}"))?;
@@ -354,22 +432,25 @@ fn install_update_linux(downloaded_path: &std::path::Path, relaunch: bool) -> Re
     }
 
     if !relaunch {
-        // File is swapped; the currently-running process just keeps going
-        // on the old code until the user quits and starts it again.
         return Ok(());
     }
 
-    #[allow(unused_mut)]
-    let mut relaunch_cmd = std::process::Command::new(&current_exe);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        relaunch_cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    relaunch_cmd
-        .spawn()
-        .map_err(|e| format!("Failed to relaunch after update: {e}"))?;
+    // When relaunching from an AppImage, AppImage runtime environment variables
+    // (APPDIR, APPIMAGE, ARGV0, OWD) must be cleared so the updated AppImage
+    // initializes its own environment cleanly.
+    let exe_str = current_exe.to_string_lossy().to_string();
+    let script = format!(
+        "sleep 0.3; exec \"{}\" >/dev/null 2>&1 &",
+        exe_str.replace('"', "\\\"")
+    );
 
+    let mut cmd = std::process::Command::new("/bin/sh");
+    cmd.arg("-c").arg(script);
+    cmd.env_remove("APPDIR");
+    cmd.env_remove("APPIMAGE");
+    cmd.env_remove("ARGV0");
+    cmd.env_remove("OWD");
+
+    let _ = cmd.spawn();
     std::process::exit(0);
 }

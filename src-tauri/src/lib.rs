@@ -63,6 +63,9 @@ pub fn run() {
             data_dir.push("Zero Launcher");
             std::fs::create_dir_all(&data_dir).ok();
 
+            // Clean up any temporary files or backups from previous updates
+            commands::updater::cleanup_updater_leftovers(&data_dir);
+
             // Initialize app state with persistence in the platform data dir
             let state = AppState::new(data_dir.clone());
 

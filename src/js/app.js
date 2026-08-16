@@ -9397,10 +9397,8 @@ function initAutoUpdate() {
   const openFolderBtn = document.getElementById('btn-open-update-folder');
   const copyLinkBtn = document.getElementById('btn-copy-update-link');
 
-  // Off by default — installing without relaunching lets people finish
-  // whatever they're doing (or scan the freshly-swapped file) before the
-  // new version actually starts.
-  if (relaunchToggle) relaunchToggle.checked = false;
+  // On by default — automatically reopens the app once the update is installed
+  if (relaunchToggle) relaunchToggle.checked = true;
 
   const close = () => {
     overlay.classList.add('hidden');

@@ -166,6 +166,20 @@ fn perform_install(app: &AppHandle) -> Result<(), String> {
     let dest = dir.join(target_exe_name());
 
     if src != dest {
+        #[cfg(target_os = "linux")]
+        {
+            let _ = fs::remove_file(&dest);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            if dest.exists() {
+                let old_path = dest.with_extension("exe.old");
+                let _ = fs::remove_file(&old_path);
+                let _ = fs::rename(&dest, &old_path);
+                let _ = fs::remove_file(&dest);
+            }
+        }
+
         fs::copy(&src, &dest).map_err(|e| format!("copy to {} failed: {e}", dest.display()))?;
 
         #[cfg(unix)]
