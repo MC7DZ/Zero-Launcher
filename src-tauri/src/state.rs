@@ -43,6 +43,11 @@ pub struct AppState {
     /// couldn't be opened (never fatal — logging still works in-memory and
     /// in the UI console, it just won't be persisted to disk that run).
     pub log_file: Mutex<Option<std::fs::File>>,
+    /// Device-code sign-in currently in progress (if any) — set by
+    /// `microsoft_device_code_start`, read/cleared by
+    /// `microsoft_device_code_poll`. Only one device-code sign-in can be
+    /// in flight at a time.
+    pub device_code_session: Mutex<Option<String>>,
 }
 
 const MAX_LOG_ENTRIES: usize = 10_000;
@@ -64,8 +69,13 @@ impl AppState {
                 .to_string_lossy()
                 .to_string();
         }
-        let accounts = Self::load_json::<Vec<AccountInfo>>(&data_dir, "accounts.json")
+        let mut accounts = Self::load_json::<Vec<AccountInfo>>(&data_dir, "accounts.json")
             .unwrap_or_default();
+        // Defensive normalization: older builds (or a hand-edited
+        // accounts.json) could leave more than one account marked active
+        // at once. Only the first one found wins; everything else is
+        // corrected on load so the UI can never show two "in use" badges.
+        crate::models::normalize_single_active_account(&mut accounts);
 
         // Instances are tracked per-game-directory, stored alongside the
         // actual version files at <game_directory>/versions/instances.json,
@@ -94,6 +104,7 @@ impl AppState {
             download_cancelled: AtomicBool::new(false),
             generic_cancels: Mutex::new(HashMap::new()),
             log_file: Mutex::new(log_file),
+            device_code_session: Mutex::new(None),
         }
     }
 

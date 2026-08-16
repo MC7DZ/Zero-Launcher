@@ -1,6 +1,6 @@
 [package]
 name = "ZeroLauncher"
-version = "2.0.1"
+version = "2.0.0"
 edition = "2021"
 
 [lib]
@@ -22,8 +22,8 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
 url = "2"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "hickory-dns"] }
-mc-launcher-core = "0.1"
+reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls", "hickory-dns"] }
+mc-launcher-core = { path = "vendor/mc-launcher-core" }
 open = "5.4.0"
 zip = "8.6.0"
 discord-rich-presence = "1.1.0"
@@ -34,8 +34,3 @@ tar = "0.4"
 [target.'cfg(windows)'.dependencies]
 mslnk = "0.1"
 
-# Patched locally to download library/asset/client jars in parallel instead
-# of one file at a time (upstream `execute_plan` was fully sequential).
-# See vendor/mc-launcher-core/src/net/download.rs for the change.
-[patch.crates-io]
-mc-launcher-core = { path = "vendor/mc-launcher-core" }

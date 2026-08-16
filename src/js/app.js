@@ -12,6 +12,29 @@ import iconFabric from '../assets/loaders/fabric.png';
 import iconForge from '../assets/loaders/forge.png';
 import iconNeoforge from '../assets/loaders/neoforge.png';
 import iconQuilt from '../assets/loaders/quilt.png';
+import defaultOfflineSkin from '../assets/default-offline-skin.png';
+// "Unknown" placeholder skin — a question-mark-textured skin, bundled
+// locally (not hotlinked) so it always loads reliably regardless of
+// network access. Used anywhere the app shows a stand-in for "no real
+// skin" (Anonymous Skin mode, offline fallback).
+import unknownSkin from '../assets/unknown-skin.png';
+
+// ── 3D Skin Viewer (skin3d) ──
+import {
+  Render,
+  IdleAnimation,
+  WalkingAnimation,
+  RunningAnimation,
+  WaveAnimation,
+  CrouchAnimation,
+  FlyingAnimation,
+  HitAnimation,
+  NameTagObject
+} from 'skin3d';
+
+// Default test skin
+const SHOW_SKIN_URL = 'https://s.namemc.com/i/ab729cae898846de.png';
+const SHOW_SKIN_NAMEMC_URL = 'https://namemc.com/skin/ab729cae898846de';
 
 const LOADER_ICONS = {
   vanilla: iconVanilla,
@@ -70,62 +93,59 @@ const ICON_WARNING_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www
 // Discover download button), an IntersectionObserver just toggles a
 // `.is-culled` class that strips the expensive-to-repaint visual effects
 // while a card is off-screen, and restores them the moment it scrolls back
-// into view. Content and listeners stay intact throughout.
 function enableCardCulling(container, cardSelector, options = {}) {
-  if (!container || container.dataset.cullingEnabled === '1') return;
-  container.dataset.cullingEnabled = '1';
+  if (!container) return;
 
-  // The real bug: IntersectionObserver defaults to the browser viewport as
-  // its root, but every scrollable list here lives inside an absolutely
-  // positioned `.tab-page` (or, for the instance list, itself) with its own
-  // `overflow-y: auto`. Comparing against the viewport meant cards scrolled
-  // out of that inner container still counted as "visible" (the container
-  // itself was on-screen), so nothing ever got culled. Root must be the
-  // actual scrolling ancestor.
-  const scrollRoot = options.root || container.closest('.tab-page') || container;
-  const rootMargin = options.rootMargin || '250px 0px';
+  if (container._cullObserver) {
+    container._cullObserver.disconnect();
+    container._cullObserver = null;
+  }
+
+  const root = options.root || null;
+  const rootMargin = options.rootMargin || '300px 0px';
 
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
-      entry.target.classList.toggle('is-culled', !entry.isIntersecting);
-    });
-  }, { root: scrollRoot, rootMargin, threshold: 0 });
-
-  const observeAll = () => {
-    container.querySelectorAll(cardSelector).forEach(card => {
-      if (card.dataset.cullObserved !== '1') {
-        card.dataset.cullObserved = '1';
-        observer.observe(card);
+      const card = entry.target;
+      if (entry.isIntersecting) {
+        if (card.classList.contains('is-culled')) {
+          card.classList.remove('is-culled');
+          card.style.minHeight = '';
+        }
+        if (card._triggerLoad) {
+          card._triggerLoad();
+        }
+      } else {
+        if (!card.classList.contains('is-culled')) {
+          const h = card.offsetHeight;
+          if (h > 40) {
+            card.style.minHeight = `${h}px`;
+          }
+          card.classList.add('is-culled');
+        }
       }
     });
-  };
-  observeAll();
+  }, {
+    root,
+    rootMargin,
+    threshold: 0,
+  });
 
-  new MutationObserver(observeAll).observe(container, { childList: true });
+  container._cullObserver = observer;
+  container.dataset.cullingEnabled = '1';
 
-  // The other real bug: `scrollRoot` is a `.tab-page`, which gets
-  // `display: none` while its tab isn't active. A root with no layout box
-  // has no viewport to intersect against, so every observed card gets
-  // reported as non-intersecting and is marked `.is-culled` while hidden —
-  // that's expected. The problem is that some WebViews don't reliably fire
-  // a fresh IntersectionObserver callback the moment that root regains a
-  // layout box (tab becomes active again), so cards can stay stuck
-  // `.is-culled` — losing their blur/shadow — even though they're back on
-  // screen. Stash what's needed to force a recheck, and remember it on the
-  // container so a tab-activation hook can call it.
+  const cards = container.querySelectorAll(cardSelector);
+  cards.forEach(card => observer.observe(card));
+
   container._cullRefresh = () => {
-    container.querySelectorAll(cardSelector).forEach(card => {
+    const currentCards = container.querySelectorAll(cardSelector);
+    currentCards.forEach(card => {
       observer.unobserve(card);
-      card.classList.remove('is-culled');
-      delete card.dataset.cullObserved;
+      observer.observe(card);
     });
-    observeAll();
   };
 }
 
-// Call when a `.tab-page` (or any ancestor) becomes visible again, to force
-// any culled cards inside it to be re-checked immediately instead of
-// potentially staying stuck invisible. See enableCardCulling() above.
 function refreshCardCullingIn(root) {
   if (!root) return;
   if (root.dataset && root.dataset.cullingEnabled === '1' && root._cullRefresh) {
@@ -141,6 +161,13 @@ const api = {
   addOfflineAccount: (username) => invoke('add_offline_account', { username }),
   removeAccount: (id) => invoke('remove_account', { id }),
   setActiveAccount: (id) => invoke('set_active_account', { id }),
+  microsoftDeviceCodeStart: () => invoke('microsoft_device_code_start'),
+  microsoftDeviceCodePoll: () => invoke('microsoft_device_code_poll'),
+  microsoftDeviceCodeCancel: () => invoke('microsoft_device_code_cancel'),
+  refreshMicrosoftAccount: (id) => invoke('refresh_microsoft_account', { id }),
+  refreshAllMicrosoftAccounts: () => invoke('refresh_all_microsoft_accounts'),
+  cacheAccountSkin: (username, renderUrl) => invoke('cache_account_skin', { username, renderUrl }),
+  listCachedSkins: () => invoke('list_cached_skins'),
   getSettings: () => invoke('get_settings'),
   updateSettings: (settings) => invoke('save_settings', { settings }),
   getMusicDir: () => invoke('get_music_dir'),
@@ -149,7 +176,8 @@ const api = {
   getLauncherVersion: () => invoke('get_launcher_version'),
   checkForUpdate: () => invoke('check_for_update'),
   downloadUpdate: (url) => invoke('download_update', { url }),
-  installUpdate: (downloadedPath) => invoke('install_update', { downloadedPath }),
+  installUpdate: (downloadedPath, relaunch) => invoke('install_update', { downloadedPath, relaunch }),
+  openCurrentExeFolder: () => invoke('open_current_exe_folder'),
   listMusicFiles: () => invoke('list_music_files'),
   readMusicFile: (fileName) => invoke('read_music_file', { fileName }),
   getAvailableVersions: () => invoke('get_available_versions'),
@@ -273,9 +301,48 @@ const TOAST_MAX_VISIBLE = 4;
 const toastQueue = [];
 let activeToasts = [];
 
+// Tracks whether the launcher window currently has OS focus. Error toasts
+// are held back while the window isn't focused (minimized, alt-tabbed
+// away, on another desktop/monitor while playing) and released the
+// moment focus comes back, rather than popping up — and possibly
+// stealing attention or getting dismissed unseen — while nobody's
+// actually looking at the launcher. Non-error toasts (success/info/
+// warning) aren't held back; those are for things the user just did.
+let windowHasFocus = typeof document !== 'undefined' ? document.hasFocus() : true;
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', () => {
+    windowHasFocus = true;
+    drainToastQueue();
+  });
+  window.addEventListener('blur', () => { windowHasFocus = false; });
+}
+
+function drainToastQueue() {
+  // Walk the queue in order, but skip over (leave in place) any error
+  // toast while the window is unfocused rather than stopping at it — a
+  // success/info toast queued behind a held-back error should still show.
+  let i = 0;
+  while (activeToasts.length < TOAST_MAX_VISIBLE && i < toastQueue.length) {
+    const next = toastQueue[i];
+    if (next.type === 'error' && !windowHasFocus) {
+      i += 1;
+      continue;
+    }
+    toastQueue.splice(i, 1);
+    spawnToast(next.message, next.type, next.title, next.actions);
+  }
+}
+
 function showToast(message, type = 'info', title, actions) {
   if (!title) {
     title = type === 'success' ? 'Success' : type === 'error' ? 'Error' : type === 'warning' ? 'Warning' : 'Info';
+  }
+  if (type === 'error' && !windowHasFocus) {
+    // Held until the window regains focus (see drainToastQueue). Still
+    // queued — not dropped — so the user sees it as soon as they're back,
+    // it just won't visibly interrupt/pop up while they're away.
+    toastQueue.push({ message, type, title, actions });
+    return;
   }
   if (activeToasts.length >= TOAST_MAX_VISIBLE) {
     toastQueue.push({ message, type, title, actions });
@@ -350,9 +417,16 @@ function spawnToast(message, type, title, actions) {
   t.addEventListener('mouseenter', () => { entry.paused = true; });
   t.addEventListener('mouseleave', () => { entry.paused = false; });
 
-  // Animate progress bar
+  // Animate progress bar. Use a transform (scaleX) instead of animating
+  // `width` — width changes force a layout/reflow on every frame, transform
+  // is composited and much cheaper. Also throttle updates to ~10/sec since
+  // a countdown bar doesn't need to redraw 60 times a second.
   const bar = t.querySelector('.toast-progress-bar');
+  bar.style.transformOrigin = 'left center';
+  bar.style.width = '100%';
   let lastTime = performance.now();
+  let lastPaint = 0;
+  const PAINT_INTERVAL = 100; // ms
 
   function tick(now) {
     if (entry.removed) return;
@@ -360,11 +434,15 @@ function spawnToast(message, type, title, actions) {
     lastTime = now;
     if (!entry.paused) {
       entry.remaining -= dt;
-      const pct = Math.max(0, (entry.remaining / entry.total) * 100);
-      bar.style.width = pct + '%';
       if (entry.remaining <= 0) {
+        bar.style.transform = 'scaleX(0)';
         dismissToast(entry);
         return;
+      }
+      if (now - lastPaint >= PAINT_INTERVAL) {
+        lastPaint = now;
+        const pct = Math.max(0, entry.remaining / entry.total);
+        bar.style.transform = `scaleX(${pct})`;
       }
     }
     requestAnimationFrame(tick);
@@ -379,11 +457,7 @@ function dismissToast(entry) {
   setTimeout(() => {
     entry.el.remove();
     activeToasts = activeToasts.filter(e => e !== entry);
-    // Drain queue
-    while (activeToasts.length < TOAST_MAX_VISIBLE && toastQueue.length > 0) {
-      const next = toastQueue.shift();
-      spawnToast(next.message, next.type, next.title, next.actions);
-    }
+    drainToastQueue();
   }, 220);
 }
 window.showToast = showToast;
@@ -403,12 +477,35 @@ function initTabs() {
         page.classList.add('active');
         refreshCardCullingIn(page);
       }
-
       // Lazy-load data when switching
-      if (tabId === 'mods') {
-        loadModInstances().then(() => loadMods()).catch(() => {});
+      if (tabId === 'instances') {
+        if (!skinMiniPreviewInstance) {
+          initSkinMiniPreview();
+        } else {
+          skinMiniPreviewInstance.renderPaused = false;
+          resizeSkinMiniPreview();
+          updateSkinMiniPreview();
+        }
+      } else {
+        // Pause 3D WebGL render loop when not viewing Instances tab to ensure silky smooth scrolling
+        if (skinMiniPreviewInstance) {
+          skinMiniPreviewInstance.renderPaused = true;
+        }
       }
-      if (tabId === 'discover') initDiscoverTabIfNeeded();
+      if (tabId === 'mods') {
+        loadModInstances().then(() => {
+          loadMods();
+          refreshModsVirtualCards();
+        }).catch(() => {});
+      } else {
+        unloadAllModsVirtualCards();
+      }
+      if (tabId === 'discover') {
+        initDiscoverTabIfNeeded();
+        refreshDiscoverVirtualCards();
+      } else {
+        unloadAllDiscoverVirtualCards();
+      }
       if (tabId === 'presets') initPresetsTabIfNeeded();
       if (tabId === 'settings') { loadSettings(); renderHiddenInstancesSettings(); }
 
@@ -416,6 +513,25 @@ function initTabs() {
       const tabName = tabId.charAt(0).toUpperCase() + tabId.slice(1);
       api.updateDiscordPresence(tabName, null, null).catch(() => { });
     });
+  });
+
+  // Global Keybinds: Alt + 1..5 for fast Tab Switching
+  window.addEventListener('keydown', (e) => {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      const tabMap = {
+        '1': 'instances',
+        '2': 'mods',
+        '3': 'discover',
+        '4': 'presets',
+        '5': 'settings'
+      };
+      const targetTab = tabMap[e.key];
+      if (targetTab) {
+        e.preventDefault();
+        const tabBtn = document.querySelector(`.pill-tab[data-tab="${targetTab}"]`);
+        if (tabBtn) tabBtn.click();
+      }
+    }
   });
 }
 
@@ -447,8 +563,64 @@ function applyUsernamePrivacy() {
   refreshAccountUI().catch(() => {});
 }
 
+// Shows one of: the account list + "add account" button (accounts exist),
+// or the empty-state choice screen (no accounts yet). Also used to reset
+// the modal back to its default view whenever it's (re)opened.
+function showAccountView(view) {
+  const map = {
+    list: 'account-list-section',
+    empty: 'account-empty-state',
+    msa: 'account-msa-section',
+    offline: 'account-offline-section',
+  };
+  Object.values(map).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  const target = document.getElementById(map[view]);
+  if (target) target.classList.remove('hidden');
+}
+
+// Accounts Manager auto-refresh: while the modal is open, silently
+// re-validate every saved Microsoft account's session in the background
+// and re-render the list, so an account that expires (or gets fixed by
+// signing in on another device) shows up-to-date without the user having
+// to manually hit Verify or close/reopen the modal.
+let accountManagerAutoRefreshTimer = null;
+const ACCOUNT_MANAGER_AUTO_REFRESH_MS = 60_000;
+
+function startAccountManagerAutoRefresh() {
+  stopAccountManagerAutoRefresh();
+  accountManagerAutoRefreshTimer = setInterval(async () => {
+    try {
+      await api.refreshAllMicrosoftAccounts();
+    } catch (_) {
+      // Best-effort — a failed refresh just leaves needs_reauth set on
+      // whichever account it was, which the next refreshAccountUI() call
+      // will surface normally.
+    }
+    refreshAccountUI().catch(() => {});
+  }, ACCOUNT_MANAGER_AUTO_REFRESH_MS);
+}
+
+function stopAccountManagerAutoRefresh() {
+  if (accountManagerAutoRefreshTimer) {
+    clearInterval(accountManagerAutoRefreshTimer);
+    accountManagerAutoRefreshTimer = null;
+  }
+}
+
+// Small type-indicator icons for the account list — a Microsoft/Xbox-style
+// glyph for online accounts, a "no signal" glyph for offline ones (they
+// never touch the network to authenticate).
+const ACCOUNT_TYPE_ICON_MICROSOFT = `<svg viewBox="0 0 24 24" width="12" height="12" style="flex-shrink:0;"><rect x="2" y="2" width="9" height="9" fill="#f35325"/><rect x="13" y="2" width="9" height="9" fill="#81bc06"/><rect x="2" y="13" width="9" height="9" fill="#05a6f0"/><rect x="13" y="13" width="9" height="9" fill="#ffba08"/></svg>`;
+const ACCOUNT_TYPE_ICON_OFFLINE = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>`;
+
 async function refreshAccountUI() {
   try {
+    renderInstanceList();
+    updateSkinMiniPreview().catch(() => {});
+
     const accounts = await api.getAccounts();
     const active = accounts.find(a => a.is_active);
     const accountNameEl = document.getElementById('account-name');
@@ -456,14 +628,50 @@ async function refreshAccountUI() {
       accountNameEl.textContent = active ? maskUsernameForDisplay(active.username) : 'No account';
     }
 
+    // If the active Microsoft account's session expired (or something else
+    // went wrong signing it back in), flag the header account button so
+    // it's obvious at a glance that it needs attention before it'll work.
+    const accountBtnEl = document.getElementById('account-btn');
+    if (accountBtnEl) {
+      const needsReauth = !!(active && active.needs_reauth);
+      accountBtnEl.classList.toggle('account-button-needs-reauth', needsReauth);
+      accountBtnEl.title = needsReauth
+        ? 'Microsoft sign-in expired — click to sign in again'
+        : '';
+    }
+
+    const headerImg = document.getElementById('account-header-avatar-img');
+    const headerFallback = document.getElementById('account-header-fallback');
+    if (headerImg && headerFallback) {
+      if (active && !shouldUseUnknownProfilePic(active)) {
+        const headKey = encodeURIComponent(active.mc_uuid || active.username || 'MHF_Steve');
+        headerImg.src = `https://mc-heads.net/avatar/${headKey}/32`;
+        headerImg.classList.remove('hidden');
+        headerFallback.style.display = 'none';
+        headerImg.onerror = () => {
+          headerImg.classList.add('hidden');
+          headerFallback.style.display = '';
+        };
+      } else {
+        // No active account, or the account's Profile Picture is set to
+        // "Use Unknown" — show the black "?" placeholder instead of
+        // fetching/displaying the real head render.
+        headerImg.classList.add('hidden');
+        headerImg.removeAttribute('src');
+        headerFallback.style.display = '';
+      }
+    }
+
     const list = document.getElementById('modal-account-list');
     if (!list) return;
     list.innerHTML = '';
 
     if (accounts.length === 0) {
-      list.innerHTML = '<div class="empty-state" style="height:70px"><span>No accounts added yet</span></div>';
+      showAccountView('empty');
       return;
     }
+
+    showAccountView('list');
 
     accounts.forEach(acc => {
       const item = document.createElement('div');
@@ -476,19 +684,46 @@ async function refreshAccountUI() {
         border-radius: 8px;
         background: ${acc.is_active ? 'var(--accent-dim)' : 'rgba(255,255,255,0.04)'};
         border: 1px solid ${acc.is_active ? 'var(--accent)' : 'rgba(255,255,255,0.08)'};
+        position: relative;
+        overflow: hidden;
       `;
 
       const initial = (acc.username || 'A').charAt(0).toUpperCase();
       const shownName = escapeHtml(maskUsernameForDisplay(acc.username));
+      const isMsa = acc.account_type === 'microsoft';
+      const useUnknownPic = shouldUseUnknownProfilePic(acc);
+      // Player-head avatar: keyed by the real Minecraft UUID when we have one
+      // (Microsoft accounts), otherwise by username (offline accounts get
+      // whatever skin — Steve/Alex — that name resolves to). Skipped
+      // entirely when this account's Profile Picture is set to "Use
+      // Unknown" — shows the black "?" placeholder instead.
+      const headKey = encodeURIComponent(acc.mc_uuid || acc.username || 'MHF_Steve');
+      const headUrl = `https://mc-heads.net/avatar/${headKey}/64`;
+      const needsReauth = !!acc.needs_reauth;
+      // Expired sessions get a cracked-glass texture across the whole card
+      // background (yellow-gradient tinted) plus a matching "Sign-in
+      // expired" tag next to the account name.
+      item.classList.toggle('account-item-reauth', needsReauth);
       item.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div style="width:32px; height:32px; border-radius:50%; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px;">${initial}</div>
+        ${needsReauth ? '<div class="account-item-crack" aria-hidden="true"></div>' : ''}
+        <div style="display:flex; align-items:center; gap:12px; position:relative; z-index:1;">
+          <div class="account-avatar">
+            <span class="account-avatar-fallback${useUnknownPic ? ' account-avatar-fallback-mc' : ''}">${useUnknownPic ? '?' : initial}</span>
+            ${useUnknownPic ? '' : `<img src="${headUrl}" alt="" loading="lazy" onerror="this.remove()" onload="this.previousElementSibling.style.display='none'" />`}
+          </div>
           <div>
-            <div style="font-weight:600; font-size:14px; color:var(--text);">${shownName}</div>
-            <div style="font-size:11px; color:var(--text-muted);">${acc.is_active ? '<span style="color:var(--accent); font-weight:700;">● Active Account</span>' : 'Offline Account'}</div>
+            <div style="display:flex; align-items:center; gap:8px; font-size:14px;">
+              <span style="font-weight:600; color:var(--text);">${shownName}</span>
+              ${needsReauth ? '<span class="account-reauth-tag">⚠ Sign-in expired</span>' : ''}
+            </div>
+            <div style="display:flex; align-items:center; gap:5px; font-size:11px; color:var(--text-muted); margin-top:2px;">
+              ${isMsa ? ACCOUNT_TYPE_ICON_MICROSOFT : ACCOUNT_TYPE_ICON_OFFLINE}
+              <span>${isMsa ? 'Microsoft Account' : 'Offline Account'}</span>
+              ${(!needsReauth && acc.is_active) ? '<span style="color:var(--accent); font-weight:700; margin-left:4px;">● In Use</span>' : ''}
+            </div>
           </div>
         </div>
-        <div style="display:flex; gap:6px;">
+        <div style="display:flex; gap:6px; position:relative; z-index:1;">
           ${!acc.is_active ? `<button class="btn-secondary btn-sm btn-select-account" data-id="${acc.id}">Select</button>` : ''}
           <button class="btn-danger-outline btn-sm btn-delete-account" data-id="${acc.id}" title="Remove Account">✕</button>
         </div>
@@ -535,18 +770,140 @@ function initAccountDropdown() {
   const doneBtn = document.getElementById('btn-done-account-modal');
   const createBtn = document.getElementById('btn-modal-add-account');
   const usernameInput = document.getElementById('modal-new-username');
+  const showAddBtn = document.getElementById('btn-show-add-account');
+  const choiceMsaBtn = document.getElementById('btn-choice-msa');
+  const choiceOfflineBtn = document.getElementById('btn-choice-offline');
+  const backBtns = document.querySelectorAll('.btn-back-to-choices');
+
+  // Device-code sign-in elements
+  const methodChoice = document.getElementById('msa-method-choice');
+  const devicePanel = document.getElementById('msa-device-panel');
+  const deviceLoginBtn = document.getElementById('btn-msa-device-login');
+  const deviceCodeEl = document.getElementById('msa-device-code');
+  const deviceOpenBtn = document.getElementById('btn-msa-device-open');
+  const deviceStatusEl = document.getElementById('msa-device-status');
+  const deviceCancelBtn = document.getElementById('btn-msa-device-cancel');
+  let devicePollTimer = null;
+  let deviceVerificationUri = '';
+
+  function stopDevicePolling() {
+    if (devicePollTimer) {
+      clearTimeout(devicePollTimer);
+      devicePollTimer = null;
+    }
+  }
+
+  function setDeviceStatus(text, isError) {
+    if (!deviceStatusEl) return;
+    deviceStatusEl.innerHTML = isError
+      ? escapeHtml(text)
+      : `<span class="msa-device-spinner" style="width:10px; height:10px; border-radius:50%; border:2px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span> ${escapeHtml(text)}`;
+    deviceStatusEl.style.color = isError ? 'var(--danger, #ef4444)' : 'var(--text-muted)';
+  }
+
+  async function pollDeviceCode(intervalSeconds) {
+    try {
+      const account = await api.microsoftDeviceCodePoll();
+      if (account) {
+        stopDevicePolling();
+        await refreshAccountUI();
+        showToast(`Signed in as ${account.username || 'Microsoft account'}!`, 'success');
+        return;
+      }
+      // Still pending — poll again after the server-specified interval.
+      devicePollTimer = setTimeout(() => pollDeviceCode(intervalSeconds), intervalSeconds * 1000);
+    } catch (e) {
+      stopDevicePolling();
+      setDeviceStatus(String(e), true);
+      showToast('Microsoft sign-in failed: ' + e, 'error');
+    }
+  }
+
+  async function startDeviceCodeSignIn() {
+    if (!devicePanel) return;
+    methodChoice.classList.add('hidden');
+    devicePanel.classList.remove('hidden');
+    if (deviceCodeEl) deviceCodeEl.textContent = '— — — — —';
+    setDeviceStatus('Requesting a code…', false);
+    try {
+      const start = await api.microsoftDeviceCodeStart();
+      deviceVerificationUri = start.verification_uri || 'https://microsoft.com/link';
+      if (deviceCodeEl) deviceCodeEl.textContent = start.user_code;
+      setDeviceStatus('Waiting for you to sign in…', false);
+      const interval = Math.max(start.interval || 5, 3);
+      devicePollTimer = setTimeout(() => pollDeviceCode(interval), interval * 1000);
+    } catch (e) {
+      setDeviceStatus(String(e), true);
+      showToast('Could not start device sign-in: ' + e, 'error');
+    }
+  }
+
+  function backToMethodChoice() {
+    stopDevicePolling();
+    api.microsoftDeviceCodeCancel().catch(() => {});
+    if (devicePanel) devicePanel.classList.add('hidden');
+    if (methodChoice) methodChoice.classList.remove('hidden');
+  }
 
   // Open modal on account top-bar button click
   if (accountBtn && modalOverlay) {
     accountBtn.addEventListener('click', () => {
       modalOverlay.classList.remove('hidden');
       refreshAccountUI();
+      startAccountManagerAutoRefresh();
+    });
+  }
+
+  // "+ Add Account" (shown once accounts already exist) -> same choice screen
+  if (showAddBtn) {
+    showAddBtn.addEventListener('click', () => showAccountView('empty'));
+  }
+
+  if (choiceMsaBtn) {
+    choiceMsaBtn.addEventListener('click', () => {
+      backToMethodChoice();
+      showAccountView('msa');
+    });
+  }
+
+  if (choiceOfflineBtn) {
+    choiceOfflineBtn.addEventListener('click', () => {
+      showAccountView('offline');
       if (usernameInput) usernameInput.focus();
     });
   }
 
+  backBtns.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      backToMethodChoice();
+      const accounts = await api.getAccounts().catch(() => []);
+      showAccountView(accounts.length === 0 ? 'empty' : 'list');
+    });
+  });
+
+  if (deviceLoginBtn) {
+    deviceLoginBtn.addEventListener('click', startDeviceCodeSignIn);
+  }
+
+  if (deviceOpenBtn) {
+    deviceOpenBtn.addEventListener('click', async () => {
+      const url = deviceVerificationUri || 'https://microsoft.com/link';
+      if (window.__TAURI__ && window.__TAURI__.shell && window.__TAURI__.shell.open) {
+        await window.__TAURI__.shell.open(url);
+      } else {
+        window.open(url, '_blank');
+      }
+    });
+  }
+
+  if (deviceCancelBtn) {
+    deviceCancelBtn.addEventListener('click', backToMethodChoice);
+  }
+
   // Close modal functions
   const closeModal = () => {
+    stopDevicePolling();
+    stopAccountManagerAutoRefresh();
     if (modalOverlay) modalOverlay.classList.add('hidden');
   };
 
@@ -680,48 +1037,151 @@ function initDownloadWidget() {
   // (each just a name + status: downloading / completed / failed). ──
   const filesOverlay = document.getElementById('dl-files-overlay');
   const filesList = document.getElementById('dl-files-list');
+  const filesViewport = document.getElementById('dl-files-viewport');
   const filesTitle = document.getElementById('dl-files-title');
+  const filesSpeed = document.getElementById('dl-files-speed');
+
+  // Virtualized rendering: with a big modpack, `card.files` can easily hit
+  // several hundred entries. Keeping a live DOM row per file (even a
+  // reused one) meant every scroll/resize/reflow had hundreds of nodes to
+  // lay out, which is what caused the lag — the fix isn't fewer updates,
+  // it's fewer DOM nodes. Only the rows actually scrolled into view (plus
+  // a small buffer) are ever real elements; everything else just lives in
+  // `card.files` as plain data until it scrolls into range. Rows are also
+  // now a plain flat list (name + underline, no per-row track/bar), which
+  // trims one child element off every row versus the old bar-per-row
+  // layout — fewer nodes to lay out on top of the already-cheap lookups.
+  const ROW_HEIGHT = 44; // must match .dl-file-row's fixed height in CSS
+  const ROW_GAP = 0;
+  const ROW_STEP = ROW_HEIGHT + ROW_GAP;
+  const OVERSCAN = 8; // extra rows rendered above/below the visible band
+
   function renderFilesList(card) {
-    filesTitle.textContent = `Files — ${card.titleText || 'Download'}`;
-    const wasNearTop = filesList.scrollTop <= 4;
-    filesList.innerHTML = '';
+    filesTitle.textContent = card.titleText || 'Files';
+    filesSpeed.textContent = card.refs && card.refs.speed ? card.refs.speed.textContent : '—';
     if (!card.files.length) {
+      filesViewport.style.height = '0px';
+      filesViewport.innerHTML = '';
       const empty = document.createElement('div');
       empty.className = 'dl-files-empty';
       empty.textContent = 'No file breakdown available for this download.';
-      filesList.appendChild(empty);
+      filesViewport.appendChild(empty);
       return;
     }
+    const wasNearTop = filesList.scrollTop <= 4;
+
     // Newest/most-recently-touched file first (top), oldest at the
     // bottom — so whatever the download is doing right now is always
-    // the first thing visible without having to scroll.
-    [...card.files].reverse().forEach(f => {
-      const row = document.createElement('div');
-      row.className = 'dl-file-row dl-file-' + f.status;
-      const top = document.createElement('div');
-      top.className = 'dl-file-row-top';
-      const name = document.createElement('span');
-      name.className = 'dl-file-name';
-      name.textContent = f.name;
-      const status = document.createElement('span');
-      status.className = 'dl-file-status';
-      status.textContent = f.status === 'completed' ? 'Done' : f.status === 'failed' ? 'Failed' : f.status === 'pending' ? 'Waiting' : 'Downloading…';
-      top.appendChild(name);
-      top.appendChild(status);
-      const track = document.createElement('div');
-      track.className = 'dl-file-track';
-      const bar = document.createElement('div');
-      bar.className = 'dl-file-bar';
-      track.appendChild(bar);
-      row.appendChild(top);
-      row.appendChild(track);
-      filesList.appendChild(row);
-    });
+    // the first thing visible without having to scroll. We used to build
+    // this by copying+reversing `card.files` on every render call, which
+    // is an O(n) allocation for a list that can be thousands of entries
+    // long. Since we only ever need a small windowed slice (firstIndex..
+    // lastIndex) for the visible rows, we instead index straight into
+    // `card.files` from the end — no copy, no reversal.
+    const total = card.files.length;
+    const ordered = (i) => card.files[total - 1 - i];
+
+    filesViewport.style.height = `${total * ROW_STEP - ROW_GAP}px`;
+
+    if (!card.fileRowEls) card.fileRowEls = new Map(); // name -> {row, status, bar, index}
+
+    const viewportHeight = filesList.clientHeight || 360;
+    const scrollTop = filesList.scrollTop;
+    const firstIndex = Math.max(0, Math.floor(scrollTop / ROW_STEP) - OVERSCAN);
+    const lastIndex = Math.min(
+      total - 1,
+      Math.ceil((scrollTop + viewportHeight) / ROW_STEP) + OVERSCAN
+    );
+
+    const wantedNames = new Set();
+    for (let i = firstIndex; i <= lastIndex; i++) {
+      const f = ordered(i);
+      wantedNames.add(f.name);
+      let refs = card.fileRowEls.get(f.name);
+      if (!refs) {
+        // Flat row: just the filename, no per-row progress track/bar —
+        // one child element instead of the old name+status+track+bar
+        // structure, which keeps each row cheap to lay out even when
+        // hundreds are being created/recycled per second during a big
+        // install.
+        const row = document.createElement('div');
+        const nameRow = document.createElement('div');
+        nameRow.className = 'dl-file-name-row';
+        const name = document.createElement('span');
+        name.className = 'dl-file-name';
+        name.textContent = f.name;
+        const pct = document.createElement('span');
+        pct.className = 'dl-file-pct';
+        nameRow.appendChild(name);
+        nameRow.appendChild(pct);
+        const track = document.createElement('div');
+        track.className = 'dl-file-track';
+        const bar = document.createElement('div');
+        bar.className = 'dl-file-bar';
+        track.appendChild(bar);
+        row.appendChild(nameRow);
+        row.appendChild(track);
+        filesViewport.appendChild(row);
+        refs = { row, name, track, bar, pct };
+        card.fileRowEls.set(f.name, refs);
+      }
+      refs.row.className = 'dl-file-row dl-file-' + f.status;
+      refs.row.style.top = `${i * ROW_STEP}px`;
+      // Real byte-level percent when the server reported one; otherwise
+      // fall back to an indeterminate sweep so the row still reads as
+      // "in progress" rather than looking stalled at 0%. Completed/failed
+      // rows snap to a settled full/empty bar instead of animating.
+      const known = typeof f.percent === 'number';
+      refs.row.classList.toggle('dl-file-indeterminate', f.status === 'downloading' && !known);
+      if (f.status === 'completed') {
+        refs.bar.style.width = '100%';
+        refs.pct.textContent = '100%';
+      } else if (f.status === 'failed') {
+        refs.bar.style.width = '0%';
+        refs.pct.textContent = 'Failed';
+      } else if (f.status === 'pending') {
+        refs.bar.style.width = '0%';
+        refs.pct.textContent = '—';
+      } else if (known) {
+        const p = Math.max(0, Math.min(100, f.percent));
+        refs.bar.style.width = `${p}%`;
+        refs.pct.textContent = `${Math.round(p)}%`;
+      } else {
+        refs.pct.textContent = '—';
+      }
+    }
+
+    // Anything with a live row that scrolled out of the rendered band (or
+    // dropped out of `card.files` entirely) gets its DOM node removed —
+    // this is what keeps the node count bounded no matter how many total
+    // files the download touches.
+    for (const [name, refs] of card.fileRowEls) {
+      if (!wantedNames.has(name)) {
+        refs.row.remove();
+        card.fileRowEls.delete(name);
+      }
+    }
+
     // Only follow new activity to the top automatically if the person was
     // already up there — if they've scrolled down to look at earlier
     // files, leave them where they are instead of yanking the list back.
     if (wasNearTop) filesList.scrollTop = 0;
   }
+
+  // Scrolling changes which rows should be rendered even when nothing
+  // about the data changed, so it needs its own (cheap) re-render pass —
+  // rAF-throttled so a fast scroll wheel doesn't queue up redundant work.
+  let filesScrollRaf = null;
+  filesList.addEventListener('scroll', () => {
+    if (filesScrollRaf) return;
+    filesScrollRaf = requestAnimationFrame(() => {
+      filesScrollRaf = null;
+      if (filesWindowCardId == null) return;
+      const card = cards.get(filesWindowCardId);
+      if (card) renderFilesList(card);
+    });
+  });
+
   let filesWindowCardId = null;
   function openFilesWindow(card) {
     filesWindowCardId = card.id;
@@ -736,23 +1196,54 @@ function initDownloadWidget() {
   const closeFilesBtn = document.getElementById('btn-close-dl-files');
   if (closeFilesBtn) closeFilesBtn.addEventListener('click', () => filesOverlay.classList.add('hidden'));
 
+  // card.fileByName: name -> entry, kept in sync with card.files so
+  // fileStart/fileProgress/fileDone never need to scan (or, worse,
+  // copy+reverse) the full files array to find one entry. That scan used
+  // to run on every single progress tick — with a big modpack (thousands
+  // of files, several downloading in parallel with frequent byte-level
+  // updates) that's thousands of O(n) array allocations per second, which
+  // is what caused the lag. Lookups are now O(1) regardless of list size.
+  function getFileMap(card) {
+    if (!card.fileByName) card.fileByName = new Map();
+    return card.fileByName;
+  }
   function fileStart(id, name) {
     const card = cards.get(id);
     if (!card || !name) return;
-    const pending = card.files.find(f => f.name === name && f.status === 'pending');
-    if (pending) {
-      pending.status = 'downloading';
-    } else if (!card.files.find(f => f.name === name && f.status === 'downloading')) {
-      card.files.push({ name, status: 'downloading' });
+    const map = getFileMap(card);
+    const entry = map.get(name);
+    if (entry && entry.status === 'pending') {
+      entry.status = 'downloading';
+    } else if (!entry || entry.status !== 'downloading') {
+      const fresh = { name, status: 'downloading', percent: null };
+      card.files.push(fresh);
+      map.set(name, fresh);
     }
+    refreshFilesWindowIfOpen(id);
+  }
+  // Updates a currently-downloading file's real byte-level percent (0-100,
+  // or null when the server didn't report a content length for it). Only
+  // touches the in-memory entry — the visible bar is repainted the next
+  // time renderFilesList runs, same as any other file-state change.
+  function fileProgress(id, name, percent) {
+    const card = cards.get(id);
+    if (!card || !name || typeof percent !== 'number') return;
+    const entry = getFileMap(card).get(name);
+    if (entry && entry.status === 'downloading') entry.percent = percent;
     refreshFilesWindowIfOpen(id);
   }
   function fileDone(id, name, success) {
     const card = cards.get(id);
     if (!card || !name) return;
-    const entry = [...card.files].reverse().find(f => f.name === name && f.status === 'downloading');
-    if (entry) entry.status = success ? 'completed' : 'failed';
-    else card.files.push({ name, status: success ? 'completed' : 'failed' });
+    const map = getFileMap(card);
+    const entry = map.get(name);
+    if (entry && entry.status === 'downloading') {
+      entry.status = success ? 'completed' : 'failed';
+    } else {
+      const fresh = { name, status: success ? 'completed' : 'failed' };
+      card.files.push(fresh);
+      map.set(name, fresh);
+    }
     refreshFilesWindowIfOpen(id);
   }
   // Pre-populates the Files window with every file this download process
@@ -763,10 +1254,12 @@ function initDownloadWidget() {
   function seedFiles(id, names) {
     const card = cards.get(id);
     if (!card) return;
+    const map = getFileMap(card);
     (names || []).forEach(name => {
-      if (!name) return;
-      if (card.files.some(f => f.name === name)) return;
-      card.files.push({ name, status: 'pending' });
+      if (!name || map.has(name)) return;
+      const fresh = { name, status: 'pending' };
+      card.files.push(fresh);
+      map.set(name, fresh);
     });
     refreshFilesWindowIfOpen(id);
   }
@@ -858,19 +1351,20 @@ function initDownloadWidget() {
         showToast('Failed to update download: ' + e, 'error');
       }
     });
-    card.refs.cancelBtn.addEventListener('click', async () => {
+    card.refs.cancelBtn.addEventListener('click', () => {
       if (!card.onCancel) return;
-      card.refs.cancelBtn.disabled = true;
-      card.refs.cancelBtn.textContent = 'Cancelling…';
-      try {
-        await card.onCancel();
-      } catch (e) {
+      // Fire-and-forget: kill the download immediately rather than
+      // disabling the button and waiting on the promise first — the
+      // person clicked Cancel to stop it *now*, not to watch a
+      // "Cancelling…" state resolve.
+      card.onCancel().catch((e) => {
         showToast('Failed to cancel download: ' + e, 'error');
-        card.refs.cancelBtn.disabled = false;
-        card.refs.cancelBtn.textContent = '✕ Cancel';
-      }
+      });
     });
-    card.refs.filesBtn.addEventListener('click', () => openFilesWindow(card));
+    card.refs.filesBtn.addEventListener('click', () => {
+      panel.classList.add('hidden');
+      openFilesWindow(card);
+    });
     cards.set(id, card);
     showWidget();
     return card;
@@ -911,6 +1405,7 @@ function initDownloadWidget() {
     card.status = 'downloading';
     card.percent = null;
     card.files = [];
+    card.fileByName = new Map();
     card.activeFileNames = new Set();
     card.el.classList.remove('dl-card-paused', 'dl-card-error', 'dl-card-cancelled');
     card.el.classList.remove('dl-card-no-pause', 'dl-card-no-stats');
@@ -956,11 +1451,13 @@ function initDownloadWidget() {
     r.percent.textContent = Math.round(pct) + '%';
 
     // Real concurrent file list from the backend (several files download
-    // at once) — fall back to the single current_file for older payload
-    // shapes so this doesn't break if a stale build sends one.
-    const activeList = (p.active_files && p.active_files.length)
+    // at once), each with its own real byte-level percent when known —
+    // fall back to the single current_file for older payload shapes so
+    // this doesn't break if a stale build sends one.
+    const activeFiles = (p.active_files && p.active_files.length)
       ? p.active_files
-      : (p.current_file ? [p.current_file] : []);
+      : (p.current_file ? [{ name: p.current_file, percent: null }] : []);
+    const activeList = activeFiles.map(f => f.name);
 
     card.titleText = paused ? 'Paused' : 'Installing…';
     card.subText = paused
@@ -984,14 +1481,16 @@ function initDownloadWidget() {
     // Reconcile the Files window against the real set of currently-active
     // files: anything newly in active_files starts downloading, anything
     // that dropped out (finished, whether via TaskFinished or TaskSkipped
-    // upstream) is marked completed. This replaces the old logic, which
+    // upstream) is marked completed, and anything still in flight has its
+    // real byte-level percent updated. This replaces the old logic, which
     // assumed only one file was ever downloading at a time and broke once
     // the downloader started fetching several files in parallel.
     if (p.status === 'downloading') {
       const activeNow = new Set(activeList);
       const activeBefore = card.activeFileNames || new Set();
-      activeNow.forEach((name) => {
+      activeFiles.forEach(({ name, percent }) => {
         if (!activeBefore.has(name)) fileStart(INSTANCE_INSTALL_CARD_ID, name);
+        fileProgress(INSTANCE_INSTALL_CARD_ID, name, percent);
       });
       activeBefore.forEach((name) => {
         if (!activeNow.has(name)) fileDone(INSTANCE_INSTALL_CARD_ID, name, true);
@@ -1031,6 +1530,7 @@ function initDownloadWidget() {
     let card = cards.get(id);
     if (!card) card = createCard(id);
     card.files = [];
+    card.fileByName = new Map();
     card.status = 'downloading';
     card.cancelled = false;
     card.percent = opts.determinate ? 0 : null;
@@ -1297,6 +1797,978 @@ function saveInstanceOrderFromDOM() {
     .map(el => el.dataset.versionId)
     .filter(Boolean);
   setInstanceOrder(ids);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 3D Skin Viewer (Powered by skin3d)
+// ═══════════════════════════════════════════════════════════════════
+
+let currentSkinAnimName = 'walk';
+let currentSkinSpeed = 0.5;
+let currentSkinEquipType = 'cape';
+let currentSkinCapeKey = 'migrator';
+let currentSkinSource = SHOW_SKIN_URL;
+let currentSkinFacing = 'left';
+let currentSkinAnonSkin = false;
+let currentSkinAnonTag = false;
+let currentSkinAnonPic = false;
+
+function getFacingYaw(facing) {
+  switch (facing) {
+    case 'right':
+      return 0.38;
+    case 'camera':
+      return 0.0;
+    case 'left':
+    default:
+      return -0.38;
+  }
+}
+
+const PRESET_SKINS = {
+  knight: SHOW_SKIN_URL,
+  steve: 'https://textures.minecraft.net/texture/414522e74cc844f44fb11f5997d826a59371f42707235cc1e62f675e38d1e',
+  alex: 'https://textures.minecraft.net/texture/6e432c7c72db19463b2cf725ed14ec5e8b610c3ea9c77ad45e2c7104b2a8d',
+  ninja: 'https://textures.minecraft.net/texture/2e086f67ca43b171694f479d2bbf8933b4fb3d30b91d2c67fe53c072c448bb',
+};
+
+const PRESET_CAPES = {
+  none: null,
+  // NOTE: these were previously corrupted (each hash was missing several
+  // characters, so every single one 404'd against Mojang's texture CDN —
+  // this was the real reason Cape/Elytra never showed anything at all,
+  // for every account, not just offline ones). Verified 64-char hashes below.
+  migrator: 'https://textures.minecraft.net/texture/2340c0e03dd24a11b15a8b33c2a7e9e32abb2051b2481d0ba7defd635ca7a933',
+  minecon2011: 'https://textures.minecraft.net/texture/953cac8b779fe41383e675ee2b86071a71658f2180f56fbce8aa315ea70e2ed6',
+  minecon2012: 'https://textures.minecraft.net/texture/a2e8d97ec79100e90a75d369d1b3ba81273c4f82bc1b737e934eed4a854be1b6',
+  minecon2013: 'https://textures.minecraft.net/texture/153b1a0dfcbae953cdeb6f2c2bf6bf79943239b1372780da44bcbb29273131da',
+  minecon2015: 'https://textures.minecraft.net/texture/b0cc08840700447322d953a02b965f1d65a13a603bf64b17c803c21446fe1635',
+  minecon2016: 'https://textures.minecraft.net/texture/e7dfea16dc83c97df01a12fabbd1216359c0cd0ea42f9999b6e97c584963e980',
+  vanilla: 'https://textures.minecraft.net/texture/f9a76537647989f9a0b6d001e320dac591c359e9e61a31f4ce11c88f207f0ad4',
+  cherry: 'https://textures.minecraft.net/texture/afd553b39358a24edfe3b8a9a939fa5fa4faa4d9a9c3d6af8eafb377fa05c2bb',
+  '15th': 'https://textures.minecraft.net/texture/cd9d82ab17fd92022dbd4a86cde4c382a7540e117fae7b9a2853658505a80625',
+};
+
+function createSkinAnimation(name) {
+  let anim = null;
+  switch (name) {
+    case 'idle':
+      anim = new IdleAnimation();
+      break;
+    case 'walk':
+      anim = new WalkingAnimation();
+      break;
+    case 'run':
+      anim = new RunningAnimation();
+      break;
+    case 'wave':
+      anim = new WaveAnimation();
+      break;
+    case 'crouch':
+      anim = new CrouchAnimation();
+      break;
+    case 'fly':
+      anim = new FlyingAnimation();
+      break;
+    case 'hit':
+      anim = new HitAnimation();
+      break;
+    case 'none':
+    default:
+      anim = null;
+      break;
+  }
+  if (anim) {
+    anim.speed = currentSkinSpeed;
+  }
+  return anim;
+}
+
+function updateSkinModelBadge() {
+  const badge = document.getElementById('skin-model-badge');
+  if (!badge || !skinViewerInstance) return;
+  const type = skinViewerInstance.playerObject?.skin?.modelType;
+  badge.textContent = type === 'slim' ? 'Slim (3px Arms)' : 'Classic (4px Arms)';
+}
+
+async function loadSkinIntoViewer(source, modelType = currentSkinModelType) {
+  if (skinViewerInstance) {
+    try {
+      currentSkinSource = source;
+      await skinViewerInstance.loadSkin(source, { model: modelType });
+      updateSkinModelBadge();
+    } catch (err) {
+      console.error('Failed to load skin in viewer:', err);
+    }
+  }
+  if (skinMiniPreviewInstance && source) {
+    try {
+      currentMiniPreviewSkinUrl = source;
+      await skinMiniPreviewInstance.loadSkin(source, { model: modelType });
+      if (skinMiniPreviewInstance.playerObject) {
+        skinMiniPreviewInstance.playerObject.rotation.y = getFacingYaw(currentSkinFacing);
+        skinMiniPreviewInstance.playerObject.position.y = -2.2;
+      }
+    } catch (err) {
+      console.warn('Could not sync mini preview skin:', err);
+    }
+  }
+}
+
+async function loadCapeIntoViewer(capeKeyOrUrl) {
+  const url = PRESET_CAPES[capeKeyOrUrl] !== undefined ? PRESET_CAPES[capeKeyOrUrl] : capeKeyOrUrl;
+  if (skinViewerInstance) {
+    try {
+      if (!url) {
+        skinViewerInstance.resetCape();
+        skinViewerInstance.playerObject.backEquipment = null;
+      } else {
+        await skinViewerInstance.loadCape(url, { backEquipment: currentSkinEquipType });
+      }
+    } catch (err) {
+      console.error('Failed to load cape in viewer:', err);
+    }
+  }
+  if (skinMiniPreviewInstance) {
+    try {
+      if (!url) {
+        skinMiniPreviewInstance.resetCape();
+        skinMiniPreviewInstance.playerObject.backEquipment = null;
+      } else {
+        await skinMiniPreviewInstance.loadCape(url, { backEquipment: currentSkinEquipType });
+      }
+    } catch (err) {
+      console.warn('Could not sync mini preview cape:', err);
+    }
+  }
+}
+
+function resizeSkinViewer() {
+  if (!skinViewerInstance) return;
+  const container = document.getElementById('skin-viewer-canvas-container');
+  if (!container) return;
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  if (w > 0 && h > 0) {
+    skinViewerInstance.setSize(w, h);
+  }
+}
+
+function takeSkinScreenshot() {
+  if (!skinViewerInstance) return;
+  skinViewerInstance.render();
+  const dataUrl = skinViewerInstance.canvas.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = `minecraft-skin-${Date.now()}.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showToast('Screenshot saved to downloads!', 'success');
+}
+
+function getAccountSkinSettingsKey(acc) {
+  if (!acc) return 'zero_skin_acc_global';
+  return 'zero_skin_acc_' + (acc.id || acc.username || 'default');
+}
+
+function loadSkinSettingsForAccount(acc, globalSettings) {
+  const isOffline = !acc || acc.account_type === 'offline' || !acc.mc_uuid;
+  const key = getAccountSkinSettingsKey(acc);
+  let saved = null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) saved = JSON.parse(raw);
+  } catch (_) {}
+
+  const g = globalSettings || settings || {};
+
+  currentSkinAnimName = (saved && saved.animation) || g.skin_animation || 'walk';
+  currentSkinSpeed = (saved && typeof saved.speed === 'number') ? saved.speed : (typeof g.skin_speed === 'number' ? g.skin_speed : 0.5);
+  currentSkinFacing = (saved && saved.facing) || g.skin_facing || 'left';
+  currentSkinEquipType = (saved && saved.equip) || g.skin_equip_type || 'cape';
+
+  if (isOffline) {
+    // Offline accounts default to Unknown Skin, but can switch to My Skin.
+    currentSkinAnonSkin = (saved && typeof saved.anonSkin === 'boolean') ? saved.anonSkin : true;
+  } else {
+    // Microsoft accounts default to showing their own skin unless specifically set to anonymous
+    currentSkinAnonSkin = (saved && typeof saved.anonSkin === 'boolean') ? saved.anonSkin : false;
+  }
+
+  currentSkinAnonTag = (saved && typeof saved.anonTag === 'boolean')
+    ? saved.anonTag
+    : (typeof g.skin_anonymous_nametag === 'boolean' ? g.skin_anonymous_nametag : false);
+
+  // Profile Picture (the small round avatar shown in the header/account
+  // list) — same "My X / Unknown X" pattern as Skin: offline accounts
+  // default to the black "?" unknown picture, Microsoft accounts default
+  // to their real head render, but either can switch either way.
+  if (saved && typeof saved.anonPic === 'boolean') {
+    currentSkinAnonPic = saved.anonPic;
+  } else if (typeof g.skin_anonymous_pic === 'boolean') {
+    currentSkinAnonPic = g.skin_anonymous_pic;
+  } else {
+    currentSkinAnonPic = isOffline;
+  }
+}
+
+/// Whether a given account's profile picture (header/account-list avatar)
+/// should show the black "?" unknown placeholder instead of its real head
+/// render. Reads the same per-account settings as the skin viewer's
+/// Anonymous section, without disturbing the currently-loaded in-modal
+/// state (`currentSkinAnonPic`).
+function shouldUseUnknownProfilePic(acc) {
+  if (!acc) return true;
+  const isOffline = acc.account_type === 'offline' || !acc.mc_uuid;
+  const key = getAccountSkinSettingsKey(acc);
+  let saved = null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) saved = JSON.parse(raw);
+  } catch (_) {}
+  if (saved && typeof saved.anonPic === 'boolean') return saved.anonPic;
+  if (settings && typeof settings.skin_anonymous_pic === 'boolean') return settings.skin_anonymous_pic;
+  return isOffline;
+}
+
+function saveSkinSettingsForAccount(acc, customSettings) {
+  if (!acc) return;
+  const key = getAccountSkinSettingsKey(acc);
+  const data = {
+    animation: currentSkinAnimName,
+    speed: currentSkinSpeed,
+    facing: currentSkinFacing,
+    equip: currentSkinEquipType,
+    anonSkin: Boolean(currentSkinAnonSkin),
+    anonTag: Boolean(currentSkinAnonTag),
+    anonPic: Boolean(currentSkinAnonPic),
+    ...customSettings
+  };
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+    if (acc.username) {
+      localStorage.setItem('zero_skin_acc_' + acc.username, JSON.stringify(data));
+    }
+  } catch (_) {}
+}
+
+async function openSkinViewerModal() {
+  const overlay = document.getElementById('skin-viewer-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+
+  // The standee sits fully behind this modal — no point spending GPU time
+  // rendering WebGL frames nobody can see while it's covered.
+  if (skinMiniPreviewInstance) {
+    skinMiniPreviewInstance.renderPaused = true;
+  }
+
+  const accounts = await api.getAccounts().catch(() => []);
+  const active = accounts.find(a => a.is_active);
+  const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
+
+  // Load active account's specific skin settings
+  loadSkinSettingsForAccount(active);
+
+  // Update active facing buttons
+  overlay.querySelectorAll('#skin-facing-group .skin-speed-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.facing === currentSkinFacing);
+  });
+
+  // Update active speed buttons
+  overlay.querySelectorAll('#skin-speed-group .skin-speed-btn').forEach(btn => {
+    btn.classList.toggle('active', parseFloat(btn.dataset.speed) === currentSkinSpeed);
+  });
+
+  // Update active animation buttons
+  overlay.querySelectorAll('#skin-anim-buttons .skin-anim-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.anim === currentSkinAnimName);
+  });
+
+  // Update active equip type buttons (Cape / Elytra / None)
+  overlay.querySelectorAll('#skin-equip-group .skin-speed-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.equip === currentSkinEquipType);
+  });
+
+  // Update Anonymous Skin buttons — offline accounts default to Unknown
+  // Skin, but (like Microsoft accounts) can freely switch to My Skin.
+  const anonSkinGroup = overlay.querySelector('#skin-anon-skin-group');
+  if (anonSkinGroup) {
+    const mySkinBtn = anonSkinGroup.querySelector('[data-anon-skin="false"]');
+    const unkSkinBtn = anonSkinGroup.querySelector('[data-anon-skin="true"]');
+    if (mySkinBtn) {
+      mySkinBtn.disabled = false;
+      mySkinBtn.style.opacity = '1';
+      mySkinBtn.style.cursor = 'pointer';
+      mySkinBtn.removeAttribute('title');
+      mySkinBtn.classList.toggle('active', !currentSkinAnonSkin);
+    }
+    if (unkSkinBtn) {
+      unkSkinBtn.classList.toggle('active', !!currentSkinAnonSkin);
+    }
+  }
+
+  // Update Anonymous Nametag buttons
+  const anonTagGroup = overlay.querySelector('#skin-anon-tag-group');
+  if (anonTagGroup) {
+    anonTagGroup.querySelectorAll('.skin-speed-btn').forEach(btn => {
+      const isAnon = btn.dataset.anonTag === 'true';
+      btn.classList.toggle('active', isAnon === !!currentSkinAnonTag);
+    });
+  }
+
+  // Update Anonymous Profile Picture buttons
+  const anonPicGroup = overlay.querySelector('#skin-anon-pic-group');
+  if (anonPicGroup) {
+    anonPicGroup.querySelectorAll('.skin-speed-btn').forEach(btn => {
+      const isAnon = btn.dataset.anonPic === 'true';
+      btn.classList.toggle('active', isAnon === !!currentSkinAnonPic);
+    });
+  }
+}
+
+/// Lightweight header-avatar update used while the skin viewer's Picture
+/// toggle is being dragged around but not yet Applied — updates just the
+/// header image/fallback from the in-memory choice, without touching
+/// localStorage/settings.json (that only happens on Apply), so it can't
+/// accidentally get overwritten back from stale saved data.
+async function previewHeaderAvatarUnknownState(anonPic) {
+  const headerImg = document.getElementById('account-header-avatar-img');
+  const headerFallback = document.getElementById('account-header-fallback');
+  if (!headerImg || !headerFallback) return;
+  const accounts = await api.getAccounts().catch(() => []);
+  const active = accounts.find(a => a.is_active);
+  if (active && !anonPic) {
+    const headKey = encodeURIComponent(active.mc_uuid || active.username || 'MHF_Steve');
+    headerImg.src = `https://mc-heads.net/avatar/${headKey}/32`;
+    headerImg.classList.remove('hidden');
+    headerFallback.style.display = 'none';
+    headerImg.onerror = () => {
+      headerImg.classList.add('hidden');
+      headerFallback.style.display = '';
+    };
+  } else {
+    headerImg.classList.add('hidden');
+    headerImg.removeAttribute('src');
+    headerFallback.style.display = '';
+  }
+}
+
+function closeSkinViewerModal() {
+  const overlay = document.getElementById('skin-viewer-overlay');
+  if (!overlay) return;
+  overlay.classList.add('hidden');
+  if (skinMiniPreviewInstance) {
+    skinMiniPreviewInstance.renderPaused = false;
+  }
+}
+
+/// Dressing Room — coming-soon preview of a wardrobe for switching skins
+/// and capes. Capes shown here are just the active Microsoft account's
+/// known cape (via crafatar) for preview purposes; nothing here is wired
+/// up to actually change the account's skin/cape yet.
+async function openDressingRoomModal() {
+  const overlay = document.getElementById('dressing-room-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+
+  // Same as the Skin Settings modal — the standee is fully covered here,
+  // so pause its WebGL render loop instead of burning GPU on hidden frames.
+  if (skinMiniPreviewInstance) {
+    skinMiniPreviewInstance.renderPaused = true;
+  }
+
+  const content = document.getElementById('dressing-room-content');
+  const lock = document.getElementById('dressing-room-msa-lock');
+  const accounts = await api.getAccounts().catch(() => []);
+  const active = accounts.find(a => a.is_active);
+  const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
+
+  if (content) content.classList.toggle('is-locked', isOffline);
+  if (lock) lock.classList.toggle('hidden', !isOffline);
+
+  if (isOffline) return;
+
+  await populateDressingRoomSkins();
+  await populateDressingRoomCapes();
+}
+
+function closeDressingRoomModal() {
+  const overlay = document.getElementById('dressing-room-overlay');
+  if (!overlay) return;
+  overlay.classList.add('hidden');
+  if (skinMiniPreviewInstance) {
+    skinMiniPreviewInstance.renderPaused = false;
+  }
+}
+
+/// Records a real, account-derived skin by caching it to disk, at
+/// `<Zero Launcher folder>/skins/<username>.png` — the file is named
+/// after the account's username, and re-caching the same username
+/// overwrites the old file, so switching skins or uploading a new one
+/// for an account always replaces what's stored rather than piling up.
+/// This runs every time a skin is loaded for the active account, so the
+/// cache is always kept in sync with whatever skin that account is
+/// currently wearing.
+async function recordUsedSkin(url, username) {
+  if (!url || !username) return;
+  const renderUrl = `https://mc-heads.net/player/${encodeURIComponent(username)}/100`;
+  try {
+    await api.cacheAccountSkin(username, renderUrl);
+  } catch (e) {
+    console.warn('Could not cache skin to disk:', e);
+  }
+}
+
+/// Reads the on-disk skin cache (Zero Launcher/skins/*.png) and returns
+/// it as file:// (asset protocol) URLs the Dressing Room can render
+/// directly, with no network round-trip.
+async function getCachedSkins() {
+  try {
+    const cached = await api.listCachedSkins();
+    const convert = window.__TAURI__.core.convertFileSrc;
+    return (cached || []).map(entry => ({
+      username: entry.username,
+      renderUrl: convert(entry.path),
+    }));
+  } catch (e) {
+    console.warn('Could not read skin cache:', e);
+    return [];
+  }
+}
+
+async function populateDressingRoomSkins() {
+  const grid = document.getElementById('dressing-room-skins-grid');
+  if (!grid) return;
+
+  // Clear out any previously rendered skin cards, but keep the "Add a
+  // Skin" card (it lives outside this grid, in its own section).
+  grid.innerHTML = '';
+
+  const accounts = await api.getAccounts().catch(() => []);
+  const active = accounts.find(a => a.is_active);
+  const activeUsername = active ? active.username : null;
+
+  if (!activeUsername) {
+    const note = document.createElement('div');
+    note.className = 'skin-control-label';
+    note.style.gridColumn = '1 / -1';
+    note.textContent = 'No skins used yet — the selected account\'s skin will show up here.';
+    grid.appendChild(note);
+    return;
+  }
+
+  // Only show the currently-selected account's own cached skin, not
+  // every account's history — the cache file is named after the
+  // username, so switching or uploading a new skin for this account
+  // overwrites it here automatically next time it's used.
+  const cachedSkins = await getCachedSkins();
+  const entry = cachedSkins.find(s => s.username === activeUsername);
+
+  if (!entry) {
+    const note = document.createElement('div');
+    note.className = 'skin-control-label';
+    note.style.gridColumn = '1 / -1';
+    note.textContent = `No cached skin for ${activeUsername} yet — it'll be cached next time this account's skin loads.`;
+    grid.appendChild(note);
+    return;
+  }
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'dressing-room-cape-card equipped';
+
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 100 150');
+  svg.setAttribute('class', 'dressing-room-cape-svg dressing-room-skin-svg');
+  const image = document.createElementNS(svgNS, 'image');
+  image.setAttributeNS('http://www.w3.org/1999/xlink', 'href', entry.renderUrl);
+  image.setAttribute('href', entry.renderUrl);
+  image.setAttribute('x', '0');
+  image.setAttribute('y', '0');
+  image.setAttribute('width', '100');
+  image.setAttribute('height', '150');
+  image.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.appendChild(image);
+
+  const label = document.createElement('span');
+  label.className = 'dressing-room-cape-name';
+  label.textContent = entry.username;
+
+  card.appendChild(svg);
+  card.appendChild(label);
+  grid.appendChild(card);
+}
+
+async function populateDressingRoomCapes() {
+  const grid = document.getElementById('dressing-room-capes-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const accounts = await api.getAccounts().catch(() => []);
+  const active = accounts.find(a => a.is_active);
+  const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
+
+  if (isOffline) {
+    const note = document.createElement('div');
+    note.className = 'skin-control-label';
+    note.style.gridColumn = '1 / -1';
+    note.textContent = 'Sign in with a Microsoft account to see owned capes here.';
+    grid.appendChild(note);
+    return;
+  }
+
+  const capeUrl = `https://crafatar.com/capes/${active.mc_uuid}`;
+  const hasCape = await new Promise((resolve) => {
+    const probe = new Image();
+    probe.onload = () => resolve(true);
+    probe.onerror = () => resolve(false);
+    probe.src = capeUrl;
+  });
+
+  if (!hasCape) {
+    const note = document.createElement('div');
+    note.className = 'skin-control-label';
+    note.style.gridColumn = '1 / -1';
+    note.textContent = 'No cape equipped on this account.';
+    grid.appendChild(note);
+    return;
+  }
+
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'dressing-room-cape-card equipped';
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 64 64');
+  svg.setAttribute('class', 'dressing-room-cape-svg');
+  const image = document.createElementNS(svgNS, 'image');
+  image.setAttributeNS('http://www.w3.org/1999/xlink', 'href', capeUrl);
+  image.setAttribute('href', capeUrl);
+  image.setAttribute('x', '0');
+  image.setAttribute('y', '0');
+  image.setAttribute('width', '64');
+  image.setAttribute('height', '64');
+  image.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.appendChild(image);
+  const label = document.createElement('span');
+  label.className = 'dressing-room-cape-name';
+  label.textContent = 'Current Cape';
+  card.appendChild(svg);
+  card.appendChild(label);
+  grid.appendChild(card);
+}
+
+function initDressingRoomUI() {
+  const overlay = document.getElementById('dressing-room-overlay');
+  if (!overlay) return;
+
+  // Close handlers
+  document.getElementById('btn-close-dressing-room')?.addEventListener('click', closeDressingRoomModal);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeDressingRoomModal();
+  });
+
+  // Tab switching (Skins / Capes)
+  const tabs = document.getElementById('dressing-room-tabs');
+  if (tabs) {
+    tabs.querySelectorAll('.dressing-room-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.dressingTab;
+        tabs.querySelectorAll('.dressing-room-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        overlay.querySelectorAll('.dressing-room-section').forEach(sec => {
+          sec.classList.toggle('active', sec.dataset.dressingSection === target);
+        });
+      });
+    });
+  }
+
+  // "Add a Skin" card is a coming-soon placeholder for now.
+  document.getElementById('btn-dressing-add-skin')?.addEventListener('click', (e) => {
+    e.preventDefault();
+  });
+
+  // Capes note link — opens the official Minecraft skin/cape editor in
+  // the system browser, same convention used elsewhere in the app.
+  document.getElementById('dressing-room-editskin-link')?.addEventListener('click', async () => {
+    const url = 'https://www.minecraft.net/en-us/msaprofile/mygames/editskin';
+    if (window.__TAURI__ && window.__TAURI__.shell && window.__TAURI__.shell.open) {
+      await window.__TAURI__.shell.open(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  });
+}
+
+function initSkinViewerUI() {
+  const overlay = document.getElementById('skin-viewer-overlay');
+  if (!overlay) return;
+
+  // Close handlers
+  document.getElementById('btn-close-skin-viewer')?.addEventListener('click', closeSkinViewerModal);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeSkinViewerModal();
+  });
+
+  // Animation selection buttons
+  overlay.querySelectorAll('#skin-anim-buttons .skin-anim-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const animName = btn.dataset.anim;
+      overlay.querySelectorAll('#skin-anim-buttons .skin-anim-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSkinAnimName = animName;
+    });
+  });
+
+  // Speed selection buttons
+  overlay.querySelectorAll('#skin-speed-group .skin-speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const speed = parseFloat(btn.dataset.speed) || 1.0;
+      overlay.querySelectorAll('#skin-speed-group .skin-speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSkinSpeed = speed;
+    });
+  });
+
+  // Facing direction buttons (Left / Right / Camera)
+  overlay.querySelectorAll('#skin-facing-group .skin-speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const facing = btn.dataset.facing || 'left';
+      overlay.querySelectorAll('#skin-facing-group .skin-speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSkinFacing = facing;
+      // Apply immediately so the preview reflects the choice right away —
+      // previously this only took effect after hitting Apply, which made
+      // the buttons look broken/unresponsive.
+      if (skinMiniPreviewInstance && skinMiniPreviewInstance.playerObject) {
+        skinMiniPreviewInstance.playerObject.rotation.y = getFacingYaw(currentSkinFacing);
+      }
+    });
+  });
+
+  // Back equipment type buttons (Cape / Elytra / None)
+  overlay.querySelectorAll('#skin-equip-group .skin-speed-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const equip = btn.dataset.equip || 'cape';
+      overlay.querySelectorAll('#skin-equip-group .skin-speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSkinEquipType = equip;
+      // Apply immediately so the preview reflects the choice right away —
+      // previously this only took effect after hitting Apply.
+      if (skinMiniPreviewInstance) {
+        try {
+          const accounts = await api.getAccounts().catch(() => []);
+          const active = accounts.find(a => a.is_active);
+          const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
+          if (equip === 'none') {
+            await skinMiniPreviewInstance.loadCape(null);
+          } else if (isOffline) {
+            await skinMiniPreviewInstance.loadCape(PRESET_CAPES.vanilla, { backEquipment: equip });
+          } else {
+            await loadEquippedCapeOnStandee(equip);
+          }
+        } catch (_) {}
+      }
+    });
+  });
+
+  // Anonymous Skin buttons (My Skin / Unknown Skin) — freely switchable
+  // for both offline and Microsoft accounts.
+  overlay.querySelectorAll('#skin-anon-skin-group .skin-speed-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      overlay.querySelectorAll('#skin-anon-skin-group .skin-speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSkinAnonSkin = (btn.dataset.anonSkin === 'true');
+    });
+  });
+
+  // Anonymous Nametag buttons (My Nametag / Unknown Nametag)
+  overlay.querySelectorAll('#skin-anon-tag-group .skin-speed-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      overlay.querySelectorAll('#skin-anon-tag-group .skin-speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSkinAnonTag = (btn.dataset.anonTag === 'true');
+    });
+  });
+
+  // Anonymous Profile Picture buttons (Use My Picture / Use Unknown) — only
+  // update the header avatar preview here; don't call refreshAccountUI()
+  // (it reloads settings from storage and would stomp this unsaved change
+  // before Apply gets a chance to persist it).
+  overlay.querySelectorAll('#skin-anon-pic-group .skin-speed-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      overlay.querySelectorAll('#skin-anon-pic-group .skin-speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSkinAnonPic = (btn.dataset.anonPic === 'true');
+      previewHeaderAvatarUnknownState(currentSkinAnonPic).catch(() => {});
+    });
+  });
+
+  // Apply Button — sync all settings to standee preview, save per account and globally, and close modal
+  document.getElementById('btn-skin-apply')?.addEventListener('click', async () => {
+    const accounts = await api.getAccounts().catch(() => []);
+    const active = accounts.find(a => a.is_active);
+
+    // Save per-account settings
+    saveSkinSettingsForAccount(active);
+
+    if (skinMiniPreviewInstance) {
+      // Sync animation & speed
+      const anim = createSkinAnimation(currentSkinAnimName);
+      if (anim) anim.speed = currentSkinSpeed;
+      skinMiniPreviewInstance.animation = anim;
+      skinMiniPreviewInstance.renderPaused = false;
+
+      // Sync facing angle & position
+      if (skinMiniPreviewInstance.playerObject) {
+        skinMiniPreviewInstance.playerObject.rotation.y = getFacingYaw(currentSkinFacing);
+      }
+      if (skinMiniPreviewInstance.playerWrapper) {
+        skinMiniPreviewInstance.playerWrapper.position.y = -1.5;
+      }
+    }
+
+    // Save to settings.json
+    try {
+      const settings = await api.getSettings().catch(() => ({}));
+      settings.skin_animation = currentSkinAnimName;
+      settings.skin_speed = currentSkinSpeed;
+      settings.skin_facing = currentSkinFacing;
+      settings.skin_equip_type = currentSkinEquipType;
+      settings.skin_anonymous_skin = currentSkinAnonSkin;
+      settings.skin_anonymous_nametag = currentSkinAnonTag;
+      settings.skin_anonymous_pic = currentSkinAnonPic;
+      await api.saveSettings(settings);
+    } catch (err) {
+      console.warn('Could not save skin settings to settings.json:', err);
+    }
+
+    // Refresh standee + header avatar with new skin/tag/picture settings
+    await refreshAccountUI();
+
+    closeSkinViewerModal();
+    showToast('Skin settings saved for this account!', 'success');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Non-Interactive 3D Skin Mini Preview (Instance Details Pane)
+// ═══════════════════════════════════════════════════════════════════
+
+let skinMiniPreviewInstance = null;
+let skinMiniPreviewResizeObserver = null;
+let currentMiniPreviewSkinUrl = null;
+
+async function initSkinMiniPreview() {
+  const canvas = document.getElementById('skin-mini-preview-canvas');
+  const wrap = document.getElementById('skin-mini-preview-wrap');
+  if (!canvas || !wrap || skinMiniPreviewInstance) return;
+
+  const accounts = await api.getAccounts().catch(() => []);
+  const active = accounts.find(a => a.is_active);
+  const globalSettings = await api.getSettings().catch(() => null);
+
+  // Load active account's skin settings
+  loadSkinSettingsForAccount(active, globalSettings);
+
+  const w = wrap.clientWidth || 440;
+  const h = wrap.clientHeight || 560;
+
+  const anim = createSkinAnimation(currentSkinAnimName);
+  if (anim) anim.speed = currentSkinSpeed;
+
+  skinMiniPreviewInstance = new Render({
+    canvas: canvas,
+    width: w,
+    height: h,
+    fov: 40,
+    zoom: 0.78,
+    preserveDrawingBuffer: true,
+    enableControls: false,
+    enableRotation: false,
+    allowZoom: false,
+    enableFXAA: true,
+    animation: anim,
+  });
+
+  // Explicitly ensure OrbitControls cannot be interacted with
+  if (skinMiniPreviewInstance.controls) {
+    skinMiniPreviewInstance.controls.enabled = false;
+    skinMiniPreviewInstance.controls.enableRotate = false;
+    skinMiniPreviewInstance.controls.enableZoom = false;
+    skinMiniPreviewInstance.controls.enablePan = false;
+  }
+
+  // Set facing angle and center character with ample margin in all directions
+  if (skinMiniPreviewInstance.playerObject) {
+    skinMiniPreviewInstance.playerObject.rotation.y = getFacingYaw(currentSkinFacing);
+  }
+  if (skinMiniPreviewInstance.playerWrapper) {
+    skinMiniPreviewInstance.playerWrapper.position.y = -1.5;
+  }
+
+  // The standee itself is no longer clickable — use the dedicated
+  // "3D Skin Settings" button next to the account button instead.
+  const skinSettingsBtn = document.getElementById('btn-open-skin-settings');
+  if (skinSettingsBtn && !skinSettingsBtn.dataset.bound) {
+    skinSettingsBtn.dataset.bound = '1';
+    skinSettingsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      openSkinViewerModal();
+    });
+  }
+
+  // Clicking the 3D player model itself opens the Dressing Room.
+  if (wrap && !wrap.dataset.dressingBound) {
+    wrap.dataset.dressingBound = '1';
+    wrap.addEventListener('click', (e) => {
+      e.preventDefault();
+      openDressingRoomModal();
+    });
+  }
+
+  // ResizeObserver for dynamic layout changes
+  if (typeof ResizeObserver !== 'undefined') {
+    skinMiniPreviewResizeObserver = new ResizeObserver(() => {
+      resizeSkinMiniPreview();
+    });
+    skinMiniPreviewResizeObserver.observe(wrap);
+  }
+
+  updateSkinMiniPreview();
+}
+
+function resizeSkinMiniPreview() {
+  if (!skinMiniPreviewInstance) return;
+  const wrap = document.getElementById('skin-mini-preview-wrap');
+  if (!wrap) return;
+  const w = wrap.clientWidth;
+  const h = wrap.clientHeight;
+  if (w > 0 && h > 0) {
+    skinMiniPreviewInstance.setSize(w, h);
+  }
+}
+
+async function loadEquippedCapeOnStandee(equipType) {
+  // Capes/elytra are intentionally never shown on the 3D player model
+  // preview — always keep the standee's back equipment cleared regardless
+  // of what equip type was requested.
+  if (!skinMiniPreviewInstance) return;
+  try {
+    await skinMiniPreviewInstance.loadCape(null);
+  } catch (e) {}
+}
+
+async function updateSkinMiniPreview() {
+  if (!skinMiniPreviewInstance) {
+    initSkinMiniPreview();
+    return;
+  }
+  try {
+    const accounts = await api.getAccounts().catch(() => []);
+    const active = accounts.find(a => a.is_active);
+
+    // Load active account's individual skin settings
+    loadSkinSettingsForAccount(active);
+
+    const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
+
+    // Skin choice now follows the Anonymous "Skin" setting for both
+    // offline and Microsoft accounts (offline just defaults to Unknown).
+    const useUnknownSkin = Boolean(currentSkinAnonSkin);
+    const useUnknownTag = Boolean(currentSkinAnonTag);
+
+    // Skin resolution: unknown -> placeholder skin, otherwise the
+    // account's real/offline-name-derived skin.
+    let skinUrl = unknownSkin;
+    if (!useUnknownSkin && active && active.username) {
+      skinUrl = `https://mineskin.eu/skin/${encodeURIComponent(active.username)}`;
+    } else {
+      skinUrl = unknownSkin;
+    }
+
+    // Nametag resolution: Check anonymous setting
+    let displayName = 'Unknown';
+    if (useUnknownTag) {
+      displayName = 'Unknown';
+    } else if (active && active.username) {
+      displayName = active.username;
+    } else {
+      displayName = 'Unknown';
+    }
+
+    // Cleanly replace floating compact Minecraft-font NameTag
+    try {
+      if (skinMiniPreviewInstance.nameTag && skinMiniPreviewInstance.nameTag.parent) {
+        skinMiniPreviewInstance.nameTag.parent.remove(skinMiniPreviewInstance.nameTag);
+      }
+    } catch (_) {}
+
+    skinMiniPreviewInstance.nameTag = new NameTagObject(displayName, {
+      font: '28px Minecraft, monospace',
+      textStyle: '#ffffff',
+      backgroundStyle: 'rgba(0, 0, 0, 0.65)',
+      margin: [4, 8, 4, 8],
+      height: 2.5,
+      repaintAfterLoaded: true,
+    });
+    if (skinMiniPreviewInstance.nameTag) {
+      skinMiniPreviewInstance.nameTag.position.y = 19.5;
+    }
+
+    // Force load skin
+    currentMiniPreviewSkinUrl = skinUrl;
+    try {
+      await skinMiniPreviewInstance.loadSkin(skinUrl, { model: 'auto-detect' });
+      // Only record real, account-derived skins into the "used skins"
+      // history — not the Unknown/default placeholder art.
+      if (!useUnknownSkin && active && active.username) {
+        await recordUsedSkin(skinUrl, active.username);
+      }
+    } catch (skinErr) {
+      console.warn('Could not load skin, falling back to default:', skinErr);
+      await skinMiniPreviewInstance.loadSkin(defaultOfflineSkin, { model: 'auto-detect' });
+    }
+
+    if (skinMiniPreviewInstance.playerWrapper) {
+      skinMiniPreviewInstance.playerWrapper.position.y = -1.5;
+    }
+
+    // Always ensure animation is synced to active account's setting.
+    // NOTE: assigning a new animation resets the player object's pose
+    // (including rotation), so facing must be (re)applied *after* this —
+    // setting it before was the reason Facing kept snapping back to
+    // "Camera" whenever the preview reloaded (e.g. after hitting Apply).
+    const anim = createSkinAnimation(currentSkinAnimName);
+    if (anim) anim.speed = currentSkinSpeed;
+    skinMiniPreviewInstance.animation = anim;
+    skinMiniPreviewInstance.renderPaused = false;
+
+    // Load equipped cape onto mini preview. Offline accounts have no real
+    // Mojang cape to fetch, so previously this just force-cleared the
+    // cape no matter what — meaning Cape/Elytra selections silently did
+    // nothing for offline accounts. Now it shows a preset cape texture
+    // instead, so the choice is actually visible.
+    // Capes/elytra are intentionally disabled on the 3D player model
+    // preview for all account types — always keep it unequipped.
+    try {
+      await skinMiniPreviewInstance.loadCape(null);
+    } catch (_) {}
+
+    // Apply facing last, once skin/animation/cape are all settled, so
+    // nothing downstream can reset the pose out from under it.
+    if (skinMiniPreviewInstance.playerObject) {
+      skinMiniPreviewInstance.playerObject.rotation.y = getFacingYaw(currentSkinFacing);
+    }
+  } catch (err) {
+    console.warn('Could not update mini skin preview:', err);
+  }
 }
 
 let draggedInstanceId = null;
@@ -1697,6 +3169,11 @@ function initInstanceTroubleshootWindow() {
 }
 
 function initInstanceActions() {
+  // Show Skin (optional fallback if present)
+  document.getElementById('btn-show-skin')?.addEventListener('click', () => {
+    openSkinViewerModal();
+  });
+
   // Play
   document.getElementById('btn-play').addEventListener('click', async () => {
     if (!selectedInstanceId) return;
@@ -2541,38 +4018,61 @@ function applyFallbackIcon(iconEl) {
   iconEl.classList.add('icon-fallback');
 }
 
-function buildModCard(mod, directory, preservedIconHtml) {
-  const card = document.createElement('div');
-  card.className = 'glass-card mod-card' + (!mod.enabled ? ' disabled' : '');
-  card.dataset.path = mod.path || '';
-  card.dataset.name = (mod.name || mod.file_name || '').toLowerCase();
+let modVirtualObserver = null;
+
+function getModVirtualObserver() {
+  if (!modVirtualObserver) {
+    const root = document.getElementById('tab-mods');
+    modVirtualObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const card = entry.target;
+        if (entry.isIntersecting) {
+          if (!card._isRendered) {
+            renderModCardContent(card);
+          }
+        } else {
+          if (card._isRendered) {
+            unloadModCardContent(card);
+          }
+        }
+      });
+    }, {
+      root: root || null,
+      rootMargin: '180px 0px',
+      threshold: 0,
+    });
+  }
+  return modVirtualObserver;
+}
+
+function renderModCardContent(card) {
+  const mod = card._mod;
+  const directory = card._directory;
+  const preservedIconHtml = card._preservedIconHtml;
+  if (!mod || card._isRendered) return;
+  card._isRendered = true;
+  card.classList.remove('is-unloaded');
+
   const badges = (mod.loader || '').split(',').map(l => l.trim()).filter(Boolean).map(l => `<span class="loader-badge ${l.toLowerCase()}">${l}</span>`).join(' ');
   card.innerHTML = `
     <div class="mod-info">
       <div class="mod-icon loading">${ICON_UNKNOWN_SVG}</div>
       <div class="mod-meta">
-        <div class="mod-name">${mod.name}</div>
-        <div class="mod-desc">${mod.description ? (mod.description.length > 140 ? mod.description.slice(0,137) + '...' : mod.description) : ''}</div>
-        <div class="mod-version">${mod.version}${badges ? ' ' + badges : ''}</div>
+        <div class="mod-name">${discoverEscape(mod.name || '')}</div>
+        <div class="mod-desc">${mod.description ? (mod.description.length > 140 ? discoverEscape(mod.description.slice(0,137)) + '...' : discoverEscape(mod.description)) : ''}</div>
+        <div class="mod-version">${discoverEscape(mod.version || '')}${badges ? ' ' + badges : ''}</div>
       </div>
     </div>
     <div class="mod-actions">
       <label class="mod-toggle-wrap">
-        <input type="checkbox" ${mod.enabled ? 'checked' : ''} data-path="${mod.path}" class="mod-toggle-input">
+        <input type="checkbox" ${mod.enabled ? 'checked' : ''} data-path="${discoverEscape(mod.path)}" class="mod-toggle-input">
         <span class="mod-toggle-slider"></span>
       </label>
-      <button class="btn-update-mod" data-path="${mod.path}" title="Update to latest version" type="button">${DOWNLOAD_ICON_SVG}</button>
-      <button class="btn-danger-pill btn-sm btn-delete-mod" data-path="${mod.path}" title="Delete mod">🗑</button>
+      <button class="btn-update-mod" data-path="${discoverEscape(mod.path)}" title="Update to latest version" type="button">${DOWNLOAD_ICON_SVG}</button>
+      <button class="btn-danger-pill btn-sm btn-delete-mod" data-path="${discoverEscape(mod.path)}" title="Delete mod">🗑</button>
     </div>
   `;
 
-  // Same method as the Java client's known-hash carry-over in refreshModsView:
-  // if this mod's icon was already resolved before this rebuild, re-apply that
-  // result directly instead of resetting to the "loading" placeholder and
-  // re-running the whole resolve/fetch pipeline. Without this, the periodic
-  // mods auto-refresh (every MODS_AUTO_REFRESH_MS) rebuilds every card from
-  // scratch, which is what made already-loaded icons appear to "unload" and
-  // reload on a timer even though nothing about the mod had changed.
   const iconEl = card.querySelector('.mod-icon');
   if (preservedIconHtml) {
     iconEl.classList.remove('loading');
@@ -2584,9 +4084,6 @@ function buildModCard(mod, directory, preservedIconHtml) {
     scheduleIconResolve(mod, iconEl);
   }
 
-  // Update button only appears when a prior "Check Updates" / "Update All"
-  // pass found a newer version available for this specific mod — the card
-  // itself also gets a glowing accent outline as an at-a-glance signal.
   const updateBtn = card.querySelector('.btn-update-mod');
   if (modUpdateInfo.has(mod.path)) {
     updateBtn.classList.add('has-update');
@@ -2625,15 +4122,6 @@ function buildModCard(mod, directory, preservedIconHtml) {
     }
   });
 
-  // Card click selects/unselects (ignore clicks on action controls)
-  card.addEventListener('click', (e) => {
-    if (e.target.closest('.mod-actions')) return;
-    card.classList.toggle('selected');
-    updateDeleteSelectedState();
-  });
-
-  // Toggle enable/disable in place — no full grid reload, so the card list
-  // doesn't flash/disappear on every click.
   const toggleInput = card.querySelector('.mod-toggle-input');
   toggleInput.addEventListener('change', async () => {
     const wantEnabled = toggleInput.checked;
@@ -2656,7 +4144,6 @@ function buildModCard(mod, directory, preservedIconHtml) {
     }
   });
 
-  // Delete just removes this one card — again, no full reload/flash.
   card.querySelector('.btn-delete-mod').addEventListener('click', async (ev) => {
     ev.stopPropagation();
     if (!confirm('Delete this mod?')) return;
@@ -2668,8 +4155,60 @@ function buildModCard(mod, directory, preservedIconHtml) {
       showToast('Mod deleted', 'success');
     } catch (e) { showToast(String(e), 'error'); }
   });
+}
 
+function unloadModCardContent(card) {
+  if (!card._isRendered) return;
+  const iconEl = card.querySelector('.mod-icon');
+  if (iconEl && !iconEl.classList.contains('loading')) {
+    card._preservedIconHtml = iconEl.innerHTML;
+  }
+  card._isRendered = false;
+  card.classList.add('is-unloaded');
+  card.innerHTML = '';
+}
+
+function createVirtualModCard(mod, directory, preservedIconHtml) {
+  const card = document.createElement('div');
+  card.className = 'glass-card mod-card is-unloaded' + (!mod.enabled ? ' disabled' : '');
+  card.dataset.path = mod.path || '';
+  card.dataset.name = (mod.name || mod.file_name || '').toLowerCase();
+  card._mod = mod;
+  card._directory = directory;
+  card._preservedIconHtml = preservedIconHtml;
+  card._isRendered = false;
+
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('.mod-actions')) return;
+    card.classList.toggle('selected');
+    updateDeleteSelectedState();
+  });
+
+  getModVirtualObserver().observe(card);
   return card;
+}
+
+function refreshModsVirtualCards() {
+  const grid = document.getElementById('mods-grid');
+  if (grid && modVirtualObserver) {
+    grid.querySelectorAll('.mod-card').forEach(card => {
+      modVirtualObserver.unobserve(card);
+      modVirtualObserver.observe(card);
+    });
+  }
+}
+
+function unloadAllModsVirtualCards() {
+  const grid = document.getElementById('mods-grid');
+  if (grid) {
+    grid.querySelectorAll('.mod-card').forEach(card => {
+      unloadModCardContent(card);
+    });
+  }
+}
+
+function buildModCard(mod, directory, preservedIconHtml) {
+  return createVirtualModCard(mod, directory, preservedIconHtml);
 }
 
 function updateDeleteSelectedState() {
@@ -2714,9 +4253,6 @@ async function loadMods() {
   const countEl = document.getElementById('mods-count');
   const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
 
-  // Only show a "Loading…" placeholder on the very first load for this
-  // directory — subsequent refreshes (e.g. after Check Updates) swap the
-  // grid content in one go so the list doesn't blank out and flash.
   const isFirstLoad = grid.children.length === 0;
   if (isFirstLoad) grid.innerHTML = '<div class="empty-state"><span>Loading mods…</span></div>';
 
@@ -2725,17 +4261,14 @@ async function loadMods() {
   modUpdateInfo = modUpdateInfoByDir.get(modsCacheKey(targetInstance, directory)) || new Map();
   refreshUpdateAllButtonState();
 
-  // Snapshot which mod icons are already resolved (loaded image or a
-  // confirmed "no icon" fallback) before we tear down the grid. Every prior
-  // auto-refresh tick rebuilt every card from scratch, which threw this
-  // state away and made icons flicker back to the loading spinner every
-  // MODS_AUTO_REFRESH_MS even though the mod itself hadn't changed at all.
   const preservedIcons = new Map();
   grid.querySelectorAll('.mod-card').forEach(card => {
     const path = card.dataset.path;
     const iconEl = card.querySelector('.mod-icon');
     if (path && iconEl && !iconEl.classList.contains('loading')) {
       preservedIcons.set(path, iconEl.innerHTML);
+    } else if (path && card._preservedIconHtml) {
+      preservedIcons.set(path, card._preservedIconHtml);
     }
   });
 
@@ -2748,7 +4281,7 @@ async function loadMods() {
       empty.innerHTML = `<span class="empty-icon">${ICON_EMPTY_BOX_SVG}</span><span>No mods found</span>`;
       frag.appendChild(empty);
     } else {
-      mods.forEach(mod => frag.appendChild(buildModCard(mod, directory, preservedIcons.get(mod.path))));
+      mods.forEach(mod => frag.appendChild(createVirtualModCard(mod, directory, preservedIcons.get(mod.path))));
     }
     grid.innerHTML = '';
     grid.appendChild(frag);
@@ -2756,12 +4289,6 @@ async function loadMods() {
     if (deleteSelectedBtn) deleteSelectedBtn.classList.toggle('hidden', mods.length === 0);
     updateModsCount();
     filterMods();
-    // Same off-screen "cull the blur, keep the listeners" treatment already
-    // used for the instance list, Discover grid, and Settings cards — the
-    // mods grid was the one long, blur-heavy list that didn't have it, so
-    // scrolling a big modlist repainted every card's backdrop-filter even
-    // for the ones off-screen.
-    enableCardCulling(grid, '.mod-card');
   } catch (e) {
     grid.innerHTML = `<div class="empty-state"><span style="color:var(--danger)">${e}</span></div>`;
     if (countEl) countEl.textContent = '';
@@ -4414,19 +5941,18 @@ function showDiscoverSkeletons() {
   if (!grid) return;
   grid.innerHTML = '';
   grid.classList.toggle('view-list', discoverState.view === 'list');
-  const count = discoverState.pageSize;
+  const count = Math.min(discoverState.pageSize, 12);
   for (let i = 0; i < count; i++) {
     const sk = document.createElement('div');
     sk.className = 'discover-skeleton';
-    sk.style.animationDelay = `${Math.min(i, count) * 30}ms`;
     sk.innerHTML = `
       <div class="discover-skeleton-icon"></div>
       <div class="discover-skeleton-body">
         <div class="discover-skeleton-line w-60"></div>
-        <div class="discover-skeleton-line w-35 dim"></div>
-        <div class="discover-skeleton-line w-90 dim"></div>
-        <div class="discover-skeleton-line w-75 dim"></div>
-        <div class="discover-skeleton-line w-40 pill"></div>
+        <div class="discover-skeleton-line w-35"></div>
+        <div class="discover-skeleton-line w-90"></div>
+        <div class="discover-skeleton-line w-75"></div>
+        <div class="discover-skeleton-line w-40"></div>
       </div>
     `;
     grid.appendChild(sk);
@@ -4448,25 +5974,9 @@ async function performDiscoverSearch() {
   if (!grid) return;
   showDiscoverSkeletons();
 
-  // Loader/Environment are mod-only facets on Modrinth's side (resourcepacks
-  // have neither) — never send them while browsing resourcepacks, even if
-  // stale state somehow lingers, or every resourcepack search would come
-  // back empty.
   const isModSearch = discoverState.type === 'mod';
   const loaderFilter = (isModSearch && discoverState.loader !== 'any') ? discoverState.loader : null;
-  // Previously this silently fell back to the selected instance's exact
-  // Minecraft version whenever no Game Version filter was explicitly chosen,
-  // even though the Game Version filter button still showed "any" with no
-  // active-filter indicator. That invisible extra facet is what made the
-  // search bar seem to "always" return no results — any instance whose
-  // tracked version didn't line up exactly with Modrinth's version tags (or
-  // just wasn't the version most mods list first) silently zeroed out every
-  // search. The Game Version dropdown is the one place this filter should be
-  // applied from now — respect only what's actually visible/selected there.
   const gameVersion = discoverState.gameVersion || null;
-  // Resolution is really just a category under a different header on
-  // Modrinth's side (see discover_get_resolutions), so it's sent as part
-  // of the same `categories` facet list rather than as its own param.
   const categoriesFilter = discoverState.resolution
     ? [...discoverState.categories, discoverState.resolution]
     : discoverState.categories;
@@ -4500,8 +6010,9 @@ function renderDiscoverResults(hits) {
     grid.innerHTML = `<div class="empty-state"><span class="empty-icon">${ICON_SEARCH_EMPTY_SVG}</span><span>No results found</span></div>`;
     return;
   }
-  hits.forEach((hit, i) => grid.appendChild(buildDiscoverCard(hit, i)));
-  enableCardCulling(grid, '.discover-card');
+  const frag = document.createDocumentFragment();
+  hits.forEach(hit => frag.appendChild(buildDiscoverCard(hit)));
+  grid.appendChild(frag);
 }
 
 function formatDiscoverCount(n) {
@@ -4558,21 +6069,94 @@ function discoverTagVariant(tag) {
   return '';
 }
 
-function buildDiscoverCard(hit, index = 0) {
-  const card = document.createElement('div');
-  card.className = 'discover-card discover-card-enter';
-  // Staggered fade/slide-in, capped so a long page doesn't take forever to
-  // finish animating. Runs once on creation only — see the CSS comment on
-  // `.discover-card-enter` for why this can't live on `.discover-card`
-  // itself (culling toggling would keep restarting it while scrolling).
-  card.style.animationDelay = `${Math.min(index, 12) * 35}ms`;
-  card.addEventListener('animationend', () => {
-    card.classList.remove('discover-card-enter');
-    card.style.animationDelay = '';
-  }, { once: true });
+const discoverVersionCache = new Map();
+
+async function fetchProjectVersions(projectId) {
+  if (discoverVersionCache.has(projectId)) {
+    return discoverVersionCache.get(projectId);
+  }
+  const versions = await api.discoverGetVersions(projectId, null, null);
+  discoverVersionCache.set(projectId, versions || []);
+  return versions || [];
+}
+
+async function populateVersionSelect(hit, versionSelect, downloadBtn) {
+  if (versionSelect._loaded) return;
+  versionSelect._loaded = true;
+  versionSelect.innerHTML = '<option value="">Loading versions…</option>';
+  try {
+    const versions = await fetchProjectVersions(hit.project_id);
+    if (!versions || versions.length === 0) {
+      versionSelect.innerHTML = '<option value="">No versions available</option>';
+      if (downloadBtn) downloadBtn.disabled = true;
+      return;
+    }
+    const target = currentDiscoverTargetInstance();
+    versionSelect.innerHTML = '';
+
+    versions.forEach(v => {
+      const primaryFile = (v.files && v.files.find(f => f.primary)) || (v.files && v.files[0]);
+      if (!primaryFile) return;
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      const latestGameVersion = (v.game_versions && v.game_versions[v.game_versions.length - 1]) || '';
+      const compatible = isDiscoverVersionCompatible(v, hit, target);
+      opt.textContent = compatible
+        ? `${v.version_number} (${latestGameVersion})`
+        : `${v.version_number} (${latestGameVersion}) — Incompatible`;
+      if (!compatible) {
+        opt.style.color = 'var(--danger)';
+        opt.dataset.incompatible = '1';
+      }
+      opt.dataset.fileUrl = primaryFile.url;
+      opt.dataset.fileName = primaryFile.filename;
+      versionSelect.appendChild(opt);
+    });
+
+    const firstCompatible = Array.from(versionSelect.options).find(o => !o.dataset.incompatible);
+    if (firstCompatible) versionSelect.value = firstCompatible.value;
+    if (downloadBtn) downloadBtn.disabled = false;
+  } catch (e) {
+    versionSelect.innerHTML = '<option value="">Failed to load versions (Click to retry)</option>';
+    versionSelect._loaded = false;
+  }
+}
+
+let discoverVirtualObserver = null;
+
+function getDiscoverVirtualObserver() {
+  if (!discoverVirtualObserver) {
+    const root = document.getElementById('tab-discover');
+    discoverVirtualObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const card = entry.target;
+        if (entry.isIntersecting) {
+          if (!card._isRendered) {
+            renderCardContent(card);
+          }
+        } else {
+          if (card._isRendered) {
+            unloadCardContent(card);
+          }
+        }
+      });
+    }, {
+      root: root || null,
+      rootMargin: '180px 0px',
+      threshold: 0,
+    });
+  }
+  return discoverVirtualObserver;
+}
+
+function renderCardContent(card) {
+  const hit = card._hit;
+  if (!hit || card._isRendered) return;
+  card._isRendered = true;
+  card.classList.remove('is-unloaded');
 
   const iconHtml = hit.icon_url
-    ? `<img src="${discoverEscape(hit.icon_url)}" alt="" draggable="false" loading="lazy" />`
+    ? `<img src="${discoverEscape(hit.icon_url)}" alt="" draggable="false" loading="lazy" decoding="async" />`
     : ICON_UNKNOWN_SVG;
 
   const sideLabel = discoverSideLabel(hit);
@@ -4586,45 +6170,83 @@ function buildDiscoverCard(hit, index = 0) {
   const tagsHtml = allTags.map(c => `<span class="discover-card-tag ${discoverTagVariant(c)}">${discoverEscape(capitalize(c))}</span>`).join('');
 
   card.innerHTML = `
-    <div class="discover-card-icon">${iconHtml}</div>
-    <div class="discover-card-main">
-      <div class="discover-card-heading">
-        <div class="discover-card-title" title="${discoverEscape(hit.title)}">${discoverEscape(hit.title)}</div>
-        ${hit.license ? `<span class="discover-card-badge">${discoverEscape(hit.license)}</span>` : ''}
-        ${sideLabel ? `<span class="discover-card-badge discover-card-badge-side ${sideVariant}">${discoverEscape(sideLabel)}</span>` : ''}
+    <div class="discover-card-top">
+      <div class="discover-card-icon">${iconHtml}</div>
+      <div class="discover-card-info">
+        <div class="discover-card-heading">
+          <span class="discover-card-title" title="${discoverEscape(hit.title)}">${discoverEscape(hit.title)}</span>
+          ${sideLabel ? `<span class="discover-card-badge discover-card-badge-side ${sideVariant}">${discoverEscape(sideLabel)}</span>` : ''}
+          ${hit.license ? `<span class="discover-card-badge">${discoverEscape(hit.license)}</span>` : ''}
+        </div>
+        <div class="discover-card-author">by ${discoverEscape(hit.author)}</div>
       </div>
-      <div class="discover-card-author">by ${discoverEscape(hit.author)}</div>
-      <div class="discover-card-desc">${discoverEscape(hit.description)}</div>
+    </div>
+    <div class="discover-card-desc">${discoverEscape(hit.description || '')}</div>
+    <div class="discover-card-meta">
+      <div class="discover-card-stats">
+        <span>⬇ ${formatDiscoverCount(hit.downloads)}</span>
+        <span>♥ ${formatDiscoverCount(hit.follows)}</span>
+        ${updatedLabel ? `<span>↻ ${discoverEscape(updatedLabel)}</span>` : ''}
+      </div>
       ${tagsHtml ? `<div class="discover-card-tags">${tagsHtml}</div>` : ''}
     </div>
-    <div class="discover-card-stats">
-      <span class="discover-card-stat" title="Downloads">⬇ ${formatDiscoverCount(hit.downloads)}</span>
-      <span class="discover-card-stat" title="Followers">♥ ${formatDiscoverCount(hit.follows)}</span>
-      ${updatedLabel ? `<span class="discover-card-stat discover-card-stat-dim" title="Last updated">↻ ${discoverEscape(updatedLabel)}</span>` : ''}
-    </div>
-    <div class="discover-card-actions">
+    <div class="discover-card-footer">
       <select class="input-field discover-version-select" data-project-id="${discoverEscape(hit.project_id)}">
-        <option value="">Loading versions…</option>
+        <option value="__latest__">✦ Latest Compatible Version</option>
       </select>
-      <button class="btn-accent btn-sm discover-download-btn" data-project-id="${discoverEscape(hit.project_id)}" data-project-type="${discoverEscape(hit.project_type)}" disabled>Download</button>
-      <button class="btn-pill btn-sm discover-retry-btn hidden" title="Retry loading versions">⟳ Retry</button>
+      <button class="btn-accent btn-sm discover-download-btn" data-project-id="${discoverEscape(hit.project_id)}">Download</button>
     </div>
   `;
 
   const versionSelect = card.querySelector('.discover-version-select');
   const downloadBtn = card.querySelector('.discover-download-btn');
-  const retryBtn = card.querySelector('.discover-retry-btn');
 
-  loadDiscoverCardVersions(hit, versionSelect, downloadBtn, retryBtn);
+  // Load versions on-demand when clicked/focused
+  versionSelect.addEventListener('focus', () => populateVersionSelect(hit, versionSelect, downloadBtn));
+  versionSelect.addEventListener('mousedown', () => populateVersionSelect(hit, versionSelect, downloadBtn));
 
   downloadBtn.addEventListener('click', () => downloadDiscoverSelection(hit, versionSelect, downloadBtn));
-  retryBtn.addEventListener('click', () => {
-    retryBtn.classList.add('hidden');
-    versionSelect.innerHTML = '<option value="">Loading versions…</option>';
-    loadDiscoverCardVersions(hit, versionSelect, downloadBtn, retryBtn);
-  });
+}
 
+function unloadCardContent(card) {
+  if (!card._isRendered) return;
+  card._isRendered = false;
+  card.classList.add('is-unloaded');
+  card.innerHTML = '';
+}
+
+function createVirtualDiscoverCard(hit) {
+  const card = document.createElement('div');
+  card.className = 'discover-card is-unloaded';
+  card.dataset.projectId = hit.project_id;
+  card._hit = hit;
+  card._isRendered = false;
+
+  getDiscoverVirtualObserver().observe(card);
   return card;
+}
+
+function refreshDiscoverVirtualCards() {
+  const grid = document.getElementById('discover-results');
+  if (grid && discoverVirtualObserver) {
+    grid.querySelectorAll('.discover-card').forEach(card => {
+      discoverVirtualObserver.unobserve(card);
+      discoverVirtualObserver.observe(card);
+    });
+  }
+}
+
+function unloadAllDiscoverVirtualCards() {
+  const grid = document.getElementById('discover-results');
+  if (grid) {
+    grid.querySelectorAll('.discover-card').forEach(card => {
+      unloadCardContent(card);
+    });
+  }
+}
+
+function buildDiscoverCard(hit) {
+  return createVirtualDiscoverCard(hit);
 }
 
 // A version is only judged against a target instance if one is actually
@@ -4634,7 +6256,7 @@ function buildDiscoverCard(hit, index = 0) {
 // against (Modrinth resourcepacks aren't loader-specific).
 function isDiscoverVersionCompatible(version, hit, target) {
   if (!target) return true;
-  if (target.minecraft_version && !version.game_versions.includes(target.minecraft_version)) {
+  if (target.minecraft_version && version.game_versions && !version.game_versions.includes(target.minecraft_version)) {
     return false;
   }
   if (hit.project_type === 'mod') {
@@ -4647,73 +6269,34 @@ function isDiscoverVersionCompatible(version, hit, target) {
   return true;
 }
 
-async function loadDiscoverCardVersions(hit, versionSelect, downloadBtn, retryBtn) {
-  const target = currentDiscoverTargetInstance();
-  // Always fetch the full version list rather than asking Modrinth to
-  // filter it down — filtering server-side made incompatible versions
-  // vanish from the dropdown entirely (so e.g. picking "Any version" in
-  // the search filter would surface a resourcepack, but its own version
-  // picker still only showed versions matching the target instance,
-  // often leaving nothing at all). Now every version is listed; ones that
-  // don't match the targeted instance are just labelled/colored instead
-  // of hidden, so they're still there to pick if the user wants them.
-  if (retryBtn) retryBtn.classList.add('hidden');
-
-  try {
-    const versions = await api.discoverGetVersions(hit.project_id, null, null);
-    if (!versions || versions.length === 0) {
-      versionSelect.innerHTML = '<option value="">No versions available</option>';
-      downloadBtn.disabled = true;
-      return;
-    }
-    versionSelect.innerHTML = '';
-    versions.forEach(v => {
-      const primaryFile = v.files.find(f => f.primary) || v.files[0];
-      if (!primaryFile) return;
-      const opt = document.createElement('option');
-      opt.value = v.id;
-      const latestGameVersion = v.game_versions[v.game_versions.length - 1] || '';
-      const compatible = isDiscoverVersionCompatible(v, hit, target);
-      opt.textContent = compatible
-        ? `${v.version_number} (${latestGameVersion})`
-        : `${v.version_number} (${latestGameVersion}) — Incompatible`;
-      if (!compatible) {
-        opt.style.color = 'var(--danger)';
-        opt.dataset.incompatible = '1';
-      }
-      opt.dataset.fileUrl = primaryFile.url;
-      opt.dataset.fileName = primaryFile.filename;
-      versionSelect.appendChild(opt);
-    });
-    // Prefer a compatible version as the default selection when there is
-    // one, so the dropdown doesn't default to an incompatible version just
-    // because it happened to be newest — the user can still pick one of
-    // the (Incompatible) options manually if they want to.
-    const firstCompatible = Array.from(versionSelect.options).find(o => !o.dataset.incompatible);
-    if (firstCompatible) versionSelect.value = firstCompatible.value;
-    downloadBtn.disabled = versionSelect.options.length === 0;
-  } catch (e) {
-    versionSelect.innerHTML = '<option value="">Failed to load versions</option>';
-    downloadBtn.disabled = true;
-    if (retryBtn) retryBtn.classList.remove('hidden');
-  }
-}
-
 async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
   if (!settings) settings = await api.getSettings();
   const target = currentDiscoverTargetInstance();
   const directory = target ? (target.directory || settings.game_directory) : settings.game_directory;
 
+  // If versions haven't been loaded into the select yet, load them now!
+  if (!versionSelect._loaded || versionSelect.value === '__latest__') {
+    downloadBtn.disabled = true;
+    const oldText = downloadBtn.textContent;
+    downloadBtn.textContent = 'Checking…';
+    await populateVersionSelect(hit, versionSelect, downloadBtn);
+    downloadBtn.textContent = oldText;
+  }
+
   const opt = versionSelect.selectedOptions[0];
   if (!opt || !opt.dataset.fileUrl) {
-    showToast('No version selected', 'error');
+    showToast('No version available for download', 'error');
+    downloadBtn.disabled = false;
     return;
   }
 
   if (opt.dataset.incompatible) {
     const targetLabel = target ? (target.name || target.version_id) : 'the targeted instance';
     const proceed = confirm(`This version doesn't match ${targetLabel} and is marked (Incompatible). Download it anyway?`);
-    if (!proceed) return;
+    if (!proceed) {
+      downloadBtn.disabled = false;
+      return;
+    }
   }
 
   downloadBtn.disabled = true;
@@ -4730,8 +6313,12 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
     setTimeout(() => { downloadBtn.textContent = originalText; downloadBtn.disabled = false; }, 1500);
   } catch (e) {
     const cancelled = dlWidgetGeneric && dlWidgetGeneric.isCancelled(dlId);
-    if (!cancelled) showToast(String(e), 'error');
-    if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, false);
+    if (cancelled) {
+      showToast('Download cancelled', 'info');
+    } else {
+      showToast('Download failed: ' + e, 'error');
+      if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, false, `Failed: ${e}`);
+    }
     downloadBtn.textContent = originalText;
     downloadBtn.disabled = false;
   }
@@ -6184,6 +7771,39 @@ function initSettings() {
       }
     });
   }
+
+  // Settings Accordion (only 1 section open at a time)
+  const accordionSections = document.querySelectorAll('#tab-settings .settings-card.accordion-section');
+  const savedActiveSection = localStorage.getItem('zero_settings_last_section') || 'appearance';
+
+  if (accordionSections.length > 0) {
+    accordionSections.forEach(section => {
+      const isTarget = section.dataset.section === savedActiveSection;
+      section.classList.toggle('active', isTarget);
+    });
+
+    if (![...accordionSections].some(s => s.classList.contains('active'))) {
+      accordionSections[0].classList.add('active');
+    }
+
+    accordionSections.forEach(section => {
+      const header = section.querySelector('.settings-card-header');
+      if (header) {
+        header.addEventListener('click', () => {
+          const isCurrentlyActive = section.classList.contains('active');
+          // Close all sections
+          accordionSections.forEach(s => s.classList.remove('active'));
+          // Open clicked section
+          if (!isCurrentlyActive) {
+            section.classList.add('active');
+            if (section.dataset.section) {
+              localStorage.setItem('zero_settings_last_section', section.dataset.section);
+            }
+          }
+        });
+      }
+    });
+  }
 }
 
 /// Render the "Hidden Instances" list in Settings → Performance & Java —
@@ -6485,38 +8105,50 @@ const BG = {
 
   resize() {
     if (!this.canvas) return;
+    const oldW = this.canvas.width || window.innerWidth;
+    const oldH = this.canvas.height || window.innerHeight;
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
+    const newW = this.canvas.width;
+    const newH = this.canvas.height;
+    // Rescale particle positions to fill the new canvas area
+    if (oldW > 0 && oldH > 0) {
+      this.particles.forEach(p => {
+        p.x = (p.x / oldW) * newW;
+        p.baseX = (p.baseX / oldW) * newW;
+        p.y = (p.y / oldH) * newH;
+      });
+    }
   },
 
   createParticles() {
     this.particles = [];
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 40; i++) {
       this.particles.push({
         x: Math.random() * window.innerWidth,
         y: Math.random() * window.innerHeight,
         baseX: Math.random() * window.innerWidth,
-        size: 1.5 + Math.random() * 3,
+        size: 1.2 + Math.random() * 3.8,
         alpha: Math.random() * 0.5,
-        alphaDir: (Math.random() * 0.01 + 0.003) * (Math.random() > 0.5 ? 1 : -1),
-        vy: 0.15 + Math.random() * 0.4,
-        driftX: (Math.random() - 0.5) * 0.3,
+        alphaDir: (Math.random() * 0.008 + 0.002) * (Math.random() > 0.5 ? 1 : -1),
+        vy: 0.12 + Math.random() * 0.35,
+        driftX: (Math.random() - 0.5) * 0.25,
         swayPhase: Math.random() * Math.PI * 2,
-        swaySpeed: 0.01 + Math.random() * 0.02,
-        swayAmp: 8 + Math.random() * 18,
+        swaySpeed: 0.008 + Math.random() * 0.018,
+        swayAmp: 10 + Math.random() * 22,
       });
     }
   },
 
   createOrbs() {
     this.orbs = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 4; i++) {
       this.orbs.push({
         xFrac: Math.random(),
         yFrac: Math.random(),
-        radius: 100 + Math.random() * 160,
+        radius: 120 + Math.random() * 140,
         phase: Math.random() * Math.PI * 2,
-        speed: 0.2 + Math.random() * 0.3,
+        speed: 0.2 + Math.random() * 0.25,
       });
     }
   },
@@ -6748,37 +8380,64 @@ const BG = {
         ctx.restore();
 
       } else if (animStyle === 'Orbs') {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
         this.orbs.forEach(orb => {
           const ox = W * orb.xFrac + Math.sin(this.phase * orb.speed + orb.phase) * 60;
           const oy = H * orb.yFrac + Math.cos(this.phase * orb.speed * 0.7 + orb.phase) * 40;
-          const og = ctx.createRadialGradient(ox, oy, 0, ox, oy, orb.radius);
-          og.addColorStop(0, `rgba(${r},${g},${b},${Math.min(1, 0.13 * aBoost)})`);
+          const rad = orb.radius;
+          const og = ctx.createRadialGradient(ox, oy, 0, ox, oy, rad);
+          og.addColorStop(0, `rgba(${r},${g},${b},${Math.min(1, 0.18 * aBoost)})`);
+          og.addColorStop(0.5, `rgba(${r},${g},${b},${Math.min(1, 0.06 * aBoost)})`);
           og.addColorStop(1, `rgba(${r},${g},${b},0)`);
           ctx.fillStyle = og;
-          ctx.fillRect(0, 0, W, H);
+          ctx.fillRect(ox - rad, oy - rad, rad * 2, rad * 2);
         });
+        ctx.restore();
 
       } else if (animStyle === 'Fireflies') {
+        // Draw soft glow halos for a dreamy firefly effect
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
         this.particles.forEach(p => {
           p.swayPhase += p.swaySpeed * speed;
-          p.baseX += p.driftX * 0.2 * speed;
+          p.baseX += p.driftX * 0.15 * speed;
           p.x = p.baseX + Math.sin(p.swayPhase) * p.swayAmp;
-          p.y += Math.cos(p.swayPhase * 0.7) * 0.3 * speed;
-          p.alpha += p.alphaDir * speed;
-          if (p.alpha > 0.85 || p.alpha < 0.05) p.alphaDir = -p.alphaDir;
-          if (p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) {
+          p.y += Math.cos(p.swayPhase * 0.5) * 0.25 * speed;
+          // Organic pulsing
+          const pulse = 0.5 + 0.5 * Math.sin(p.swayPhase * 1.3 + p.size);
+          p.alpha += p.alphaDir * speed * 0.7;
+          if (p.alpha > 0.9 || p.alpha < 0.03) p.alphaDir = -p.alphaDir;
+          const a = Math.max(0, p.alpha * pulse);
+          if (p.x < -30 || p.x > W + 30 || p.y < -30 || p.y > H + 30) {
             p.baseX = p.x = Math.random() * W;
             p.y = Math.random() * H;
-            p.alpha = 0.1;
+            p.alpha = 0.05;
           }
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${r},${g},${b},${Math.min(1, Math.max(0, p.alpha) * aBoost)})`;
-          ctx.fill();
+          // Outer soft glow
+          const glowRadius = p.size * 10;
+          const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowRadius);
+          grd.addColorStop(0, `rgba(${r},${g},${b},${Math.min(1, a * 0.6 * aBoost)})`);
+          grd.addColorStop(0.3, `rgba(${r},${g},${b},${Math.min(1, a * 0.2 * aBoost)})`);
+          grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+          ctx.fillStyle = grd;
+          ctx.fillRect(p.x - glowRadius, p.y - glowRadius, glowRadius * 2, glowRadius * 2);
+          // Bright core
+          const coreRadius = p.size * 0.8;
+          const core = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, coreRadius);
+          core.addColorStop(0, `rgba(255,255,255,${Math.min(1, a * 0.9 * aBoost)})`);
+          core.addColorStop(1, `rgba(${r},${g},${b},0)`);
+          ctx.fillStyle = core;
+          ctx.fillRect(p.x - coreRadius, p.y - coreRadius, coreRadius * 2, coreRadius * 2);
         });
+        ctx.restore();
+
 
       } else {
-        // Particles (float up)
+        // Particles (float up) with glow and constellation lines
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        // Update positions first
         this.particles.forEach(p => {
           p.y -= p.vy * speed;
           p.swayPhase += p.swaySpeed * speed;
@@ -6792,11 +8451,45 @@ const BG = {
             p.alpha = 0.05;
             p.alphaDir = Math.abs(p.alphaDir);
           }
+        });
+        // Draw faint constellation lines between nearby particles
+        const maxDist = 110;
+        for (let i = 0; i < this.particles.length; i++) {
+          const a = this.particles[i];
+          if (a.alpha < 0.05) continue;
+          for (let j = i + 1; j < this.particles.length; j++) {
+            const b = this.particles[j];
+            if (b.alpha < 0.05) continue;
+            const dx = a.x - b.x, dy = a.y - b.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < maxDist) {
+              const lineAlpha = (1 - dist / maxDist) * Math.min(a.alpha, b.alpha) * 0.35 * aBoost;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.strokeStyle = `rgba(${r},${g},${b},${Math.min(1, lineAlpha)})`;
+              ctx.lineWidth = 0.6;
+              ctx.stroke();
+            }
+          }
+        }
+        // Draw glowing particles
+        this.particles.forEach(p => {
+          const a = Math.max(0, p.alpha);
+          // Soft glow
+          const glowR = p.size * 5;
+          const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowR);
+          grd.addColorStop(0, `rgba(${r},${g},${b},${Math.min(1, a * 0.5 * aBoost)})`);
+          grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+          ctx.fillStyle = grd;
+          ctx.fillRect(p.x - glowR, p.y - glowR, glowR * 2, glowR * 2);
+          // Bright core dot
           ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${r},${g},${b},${Math.min(1, Math.max(0, p.alpha) * aBoost)})`;
+          ctx.arc(p.x, p.y, p.size * 0.6, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255,255,255,${Math.min(1, a * 0.8 * aBoost)})`;
           ctx.fill();
         });
+        ctx.restore();
       }
     }
 
@@ -7546,6 +9239,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initAccountDropdown();
   initDownloadWidget();
   initInstanceActions();
+  initSkinViewerUI();
+  initDressingRoomUI();
+  initSkinMiniPreview();
   initCrashTroubleshootWindow();
   initInstanceTroubleshootWindow();
   initMods();
@@ -7673,31 +9369,179 @@ function initAutoUpdate() {
 
   const promptView = document.getElementById('update-prompt-view');
   const progressView = document.getElementById('update-progress-view');
+  const readyView = document.getElementById('update-ready-view');
   const progressBar = document.getElementById('update-progress-bar');
   const progressPct = document.getElementById('update-progress-pct');
   const progressLabel = document.getElementById('update-progress-label');
+  const readyCountdown = document.getElementById('update-ready-countdown');
+  const readyOkayBtn = document.getElementById('btn-update-ready-okay');
+  const readyReopenBtn = document.getElementById('btn-update-ready-reopen');
   const closeBtn = document.getElementById('btn-close-update-overlay');
   const noBtn = document.getElementById('btn-update-no');
   const yesBtn = document.getElementById('btn-update-yes');
+  const relaunchToggle = document.getElementById('setting-update-relaunch');
+  const virusTotalLink = document.getElementById('link-virustotal');
+  const openFolderBtn = document.getElementById('btn-open-update-folder');
+  const copyLinkBtn = document.getElementById('btn-copy-update-link');
 
-  const close = () => overlay.classList.add('hidden');
+  // Off by default — installing without relaunching lets people finish
+  // whatever they're doing (or scan the freshly-swapped file) before the
+  // new version actually starts.
+  if (relaunchToggle) relaunchToggle.checked = false;
+
+  const close = () => {
+    overlay.classList.add('hidden');
+    clearReadyCountdown();
+  };
   closeBtn.addEventListener('click', close);
   noBtn.addEventListener('click', close);
 
+  if (virusTotalLink) {
+    virusTotalLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const url = virusTotalLink.dataset.url;
+      if (window.__TAURI__ && window.__TAURI__.shell && window.__TAURI__.shell.open) {
+        await window.__TAURI__.shell.open(url);
+      } else {
+        window.open(url, '_blank');
+      }
+    });
+  }
+
+  if (openFolderBtn) {
+    openFolderBtn.addEventListener('click', async () => {
+      try {
+        await api.openCurrentExeFolder();
+      } catch (e) {
+        showToast('Failed to open folder: ' + e, 'error');
+      }
+    });
+  }
+
+  if (copyLinkBtn) {
+    copyLinkBtn.addEventListener('click', async () => {
+      const url = pendingUpdate && pendingUpdate.url;
+      if (!url) {
+        showToast('No download link available yet', 'error');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('Download link copied', 'success');
+      } catch (e) {
+        showToast('Failed to copy link: ' + e, 'error');
+      }
+    });
+  }
+
   let pendingUpdate = null;
   let unlistenProgress = null;
+  let downloadedUpdatePath = null;
+  let readyCountdownTimer = null;
 
   const showUpdatePrompt = (update) => {
     pendingUpdate = update;
     document.getElementById('update-version-text').textContent = `v${update.version}`;
     document.getElementById('update-size-text').textContent =
       update.size_mb ? `${update.size_mb.toFixed(1)} MB` : 'size unknown';
+    // "What's new" section — only shown when the manifest actually gave us
+    // changelog bullets for this version; otherwise the prompt looks the
+    // same as before (just version + size + actions).
+    const changelogEl = document.getElementById('update-changelog');
+    const changelogList = document.getElementById('update-changelog-list');
+    const notes = Array.isArray(update.changelog) ? update.changelog.filter(Boolean) : [];
+    if (notes.length) {
+      changelogList.innerHTML = '';
+      notes.forEach((note) => {
+        const li = document.createElement('li');
+        li.textContent = note;
+        changelogList.appendChild(li);
+      });
+      changelogEl.classList.remove('hidden');
+    } else {
+      changelogEl.classList.add('hidden');
+    }
     promptView.classList.remove('hidden');
     progressView.classList.add('hidden');
+    readyView.classList.add('hidden');
     closeBtn.style.visibility = 'visible';
     overlay.classList.remove('hidden');
   };
   window.__ZL_showUpdatePrompt = showUpdatePrompt;
+
+  const clearReadyCountdown = () => {
+    if (readyCountdownTimer) { clearInterval(readyCountdownTimer); readyCountdownTimer = null; }
+  };
+
+  // Actually performs the swap (and optional restart) via the backend.
+  // Called either automatically (relaunch toggle on, after the 5s window)
+  // or manually from the ready view's buttons.
+  const doInstall = async (relaunch) => {
+    clearReadyCountdown();
+    readyOkayBtn.disabled = true;
+    readyReopenBtn.disabled = true;
+    readyCountdown.classList.remove('hidden');
+    readyCountdown.textContent = relaunch ? 'Reopening…' : 'Installing…';
+    try {
+      await api.installUpdate(downloadedUpdatePath, relaunch);
+      // Only reached when relaunch was off and the platform didn't need to
+      // exit to finish the swap (Linux/macOS).
+      readyCountdown.textContent = 'Update installed — restart the app to use the new version.';
+      readyOkayBtn.disabled = false;
+      readyOkayBtn.textContent = 'Close';
+      readyReopenBtn.classList.add('hidden');
+    } catch (e) {
+      console.error('Update install failed:', e);
+      readyCountdown.textContent = `Update failed: ${e}`;
+      readyOkayBtn.disabled = false;
+      readyReopenBtn.disabled = false;
+    }
+  };
+
+  // Shown right after the download finishes. If "relaunch automatically"
+  // is on, this counts down 5 seconds and then installs + restarts on its
+  // own (Reopen Now still lets them skip the wait). If it's off, the
+  // window just sits there until they click Okay (install, stay on the
+  // old code until they restart it themselves) or Reopen Now (install and
+  // restart immediately).
+  const showUpdateReady = (relaunch) => {
+    progressView.classList.add('hidden');
+    readyView.classList.remove('hidden');
+    closeBtn.style.visibility = 'hidden';
+    readyOkayBtn.disabled = false;
+    readyReopenBtn.disabled = false;
+    readyReopenBtn.classList.remove('hidden');
+    readyOkayBtn.textContent = 'Okay';
+
+    if (relaunch) {
+      let secondsLeft = 5;
+      readyCountdown.classList.remove('hidden');
+      readyCountdown.textContent = `Reopening automatically in ${secondsLeft}s…`;
+      readyOkayBtn.classList.add('hidden');
+      clearReadyCountdown();
+      readyCountdownTimer = setInterval(() => {
+        secondsLeft -= 1;
+        if (secondsLeft <= 0) {
+          clearReadyCountdown();
+          doInstall(true);
+          return;
+        }
+        readyCountdown.textContent = `Reopening automatically in ${secondsLeft}s…`;
+      }, 1000);
+    } else {
+      readyCountdown.classList.add('hidden');
+      readyOkayBtn.classList.remove('hidden');
+    }
+  };
+
+  readyOkayBtn.addEventListener('click', () => {
+    if (readyOkayBtn.textContent === 'Close') {
+      close();
+      return;
+    }
+    doInstall(false);
+  });
+  readyReopenBtn.addEventListener('click', () => doInstall(true));
 
   yesBtn.addEventListener('click', async () => {
     if (!pendingUpdate) return;
@@ -7721,18 +9565,14 @@ function initAutoUpdate() {
         }
       });
 
-      const downloadedPath = await api.downloadUpdate(pendingUpdate.url);
+      downloadedUpdatePath = await api.downloadUpdate(pendingUpdate.url);
 
       if (unlistenProgress) { unlistenProgress(); unlistenProgress = null; }
-      progressLabel.textContent = 'Installing update…';
-      progressBar.style.width = '100%';
-      progressPct.textContent = '100%';
 
-      // The app exits and relaunches as part of this call on success — if
-      // we get a response back at all here, something went wrong.
-      await api.installUpdate(downloadedPath);
+      const relaunch = !!(relaunchToggle && relaunchToggle.checked);
+      showUpdateReady(relaunch);
     } catch (e) {
-      console.error('Update failed:', e);
+      console.error('Update download failed:', e);
       progressLabel.textContent = `Update failed: ${e}`;
       closeBtn.style.visibility = 'visible';
       if (unlistenProgress) { unlistenProgress(); unlistenProgress = null; }

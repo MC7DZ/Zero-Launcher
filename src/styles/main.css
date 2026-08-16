@@ -172,9 +172,10 @@ html, body {
   height: 100%;
   z-index: 4;
   pointer-events: none;
-  box-shadow: inset 0 0 140px rgba(0, 0, 0, 0.8);
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.72) 100%);
   opacity: 0;
   transition: opacity 0.3s ease;
+  transform: translateZ(0);
 }
 
 #app {
@@ -194,15 +195,19 @@ html, body {
 
 /* ═══ Top Bar ═══ */
 #top-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   padding: 12px 20px;
   background: var(--header-bg, rgba(15, 15, 20, 0.45));
   backdrop-filter: blur(var(--blur-amount, 12px));
   -webkit-backdrop-filter: blur(var(--blur-amount, 12px));
   border-bottom: 1px solid rgba(var(--overlay-rgb),0.06);
   flex-shrink: 0;
+}
+#top-bar #tab-bar {
+  grid-column: 2;
+  justify-self: center;
 }
 
 .brand {
@@ -239,7 +244,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(var(--overlay-rgb),0.08);
+  background: var(--panel);
   border: none;
   color: #fff;
   font-family: var(--font);
@@ -250,24 +255,115 @@ html, body {
   cursor: pointer;
   transition: background var(--transition);
 }
-.account-button:hover { background: rgba(var(--overlay-rgb),0.14); }
+.account-button:hover { background: var(--panel-hover); }
+
+/* Shown on the header account button when the active Microsoft account's
+   session has expired (or re-signing it in otherwise failed) — a quick
+   visual nudge that it needs to be reconnected before it'll launch. */
+.account-button-needs-reauth,
+.account-button-under-preview.account-button-needs-reauth {
+  background: rgba(245, 197, 24, 0.16);
+  border: 1px solid rgba(245, 197, 24, 0.55);
+  color: #f5c518;
+  animation: account-needs-reauth-pulse 2s ease-in-out infinite;
+}
+.account-button-needs-reauth:hover,
+.account-button-under-preview.account-button-needs-reauth:hover {
+  background: rgba(245, 197, 24, 0.26);
+}
+.account-button-needs-reauth .account-arrow { opacity: 0.8; }
+@keyframes account-needs-reauth-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 197, 24, 0.35); }
+  50% { box-shadow: 0 0 0 4px rgba(245, 197, 24, 0); }
+}
 .account-icon { font-size: 14px; }
 .account-arrow { opacity: 0.5; font-size: 10px; }
+.account-avatar-header {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(var(--overlay-rgb), 0.15);
+}
+.account-avatar-header .account-avatar-fallback { font-size: 11px; }
+.account-avatar-fallback-mc {
+  font-family: 'Minecraft', var(--font);
+  font-weight: normal;
+  font-size: 15px !important;
+  letter-spacing: 0;
+  color: #fff !important;
+  position: relative;
+  top: 2px;
+}
+.account-avatar:has(.account-avatar-fallback-mc) {
+  background: #000;
+}
 
-/* ─── Account Dropdown ─── */
+/* Match the "Sign in with Microsoft" / "Add Microsoft Account" buttons to
+   the same, less-rounded corner radius as the offline account button. */
+#account-modal-overlay .btn-accent {
+  border-radius: var(--radius);
+}
+
+.account-row-under-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 20px;
+}
+.account-button-under-preview {
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 42px;
+  box-sizing: border-box;
+}
+.account-button-under-preview:hover {
+  background: var(--panel-hover);
+}
+.account-button-under-preview #account-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.skin-settings-btn {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  flex: 0 0 42px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.skin-settings-btn svg {
+  width: 18px;
+  height: 18px;
+}
 .dropdown-panel {
   position: absolute;
   top: 56px;
   right: 20px;
   width: 300px;
-  background: var(--panel-solid);
-  backdrop-filter: blur(var(--blur-amount, 16px));
-  -webkit-backdrop-filter: blur(var(--blur-amount, 16px));
-  border: 1px solid rgba(var(--overlay-rgb),0.1);
+  background: rgba(22, 22, 32, 0.84);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
   border-radius: var(--radius);
   padding: 12px;
   z-index: 200;
   box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  transform: translateZ(0);
+}
+[data-theme="light"] .dropdown-panel {
+  background: rgba(248, 249, 252, 0.88);
+  border-color: rgba(0,0,0,0.1);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.15);
 }
 .dropdown-panel.hidden { display: none; }
 
@@ -387,6 +483,24 @@ html, body {
     0 0 0 1px var(--accent),
     0 0 16px var(--accent-glow);
 }
+/* Kill the browser's default focus rectangle on click (that's the boxy
+   "selection box" outline) — replace it with a quick, subtle press-scale
+   instead. Keyboard users still get a clear (but calm) ring via
+   :focus-visible, which only fires for keyboard/programmatic focus, not
+   mouse clicks. */
+.pill-tab {
+  outline: none;
+}
+.pill-tab:focus {
+  outline: none;
+}
+.pill-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 16, 185, 129), 0.5);
+}
+.pill-tab:active {
+  transform: scale(0.96);
+}
 
 /* ═══ Tab Content ═══ */
 #tab-content {
@@ -401,7 +515,10 @@ html, body {
   inset: 0;
   padding: 20px;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   animation: tabFadeIn 0.25s ease;
+  contain: layout;
 }
 .tab-page.active { display: block; }
 
@@ -421,17 +538,15 @@ html, body {
 }
 
 .glass-card {
-  background: var(--panel, rgba(19, 19, 26, 0.45));
-  backdrop-filter: blur(var(--blur-amount, 12px));
-  -webkit-backdrop-filter: blur(var(--blur-amount, 12px));
+  background: var(--panel, rgba(22, 22, 30, 0.85));
   border: 1px solid var(--panel-border, rgba(var(--overlay-rgb), 0.08));
   border-radius: var(--radius);
   padding: 18px 20px;
-  transition: background var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 .glass-card:hover {
   border-color: var(--accent-dim);
-  box-shadow: 0 0 0 1px var(--accent-dim), 0 10px 26px rgba(0,0,0,0.18);
+  box-shadow: 0 0 0 1px var(--accent-dim), 0 8px 20px rgba(0,0,0,0.22);
 }
 
 /* ═══ Inputs ═══ */
@@ -581,6 +696,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 .btn-sm { padding: 6px 14px; font-size: 12px; }
 .btn-full { width: 100%; }
+
+#btn-new-instance {
+  border-radius: var(--radius-sm);
+}
 
 .btn-pill {
   background: rgba(var(--overlay-rgb),0.07);
@@ -736,6 +855,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   margin-right: 2px;
   animation: btn-play-hourglass-spin 1.1s ease-in-out infinite;
 }
+@keyframes msa-spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes btn-play-hourglass-spin {
   0%, 40% { transform: rotate(0deg); }
   50%, 90% { transform: rotate(180deg); }
@@ -747,6 +870,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   gap: 20px;
   height: 100%;
+  position: relative;
 }
 
 .instance-sidebar {
@@ -773,7 +897,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 10px 12px;
   border-radius: var(--radius);
   cursor: pointer;
-  transition: all var(--transition);
+  transition: background var(--transition), border-color var(--transition), box-shadow var(--transition);
   background: var(--panel);
   border: 1px solid transparent;
   /* Skip layout/style/paint entirely for rows scrolled out of view instead
@@ -1045,11 +1169,17 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .info-label { color: var(--text-muted); font-size: 13px; }
 .info-value { font-weight: 600; font-size: 13px; }
 
-.detail-actions {
+.detail-actions-wrap {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   margin-top: auto;
   padding-top: 12px;
+}
+.detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* ═══ Running Instances (inline buttons, sits under Mod Loader / Game Directory) ═══
@@ -1278,27 +1408,40 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 /* ═══ Overlay / Modal ═══ */
+/* ═══ Overlay / Modal ═══ */
 .overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0,0,0,0.6);
-  backdrop-filter: blur(4px);
+  background: rgba(8, 8, 14, 0.42);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  transform: translateZ(0);
 }
 .overlay.hidden { display: none; }
 
 .overlay-card {
-  background: var(--panel-solid);
-  border: 1px solid rgba(var(--overlay-rgb),0.1);
+  background: rgba(22, 22, 32, 0.52);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
   border-radius: var(--radius);
   padding: 28px;
   width: 440px;
   max-height: 80vh;
   overflow-y: auto;
-  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+[data-theme="light"] .overlay-card {
+  background: rgba(248, 249, 252, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 .overlay-header {
   display: flex;
@@ -1320,15 +1463,126 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .overlay-close:hover { background: rgba(var(--overlay-rgb),0.1); color: var(--text); }
 .overlay-actions { display: flex; gap: 10px; margin-top: 20px; }
 
+/* ── Accounts Manager overlay: blurred Microsoft-logo backdrop ─────────── */
+.account-overlay-card {
+  position: relative;
+  overflow: hidden;
+  background: rgba(22, 22, 32, 0.42);
+}
+[data-theme="light"] .account-overlay-card {
+  background: rgba(248, 249, 252, 0.5);
+}
+.account-overlay-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 23 23'><rect x='1' y='1' width='10' height='10' fill='%23f25022'/><rect x='12' y='1' width='10' height='10' fill='%237fba00'/><rect x='1' y='12' width='10' height='10' fill='%2300a4ef'/><rect x='12' y='12' width='10' height='10' fill='%23ffb900'/></svg>");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 320px 320px;
+  filter: blur(30px);
+  opacity: 0.35;
+  z-index: 0;
+  pointer-events: none;
+}
+[data-theme="light"] .account-overlay-card::before {
+  opacity: 0.22;
+}
+.account-overlay-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Player-head avatars in the accounts list ───────────────────────── */
+.account-avatar {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--overlay-rgb), 0.15);
+}
+.account-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+  display: block;
+}
+.account-avatar .account-avatar-fallback {
+  position: relative;
+  z-index: 0;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+/* ── Expired-session "broken glass" treatment ────────────────────────────
+   Applied as a background layer across the whole Microsoft account card
+   (not just the avatar) when its session needs re-auth: a cracked,
+   yellow-gradient glass texture sits behind the card content. Kept to a
+   single masked layer + one one-shot entrance animation (no blend modes,
+   no infinite loops, no filters) so it stays cheap to paint. */
+.account-item-reauth {
+  border-color: rgba(245, 197, 24, 0.4) !important;
+  box-shadow: 0 0 0 1px rgba(245, 197, 24, 0.12) inset;
+}
+.account-item-crack {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.6;
+  background: linear-gradient(135deg, #fde68a, #f5c518 45%, #b8860b);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cg fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 50 L34 28 M18 50 L32 66 M18 50 L4 36 M18 50 L2 62 M34 28 L46 6 M34 28 L54 20 M32 66 L42 90 M32 66 L52 74 M54 20 L72 12 M54 20 L64 2 M52 74 L70 84 M52 74 L64 96 M72 12 L90 18 M72 12 L84 0 M64 96 L86 98 M70 84 L92 80 M90 18 L98 32 M86 98 L98 84'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cg fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 50 L34 28 M18 50 L32 66 M18 50 L4 36 M18 50 L2 62 M34 28 L46 6 M34 28 L54 20 M32 66 L42 90 M32 66 L52 74 M54 20 L72 12 M54 20 L64 2 M52 74 L70 84 M52 74 L64 96 M72 12 L90 18 M72 12 L84 0 M64 96 L86 98 M70 84 L92 80 M90 18 L98 32 M86 98 L98 84'/%3E%3C/g%3E%3C/svg%3E");
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: cardCrackIn 0.3s ease-out both;
+}
+@keyframes cardCrackIn {
+  from { opacity: 0; }
+  to   { opacity: 0.6; }
+}
+
+.account-reauth-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-weight: 700;
+  background: linear-gradient(90deg, #fde68a, #f5c518);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 /* ── Update Available overlay ────────────────────────────────────────── */
 .update-overlay-card {
-  width: 400px;
+  width: 560px;
   padding: 32px 28px 28px;
   text-align: center;
   position: relative;
+  background: rgba(22, 22, 32, 0.45);
 }
 [data-theme="light"] .update-overlay-card {
-  background: #f7f7f9;
+  background: rgba(248, 249, 252, 0.5);
+}
+/* "Update Available" card is wider than the plain consent dialog — it has
+   more content (changelog, size, progress bar) so it benefits from the
+   extra room. */
+.update-available-card {
+  width: 680px;
+  max-width: 92vw;
 }
 [data-theme="light"] .update-overlay-card .update-title {
   color: #1c1c22;
@@ -1399,6 +1653,92 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   margin: 12px 0 0;
   color: var(--text-muted);
   font-size: 12.5px;
+}
+.update-changelog {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--overlay-rgb), 0.05);
+  border: 1px solid var(--panel-border);
+  text-align: left;
+}
+.update-changelog-title {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.update-changelog-list {
+  margin: 0;
+  padding: 0 0 0 18px;
+  list-style: disc;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.update-changelog-list li { margin: 2px 0; }
+[data-theme="light"] .update-changelog { background: rgba(var(--overlay-rgb), 0.04); }
+[data-theme="light"] .update-changelog-title { color: var(--text-muted); }
+
+.update-ready-countdown {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.update-relaunch-toggle {
+  margin: 16px 0 0;
+  justify-content: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.update-trust-note {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-dim);
+  text-align: left;
+}
+.update-trust-note-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 0 0 6px;
+}
+.update-trust-note p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.update-trust-note p a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.update-trust-note p a:hover { text-decoration: underline; }
+.update-trust-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.btn-small {
+  padding: 6px 10px;
+  font-size: 11.5px;
+  gap: 5px;
+}
+[data-theme="light"] .update-trust-note {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
 }
 .update-actions {
   justify-content: center;
@@ -1494,13 +1834,19 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .bento-tile {
   position: relative;
   border-radius: var(--radius);
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  backdrop-filter: blur(var(--blur-amount, 16px)) saturate(150%);
-  -webkit-backdrop-filter: blur(var(--blur-amount, 16px)) saturate(150%);
+  background: rgba(22, 22, 32, 0.80);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
   box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.06), 0 10px 26px rgba(0,0,0,0.16);
   padding: 16px 18px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+[data-theme="light"] .bento-tile {
+  background: rgba(248, 249, 252, 0.85);
+  border-color: rgba(0,0,0,0.08);
 }
 .bento-tile:hover {
   transform: translateY(-3px);
@@ -1733,10 +2079,21 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 .mods-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 .mods-list .empty-state { grid-column: 1 / -1; }
+
+@media (max-width: 1280px) {
+  .mods-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 780px) {
+  .mods-list {
+    grid-template-columns: 1fr;
+  }
+}
 
 .mod-card {
   position: relative;
@@ -1748,16 +2105,27 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: var(--radius);
   background: var(--panel);
   border: 1px solid var(--panel-border);
-  backdrop-filter: blur(var(--blur-amount, 12px));
-  -webkit-backdrop-filter: blur(var(--blur-amount, 12px));
+  contain: layout style paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
   transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
-  /* Same native "skip offscreen rendering work" treatment as the instance
-     list — the mods grid is usually the longest list in the app and the
-     one most likely to visibly stutter on the first scroll. */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 132px;
 }
-.mod-card:hover { transform: translateY(-4px); box-shadow: 0 12px 36px rgba(0,0,0,0.35); background: var(--panel-hover); }
+
+.mod-card.is-unloaded {
+  contain: strict !important;
+  content-visibility: hidden !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+  min-height: 132px;
+}
+
+.mod-card:not(.is-unloaded) {
+  animation: cardFadeIn 0.12s ease-out;
+}
+
+.mod-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,0.3); background: var(--panel-hover); }
 .mod-card.disabled { opacity: 0.6; }
 .mod-card.selected { outline: 2px solid var(--accent); box-shadow: 0 8px 18px rgba(0,0,0,0.18); }
 
@@ -2234,392 +2602,304 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: var(--text);
 }
 
+/* ═══ Ultra-Lightweight Discover Grid & Cards ═══ */
 .discover-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   min-height: 120px;
 }
-/* Grid children only occupy one column track by default, so a lone
-   .empty-state (e.g. "No results found") sat pinned to the left instead of
-   centered across the row. Make it span every column. */
-.discover-grid .empty-state { grid-column: 1 / -1; }
-.discover-grid.view-list {
-  grid-template-columns: 1fr;
-  gap: 8px;
-}
 
-/* ── List view: one row per result — icon, info, stats, actions ── */
-.discover-grid.view-list .discover-card {
-  display: grid;
-  grid-template-columns: 80px minmax(280px, 1.6fr) auto auto;
-  align-items: center;
-  column-gap: 20px;
-  padding: 12px 16px;
-  border-radius: 12px;
+.discover-grid .empty-state { grid-column: 1 / -1; }
+
+@media (max-width: 1280px) {
+  .discover-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
-.discover-grid.view-list .discover-card-icon {
-  width: 76px;
-  height: 76px;
-  min-width: 76px;
-  border-radius: 14px;
-  font-size: 30px;
-}
-.discover-grid.view-list .discover-card-main {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(150px, 240px) 1fr;
-  grid-template-rows: auto auto;
-  column-gap: 20px;
-  row-gap: 2px;
-  align-items: center;
-}
-.discover-grid.view-list .discover-card-icon { grid-column: 1; grid-row: 1; }
-.discover-grid.view-list .discover-card-main { grid-column: 2; grid-row: 1; }
-.discover-grid.view-list .discover-card-heading { grid-column: 1; grid-row: 1; }
-.discover-grid.view-list .discover-card-author { grid-column: 1; grid-row: 2; }
-.discover-grid.view-list .discover-card-desc {
-  grid-column: 2;
-  grid-row: 1;
-  -webkit-line-clamp: 1;
-  margin-top: 0;
-  font-size: 12px;
-}
-.discover-grid.view-list .discover-card-tags {
-  grid-column: 2;
-  grid-row: 2;
-  margin-top: 0;
-}
-.discover-grid.view-list .discover-card-stats {
-  grid-column: 3;
-  grid-row: 1;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  min-width: 200px;
-  text-align: center;
-}
-.discover-grid.view-list .discover-card-actions {
-  grid-column: 4;
-  grid-row: 1;
-  margin-top: 0;
-  flex-wrap: wrap;
-  min-width: 0;
-  justify-content: flex-end;
-}
-.discover-grid.view-list .discover-card-actions select.input-field {
-  max-width: 220px;
-  min-width: 0;
-  padding: 9px 14px;
-  font-size: 14px;
-  flex: 1;
-}
-.discover-grid.view-list .discover-card-actions .discover-download-btn {
-  padding: 10px 22px;
-  font-size: 14px;
-}
-.discover-grid.view-list .discover-skeleton {
-  min-height: 78px;
-  align-items: center;
-  padding: 12px 16px;
-}
-.discover-grid.view-list .discover-skeleton-icon {
-  width: 76px;
-  height: 76px;
-  min-width: 76px;
-  border-radius: 14px;
-}
-.discover-grid.view-list .discover-skeleton-body {
-  flex-direction: row;
-  align-items: center;
-  gap: 18px;
-}
-.discover-grid.view-list .discover-skeleton-body .discover-skeleton-line:nth-child(1) { width: 160px; }
-.discover-grid.view-list .discover-skeleton-body .discover-skeleton-line:nth-child(2),
-.discover-grid.view-list .discover-skeleton-body .discover-skeleton-line:nth-child(4),
-.discover-grid.view-list .discover-skeleton-body .discover-skeleton-line:nth-child(5) { display: none; }
-.discover-grid.view-list .discover-skeleton-body .discover-skeleton-line:nth-child(3) { flex: 1; width: auto; }
-.discover-grid.view-list .discover-skeleton-line { margin-top: 0; }
-@media (max-width: 860px) {
-  .discover-grid.view-list .discover-card {
+@media (max-width: 780px) {
+  .discover-grid {
     grid-template-columns: 1fr;
-    row-gap: 8px;
   }
-  .discover-grid.view-list .discover-card-icon { grid-column: 1; grid-row: 1; }
-  .discover-grid.view-list .discover-card-main {
-    grid-column: 1;
-    grid-row: 2;
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto auto;
-  }
-  .discover-grid.view-list .discover-card-heading,
-  .discover-grid.view-list .discover-card-author,
-  .discover-grid.view-list .discover-card-desc,
-  .discover-grid.view-list .discover-card-tags { grid-column: 1; }
-  .discover-grid.view-list .discover-card-heading { grid-row: 1; }
-  .discover-grid.view-list .discover-card-author { grid-row: 2; }
-  .discover-grid.view-list .discover-card-desc { grid-row: 3; }
-  .discover-grid.view-list .discover-card-tags { grid-row: 4; }
-  .discover-grid.view-list .discover-card-stats {
-    grid-column: 1;
-    grid-row: 3;
-    flex-direction: row;
-    align-items: center;
-    text-align: left;
-    justify-content: flex-start;
-    min-width: 0;
-  }
-  .discover-grid.view-list .discover-card-actions {
-    grid-column: 1;
-    grid-row: 4;
-    justify-content: flex-start;
-  }
-  .discover-grid.view-list .discover-skeleton-body { flex-wrap: wrap; }
 }
 
 .discover-card {
   position: relative;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: 100px 1fr;
-  column-gap: 14px;
-  row-gap: 8px;
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 14px;
   border-radius: var(--radius);
-  background: linear-gradient(135deg, rgba(120,140,255,0.10), rgba(var(--overlay-rgb),0.03) 60%);
-  backdrop-filter: blur(var(--blur-amount, 14px)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--blur-amount, 14px)) saturate(1.4);
-  border: 1px solid rgba(var(--overlay-rgb),0.10);
-  transition: box-shadow 0.28s ease, border-color 0.28s ease, background 0.28s ease;
-  will-change: box-shadow, border-color, background;
+  background: var(--panel, rgba(22, 22, 30, 0.90));
+  border: 1px solid var(--panel-border, rgba(var(--overlay-rgb), 0.08));
+  gap: 10px;
+  contain: layout style paint;
   transform: translateZ(0);
-  content-visibility: auto;
-  contain-intrinsic-size: auto 190px;
-}
-/* Entrance fade/slide-in — a separate class applied only once at creation
-   and removed after it finishes (see buildDiscoverCard), instead of being
-   baked into `.discover-card` itself. Toggling `.is-culled` on/off as a
-   card scrolls in and out of view flips the `animation` property on the
-   base rule, and re-applying a running `animation` declaration (even to
-   the same value) restarts it from frame zero — that's what made
-   already-visible cards keep vanishing and slowly fading back in while
-   scrolling. Scoping the animation to its own one-shot class means
-   culling only ever touches box-shadow/backdrop-filter, so re-entering
-   the viewport just shows the card immediately.
-   */
-.discover-card.discover-card-enter {
-  animation: discoverCardIn 0.45s cubic-bezier(.2,.8,.2,1) both;
-}
-.discover-card-icon { grid-column: 1; grid-row: 1; }
-.discover-card-main { grid-column: 2; grid-row: 1; }
-.discover-card-stats { grid-column: 1 / -1; grid-row: 2; margin-top: 2px; }
-.discover-card-actions { grid-column: 1 / -1; grid-row: 3; }
-.discover-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.10) 48%, transparent 66%);
-  transform: translateX(-130%);
-  transition: transform 0.7s ease;
-  pointer-events: none;
-}
-.discover-card:hover {
-  box-shadow: 0 14px 34px rgba(0,0,0,0.28), 0 0 0 1px var(--accent-dim);
-  border-color: var(--accent-dim);
-  background: linear-gradient(135deg, rgba(120,140,255,0.16), rgba(var(--overlay-rgb),0.05) 60%);
-}
-.discover-card:hover::before { transform: translateX(130%); }
-
-@keyframes discoverCardIn {
-  from { opacity: 0; transform: translateY(14px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  backface-visibility: hidden;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  min-height: 170px;
 }
 
-/* Culled (offscreen) state — strip the expensive-to-repaint effects while
-   scrolled out of view; content and listeners stay intact underneath. */
-.discover-card.is-culled,
-.instance-card.is-culled,
-.mod-card.is-culled,
-#tab-settings .glass-card.is-culled {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+.discover-card.is-unloaded {
+  contain: strict !important;
+  content-visibility: hidden !important;
+  background: transparent !important;
+  border-color: transparent !important;
   box-shadow: none !important;
-  transition: none !important;
+  pointer-events: none !important;
+  min-height: 170px;
 }
-.discover-card.is-culled::before { display: none; }
 
-/* Same native "skip layout/paint entirely while offscreen" treatment as
-   .instance-card/.mod-card/.discover-card above, scoped to the Settings
-   tab specifically (the bare .glass-card class is reused in a lot of
-   one-off places — modals, small info boxes — that aren't long lists and
-   shouldn't get a content-visibility size guess forced on them). */
-#tab-settings .glass-card {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 120px;
+.discover-grid.view-list .discover-card.is-unloaded {
+  min-height: 64px;
+}
+
+.discover-card:not(.is-unloaded) {
+  animation: cardFadeIn 0.12s ease-out;
+}
+
+.discover-card:hover {
+  border-color: rgba(var(--overlay-rgb), 0.18);
+  background: rgba(var(--panel-rgb, 26, 26, 36), 0.95);
+}
+
+.discover-card-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
 }
 
 .discover-card-icon {
-  width: 96px;
-  height: 96px;
-  min-width: 96px;
-  border-radius: 16px;
-  background: rgba(var(--overlay-rgb),0.06);
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  border-radius: 12px;
+  background: rgba(var(--overlay-rgb), 0.06);
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 36px;
-  align-self: start;
+  font-size: 24px;
+  flex-shrink: 0;
 }
-.discover-card-icon img { width: 100%; height: 100%; object-fit: cover; }
-.discover-card-icon svg { width: 44%; height: 44%; opacity: 0.5; }
 
-.discover-card-main { min-width: 0; }
+.discover-card-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.discover-card-icon svg {
+  width: 50%;
+  height: 50%;
+  opacity: 0.5;
+}
+
+.discover-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .discover-card-heading {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
+
 .discover-card-title {
   font-weight: 700;
-  font-size: 15px;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
+  color: var(--text);
 }
-.discover-card-badge {
+
+.discover-card-author {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.discover-card-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+}
+
+.discover-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.discover-card-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.discover-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.discover-card-tag {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
   color: var(--text-muted);
-  background: rgba(var(--overlay-rgb),0.07);
-  border: 1px solid rgba(var(--overlay-rgb),0.10);
-  border-radius: var(--radius-pill);
-  padding: 2px 8px;
+  background: rgba(var(--overlay-rgb), 0.05);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
   white-space: nowrap;
 }
+
+.discover-card-tag--fabric { color: #e0b06a; background: rgba(224,176,106,0.14); border-color: rgba(224,176,106,0.3); }
+.discover-card-tag--forge { color: #ff9466; background: rgba(255,148,102,0.14); border-color: rgba(255,148,102,0.3); }
+.discover-card-tag--neoforge { color: #ff8a5c; background: rgba(255,138,92,0.14); border-color: rgba(255,138,92,0.3); }
+.discover-card-tag--quilt { color: #c894ff; background: rgba(200,148,255,0.14); border-color: rgba(200,148,255,0.3); }
+.discover-card-tag--client { color: #6fb6ff; background: rgba(111,182,255,0.14); border-color: rgba(111,182,255,0.3); }
+.discover-card-tag--server { color: #b892ff; background: rgba(184,146,255,0.14); border-color: rgba(184,146,255,0.3); }
+
+.discover-card-badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: rgba(var(--overlay-rgb), 0.07);
+  border: 1px solid rgba(var(--overlay-rgb), 0.10);
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
 .discover-card-badge-side {
   color: var(--accent);
   border-color: var(--accent-dim);
   background: var(--accent-dim);
 }
-.discover-card-badge-client { color: #6fb6ff; border-color: rgba(111,182,255,0.35); background: rgba(111,182,255,0.14); }
-.discover-card-badge-server { color: #b892ff; border-color: rgba(184,146,255,0.35); background: rgba(184,146,255,0.14); }
-.discover-card-badge-both { color: #5be0b3; border-color: rgba(91,224,179,0.35); background: rgba(91,224,179,0.14); }
-.discover-card-author { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
-.discover-card-desc {
-  font-size: 12.5px;
-  color: var(--text-muted);
-  margin-top: 6px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.discover-card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.discover-card-tag {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: rgba(var(--overlay-rgb),0.05);
-  border: 1px solid rgba(var(--overlay-rgb),0.08);
-  border-radius: 6px;
-  padding: 2px 7px;
-  white-space: nowrap;
-}
-.discover-card-tag--fabric { color: #e0b06a; background: rgba(224,176,106,0.14); border-color: rgba(224,176,106,0.35); }
-.discover-card-tag--forge { color: #ff9466; background: rgba(255,148,102,0.14); border-color: rgba(255,148,102,0.35); }
-.discover-card-tag--neoforge { color: #ff8a5c; background: rgba(255,138,92,0.14); border-color: rgba(255,138,92,0.35); }
-.discover-card-tag--quilt { color: #c894ff; background: rgba(200,148,255,0.14); border-color: rgba(200,148,255,0.35); }
-.discover-card-tag--client { color: #6fb6ff; background: rgba(111,182,255,0.14); border-color: rgba(111,182,255,0.35); }
-.discover-card-tag--server { color: #b892ff; background: rgba(184,146,255,0.14); border-color: rgba(184,146,255,0.35); }
-.discover-card-stats {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  gap: 18px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-.discover-card-stat { display: inline-flex; align-items: center; gap: 5px; }
-.discover-card-stat-dim { opacity: 0.7; font-weight: 500; font-size: 13px; }
-.discover-card-actions {
+
+.discover-card-footer {
   display: flex;
   gap: 8px;
   align-items: center;
-  justify-content: flex-start;
-}
-.discover-card-actions select.input-field {
-  padding: 7px 11px;
-  font-size: 13px;
-  max-width: 440px;
-  flex: 1;
-}
-.discover-card-actions .discover-download-btn {
-  font-size: 13px;
-  padding: 7px 16px;
+  margin-top: auto;
+  padding-top: 4px;
 }
 
+.discover-card-footer select.input-field {
+  padding: 6px 10px;
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+}
+
+.discover-card-footer .discover-download-btn {
+  font-size: 12px;
+  padding: 6px 14px;
+  height: 32px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── List view ── */
+.discover-grid.view-list {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.discover-grid.view-list .discover-card {
+  flex-direction: row;
+  align-items: center;
+  padding: 10px 14px;
+  min-height: 64px;
+  gap: 16px;
+}
+
+.discover-grid.view-list .discover-card-top {
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.discover-grid.view-list .discover-card-icon {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 8px;
+}
+
+.discover-grid.view-list .discover-card-desc {
+  display: none;
+}
+
+.discover-grid.view-list .discover-card-meta {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.discover-grid.view-list .discover-card-footer {
+  margin-top: 0;
+  padding-top: 0;
+  width: 320px;
+  flex-shrink: 0;
+}
+
+/* ── Lightweight Skeleton ── */
 .discover-skeleton {
-  position: relative;
-  overflow: hidden;
   display: flex;
-  gap: 14px;
-  padding: 16px;
+  gap: 12px;
+  padding: 14px;
   border-radius: var(--radius);
-  background: rgba(var(--overlay-rgb),0.035);
-  border: 1px solid rgba(var(--overlay-rgb),0.07);
-  min-height: 108px;
-  animation: discoverCardIn 0.4s cubic-bezier(.2,.8,.2,1) both;
+  background: rgba(var(--overlay-rgb), 0.03);
+  border: 1px solid rgba(var(--overlay-rgb), 0.05);
+  min-height: 170px;
 }
-.discover-skeleton::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(100deg, transparent 30%, rgba(var(--overlay-rgb),0.09) 50%, transparent 70%);
-  transform: translateX(-100%);
-  animation: discoverShimmer 1.4s ease-in-out infinite;
-}
-@keyframes discoverShimmer {
-  100% { transform: translateX(100%); }
-}
+
 .discover-skeleton-icon {
-  width: 96px;
-  height: 96px;
-  min-width: 96px;
-  border-radius: 16px;
-  background: rgba(var(--overlay-rgb),0.08);
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  border-radius: 12px;
+  background: rgba(var(--overlay-rgb), 0.07);
 }
+
 .discover-skeleton-body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
   justify-content: center;
 }
+
 .discover-skeleton-line {
-  height: 10px;
-  border-radius: 5px;
-  background: rgba(var(--overlay-rgb),0.08);
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(var(--overlay-rgb), 0.07);
 }
-.discover-skeleton-line.dim { background: rgba(var(--overlay-rgb),0.05); height: 8px; }
-.discover-skeleton-line.pill { border-radius: var(--radius-pill); margin-top: 4px; }
-.discover-skeleton-line.w-35 { width: 35%; }
-.discover-skeleton-line.w-40 { width: 55%; }
+
 .discover-skeleton-line.w-60 { width: 60%; }
-.discover-skeleton-line.w-75 { width: 75%; }
+.discover-skeleton-line.w-35 { width: 35%; }
 .discover-skeleton-line.w-90 { width: 90%; }
+.discover-skeleton-line.w-75 { width: 75%; }
+.discover-skeleton-line.w-40 { width: 40%; }
 
 .discover-pagination {
   display: flex;
@@ -2696,9 +2976,103 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .settings-grid {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  max-width: 860px;
+  margin: 0 auto;
+  padding-bottom: 24px;
 }
-.settings-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+
+.settings-card {
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--panel, rgba(22, 22, 30, 0.85));
+  border: 1px solid var(--panel-border, rgba(var(--overlay-rgb), 0.08));
+  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+}
+
+.settings-card.active {
+  border-color: rgba(var(--overlay-rgb), 0.16);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.22);
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  cursor: pointer;
+  user-select: none;
+  background: transparent;
+  transition: background var(--transition);
+}
+
+.settings-card-header:hover {
+  background: rgba(var(--overlay-rgb), 0.04);
+}
+
+.settings-card.active .settings-card-header {
+  border-bottom: 1px solid rgba(var(--overlay-rgb), 0.06);
+  background: rgba(var(--overlay-rgb), 0.02);
+}
+
+.settings-card-header h3 {
+  margin: 0 !important;
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+
+.accordion-chevron {
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.settings-card:hover .accordion-chevron {
+  color: var(--text);
+}
+
+.settings-card.active .accordion-chevron {
+  transform: rotate(90deg);
+  color: var(--accent);
+}
+
+.settings-card-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  pointer-events: none;
+  transition: grid-template-rows 0.26s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 0.26s;
+}
+
+.settings-card.active .settings-card-body {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  pointer-events: auto;
+  transition: grid-template-rows 0.26s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear;
+}
+
+.settings-card-body-inner {
+  overflow: hidden;
+  min-height: 0;
+  padding: 0 20px;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.16, 1, 0.3, 1), padding 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.settings-card.active .settings-card-body-inner {
+  opacity: 1;
+  transform: translateY(0);
+  padding: 20px;
+}
+
 .settings-icon {
   flex-shrink: 0;
   width: 17px;
@@ -2762,7 +3136,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 [data-theme="light"] .log-level-ERROR { color: #dc2626; }
 [data-theme="light"] .log-level-DEBUG { color: #52525b; }
 
-/* ═══ Toast / Notification (Zero-Launcher NotificationPanel style) ═══ */
+/* ═══ Toast / Notification (lightweight — no blur, no infinite animations) ═══ */
 #toast-container {
   position: fixed;
   top: 70px;
@@ -2776,12 +3150,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   /* The container itself spans a tall column of empty space above/below
      toasts — it must never eat clicks meant for the app underneath it. */
   pointer-events: none;
-  perspective: 800px;
 }
 
 /* Per-type accent color, resolved once and reused by every part of the
-   toast (badge, icon, progress bar, glow) so styles/types stay perfectly
-   in sync. */
+   toast (badge, icon, progress bar) so styles/types stay perfectly in sync. */
 .toast-success { --toast-color: var(--accent); --toast-color-rgb: 16, 185, 129; }
 .toast-error   { --toast-color: #ef4444;       --toast-color-rgb: 239, 68, 68; }
 .toast-warning { --toast-color: #f59e0b;       --toast-color-rgb: 245, 158, 11; }
@@ -2792,55 +3164,24 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: rgba(var(--notif-bg-rgb, 19, 19, 26), 0.94);
-  backdrop-filter: blur(var(--blur-amount, 18px));
-  -webkit-backdrop-filter: blur(var(--blur-amount, 18px));
+  /* Solid-ish background instead of backdrop-filter blur — blur is by far
+     the most expensive part of the old style and the main lag source. */
+  background: var(--notif-bg, #14141e);
   border: 1px solid rgba(var(--overlay-rgb), 0.18);
-  border-radius: 18px;
+  border-radius: 14px;
   padding: 14px 16px 12px 16px;
   width: 100%;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
-  transform-origin: 100% 0%;
-  animation: toastSlideIn 0.55s cubic-bezier(0.16, 1.35, 0.34, 1) both;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  animation: toastSlideIn 0.16s ease-out both;
   overflow: hidden;
   pointer-events: auto;
   cursor: default;
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease,
-    background 0.18s ease, border-color 0.18s ease;
-  will-change: transform, opacity;
 }
 
-.toast:hover {
-  transform: translateY(-2px) scale(1.012);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.34), 0 0 26px rgba(var(--toast-color-rgb), 0.14);
-}
-
-/* Entrance: slide + settle in from the right with a soft spring overshoot */
+/* Entrance: simple fade + short slide, no scale/rotate/spring math */
 @keyframes toastSlideIn {
-  0% {
-    opacity: 0;
-    transform: translateX(64px) translateY(-4px) scale(0.88) rotateY(8deg);
-  }
-  55% { opacity: 1; }
-  100% {
-    opacity: 1;
-    transform: translateX(0) translateY(0) scale(1) rotateY(0deg);
-  }
-}
-
-/* Quick one-shot ring of color that flashes outward from the toast */
-.toast::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow: 0 0 0 0 rgba(var(--toast-color-rgb), 0.45);
-  pointer-events: none;
-  animation: toastRingPulse 0.7s ease-out 0.05s both;
-}
-@keyframes toastRingPulse {
-  0%   { box-shadow: 0 0 0 0 rgba(var(--toast-color-rgb), 0.5); }
-  100% { box-shadow: 0 0 0 14px rgba(var(--toast-color-rgb), 0); }
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 /* ─── No stripe element ─── The .toast-accent-stripe is kept in HTML for
@@ -2863,30 +3204,12 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-shrink: 0;
   background: rgba(var(--toast-color-rgb), 0.14);
   border: 1px solid rgba(var(--toast-color-rgb), 0.2);
-  transition: all 0.18s ease;
-  animation: toastIconPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;
-}
-@keyframes toastIconPop {
-  0%   { transform: scale(0) rotate(-20deg); opacity: 0; }
-  60%  { transform: scale(1.18) rotate(6deg); opacity: 1; }
-  100% { transform: scale(1) rotate(0deg); opacity: 1; }
-}
-/* Error/warning keep a soft breathing glow going the whole time */
-.toast-error .toast-icon-badge,
-.toast-warning .toast-icon-badge {
-  animation: toastIconPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both,
-             toastBadgeGlow 2.2s ease-in-out 0.6s infinite;
-}
-@keyframes toastBadgeGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--toast-color-rgb), 0); }
-  50%      { box-shadow: 0 0 14px 2px rgba(var(--toast-color-rgb), 0.35); }
 }
 
 .toast-icon {
   font-size: 17px;
   font-weight: 700;
   color: var(--toast-color);
-  transition: color 0.18s ease;
 }
 
 .toast-content {
@@ -2902,8 +3225,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   font-size: 14.5px;
   color: var(--text);
   line-height: 1.25;
-  opacity: 0;
-  animation: toastTextIn 0.4s ease 0.16s both;
 }
 
 .toast-message {
@@ -2911,20 +3232,12 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: var(--text-muted);
   line-height: 1.5;
   word-break: break-word;
-  opacity: 0;
-  animation: toastTextIn 0.4s ease 0.22s both;
-}
-@keyframes toastTextIn {
-  from { opacity: 0; transform: translateY(5px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
 
 .toast-actions {
   display: flex;
   gap: 8px;
   margin-top: 4px;
-  opacity: 0;
-  animation: toastTextIn 0.4s ease 0.26s both;
 }
 
 .toast-action-btn {
@@ -2937,10 +3250,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   font-size: 11.5px;
   font-weight: 700;
   cursor: pointer;
-  transition: background var(--transition), transform var(--transition);
 }
-.toast-action-btn:hover { background: var(--accent-glow); transform: translateY(-1px); }
-.toast-action-btn:active { transform: translateY(0); }
+.toast-action-btn:hover { background: var(--accent-glow); }
 
 .toast-close {
   background: rgba(var(--overlay-rgb), 0.08);
@@ -2953,19 +3264,13 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   place-items: center;
   font-size: 11px;
   cursor: pointer;
-  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
   flex-shrink: 0;
-  opacity: 0;
-  animation: toastTextIn 0.4s ease 0.26s both;
 }
 
 .toast-close:hover {
-  opacity: 1;
-  transform: scale(1.1) rotate(90deg);
   background: rgba(var(--overlay-rgb), 0.14);
   border-color: rgba(var(--overlay-rgb), 0.2);
 }
-.toast-close:active { transform: scale(0.92) rotate(90deg); }
 
 .toast-progress {
   position: relative;
@@ -2973,8 +3278,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: 999px;
   background: rgba(var(--overlay-rgb), 0.08);
   overflow: hidden;
-  opacity: 0;
-  animation: toastTextIn 0.35s ease 0.3s both;
 }
 .toast-progress-bar {
   position: relative;
@@ -2983,159 +3286,90 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: 999px;
   background: rgba(var(--toast-color-rgb), 0.8);
   transition: width 0.1s linear;
-  overflow: hidden;
 }
-/* Traveling shine along the progress bar */
-.toast-progress-bar::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
-  background-size: 200% 100%;
-  animation: toastProgressShine 1.6s linear infinite;
-}
-@keyframes toastProgressShine {
-  from { background-position: 200% 0; }
-  to   { background-position: -200% 0; }
-}
+/* Traveling shine removed — it was an infinite animation running for the
+   full lifetime of every visible toast. */
 
 .toast-fade-out {
-  animation: toastFadeOut 0.22s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  animation: toastFadeOut 0.14s ease-in forwards !important;
 }
 
 @keyframes toastFadeOut {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to   { opacity: 0; transform: translateY(-10px) scale(0.94); }
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    NOTIFICATION STYLE VARIATIONS
-   5 premium styles — Glass (default), Neon, Solid Card, Pill, Minimal
-   No accent stripe in any style.
+   5 styles — Glass, Neon, Solid Card, Pill, Minimal — kept visually distinct
+   but with backdrop-filter, glow shadows, and infinite animations removed.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── 1. GLASS (default) ─────────────────────────────────────────────────────
-   Heavy frosted glass, glowing colored shadow, rounded card. Premium & clean. */
+/* ── 1. GLASS (default) ─── Softly tinted card, subtle color border. */
 .toast-style-glass {
-  background: rgba(var(--notif-bg-rgb, 18, 18, 28), 0.55) !important;
-  backdrop-filter: blur(32px) saturate(1.5) !important;
-  -webkit-backdrop-filter: blur(32px) saturate(1.5) !important;
+  background: var(--notif-bg, #14141e) !important;
   border: 1px solid rgba(var(--toast-color-rgb), 0.22) !important;
-  border-radius: 20px !important;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.38),
-    0 0 0 1px rgba(var(--toast-color-rgb), 0.08),
-    0 0 40px rgba(var(--toast-color-rgb), 0.10) !important;
-}
-.toast-style-glass::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(115deg, transparent 15%, rgba(255, 255, 255, 0.18) 30%, transparent 50%);
-  background-size: 250% 250%;
-  background-position: 150% -50%;
-  pointer-events: none;
-  animation: toastGlassSheen 1s ease-out 0.12s both;
-  z-index: 1;
-}
-@keyframes toastGlassSheen {
-  from { background-position: 150% -50%; opacity: 1; }
-  to   { background-position: -50% 150%; opacity: 0; }
+  border-radius: 16px !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22) !important;
 }
 .toast-style-glass .toast-icon-badge {
   background: rgba(var(--toast-color-rgb), 0.18);
   border: 1px solid rgba(var(--toast-color-rgb), 0.28);
-  box-shadow: 0 4px 14px rgba(var(--toast-color-rgb), 0.2);
   border-radius: 12px;
 }
 .toast-style-glass .toast-progress {
   background: rgba(var(--toast-color-rgb), 0.08);
 }
 
-/* ── 2. NEON ────────────────────────────────────────────────────────────────
-   Deep dark card, vivid glowing border + inner color halo. Futuristic. */
+/* ── 2. NEON ─── Dark card with a plain, brighter color border. */
 .toast-style-neon {
-  background: rgba(8, 8, 14, 0.92) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  background: rgba(8, 8, 14, 0.96) !important;
   border: 1px solid rgba(var(--toast-color-rgb), 0.6) !important;
-  border-radius: 16px !important;
-  box-shadow:
-    0 0 0 1px rgba(var(--toast-color-rgb), 0.15),
-    0 0 20px rgba(var(--toast-color-rgb), 0.25),
-    0 0 60px rgba(var(--toast-color-rgb), 0.10),
-    0 16px 40px rgba(0, 0, 0, 0.5) !important;
-  animation: toastSlideIn 0.55s cubic-bezier(0.16, 1.35, 0.34, 1) both,
-             neonBorderPulse 2.5s ease-in-out 0.8s infinite;
-}
-@keyframes neonBorderPulse {
-  0%, 100% {
-    box-shadow: 0 0 0 1px rgba(var(--toast-color-rgb), 0.15),
-                0 0 20px rgba(var(--toast-color-rgb), 0.25),
-                0 0 60px rgba(var(--toast-color-rgb), 0.10),
-                0 16px 40px rgba(0,0,0,0.5);
-  }
-  50% {
-    box-shadow: 0 0 0 1px rgba(var(--toast-color-rgb), 0.25),
-                0 0 30px rgba(var(--toast-color-rgb), 0.40),
-                0 0 80px rgba(var(--toast-color-rgb), 0.18),
-                0 16px 40px rgba(0,0,0,0.5);
-  }
+  border-radius: 14px !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35) !important;
 }
 .toast-style-neon .toast-icon-badge {
   background: rgba(var(--toast-color-rgb), 0.12);
   border: 1px solid rgba(var(--toast-color-rgb), 0.5);
   border-radius: 10px;
-  box-shadow: 0 0 12px rgba(var(--toast-color-rgb), 0.4),
-              inset 0 0 8px rgba(var(--toast-color-rgb), 0.1);
 }
 .toast-style-neon .toast-icon {
-  text-shadow: 0 0 12px rgba(var(--toast-color-rgb), 0.9);
+  color: rgba(var(--toast-color-rgb), 1);
 }
 .toast-style-neon .toast-title {
   color: rgba(var(--toast-color-rgb), 1);
-  text-shadow: 0 0 10px rgba(var(--toast-color-rgb), 0.4);
 }
 .toast-style-neon .toast-progress {
   background: rgba(var(--toast-color-rgb), 0.1);
 }
 .toast-style-neon .toast-progress-bar {
   background: rgba(var(--toast-color-rgb), 1);
-  box-shadow: 0 0 8px rgba(var(--toast-color-rgb), 0.6);
 }
 
-/* ── 3. SOLID CARD ──────────────────────────────────────────────────────────
-   Fully opaque card with bold colored top border. Clean & modern. */
+/* ── 3. SOLID CARD ─── Fully opaque card with a bold colored top border. */
 .toast-style-solid-card {
   background: var(--notif-bg, #14141e) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
   border: 1px solid rgba(var(--overlay-rgb), 0.12) !important;
   border-top: 3px solid rgba(var(--toast-color-rgb), 1) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3) !important;
 }
 .toast-style-solid-card .toast-icon-badge {
   background: var(--toast-color);
   border: none;
   border-radius: 10px;
-  box-shadow: 0 4px 14px rgba(var(--toast-color-rgb), 0.35);
 }
 .toast-style-solid-card .toast-icon { color: #fff; }
 .toast-style-solid-card .toast-progress { background: rgba(var(--overlay-rgb), 0.1); }
 .toast-style-solid-card .toast-progress-bar { background: var(--toast-color); }
 
-/* ── 4. PILL ────────────────────────────────────────────────────────────────
-   Compact fully-rounded pill. Color-tinted bg. Playful & compact. */
+/* ── 4. PILL ─── Compact fully-rounded pill, color-tinted bg. */
 .toast-style-pill {
-  background: rgba(var(--toast-color-rgb), 0.08) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
+  background: rgba(var(--toast-color-rgb), 0.1) !important;
   border: 1px solid rgba(var(--toast-color-rgb), 0.25) !important;
   border-radius: 999px !important;
   padding: 10px 18px !important;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.25), 0 0 0 1px rgba(var(--toast-color-rgb), 0.1) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18) !important;
 }
 .toast-style-pill .toast-main { align-items: center; }
 .toast-style-pill .toast-icon-badge {
@@ -3147,15 +3381,12 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .toast-style-pill .toast-close { border-radius: 999px; }
 .toast-style-pill .toast-progress { border-radius: 999px; }
 
-/* ── 5. MINIMAL ─────────────────────────────────────────────────────────────
-   Ultra-clean: barely-there glass with thin accent-colored border only. */
+/* ── 5. MINIMAL ─── Barely-there card with thin accent-colored border only. */
 .toast-style-minimal {
-  background: rgba(var(--notif-bg-rgb, 19, 19, 26), 0.28) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
+  background: rgba(var(--notif-bg-rgb, 19, 19, 26), 0.9) !important;
   border: 1px solid rgba(var(--toast-color-rgb), 0.38) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
 }
 .toast-style-minimal .toast-icon-badge {
   background: transparent;
@@ -3215,34 +3446,35 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 8px 16px 8px 8px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--panel-border);
-  background: var(--panel);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+  /* Was backdrop-filter: blur(20px) — this widget is fixed on screen and
+     stays up for the whole download, so anything scrolling behind it
+     (e.g. the Discover mods grid) forced a blur recomposite every frame.
+     Solid-ish background instead removes that cost entirely. */
+  background: var(--notif-bg, #14141e);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
   cursor: pointer;
   color: var(--text);
   font-family: var(--font);
-  animation: dl-widget-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: dl-widget-in 0.18s ease-out;
   transition: box-shadow var(--transition), transform var(--transition), border-color var(--transition);
 }
 .dl-widget-btn:hover {
   border-color: var(--accent);
-  box-shadow: 0 8px 28px rgba(0,0,0,0.45), 0 0 0 3px var(--accent-dim);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35), 0 0 0 3px var(--accent-dim);
   transform: translateY(-1px);
 }
 
 .dl-widget.dl-leaving .dl-widget-btn {
-  animation: dl-widget-out 0.28s ease forwards;
+  animation: dl-widget-out 0.16s ease forwards;
 }
 
 @keyframes dl-widget-in {
-  0%   { opacity: 0; transform: translateY(16px) scale(0.85); }
-  60%  { opacity: 1; transform: translateY(-3px) scale(1.03); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes dl-widget-out {
-  0%   { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(14px) scale(0.85); }
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(10px); }
 }
 
 .dl-widget-ring {
@@ -3510,55 +3742,106 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .dl-card.dl-card-no-stats .dl-card-file { display: none; }
 .dl-card.dl-card-no-cancel .dl-card-cancel { display: none; }
 
-/* ── Download files window — one small overlay, a plain list of files
-   with a per-file status (waiting/downloading/done/failed). ── */
-.dl-files-card { width: 380px; padding: 22px; }
-.dl-files-list { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+/* ── Download files window — one small overlay, a plain flat list of
+   filenames (each just an underlined row, no per-file bar/status chip),
+   with an overall speed readout + Cancel in the footer. ── */
+.dl-files-card { width: 560px; max-height: 85vh; padding: 26px; }
+.dl-files-header { position: relative; }
+.dl-files-header h3 {
+  text-align: center;
+  width: 100%;
+  /* h3 was set to width:100% inside a flex row that also holds the
+     close button — that made the title stretch the full row and sit
+     underneath/behind the close button instead of leaving room for
+     it, so the title text and the ✕ overlapped. Taking the button out
+     of flow (below) and reserving space here keeps the title centered
+     without colliding with it. */
+  padding: 0 32px;
+  box-sizing: border-box;
+}
+.dl-files-header .overlay-close {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.dl-files-list { position: relative; max-height: 480px; overflow-y: auto; overflow-x: hidden; margin-top: 4px; }
+.dl-files-viewport { position: relative; width: 100%; }
 .dl-files-empty { color: var(--text-muted); font-size: 13px; padding: 8px 2px; }
 .dl-file-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(var(--overlay-rgb),0.04);
-  border: 1px solid var(--panel-border);
+  justify-content: center;
+  gap: 5px;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--panel-border);
   font-size: 13px;
+  color: var(--text);
+  /* Fixed height (see ROW_STEP in app.js) so the Files window can
+     virtualize this list — with hundreds of files in flight (big
+     modpacks), only rows actually scrolled into view are ever real DOM
+     nodes; this height is what the scroll-position math is based on. */
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 44px;
+  box-sizing: border-box;
 }
-.dl-file-row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dl-file-row .dl-file-name-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .dl-file-row .dl-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dl-file-row .dl-file-status { font-size: 11px; font-weight: 600; flex-shrink: 0; color: var(--text-muted); }
-.dl-file-row.dl-file-pending { opacity: 0.75; }
-.dl-file-row.dl-file-pending .dl-file-status { color: #9ca3af; }
-.dl-file-row.dl-file-downloading .dl-file-status { color: #60a5fa; }
-.dl-file-row.dl-file-completed { opacity: 0.55; }
-.dl-file-row.dl-file-completed .dl-file-status { color: #34d399; }
-.dl-file-row.dl-file-failed .dl-file-status { color: #f87171; }
-.dl-file-row.dl-file-failed { border-color: rgba(248,113,113,0.35); }
+.dl-file-row .dl-file-pct {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 34px;
+  text-align: right;
+}
+.dl-file-row.dl-file-downloading .dl-file-pct { color: #60a5fa; }
+.dl-file-row.dl-file-completed .dl-file-pct { color: var(--text-muted); }
+.dl-file-row.dl-file-failed .dl-file-pct { color: #f87171; }
+.dl-file-row.dl-file-pending { opacity: 0.55; }
+.dl-file-row.dl-file-downloading .dl-file-name { color: #60a5fa; }
+.dl-file-row.dl-file-completed { opacity: 0.65; }
+.dl-file-row.dl-file-failed .dl-file-name { color: #f87171; }
 
+/* Per-file progress bar — real byte-level percent when the backend
+   reports content-length for that file, otherwise an indeterminate
+   sweep so a file with unknown size still visibly reads as active. */
 .dl-file-track {
   height: 4px;
-  border-radius: 2px;
-  background: rgba(var(--overlay-rgb),0.08);
+  border-radius: var(--radius-pill);
+  background: rgba(var(--overlay-rgb), 0.08);
   overflow: hidden;
-  position: relative;
+  flex-shrink: 0;
 }
-.dl-file-bar { height: 100%; border-radius: 2px; transition: width var(--transition); }
-.dl-file-pending .dl-file-bar { width: 0%; background: transparent; }
-.dl-file-completed .dl-file-bar { width: 100%; background: #34d399; }
-.dl-file-failed .dl-file-bar { width: 100%; background: #f87171; }
-/* No real byte-level progress is available per mod file, so the active
-   file gets an indeterminate sliding bar instead of a fixed percentage. */
-.dl-file-downloading .dl-file-bar {
-  position: absolute;
-  width: 40%;
-  background: #60a5fa;
-  animation: dl-file-bar-slide 1.1s ease-in-out infinite;
+.dl-file-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--accent), #34e0a1);
+  transition: width 0.25s ease;
 }
-@keyframes dl-file-bar-slide {
-  0%   { left: -40%; }
-  100% { left: 100%; }
+.dl-file-row.dl-file-completed .dl-file-bar { background: rgba(var(--overlay-rgb), 0.25); }
+.dl-file-row.dl-file-failed .dl-file-bar { background: #f87171; width: 100% !important; }
+.dl-file-row.dl-file-indeterminate .dl-file-bar {
+  width: 35% !important;
+  animation: dl-file-bar-indeterminate 1.1s ease-in-out infinite;
 }
+@keyframes dl-file-bar-indeterminate {
+  0%   { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
+.dl-files-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+.dl-files-speed { font-size: 13px; color: var(--text-muted); }
+
 
 /* ══════════════════════════════════════════════════════════════════
    PRESETS TAB
@@ -3567,8 +3850,19 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 .presets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+}
+
+@media (max-width: 1280px) {
+  .presets-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 780px) {
+  .presets-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .preset-type-section { margin-bottom: 24px; }
@@ -4237,5 +4531,635 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ═══ 3D Skin Viewer Modal ═══ */
+.skin-viewer-modal {
+  width: 440px;
+  max-width: 95vw;
+  height: auto;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  padding: 22px;
+  background: rgba(22, 22, 32, 0.84);
+  backdrop-filter: blur(20px) saturate(130%);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
+  border-radius: var(--radius);
+  box-shadow: 0 32px 72px rgba(0, 0, 0, 0.6);
+  transform: translateZ(0);
+}
+
+[data-theme="light"] .skin-viewer-modal {
+  background: rgba(248, 249, 252, 0.88);
+  border-color: rgba(0,0,0,0.1);
+  box-shadow: 0 32px 72px rgba(0, 0, 0, 0.15);
+}
+
+.skin-viewer-header {
+  margin-bottom: 14px;
+}
+
+.skin-viewer-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.skin-viewer-badge {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  letter-spacing: 0.6px;
+}
+
+.skin-viewer-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.skin-viewer-sidebar {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.skin-apply-btn {
+  margin-top: auto;
+  width: 100%;
+  padding: 12px 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.skin-apply-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(var(--accent-rgb, 100, 108, 255), 0.35);
+}
+
+.skin-section {
+  background: var(--field-bg);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.skin-section-title {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.skin-source-quick {
+  display: flex;
+  gap: 8px;
+}
+
+.skin-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.skin-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.skin-input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12px;
+  height: 32px;
+}
+
+.skin-select {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  height: 32px;
+}
+
+.skin-presets-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 8px 0 4px;
+}
+
+.skin-presets-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.skin-preset-btn {
+  padding: 5px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: rgba(var(--overlay-rgb), 0.05);
+  border: 1px solid rgba(var(--overlay-rgb), 0.1);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  text-align: center;
+}
+
+.skin-preset-btn:hover {
+  background: rgba(var(--overlay-rgb), 0.12);
+  color: var(--text);
+  border-color: rgba(var(--overlay-rgb), 0.25);
+}
+
+.skin-anim-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.skin-anim-btn {
+  padding: 6px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 6px;
+  background: rgba(var(--overlay-rgb), 0.05);
+  border: 1px solid rgba(var(--overlay-rgb), 0.1);
+  color: var(--text);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.skin-anim-btn:hover {
+  background: rgba(var(--overlay-rgb), 0.12);
+}
+
+.skin-anim-btn.active {
+  background: var(--accent);
+  color: #0a0a0f;
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+.skin-control-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.skin-control-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 50px;
+}
+
+.skin-speed-radios {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.skin-speed-btn {
+  flex: 1;
+  padding: 5px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: rgba(var(--overlay-rgb), 0.05);
+  border: 1px solid rgba(var(--overlay-rgb), 0.1);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  text-align: center;
+}
+
+.skin-speed-btn:hover {
+  background: rgba(var(--overlay-rgb), 0.1);
+  color: var(--text);
+}
+
+.skin-speed-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+.skin-toggles-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.skin-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.skin-checkbox-label input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ═══ Minecraft Pixel Font ═══ */
+@font-face {
+  font-family: 'Minecraft';
+  src: url('../assets/fonts/minecraft.ttf') format('truetype'),
+       url('file:///home/monib/Downloads/minecraft.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+/* ═══ Non-Interactive 3D Skin Standee Preview (Instance Details) ═══ */
+.skin-panel {
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  width: clamp(180px, 22vw, 320px);
+  max-width: 100%;
+  margin-top: clamp(-230px, -18vh, -80px);
+  margin-bottom: 2px;
+}
+
+.skin-mini-preview-wrap {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  height: auto;
+  max-height: 55vh;
+  position: relative;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* Non-interactive: use the "3D Skin Settings" button instead */
+  cursor: default;
+  user-select: none;
+  overflow: visible;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.skin-mini-preview-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  z-index: -1;
+}
+
+#skin-mini-preview-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  pointer-events: none; /* Model cannot be rotated/dragged */
+  user-select: none;
+  filter: none !important;
+}
+
+.skin-mini-preview-wrap:hover #skin-mini-preview-canvas {
+  filter: none !important;
+}
+
+/* ═══ Dressing Room Modal ═══ */
+.skin-mini-preview-wrap {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.skin-mini-preview-wrap:hover {
+  transform: scale(1.035);
+}
+
+.skin-mini-preview-wrap:active {
+  transform: scale(0.985);
+}
+
+.skin-mini-preview-wrap:hover::before {
+  border-color: var(--accent);
+  box-shadow: 0 0 24px 2px rgba(var(--accent-rgb, 183, 183, 183), 0.35), 0 0 0 1px rgba(var(--accent-rgb, 183, 183, 183), 0.25) inset;
+}
+
+.skin-mini-preview-wrap::before {
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+
+.dressing-room-modal {
+  width: 1600px;
+  max-width: 97vw;
+  height: 90vh;
+  max-height: 1100px;
+  display: flex;
+  flex-direction: column;
+  padding: 26px;
+  background: rgba(22, 22, 32, 0.84);
+  backdrop-filter: blur(20px) saturate(130%);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
+  border-radius: var(--radius);
+  box-shadow: 0 32px 72px rgba(0, 0, 0, 0.6);
+  transform: translateZ(0);
+  position: relative;
+  overflow: hidden;
+}
+
+.dressing-room-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 16px;
+  transition: opacity 0.25s ease;
+}
+
+.dressing-room-content.is-locked {
+  opacity: 0.35;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dressing-room-msa-lock {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 32px;
+  z-index: 2;
+  background: rgba(8, 8, 14, 0.72);
+}
+
+[data-theme="light"] .dressing-room-msa-lock {
+  background: rgba(20, 20, 28, 0.72);
+}
+
+.dressing-room-msa-lock-icon {
+  width: 34px;
+  height: 34px;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.dressing-room-msa-lock-text {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.dressing-room-msa-lock-subtext {
+  margin: 0;
+  max-width: 320px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+[data-theme="light"] .dressing-room-modal {
+  background: rgba(248, 249, 252, 0.88);
+  border-color: rgba(0,0,0,0.1);
+  box-shadow: 0 32px 72px rgba(0, 0, 0, 0.15);
+}
+
+.dressing-room-header {
+  position: relative;
+  z-index: 3;
+  margin-bottom: 14px;
+}
+
+.dressing-room-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  border-radius: var(--radius-pill);
+  margin-bottom: 16px;
+}
+
+.dressing-room-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.dressing-room-tab:hover {
+  background: var(--panel-hover);
+  color: var(--text);
+}
+
+.dressing-room-tab.active {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.dressing-room-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dressing-room-section {
+  display: none;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.dressing-room-section.active {
+  display: block;
+}
+
+.dressing-room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.dressing-room-add-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  aspect-ratio: 3 / 4;
+  background: var(--panel);
+  border: 1px dashed rgba(var(--overlay-rgb), 0.18);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  font-family: var(--font);
+}
+
+.dressing-room-add-card:hover {
+  background: var(--panel-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.dressing-room-add-icon {
+  width: 30px;
+  height: 30px;
+  color: currentColor;
+}
+
+.dressing-room-add-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dressing-room-cape-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  aspect-ratio: 3 / 4;
+  background: var(--panel);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.dressing-room-cape-card:hover {
+  background: var(--panel-hover);
+}
+
+.dressing-room-cape-card.equipped {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.dressing-room-cape-svg {
+  width: 100%;
+  max-height: 70%;
+  flex: 1;
+}
+
+.dressing-room-skin-svg {
+  max-height: 85%;
+}
+
+.dressing-room-cape-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.dressing-room-note {
+  margin: 12px 2px 0;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--panel);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  border-radius: var(--radius);
+}
+
+.dressing-room-note-link {
+  display: inline;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.dressing-room-note-link:hover {
+  opacity: 0.85;
+}
+
+.dressing-room-soon {
+  order: -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(245, 197, 24, 0.12);
+  border: 1px solid rgba(245, 197, 24, 0.4);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.dressing-room-soon-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: #f5c518;
+}
+
+.dressing-room-soon-badge {
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(245, 197, 24, 0.18);
+  border: 1px solid #f5c518;
+  color: #f5c518;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
+}
+
+.dressing-room-soon-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #f5c518;
+}
+
 
 

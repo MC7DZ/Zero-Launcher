@@ -33,38 +33,82 @@
 
       <!-- Navigation Tabs in Top Bar -->
       <nav id="tab-bar">
-        <button class="pill-tab active" data-tab="instances" title="View and launch your Minecraft instances">Instances</button>
-        <button class="pill-tab" data-tab="mods" title="Manage mods for an instance">Mods</button>
-        <button class="pill-tab" data-tab="discover" title="Search and install mods/resourcepacks from Modrinth">Discover</button>
-        <button class="pill-tab" data-tab="presets" title="Apply bundled mod/config presets to an instance">Presets</button>
-        <button class="pill-tab" data-tab="settings" title="Launcher settings and preferences">Settings</button>
+        <button class="pill-tab active" data-tab="instances" title="Instances (Alt + 1)">Instances</button>
+        <button class="pill-tab" data-tab="mods" title="Mods (Alt + 2)">Mods</button>
+        <button class="pill-tab" data-tab="discover" title="Discover (Alt + 3)">Discover</button>
+        <button class="pill-tab" data-tab="presets" title="Presets (Alt + 4)">Presets</button>
+        <button class="pill-tab" data-tab="settings" title="Settings (Alt + 5)">Settings</button>
       </nav>
-
-      <button id="account-btn" class="account-button">
-        <span class="account-icon">◯</span>
-        <span id="account-name">No account</span>
-        <span class="account-arrow">▾</span>
-      </button>
     </header>
 
     <!-- ═══ Accounts Management Modal Overlay ═══ -->
     <div id="account-modal-overlay" class="overlay hidden">
-      <div class="overlay-card" style="max-width: 520px; width: 90%;">
+      <div class="overlay-card account-overlay-card" style="max-width: 520px; width: 90%;">
         <div class="overlay-header">
           <h3>Accounts Manager</h3>
           <button class="overlay-close" id="btn-close-account-modal">✕</button>
         </div>
 
-        <!-- Section 1: Select Active Account -->
-        <div style="margin-bottom: 20px;">
+        <!-- Section 1: Select Active Account (hidden when there are no accounts yet) -->
+        <div id="account-list-section" style="margin-bottom: 20px;">
           <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">Switch Account</label>
-          <div id="modal-account-list" style="display:flex; flex-direction:column; gap:8px; max-height: 200px; overflow-y: auto; padding-right: 4px;"></div>
+          <div id="modal-account-list" style="display:flex; flex-direction:column; gap:8px; max-height: 200px; overflow-y: auto; padding-right: 4px; margin-bottom:10px;"></div>
+          <button id="btn-show-add-account" class="btn-secondary" style="width:100%;">+ Add Account</button>
         </div>
 
-        <div class="dropdown-divider" style="margin: 16px 0;"></div>
+        <!-- Empty state: no accounts yet, offer the two ways to add one -->
+        <div id="account-empty-state" class="hidden">
+          <div style="text-align:center; padding: 6px 0 18px;">
+            <div style="font-size:14px; font-weight:600; color:var(--text); margin-bottom:2px;">No accounts yet</div>
+            <div style="font-size:12px; color:var(--text-muted);">Add a Microsoft account or play offline for free.</div>
+          </div>
+          <div id="account-choice-buttons" style="display:flex; flex-direction:column; gap:10px;">
+            <button id="btn-choice-msa" class="btn-secondary" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; font-size:14px;">
+              <svg viewBox="0 0 23 23" width="18" height="18"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>
+              Add Microsoft Account
+            </button>
+            <button id="btn-choice-offline" class="btn-secondary" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; font-size:14px;">
+              <span style="width:18px; height:18px; border-radius:50%; background:var(--accent-dim); border:1px solid var(--accent); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; flex-shrink:0;">?</span>
+              Add Free Offline Account
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 2b: Microsoft Sign-In -->
+        <div id="account-msa-section" class="hidden">
+          <button class="btn-ghost btn-sm btn-back-to-choices" style="margin-bottom:12px;">← Back</button>
+          <label style="font-size:12px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">Sign in with Microsoft</label>
+
+          <!-- Sign-in method: device code only (opens Microsoft's sign-in in the
+               user's normal browser instead of an embedded popup webview). -->
+          <div id="msa-method-choice" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;">
+            <button id="btn-msa-device-login" class="btn-secondary" style="white-space:nowrap; display:flex; align-items:center; justify-content:center; gap:6px; width:100%; padding:12px;">
+              <svg viewBox="0 0 23 23" width="14" height="14"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>
+              Sign In with Microsoft
+            </button>
+            <p style="font-size:11px; line-height:1.5; color:var(--text-muted); margin:2px 0 0;">
+              You'll get a short code to enter at microsoft.com/link in your normal browser — this plays nicer with 2FA, family/child accounts, and passkeys than an embedded sign-in window.
+            </p>
+          </div>
+
+          <!-- Device-code panel: shown after choosing the code option -->
+          <div id="msa-device-panel" class="hidden">
+            <div style="text-align:center; padding:16px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);">
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Your code</div>
+              <div id="msa-device-code" style="font-size:26px; font-weight:800; letter-spacing:3px; color:var(--accent); margin-bottom:12px;">— — — — —</div>
+              <button id="btn-msa-device-open" class="btn-accent btn-sm" style="margin-bottom:8px;">Open microsoft.com/link</button>
+              <div id="msa-device-status" style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; gap:6px;">
+                <span class="msa-device-spinner" style="width:10px; height:10px; border-radius:50%; border:2px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span>
+                Waiting for you to sign in…
+              </div>
+            </div>
+            <button id="btn-msa-device-cancel" class="btn-ghost btn-sm" style="width:100%; margin-top:10px;">Cancel</button>
+          </div>
+        </div>
 
         <!-- Section 2: Create New Offline Account -->
-        <div>
+        <div id="account-offline-section" class="hidden">
+          <button class="btn-ghost btn-sm btn-back-to-choices" style="margin-bottom:12px;">← Back</button>
           <label style="font-size:12px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">Create Offline Account</label>
           <div style="display:flex; gap:10px;">
             <input type="text" id="modal-new-username" class="input-field" placeholder="Username (1-16 chars)" style="flex:1;" />
@@ -78,8 +122,165 @@
       </div>
     </div>
 
+    <!-- ═══ 3D Skin Settings Modal Overlay ═══ -->
+    <div id="skin-viewer-overlay" class="overlay hidden">
+      <div class="overlay-card skin-viewer-modal">
+        <div class="overlay-header skin-viewer-header">
+          <div class="skin-viewer-title-group">
+            <span class="skin-viewer-badge">SETTINGS</span>
+            <h3>3D Skin Settings</h3>
+          </div>
+          <button class="overlay-close" id="btn-close-skin-viewer" title="Close Settings">✕</button>
+        </div>
+
+        <div class="skin-viewer-body">
+          <div class="skin-viewer-sidebar">
+
+            <!-- Section: Animations -->
+            <div class="skin-section">
+              <div class="skin-section-title">Animation</div>
+              <div class="skin-anim-grid" id="skin-anim-buttons">
+                <button class="skin-anim-btn" data-anim="idle">Idle</button>
+                <button class="skin-anim-btn active" data-anim="walk">Walk</button>
+                <button class="skin-anim-btn" data-anim="run">Run</button>
+                <button class="skin-anim-btn" data-anim="wave">Wave</button>
+                <button class="skin-anim-btn" data-anim="crouch">Crouch</button>
+                <button class="skin-anim-btn" data-anim="fly">Fly</button>
+                <button class="skin-anim-btn" data-anim="hit">Hit</button>
+                <button class="skin-anim-btn" data-anim="none">None</button>
+              </div>
+
+              <div class="skin-control-row" style="margin-top: 10px;">
+                <span class="skin-control-label">Speed</span>
+                <div class="skin-speed-radios" id="skin-speed-group">
+                  <button class="skin-speed-btn active" data-speed="0.5">Slow</button>
+                  <button class="skin-speed-btn" data-speed="1.0">Normal</button>
+                  <button class="skin-speed-btn" data-speed="1.6">Fast</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Section: Facing Direction -->
+            <div class="skin-section">
+              <div class="skin-section-title">Facing</div>
+              <div class="skin-control-row">
+                <div class="skin-speed-radios" id="skin-facing-group">
+                  <button class="skin-speed-btn active" data-facing="left">Left</button>
+                  <button class="skin-speed-btn" data-facing="right">Right</button>
+                  <button class="skin-speed-btn" data-facing="camera">Camera</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Section: Anonymous -->
+            <div class="skin-section">
+              <div class="skin-section-title">Anonymous</div>
+              <div class="skin-control-row" style="margin-bottom: 8px;">
+                <span class="skin-control-label">Skin</span>
+                <div class="skin-speed-radios" id="skin-anon-skin-group">
+                  <button class="skin-speed-btn active" data-anon-skin="false">My Skin</button>
+                  <button class="skin-speed-btn" data-anon-skin="true">Unknown Skin</button>
+                </div>
+              </div>
+              <div class="skin-control-row" style="margin-bottom: 8px;">
+                <span class="skin-control-label">Nametag</span>
+                <div class="skin-speed-radios" id="skin-anon-tag-group">
+                  <button class="skin-speed-btn active" data-anon-tag="false">My Nametag</button>
+                  <button class="skin-speed-btn" data-anon-tag="true">Unknown Nametag</button>
+                </div>
+              </div>
+              <div class="skin-control-row">
+                <span class="skin-control-label">Picture</span>
+                <div class="skin-speed-radios" id="skin-anon-pic-group">
+                  <button class="skin-speed-btn" data-anon-pic="false">Use My Picture</button>
+                  <button class="skin-speed-btn active" data-anon-pic="true">Use Unknown</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Apply Button -->
+            <button id="btn-skin-apply" class="btn-accent skin-apply-btn">✓ Apply</button>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Dressing Room Modal Overlay ═══ -->
+    <div id="dressing-room-overlay" class="overlay hidden">
+      <div class="overlay-card dressing-room-modal">
+        <div class="overlay-header dressing-room-header">
+          <div class="skin-viewer-title-group">
+            <span class="skin-viewer-badge">WARDROBE</span>
+            <h3>Dressing Room</h3>
+          </div>
+          <button class="overlay-close" id="btn-close-dressing-room" title="Close Dressing Room">✕</button>
+        </div>
+
+        <div class="dressing-room-content" id="dressing-room-content">
+
+          <div class="dressing-room-tabs" id="dressing-room-tabs">
+            <button class="dressing-room-tab active" data-dressing-tab="skins">Skins</button>
+            <button class="dressing-room-tab" data-dressing-tab="capes">Capes</button>
+          </div>
+
+          <div class="dressing-room-body">
+
+            <!-- Coming Soon banner -->
+            <div class="dressing-room-soon">
+              <svg class="dressing-room-soon-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 9V13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M12 16.5V16.51" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M10.29 3.86L1.82 18a1.5 1.5 0 0 0 1.28 2.25h17.8a1.5 1.5 0 0 0 1.28-2.25L13.71 3.86a1.5 1.5 0 0 0-2.42 0Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              </svg>
+              <span class="dressing-room-soon-badge">Coming Soon</span>
+              <p class="dressing-room-soon-text">Changing skins &amp; capes from here isn't available yet — this is a preview of what's coming.</p>
+            </div>
+
+            <!-- Skins Section -->
+            <div class="dressing-room-section active" id="dressing-room-skins" data-dressing-section="skins">
+              <div class="dressing-room-grid">
+                <button class="dressing-room-add-card" id="btn-dressing-add-skin" type="button">
+                  <svg class="dressing-room-add-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 5V19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                  <span class="dressing-room-add-label">Add a Skin</span>
+                </button>
+                <div class="dressing-room-grid" id="dressing-room-skins-grid" style="display:contents;">
+                  <!-- Previously-used skins are populated here -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Capes Section -->
+            <div class="dressing-room-section" id="dressing-room-capes" data-dressing-section="capes">
+              <div class="dressing-room-grid" id="dressing-room-capes-grid">
+                <!-- Owned capes are populated here -->
+              </div>
+              <p class="dressing-room-note">Some capes might not show up here — you need to equip them first. Head to <button type="button" class="dressing-room-note-link" id="dressing-room-editskin-link">minecraft.net/msaprofile/editskin</button> to equip a cape, or change your skin/cape entirely from there.</p>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- Microsoft-only lock shown over the blurred content for offline accounts -->
+        <div class="dressing-room-msa-lock hidden" id="dressing-room-msa-lock">
+          <svg class="dressing-room-msa-lock-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="2"/>
+            <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <p class="dressing-room-msa-lock-text">This is a Microsoft accounts only feature</p>
+          <p class="dressing-room-msa-lock-subtext">Sign in with a Microsoft account to use the Dressing Room.</p>
+        </div>
+
+      </div>
+    </div>
+
     <!-- Vanilla-instance delete dependency warning -->
     <div id="vanilla-delete-warning-overlay" class="overlay hidden">
+
       <div class="overlay-card" style="max-width: 480px; width: 90%;">
         <div class="overlay-header">
           <h3>⚠ Other Instances Need This</h3>
@@ -128,7 +329,7 @@
 
     <!-- Auto-Update overlay -->
     <div id="update-available-overlay" class="overlay hidden">
-      <div class="overlay-card update-overlay-card">
+      <div class="overlay-card update-overlay-card update-available-card">
         <button class="overlay-close" id="btn-close-update-overlay">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
@@ -150,6 +351,40 @@
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5"/></svg>
             <span id="update-size-text">— MB</span>
           </div>
+          <div id="update-changelog" class="update-changelog hidden">
+            <p class="update-changelog-title">What's new</p>
+            <ul id="update-changelog-list" class="update-changelog-list"></ul>
+          </div>
+
+          <label class="toggle-row update-relaunch-toggle">
+            <input type="checkbox" id="setting-update-relaunch" />
+            <span class="toggle-slider"></span>
+            <span>Relaunch automatically after the update installs</span>
+          </label>
+
+          <div class="update-trust-note">
+            <div class="update-trust-note-title">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6.5v5.2c0 4.6 3.2 8.7 8 9.8 4.8-1.1 8-5.2 8-9.8V6.5L12 3Z"/><path d="m9.2 12.2 2 2.1 3.8-4.3"/></svg>
+              Don't take our word for it
+            </div>
+            <p>
+              If you don't trust this launcher, please scan it yourself before installing —
+              upload it to <a href="#" id="link-virustotal" data-url="https://www.virustotal.com/gui/home/upload">virustotal.com/gui/home/upload</a>.
+              You can grab the actual exe/AppImage file from its folder on disk, or scan the
+              download link directly.
+            </p>
+            <div class="update-trust-note-actions">
+              <button type="button" id="btn-open-update-folder" class="btn-ghost btn-small">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>
+                Open File Location
+              </button>
+              <button type="button" id="btn-copy-update-link" class="btn-ghost btn-small">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                Copy Download Link
+              </button>
+            </div>
+          </div>
+
           <div class="overlay-actions update-actions">
             <button id="btn-update-no" class="btn-ghost">Not Now</button>
             <button id="btn-update-yes" class="btn-accent">
@@ -168,6 +403,24 @@
             <div id="update-progress-bar" class="update-progress-fill"></div>
           </div>
           <p class="update-progress-pct" id="update-progress-pct">0%</p>
+        </div>
+
+        <div id="update-ready-view" class="hidden">
+          <div class="update-icon-badge">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </div>
+          <h3 class="update-title">Update Downloaded</h3>
+          <p class="update-desc">
+            Zero Launcher has been downloaded successfully — reopen the launcher to apply it.
+          </p>
+          <p class="update-ready-countdown hidden" id="update-ready-countdown"></p>
+          <div class="overlay-actions update-actions">
+            <button id="btn-update-ready-okay" class="btn-ghost">Okay</button>
+            <button id="btn-update-ready-reopen" class="btn-accent">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 3v6h-6"/></svg>
+              Reopen Now
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -246,10 +499,31 @@
               <div id="ri-buttons" class="ri-buttons"></div>
             </div>
 
-            <div class="detail-actions">
-              <button id="btn-play" class="btn-play" disabled title="Launch the selected instance">▶ PLAY</button>
-              <button id="btn-edit-instance" class="btn-secondary" title="Rename or change the loader version of the selected instance">Edit</button>
-              <button id="btn-delete-instance" class="btn-danger-outline" title="Permanently delete the selected instance">Delete</button>
+            <div class="detail-actions-wrap">
+              <div class="skin-panel">
+                <!-- 3D Non-interactive Skin Standee Preview -->
+                <div class="skin-mini-preview-wrap" id="skin-mini-preview-wrap">
+                  <canvas id="skin-mini-preview-canvas"></canvas>
+                </div>
+                <div class="account-row-under-preview">
+                  <button id="account-btn" class="account-button account-button-under-preview">
+                    <span class="account-avatar account-avatar-header" id="account-header-avatar">
+                      <span class="account-avatar-fallback account-avatar-fallback-mc" id="account-header-fallback">?</span>
+                      <img id="account-header-avatar-img" alt="" class="hidden" />
+                    </span>
+                    <span id="account-name">No account</span>
+                    <span class="account-arrow">▾</span>
+                  </button>
+                  <button id="btn-open-skin-settings" class="account-button account-button-under-preview skin-settings-btn" title="3D Skin &amp; Animation Settings">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="detail-actions">
+                <button id="btn-play" class="btn-play" disabled title="Launch the selected instance">▶ PLAY</button>
+                <button id="btn-edit-instance" class="btn-secondary" title="Rename or change the loader version of the selected instance">Edit</button>
+                <button id="btn-delete-instance" class="btn-danger-outline" title="Permanently delete the selected instance">Delete</button>
+              </div>
             </div>
           </div>
         </div>
@@ -662,598 +936,646 @@
 
         <div class="settings-grid">
           <!-- Appearance Settings -->
-          <div class="glass-card settings-card">
-            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="7.5" cy="10.5" r="1.3" fill="currentColor"/><circle cx="11.5" cy="7" r="1.3" fill="currentColor"/><circle cx="16" cy="8.5" r="1.3" fill="currentColor"/><circle cx="17" cy="13" r="1.3" fill="currentColor"/></svg>Appearance Settings</h3>
-
-            <!-- Theme Mode -->
-            <div class="form-row" style="margin-bottom: 14px;">
-              <div class="form-group">
-                <label>Theme</label>
-                <select id="setting-theme-mode" class="input-field">
-                  <option value="system">Match System (Auto)</option>
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                </select>
-              </div>
+          <div class="glass-card settings-card accordion-section active" data-section="appearance">
+            <div class="settings-card-header">
+              <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="7.5" cy="10.5" r="1.3" fill="currentColor"/><circle cx="11.5" cy="7" r="1.3" fill="currentColor"/><circle cx="16" cy="8.5" r="1.3" fill="currentColor"/><circle cx="17" cy="13" r="1.3" fill="currentColor"/></svg>Appearance Settings</h3>
+              <svg class="accordion-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </div>
-
-            <div class="dropdown-divider" style="margin: 16px 0;"></div>
-
-            <!-- Color Setting — each theme remembers its own accent color -->
-            <div class="form-row" style="margin-bottom: 14px;">
-              <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
-                <label style="margin-bottom: 0;">Accent Color (Dark Theme)</label>
-                <input type="color" id="setting-accent-color-dark" class="color-picker-box" />
-              </div>
-            </div>
-            <div class="form-row" style="margin-bottom: 14px;">
-              <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
-                <label style="margin-bottom: 0;">Accent Color (Light Theme)</label>
-                <input type="color" id="setting-accent-color-light" class="color-picker-box" />
-              </div>
-            </div>
-
-            <div class="dropdown-divider" style="margin: 16px 0;"></div>
-
-            <!-- Background Style & Animation -->
-            <div class="form-row">
-              <div class="form-group">
-                <label>Background Style</label>
-                <select id="setting-bg-style" class="input-field">
-                  <option value="Default">Default</option>
-                  <option value="Midnight">Midnight</option>
-                  <option value="Sunset">Sunset</option>
-                  <option value="Forest">Forest</option>
-                  <option value="Ocean">Ocean</option>
-                  <option value="Monochrome">Monochrome</option>
-                  <option value="Accent Glow">Accent Glow</option>
-                  <option value="Nothing">Nothing (flat gray)</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Animation Style</label>
-                <select id="setting-bg-anim-style" class="input-field">
-                  <option value="Waves">Waves</option>
-                  <option value="Particles">Particles</option>
-                  <option value="Fireflies">Fireflies</option>
-                  <option value="Orbs">Orbs</option>
-                  <option value="Nothing">Nothing (no animation)</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="form-group">
-                <label>Animation Speed</label>
-                <input type="number" step="0.1" min="0.1" max="5.0" id="setting-bg-anim-speed" class="input-field" />
-              </div>
-              <div class="form-group">
-                <label>Animation FPS</label>
-                <input type="number" min="10" max="120" id="setting-bg-anim-fps" class="input-field" />
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Animation Intensity</label>
-                <input type="range" min="0.5" max="3.0" step="0.1" id="setting-bg-anim-intensity" class="input-range" />
-              </div>
-            </div>
-
-            <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-bg-anim-enable" />
-                <span class="toggle-slider"></span>
-                <span>Background Animations</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-transparency" />
-                <span class="toggle-slider"></span>
-                <span>Frosted Glass Transparency</span>
-              </label>
-            </div>
-
-            <div class="dropdown-divider" style="margin: 16px 0;"></div>
-
-            <!-- Background Image -->
-            <label class="toggle-row" style="margin-bottom:10px;">
-              <input type="checkbox" id="setting-use-bg-image" />
-              <span class="toggle-slider"></span>
-              <span>Use Background Image</span>
-            </label>
-
-            <div class="form-group">
-              <label>Background Image</label>
-              <div style="display:flex; gap:8px; align-items:center;">
-                <input type="hidden" id="setting-bg-image-path" />
-                <div id="setting-bg-image-selected" class="input-field" style="flex:1; min-height:40px; display:flex; align-items:center; padding:0 12px; border-radius:14px; overflow:hidden; background: rgba(var(--overlay-rgb),0.08); border:1px solid rgba(var(--overlay-rgb),0.12); color: var(--text);">
-                  <span id="setting-bg-image-selected-text" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">No image selected</span>
+            <div class="settings-card-body">
+              <div class="settings-card-body-inner">
+                <!-- Theme Mode -->
+                <div class="form-row" style="margin-bottom: 14px;">
+                  <div class="form-group">
+                    <label>Theme</label>
+                    <select id="setting-theme-mode" class="input-field">
+                      <option value="system">Match System (Auto)</option>
+                      <option value="dark">Dark</option>
+                      <option value="light">Light</option>
+                    </select>
+                  </div>
                 </div>
-                <button id="btn-browse-bg-image" type="button" class="btn-pill" style="flex-shrink:0;">⌗ Browse…</button>
-                <button id="btn-clear-bg-image" type="button" class="btn-secondary btn-pill" style="flex-shrink:0;">Clear</button>
-              </div>
-              <div id="setting-bg-image-name" style="margin-top:8px; font-size:12px; color: var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Select an image to show a screenshot preview.</div>
-              <div id="setting-bg-image-preview" class="image-preview hidden" style="margin-top:10px; max-width:240px; border-radius:14px; overflow:hidden; border:1px solid rgba(var(--overlay-rgb),0.12); background:rgba(var(--overlay-rgb),0.08);">
-                <img id="setting-bg-image-thumbnail" alt="Background preview" style="width:100%; height:100%; object-fit:cover; display:block;" />
+
+                <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+                <!-- Color Setting — each theme remembers its own accent color -->
+                <div class="form-row" style="margin-bottom: 14px;">
+                  <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+                    <label style="margin-bottom: 0;">Accent Color (Dark Theme)</label>
+                    <input type="color" id="setting-accent-color-dark" class="color-picker-box" />
+                  </div>
+                </div>
+                <div class="form-row" style="margin-bottom: 14px;">
+                  <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+                    <label style="margin-bottom: 0;">Accent Color (Light Theme)</label>
+                    <input type="color" id="setting-accent-color-light" class="color-picker-box" />
+                  </div>
+                </div>
+
+                <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+                <!-- Background Style & Animation -->
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Background Style</label>
+                    <select id="setting-bg-style" class="input-field">
+                      <option value="Default">Default</option>
+                      <option value="Midnight">Midnight</option>
+                      <option value="Sunset">Sunset</option>
+                      <option value="Forest">Forest</option>
+                      <option value="Ocean">Ocean</option>
+                      <option value="Monochrome">Monochrome</option>
+                      <option value="Accent Glow">Accent Glow</option>
+                      <option value="Nothing">Nothing (flat gray)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Animation Style</label>
+                    <select id="setting-bg-anim-style" class="input-field">
+                      <option value="Waves">Waves</option>
+                      <option value="Particles">Particles</option>
+                      <option value="Fireflies">Fireflies</option>
+                      <option value="Orbs">Orbs</option>
+                      <option value="Nothing">Nothing (no animation)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Animation Speed</label>
+                    <input type="number" step="0.1" min="0.1" max="5.0" id="setting-bg-anim-speed" class="input-field" />
+                  </div>
+                  <div class="form-group">
+                    <label>Animation FPS</label>
+                    <input type="number" min="10" max="120" id="setting-bg-anim-fps" class="input-field" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Animation Intensity</label>
+                    <input type="range" min="0.5" max="3.0" step="0.1" id="setting-bg-anim-intensity" class="input-range" />
+                  </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-bg-anim-enable" />
+                    <span class="toggle-slider"></span>
+                    <span>Background Animations</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-transparency" />
+                    <span class="toggle-slider"></span>
+                    <span>Frosted Glass Transparency</span>
+                  </label>
+                </div>
+
+                <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+                <!-- Background Image -->
+                <label class="toggle-row" style="margin-bottom:10px;">
+                  <input type="checkbox" id="setting-use-bg-image" />
+                  <span class="toggle-slider"></span>
+                  <span>Use Background Image</span>
+                </label>
+
+                <div class="form-group">
+                  <label>Background Image</label>
+                  <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="hidden" id="setting-bg-image-path" />
+                    <div id="setting-bg-image-selected" class="input-field" style="flex:1; min-height:40px; display:flex; align-items:center; padding:0 12px; border-radius:14px; overflow:hidden; background: rgba(var(--overlay-rgb),0.08); border:1px solid rgba(var(--overlay-rgb),0.12); color: var(--text);">
+                      <span id="setting-bg-image-selected-text" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">No image selected</span>
+                    </div>
+                    <button id="btn-browse-bg-image" type="button" class="btn-pill" style="flex-shrink:0;">⌗ Browse…</button>
+                    <button id="btn-clear-bg-image" type="button" class="btn-secondary btn-pill" style="flex-shrink:0;">Clear</button>
+                  </div>
+                  <div id="setting-bg-image-name" style="margin-top:8px; font-size:12px; color: var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Select an image to show a screenshot preview.</div>
+                  <div id="setting-bg-image-preview" class="image-preview hidden" style="margin-top:10px; max-width:240px; border-radius:14px; overflow:hidden; border:1px solid rgba(var(--overlay-rgb),0.12); background:rgba(var(--overlay-rgb),0.08);">
+                    <img id="setting-bg-image-thumbnail" alt="Background preview" style="width:100%; height:100%; object-fit:cover; display:block;" />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Image Fit</label>
+                    <select id="setting-bg-image-fit" class="input-field">
+                      <option value="Cover">Cover</option>
+                      <option value="Contain">Contain</option>
+                      <option value="Stretch">Stretch</option>
+                      <option value="Center">Center</option>
+                      <option value="Tile">Tile</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Dim Overlay (0-100)</label>
+                    <input type="range" min="0" max="100" id="setting-bg-image-dim" class="input-range" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Image Brightness</label>
+                    <input type="range" min="50" max="150" id="setting-bg-image-brightness" class="input-range" />
+                  </div>
+                  <div class="form-group">
+                    <label>Image Blur</label>
+                    <input type="range" min="0" max="20" id="setting-bg-image-blur" class="input-range" />
+                  </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-bg-image-tint" />
+                    <span class="toggle-slider"></span>
+                    <span>Tint with Accent Color</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-bg-image-vignette" />
+                    <span class="toggle-slider"></span>
+                    <span>Vignette Effect</span>
+                  </label>
+                </div>
+
+                <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+                <!-- Notification Style & Font -->
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Notification Style</label>
+                    <select id="setting-notif-style" class="input-field">
+                      <option value="Glass" selected>Glass (Default)</option>
+                      <option value="Neon">Neon</option>
+                      <option value="Solid Card">Solid Card</option>
+                      <option value="Pill">Pill</option>
+                      <option value="Minimal">Minimal</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Font Family</label>
+                    <select id="setting-font-family" class="input-field">
+                      <option value="Inter">Inter</option>
+                      <option value="Roboto">Roboto</option>
+                      <option value="Outfit">Outfit</option>
+                      <option value="system-ui">System Default</option>
+                      <option value="monospace">Monospace</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="dropdown-divider" style="margin: 16px 0;"></div>
+
+                <!-- Music -->
+                <label class="toggle-row" style="margin-bottom:14px;">
+                  <input type="checkbox" id="setting-music-enabled" />
+                  <span class="toggle-slider"></span>
+                  <span>Background Music</span>
+                </label>
+
+                <div class="form-row" style="margin-bottom: 14px;">
+                  <div class="form-group">
+                    <label>Music Volume</label>
+                    <input type="range" min="0" max="100" step="1" id="setting-music-volume" class="input-range" />
+                  </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 14px;">
+                  <label>When switching to another window</label>
+                  <select id="setting-music-switch-behavior" class="input-field">
+                    <option value="pause">Pause music</option>
+                    <option value="continue">Don't pause music</option>
+                    <option value="lower">Don't pause music, but lower volume</option>
+                  </select>
+                </div>
+
+                <div class="form-row" id="setting-music-lower-row" style="margin-bottom: 14px;">
+                  <div class="form-group">
+                    <label>Volume while unfocused</label>
+                    <input type="range" min="0" max="100" step="1" id="setting-music-lower-percent" class="input-range" />
+                  </div>
+                </div>
+
+                <button type="button" id="btn-open-music-library" class="btn-secondary">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">
+                    <path d="M9 18V5l12-2v13"></path>
+                    <circle cx="6" cy="18" r="3"></circle>
+                    <circle cx="18" cy="16" r="3"></circle>
+                  </svg>
+                  Manage Music Library
+                </button>
               </div>
             </div>
-
-            <div class="form-row">
-              <div class="form-group">
-                <label>Image Fit</label>
-                <select id="setting-bg-image-fit" class="input-field">
-                  <option value="Cover">Cover</option>
-                  <option value="Contain">Contain</option>
-                  <option value="Stretch">Stretch</option>
-                  <option value="Center">Center</option>
-                  <option value="Tile">Tile</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Dim Overlay (0-100)</label>
-                <input type="range" min="0" max="100" id="setting-bg-image-dim" class="input-range" />
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Image Brightness</label>
-                <input type="range" min="50" max="150" id="setting-bg-image-brightness" class="input-range" />
-              </div>
-              <div class="form-group">
-                <label>Image Blur</label>
-                <input type="range" min="0" max="20" id="setting-bg-image-blur" class="input-range" />
-              </div>
-            </div>
-
-            <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-bg-image-tint" />
-                <span class="toggle-slider"></span>
-                <span>Tint with Accent Color</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-bg-image-vignette" />
-                <span class="toggle-slider"></span>
-                <span>Vignette Effect</span>
-              </label>
-            </div>
-
-            <div class="dropdown-divider" style="margin: 16px 0;"></div>
-
-            <!-- Notification Style & Font -->
-            <div class="form-row">
-              <div class="form-group">
-                <label>Notification Style</label>
-                <select id="setting-notif-style" class="input-field">
-                  <option value="Glass" selected>Glass (Default)</option>
-                  <option value="Neon">Neon</option>
-                  <option value="Solid Card">Solid Card</option>
-                  <option value="Pill">Pill</option>
-                  <option value="Minimal">Minimal</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Font Family</label>
-                <select id="setting-font-family" class="input-field">
-                  <option value="Inter">Inter</option>
-                  <option value="Roboto">Roboto</option>
-                  <option value="Outfit">Outfit</option>
-                  <option value="system-ui">System Default</option>
-                  <option value="monospace">Monospace</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="dropdown-divider" style="margin: 16px 0;"></div>
-
-            <!-- Music -->
-            <label class="toggle-row" style="margin-bottom:14px;">
-              <input type="checkbox" id="setting-music-enabled" />
-              <span class="toggle-slider"></span>
-              <span>Background Music</span>
-            </label>
-
-            <div class="form-row" style="margin-bottom: 14px;">
-              <div class="form-group">
-                <label>Music Volume</label>
-                <input type="range" min="0" max="100" step="1" id="setting-music-volume" class="input-range" />
-              </div>
-            </div>
-
-            <div class="form-group" style="margin-bottom: 14px;">
-              <label>When switching to another window</label>
-              <select id="setting-music-switch-behavior" class="input-field">
-                <option value="pause">Pause music</option>
-                <option value="continue">Don't pause music</option>
-                <option value="lower">Don't pause music, but lower volume</option>
-              </select>
-            </div>
-
-            <div class="form-row" id="setting-music-lower-row" style="margin-bottom: 14px;">
-              <div class="form-group">
-                <label>Volume while unfocused</label>
-                <input type="range" min="0" max="100" step="1" id="setting-music-lower-percent" class="input-range" />
-              </div>
-            </div>
-
-            <button type="button" id="btn-open-music-library" class="btn-secondary">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">
-                <path d="M9 18V5l12-2v13"></path>
-                <circle cx="6" cy="18" r="3"></circle>
-                <circle cx="18" cy="16" r="3"></circle>
-              </svg>
-              Manage Music Library
-            </button>
           </div>
 
           <!-- Window Behavior -->
-          <div class="glass-card settings-card">
-            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M3 9h18" stroke="currentColor" stroke-width="1.6"/></svg>Window Behavior</h3>
-
-            <div style="font-size:12px; opacity:0.65; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em;">When launching a game</div>
-            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:18px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-close-on-launch" />
-                <span class="toggle-slider"></span>
-                <span>Close launcher when game starts</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-minimize-on-launch" />
-                <span class="toggle-slider"></span>
-                <span>Minimize launcher while game is running</span>
-              </label>
+          <div class="glass-card settings-card accordion-section" data-section="window-behavior">
+            <div class="settings-card-header">
+              <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M3 9h18" stroke="currentColor" stroke-width="1.6"/></svg>Window Behavior</h3>
+              <svg class="accordion-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </div>
+            <div class="settings-card-body">
+              <div class="settings-card-body-inner">
+                <div style="font-size:12px; opacity:0.65; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em;">When launching a game</div>
+                <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:18px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-close-on-launch" />
+                    <span class="toggle-slider"></span>
+                    <span>Close launcher when game starts</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-minimize-on-launch" />
+                    <span class="toggle-slider"></span>
+                    <span>Minimize launcher while game is running</span>
+                  </label>
+                </div>
 
-            <div style="font-size:12px; opacity:0.65; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em;">When a Minecraft instance closes</div>
-            <div class="form-group" style="margin-bottom:18px;">
-              <select id="setting-on-game-close" class="input-field">
-                <option value="show">Show &amp; focus the launcher</option>
-                <option value="none">Don't show the launcher</option>
-                <option value="quit">Quit the launcher too</option>
-              </select>
-            </div>
+                <div style="font-size:12px; opacity:0.65; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em;">When a Minecraft instance closes</div>
+                <div class="form-group" style="margin-bottom:18px;">
+                  <select id="setting-on-game-close" class="input-field">
+                    <option value="show">Show &amp; focus the launcher</option>
+                    <option value="none">Don't show the launcher</option>
+                    <option value="quit">Quit the launcher too</option>
+                  </select>
+                </div>
 
-            <div style="font-size:12px; opacity:0.65; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em;">When you close the launcher window</div>
-            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:10px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-system-tray" />
-                <span class="toggle-slider"></span>
-                <span>Enable System Tray Icon</span>
-              </label>
-              <div class="form-group" id="setting-on-launcher-close-row">
-                <select id="setting-on-launcher-close" class="input-field">
-                  <option value="tray">Hide to tray (while a game is running)</option>
-                  <option value="close">Close everything</option>
-                </select>
+                <div style="font-size:12px; opacity:0.65; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em;">When you close the launcher window</div>
+                <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:10px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-system-tray" />
+                    <span class="toggle-slider"></span>
+                    <span>Enable System Tray Icon</span>
+                  </label>
+                  <div class="form-group" id="setting-on-launcher-close-row">
+                    <select id="setting-on-launcher-close" class="input-field">
+                      <option value="tray">Hide to tray (while a game is running)</option>
+                      <option value="close">Close everything</option>
+                    </select>
+                  </div>
+                  <label class="toggle-row" id="setting-always-hide-to-tray-row">
+                    <input type="checkbox" id="setting-always-hide-to-tray" />
+                    <span class="toggle-slider"></span>
+                    <span>Always hide to tray, even with nothing running</span>
+                  </label>
+                </div>
               </div>
-              <label class="toggle-row" id="setting-always-hide-to-tray-row">
-                <input type="checkbox" id="setting-always-hide-to-tray" />
-                <span class="toggle-slider"></span>
-                <span>Always hide to tray, even with nothing running</span>
-              </label>
             </div>
           </div>
 
           <!-- Behavior -->
-          <div class="glass-card settings-card">
-            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="6" width="18" height="4.5" rx="2.25" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8.25" r="1.4" fill="currentColor"/><rect x="3" y="13.5" width="18" height="4.5" rx="2.25" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="15.75" r="1.4" fill="currentColor"/></svg>Behavior</h3>
-            <div style="display:flex; flex-direction:column; gap:10px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-mod-updates-startup" />
-                <span class="toggle-slider"></span>
-                <span>Check mod updates on startup</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-confirm-destructive" />
-                <span class="toggle-slider"></span>
-                <span>Confirm before deleting items</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-auto-apply-instance-filters" />
-                <span class="toggle-slider"></span>
-                <span>Auto-select loader &amp; game version in Discover when picking an instance</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-smooth-scrolling" />
-                <span class="toggle-slider"></span>
-                <span>Smooth scrolling</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-notify-auto-mod-updates" />
-                <span class="toggle-slider"></span>
-                <span>Notify when the automatic mod update check finds updates</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-auto-check-launcher-updates" />
-                <span class="toggle-slider"></span>
-                <span>Auto Check For Launcher Updates (Recommended)</span>
-              </label>
+          <div class="glass-card settings-card accordion-section" data-section="behavior">
+            <div class="settings-card-header">
+              <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="6" width="18" height="4.5" rx="2.25" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8.25" r="1.4" fill="currentColor"/><rect x="3" y="13.5" width="18" height="4.5" rx="2.25" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="15.75" r="1.4" fill="currentColor"/></svg>Behavior</h3>
+              <svg class="accordion-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+            <div class="settings-card-body">
+              <div class="settings-card-body-inner">
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-mod-updates-startup" />
+                    <span class="toggle-slider"></span>
+                    <span>Check mod updates on startup</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-confirm-destructive" />
+                    <span class="toggle-slider"></span>
+                    <span>Confirm before deleting items</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-auto-apply-instance-filters" />
+                    <span class="toggle-slider"></span>
+                    <span>Auto-select loader &amp; game version in Discover when picking an instance</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-smooth-scrolling" />
+                    <span class="toggle-slider"></span>
+                    <span>Smooth scrolling</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-notify-auto-mod-updates" />
+                    <span class="toggle-slider"></span>
+                    <span>Notify when the automatic mod update check finds updates</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-auto-check-launcher-updates" />
+                    <span class="toggle-slider"></span>
+                    <span>Auto Check For Launcher Updates (Recommended)</span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
 
-
           <!-- Performance & Java -->
-          <div class="glass-card settings-card">
-            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 21a9 9 0 1 1 9-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12 12 8.5 8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12 12 15 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>Performance & Java</h3>
-            <div class="form-group">
-              <label>Minecraft Game Directory</label>
-              <input type="text" id="setting-game-dir" class="input-field" placeholder="Default (~/.minecraft)" autocomplete="off" />
+          <div class="glass-card settings-card accordion-section" data-section="performance">
+            <div class="settings-card-header">
+              <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 21a9 9 0 1 1 9-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12 12 8.5 8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12 12 15 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>Performance & Java</h3>
+              <svg class="accordion-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </div>
-            <div class="form-row">
-              <div class="form-group"><label>Min RAM (MB)</label><input type="number" id="setting-min-ram" class="input-field" /></div>
-              <div class="form-group"><label>Max RAM (MB)</label><input type="number" id="setting-max-ram" class="input-field" /></div>
-            </div>
-            <div class="form-group">
-              <label>Java Version</label>
-              <select id="setting-java-select" class="input-field">
-                <option value="">✦ Smart Java Detection (Recommended)</option>
-              </select>
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
-                <span id="java-select-hint" style="font-size:12px; opacity:0.7;">Automatically picks (or downloads) the right Java for each instance.</span>
-                <button type="button" id="btn-refresh-java" class="btn-secondary" style="padding:4px 10px; font-size:12px;">⟳ Refresh</button>
-              </div>
-            </div>
-            <div class="form-group"><label>JVM Arguments</label><input type="text" id="setting-jvm-args" class="input-field" placeholder="-XX:+UseG1GC" /></div>
+            <div class="settings-card-body">
+              <div class="settings-card-body-inner">
+                <div class="form-group">
+                  <label>Minecraft Game Directory</label>
+                  <input type="text" id="setting-game-dir" class="input-field" placeholder="Default (~/.minecraft)" autocomplete="off" />
+                </div>
+                <div class="form-row">
+                  <div class="form-group"><label>Min RAM (MB)</label><input type="number" id="setting-min-ram" class="input-field" /></div>
+                  <div class="form-group"><label>Max RAM (MB)</label><input type="number" id="setting-max-ram" class="input-field" /></div>
+                </div>
+                <div class="form-group">
+                  <label>Java Version</label>
+                  <select id="setting-java-select" class="input-field">
+                    <option value="">✦ Smart Java Detection (Recommended)</option>
+                  </select>
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+                    <span id="java-select-hint" style="font-size:12px; opacity:0.7;">Automatically picks (or downloads) the right Java for each instance.</span>
+                    <button type="button" id="btn-refresh-java" class="btn-secondary" style="padding:4px 10px; font-size:12px;">⟳ Refresh</button>
+                  </div>
+                </div>
+                <div class="form-group"><label>JVM Arguments</label><input type="text" id="setting-jvm-args" class="input-field" placeholder="-XX:+UseG1GC" /></div>
 
-            <div class="dropdown-divider" style="margin: 14px 0;"></div>
+                <div class="dropdown-divider" style="margin: 14px 0;"></div>
 
-            <div class="form-group">
-              <label>Concurrent Downloads</label>
-              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:8px;">
-                <input type="checkbox" id="setting-download-threads-auto" />
-                <span>Automatic (recommended — downloads 3 files at once)</span>
-              </label>
-              <div id="download-threads-manual-wrap" style="display:flex; align-items:center; gap:10px;">
-                <input type="range" id="setting-download-threads" min="1" max="16" step="1" style="flex:1;" />
-                <span id="download-threads-value" style="min-width:2.5em; text-align:right; font-size:13px; opacity:0.85;">3</span>
-              </div>
-              <span style="font-size:12px; opacity:0.7;">How many mod/file downloads (preset installs, mod imports, dependency installs) run at the same time. Higher can be faster on a good connection but uses more bandwidth and CPU at once.</span>
-            </div>
+                <div class="form-group">
+                  <label>Concurrent Downloads</label>
+                  <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:8px;">
+                    <input type="checkbox" id="setting-download-threads-auto" />
+                    <span>Automatic (recommended — downloads 3 files at once)</span>
+                  </label>
+                  <div id="download-threads-manual-wrap" style="display:flex; align-items:center; gap:10px;">
+                    <input type="range" id="setting-download-threads" min="1" max="16" step="1" style="flex:1;" />
+                    <span id="download-threads-value" style="min-width:2.5em; text-align:right; font-size:13px; opacity:0.85;">3</span>
+                  </div>
+                  <span style="font-size:12px; opacity:0.7;">How many mod/file downloads (preset installs, mod imports, dependency installs) run at the same time. Higher can be faster on a good connection but uses more bandwidth and CPU at once.</span>
+                </div>
 
-            <div class="dropdown-divider" style="margin: 14px 0;"></div>
+                <div class="dropdown-divider" style="margin: 14px 0;"></div>
 
-            <div class="form-group">
-              <label>Hidden Instances</label>
-              <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
-                <span id="hidden-instances-status" style="font-size:12px; opacity:0.7;">Instances you've hidden (e.g. a vanilla instance other instances still need) show up here. They stay fully installed on disk.</span>
-              </div>
-              <div id="hidden-instances-list" class="instance-list hidden-instances-list">
-                <div class="empty-state"><span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 12C3 9 7 5 12 5s9 4 10.5 7c-1.5 3-5.5 7-10.5 7S3 15 1.5 12Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.6"/></svg></span><span>No hidden instances</span></div>
+                <div class="form-group">
+                  <label>Hidden Instances</label>
+                  <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                    <span id="hidden-instances-status" style="font-size:12px; opacity:0.7;">Instances you've hidden (e.g. a vanilla instance other instances still need) show up here. They stay fully installed on disk.</span>
+                  </div>
+                  <div id="hidden-instances-list" class="instance-list hidden-instances-list">
+                    <div class="empty-state"><span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 12C3 9 7 5 12 5s9 4 10.5 7c-1.5 3-5.5 7-10.5 7S3 15 1.5 12Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.6"/></svg></span><span>No hidden instances</span></div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- Discord RPC -->
-          <div class="glass-card settings-card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+          <div class="glass-card settings-card accordion-section" data-section="discord-rpc">
+            <div class="settings-card-header">
               <h3><svg class="settings-icon" viewBox="0 -28.5 256 256" xmlns="http://www.w3.org/2000/svg"><path d="M216.856339,16.5966031 C200.285002,8.84328665 182.566144,3.2084988 164.041564,0 C161.766523,4.11318106 159.108624,9.64549908 157.276099,14.0464379 C137.583995,11.0849896 118.072967,11.0849896 98.7430163,14.0464379 C96.9108417,9.64549908 94.1925838,4.11318106 91.8971895,0 C73.3526068,3.2084988 55.6133949,8.86399117 39.0420583,16.6376612 C5.61752293,67.146514 -3.4433191,116.400813 1.08711069,164.955721 C23.2560196,181.510915 44.7403634,191.567697 65.8621325,198.148576 C71.0772151,190.971126 75.7283628,183.341335 79.7352139,175.300261 C72.104019,172.400575 64.7949724,168.822202 57.8887866,164.667963 C59.7209612,163.310589 61.5131304,161.891452 63.2445898,160.431257 C105.36741,180.133187 151.134928,180.133187 192.754523,160.431257 C194.506336,161.891452 196.298154,163.310589 198.110326,164.667963 C191.183787,168.842556 183.854737,172.420929 176.223542,175.320965 C180.230393,183.341335 184.861538,190.991831 190.096624,198.16893 C211.238746,191.588051 232.743023,181.531619 254.911949,164.955721 C260.227747,108.668201 245.831087,59.8662432 216.856339,16.5966031 Z M85.4738752,135.09489 C72.8290281,135.09489 62.4592217,123.290155 62.4592217,108.914901 C62.4592217,94.5396472 72.607595,82.7145587 85.4738752,82.7145587 C98.3405064,82.7145587 108.709962,94.5189427 108.488529,108.914901 C108.508531,123.290155 98.3405064,135.09489 85.4738752,135.09489 Z M170.525237,135.09489 C157.88039,135.09489 147.510584,123.290155 147.510584,108.914901 C147.510584,94.5396472 157.658606,82.7145587 170.525237,82.7145587 C183.391518,82.7145587 193.761324,94.5189427 193.539891,108.914901 C193.539891,123.290155 183.391518,135.09489 170.525237,135.09489 Z" fill="currentColor" fill-rule="nonzero"/></svg>Discord Rich Presence</h3>
+              <svg class="accordion-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </div>
-            
-            <!-- Master Toggle -->
-            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-enable-discord-rpc" />
-                <span class="toggle-slider"></span>
-                <span>Enable Discord RPC</span>
-              </label>
-            </div>
+            <div class="settings-card-body">
+              <div class="settings-card-body-inner">
+                <!-- Master Toggle -->
+                <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-enable-discord-rpc" />
+                    <span class="toggle-slider"></span>
+                    <span>Enable Discord RPC</span>
+                  </label>
+                </div>
 
-            <div class="dropdown-divider" style="margin: 12px 0;"></div>
+                <div class="dropdown-divider" style="margin: 12px 0;"></div>
 
-            <!-- Section 1: General & Custom App ID -->
-            <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">General</h4>
-            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:12px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-rpc-show-in-launcher" />
-                <span class="toggle-slider"></span>
-                <span>Show RPC when in Zero Launcher</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-rpc-show-instance" />
-                <span class="toggle-slider"></span>
-                <span>Show Modpack / Instance Name</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-rpc-show-version" />
-                <span class="toggle-slider"></span>
-                <span>Show Minecraft Version</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-rpc-show-server-ip" />
-                <span class="toggle-slider"></span>
-                <span>Show Multiplayer Server IP</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-rpc-show-game-state" />
-                <span class="toggle-slider"></span>
-                <span>Show Game State (e.g., 'In Main Menu')</span>
-              </label>
-            </div>
+                <!-- Section 1: General & Custom App ID -->
+                <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">General</h4>
+                <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:12px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-in-launcher" />
+                    <span class="toggle-slider"></span>
+                    <span>Show RPC when in Zero Launcher</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-instance" />
+                    <span class="toggle-slider"></span>
+                    <span>Show Modpack / Instance Name</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-version" />
+                    <span class="toggle-slider"></span>
+                    <span>Show Minecraft Version</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-server-ip" />
+                    <span class="toggle-slider"></span>
+                    <span>Show Multiplayer Server IP</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-game-state" />
+                    <span class="toggle-slider"></span>
+                    <span>Show Game State (e.g., 'In Main Menu')</span>
+                  </label>
+                </div>
 
-            <div class="form-group" style="margin-bottom:10px;">
-              <label>Icon Style</label>
-              <select id="setting-rpc-app-id" class="input-field">
-                <option value="1131048770109460500" selected>Vanilla Icon</option>
-                <option value="1528905372625146066">Modern Icon</option>
-                <option value="1528907493265375382">Classic Icon</option>
-                <option value="custom">Custom</option>
-              </select>
-            </div>
+                <div class="form-group" style="margin-bottom:10px;">
+                  <label>Icon Style</label>
+                  <select id="setting-rpc-app-id" class="input-field">
+                    <option value="1131048770109460500" selected>Vanilla Icon</option>
+                    <option value="1528905372625146066">Modern Icon</option>
+                    <option value="1528907493265375382">Classic Icon</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
 
-            <div id="rpc-custom-appid-wrap" class="form-group hidden" style="margin-bottom:10px;">
-              <label>Custom Discord Application ID</label>
-              <input type="text" id="setting-rpc-custom-appid" class="input-field" placeholder="1131048770109460500" />
-            </div>
+                <div id="rpc-custom-appid-wrap" class="form-group hidden" style="margin-bottom:10px;">
+                  <label>Custom Discord Application ID</label>
+                  <input type="text" id="setting-rpc-custom-appid" class="input-field" placeholder="1131048770109460500" />
+                </div>
 
-            <div class="form-group" style="margin-bottom:14px;">
-              <label>Custom status text (shown when in the launcher)</label>
-              <input type="text" id="setting-rpc-custom-state" class="input-field" placeholder="In Zero Launcher" />
-            </div>
+                <div class="form-group" style="margin-bottom:14px;">
+                  <label>Custom status text (shown when in the launcher)</label>
+                  <input type="text" id="setting-rpc-custom-state" class="input-field" placeholder="In Zero Launcher" />
+                </div>
 
-            <div class="dropdown-divider" style="margin: 12px 0;"></div>
+                <div class="dropdown-divider" style="margin: 12px 0;"></div>
 
-            <!-- Section 2: Launcher — Which tabs to show on Discord -->
-            <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">Launcher — Which tabs to show on Discord</h4>
-            <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-rpc-show-launcher-activity" />
-                <span class="toggle-slider"></span>
-                <span>Show which tab I'm browsing</span>
-              </label>
-              <div style="display:flex; flex-direction:column; gap:8px; padding-left:16px;">
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-rpc-tab-instances" />
-                  <span class="toggle-slider"></span>
-                  <span>Instances</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-rpc-tab-mods" />
-                  <span class="toggle-slider"></span>
-                  <span>Mods</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-rpc-tab-settings" />
-                  <span class="toggle-slider"></span>
-                  <span>Settings</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-rpc-tab-logs" />
-                  <span class="toggle-slider"></span>
-                  <span>Logs</span>
-                </label>
+                <!-- Section 2: Launcher — Which tabs to show on Discord -->
+                <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">Launcher — Which tabs to show on Discord</h4>
+                <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-launcher-activity" />
+                    <span class="toggle-slider"></span>
+                    <span>Show which tab I'm browsing</span>
+                  </label>
+                  <div style="display:flex; flex-direction:column; gap:8px; padding-left:16px;">
+                    <label class="toggle-row">
+                      <input type="checkbox" id="setting-rpc-tab-instances" />
+                      <span class="toggle-slider"></span>
+                      <span>Instances</span>
+                    </label>
+                    <label class="toggle-row">
+                      <input type="checkbox" id="setting-rpc-tab-mods" />
+                      <span class="toggle-slider"></span>
+                      <span>Mods</span>
+                    </label>
+                    <label class="toggle-row">
+                      <input type="checkbox" id="setting-rpc-tab-settings" />
+                      <span class="toggle-slider"></span>
+                      <span>Settings</span>
+                    </label>
+                    <label class="toggle-row">
+                      <input type="checkbox" id="setting-rpc-tab-logs" />
+                      <span class="toggle-slider"></span>
+                      <span>Logs</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="dropdown-divider" style="margin: 12px 0;"></div>
+
+                <!-- Section 3: In-Game — Which states to show on Discord -->
+                <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">In-Game — Which states to show on Discord</h4>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-state-launching" />
+                    <span class="toggle-slider"></span>
+                    <span>Launching Game</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-state-main-menu" />
+                    <span class="toggle-slider"></span>
+                    <span>Main Menu</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-state-singleplayer" />
+                    <span class="toggle-slider"></span>
+                    <span>Singleplayer</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-state-multiplayer" />
+                    <span class="toggle-slider"></span>
+                    <span>Multiplayer</span>
+                  </label>
+                </div>
               </div>
-            </div>
-
-            <div class="dropdown-divider" style="margin: 12px 0;"></div>
-
-            <!-- Section 3: In-Game — Which states to show on Discord -->
-            <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">In-Game — Which states to show on Discord</h4>
-            <div style="display:flex; flex-direction:column; gap:10px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-rpc-state-launching" />
-                <span class="toggle-slider"></span>
-                <span>Launching Game</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-rpc-state-main-menu" />
-                <span class="toggle-slider"></span>
-                <span>Main Menu</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-rpc-state-singleplayer" />
-                <span class="toggle-slider"></span>
-                <span>Singleplayer</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-rpc-state-multiplayer" />
-                <span class="toggle-slider"></span>
-                <span>Multiplayer</span>
-              </label>
             </div>
           </div>
 
           <!-- Privacy & Developer -->
-          <div class="glass-card settings-card">
-            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3 4.5 5.6V11c0 5 3.2 8.4 7.5 10 4.3-1.6 7.5-5 7.5-10V5.6L12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12.2 11.2 14.3 15.3 9.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Privacy & Developer</h3>
-            <div style="display:flex; flex-direction:column; gap:10px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-hide-username" />
-                <span class="toggle-slider"></span>
-                <span>Hide Username in UI</span>
-              </label>
-              <p class="settings-hint" style="margin:0 0 2px; opacity:0.7; font-size:12px; line-height:1.5;">
-                Masks your account name wherever it's shown in the launcher (header, account switcher) — the real name is still used to launch the game.
-              </p>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-clear-session-on-exit" />
-                <span class="toggle-slider"></span>
-                <span>Clear Account Session on Exit</span>
-              </label>
-              <p class="settings-hint" style="margin:0 0 2px; opacity:0.7; font-size:12px; line-height:1.5;">
-                Signs every account out when the launcher fully closes. Accounts stay saved — you'll just need to pick one again next launch.
-              </p>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-redact-tokens" />
-                <span class="toggle-slider"></span>
-                <span>Redact Auth Tokens in Logs</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-redact-paths" />
-                <span class="toggle-slider"></span>
-                <span>Redact Full File Paths in Logs</span>
-              </label>
-              <p class="settings-hint" style="margin:0 0 2px; opacity:0.7; font-size:12px; line-height:1.5;">
-                Replaces your home folder and game directory paths in logs with generic placeholders instead of showing them in full.
-              </p>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-hide-launch-command" />
-                <span class="toggle-slider"></span>
-                <span>Hide Launch Command from Logs</span>
-              </label>
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-debug-mode" />
-                <span class="toggle-slider"></span>
-                <span>Debug Logging Mode</span>
-              </label>
-              <p class="settings-hint" style="margin:0; opacity:0.7; font-size:12px; line-height:1.5;">
-                Adds verbose DEBUG-level entries (like the exact launch command, subject to the settings above) to the log and console windows.
-              </p>
+          <div class="glass-card settings-card accordion-section" data-section="privacy">
+            <div class="settings-card-header">
+              <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3 4.5 5.6V11c0 5 3.2 8.4 7.5 10 4.3-1.6 7.5-5 7.5-10V5.6L12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12.2 11.2 14.3 15.3 9.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Privacy & Developer</h3>
+              <svg class="accordion-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+            <div class="settings-card-body">
+              <div class="settings-card-body-inner">
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-hide-username" />
+                    <span class="toggle-slider"></span>
+                    <span>Hide Username in UI</span>
+                  </label>
+                  <p class="settings-hint" style="margin:0 0 2px; opacity:0.7; font-size:12px; line-height:1.5;">
+                    Masks your account name wherever it's shown in the launcher (header, account switcher) — the real name is still used to launch the game.
+                  </p>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-clear-session-on-exit" />
+                    <span class="toggle-slider"></span>
+                    <span>Clear Account Session on Exit</span>
+                  </label>
+                  <p class="settings-hint" style="margin:0 0 2px; opacity:0.7; font-size:12px; line-height:1.5;">
+                    Signs every account out when the launcher fully closes. Accounts stay saved — you'll just need to pick one again next launch.
+                  </p>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-redact-tokens" />
+                    <span class="toggle-slider"></span>
+                    <span>Redact Auth Tokens in Logs</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-redact-paths" />
+                    <span class="toggle-slider"></span>
+                    <span>Redact Full File Paths in Logs</span>
+                  </label>
+                  <p class="settings-hint" style="margin:0 0 2px; opacity:0.7; font-size:12px; line-height:1.5;">
+                    Replaces your home folder and game directory paths in logs with generic placeholders instead of showing them in full.
+                  </p>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-hide-launch-command" />
+                    <span class="toggle-slider"></span>
+                    <span>Hide Launch Command from Logs</span>
+                  </label>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-debug-mode" />
+                    <span class="toggle-slider"></span>
+                    <span>Debug Logging Mode</span>
+                  </label>
+                  <p class="settings-hint" style="margin:0; opacity:0.7; font-size:12px; line-height:1.5;">
+                    Adds verbose DEBUG-level entries (like the exact launch command, subject to the settings above) to the log and console windows.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
           <!-- Experimental -->
-          <div class="glass-card settings-card">
-            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9.5 3h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.3 3.3v5.4L5.6 17a2 2 0 0 0 1.75 3h9.3a2 2 0 0 0 1.75-3l-4.7-8.3V3.3" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.6 14.5h8.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Experimental</h3>
-            <div style="display:flex; flex-direction:column; gap:10px;">
-              <label class="toggle-row">
-                <input type="checkbox" id="setting-crash-analysis" />
-                <span class="toggle-slider"></span>
-                <span>Analyze crash logs automatically</span>
-              </label>
-              <p class="settings-hint" style="margin:0; opacity:0.7; font-size:12px; line-height:1.5;">
-                Shows a "likely cause" popup after a crash, based on pattern-matching the log — not a full rules
-                engine, so it can occasionally misread the real cause or suggest a fix that doesn't actually help.
-                Turn this off if it's giving you bad guesses; you can still read the raw log yourself either way.
-              </p>
+          <div class="glass-card settings-card accordion-section" data-section="experimental">
+            <div class="settings-card-header">
+              <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9.5 3h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.3 3.3v5.4L5.6 17a2 2 0 0 0 1.75 3h9.3a2 2 0 0 0 1.75-3l-4.7-8.3V3.3" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.6 14.5h8.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Experimental</h3>
+              <svg class="accordion-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+            <div class="settings-card-body">
+              <div class="settings-card-body-inner">
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-crash-analysis" />
+                    <span class="toggle-slider"></span>
+                    <span>Analyze crash logs automatically</span>
+                  </label>
+                  <p class="settings-hint" style="margin:0; opacity:0.7; font-size:12px; line-height:1.5;">
+                    Shows a "likely cause" popup after a crash, based on pattern-matching the log — not a full rules
+                    engine, so it can occasionally misread the real cause or suggest a fix that doesn't actually help.
+                    Turn this off if it's giving you bad guesses; you can still read the raw log yourself either way.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
           <!-- About & Setup -->
-          <div class="glass-card settings-card">
-            <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>About & Initial Setup</h3>
-            <div style="display:flex; flex-direction:column; gap:12px;">
-              <p class="settings-hint" style="margin:0; opacity:0.85; font-size:12.5px; line-height:1.5;">
-                Zero Launcher is a modern, lightweight Minecraft launcher. Re-run the initial onboarding wizard at any time to reconfigure appearance, default account, or first instance.
-              </p>
+          <div class="glass-card settings-card accordion-section" data-section="about">
+            <div class="settings-card-header">
+              <h3><svg class="settings-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>About & Initial Setup</h3>
+              <svg class="accordion-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+            <div class="settings-card-body">
+              <div class="settings-card-body-inner">
+                <p class="settings-hint" style="margin:0; opacity:0.85; font-size:12.5px; line-height:1.5;">
+                  Zero Launcher is a modern, lightweight Minecraft launcher. Re-run the initial onboarding wizard at any time to reconfigure appearance, default account, or first instance.
+                </p>
 
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-radius:8px; background:var(--bg-tertiary, rgba(255,255,255,0.04)); border:1px solid var(--border-color, rgba(255,255,255,0.08));">
-                <span style="font-size:13px; opacity:0.85;">Current Launcher Version</span>
-                <span id="settings-launcher-version" style="font-size:13px; font-weight:600; font-family:monospace; color:var(--accent);">—</span>
-              </div>
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-radius:8px; background:var(--bg-tertiary, rgba(255,255,255,0.04)); border:1px solid var(--border-color, rgba(255,255,255,0.08)); margin: 12px 0;">
+                  <span style="font-size:13px; opacity:0.85;">Current Launcher Version</span>
+                  <span id="settings-launcher-version" style="font-size:13px; font-weight:600; font-family:monospace; color:var(--accent);">—</span>
+                </div>
 
-              <div style="display:flex; align-items:center; gap:10px; margin-top:4px; flex-wrap:wrap;">
-                <button type="button" id="btn-reopen-setup" class="btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-                  </svg>
-                  Reopen Setup Wizard
-                </button>
-                <button type="button" id="btn-open-launcher-folder" class="btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
-                  </svg>
-                  Open Zero Launcher Folder
-                </button>
-                <button type="button" id="btn-check-for-updates" class="btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
-                  <svg id="btn-check-for-updates-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 3v6h-6"/>
-                  </svg>
-                  Check for Updates
-                </button>
-              </div>
+                <div style="display:flex; align-items:center; gap:10px; margin-top:4px; flex-wrap:wrap;">
+                  <button type="button" id="btn-reopen-setup" class="btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    Reopen Setup Wizard
+                  </button>
+                  <button type="button" id="btn-open-launcher-folder" class="btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+                    </svg>
+                    Open Zero Launcher Folder
+                  </button>
+                  <button type="button" id="btn-check-for-updates" class="btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
+                    <svg id="btn-check-for-updates-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 3v6h-6"/>
+                    </svg>
+                    Check for Updates
+                  </button>
+                </div>
 
-              <div id="update-check-status" class="update-check-status hidden">
-                <svg id="update-check-status-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
-                <span id="update-check-status-text"></span>
+                <div id="update-check-status" class="update-check-status hidden" style="margin-top: 10px;">
+                  <svg id="update-check-status-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+                  <span id="update-check-status-text"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -1559,11 +1881,14 @@
   <!-- Lightweight window listing the individual files for one download-widget card -->
   <div id="dl-files-overlay" class="overlay hidden">
     <div class="overlay-card dl-files-card">
-      <div class="overlay-header">
+      <div class="overlay-header dl-files-header">
         <h3 id="dl-files-title">Files</h3>
         <button class="overlay-close" id="btn-close-dl-files">✕</button>
       </div>
-      <div id="dl-files-list" class="dl-files-list"></div>
+      <div id="dl-files-list" class="dl-files-list"><div id="dl-files-viewport" class="dl-files-viewport"></div></div>
+      <div class="dl-files-footer">
+        <span id="dl-files-speed" class="dl-files-speed">—</span>
+      </div>
     </div>
   </div>
 

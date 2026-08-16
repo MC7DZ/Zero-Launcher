@@ -700,9 +700,16 @@ pub async fn install_minecraft(
             // Genuine pause: block this thread (the library's own download
             // loop) until resumed or cancelled, so no bytes move while paused.
             while app_state.download_paused.load(Ordering::Relaxed) {
-                let active_files_display: Vec<String> = active_labels
+                let active_files_display: Vec<ActiveFileProgress> = active_labels
                     .iter()
-                    .map(|l| label_display.get(l).cloned().unwrap_or_else(|| l.clone()))
+                    .map(|l| {
+                        let name = label_display.get(l).cloned().unwrap_or_else(|| l.clone());
+                        let percent = per_label_total.get(l).filter(|t| **t > 0).map(|total| {
+                            let received = per_label_last_received.get(l).copied().unwrap_or(0);
+                            (received as f64 / *total as f64 * 100.0).clamp(0.0, 100.0)
+                        });
+                        ActiveFileProgress { name, percent }
+                    })
                     .collect();
                 let in_flight_frac_sum: f64 = active_labels
                     .iter()
@@ -803,9 +810,16 @@ pub async fn install_minecraft(
             }
             last_emit = now;
 
-            let active_files_display: Vec<String> = active_labels
+            let active_files_display: Vec<ActiveFileProgress> = active_labels
                 .iter()
-                .map(|l| label_display.get(l).cloned().unwrap_or_else(|| l.clone()))
+                .map(|l| {
+                    let name = label_display.get(l).cloned().unwrap_or_else(|| l.clone());
+                    let percent = per_label_total.get(l).filter(|t| **t > 0).map(|total| {
+                        let received = per_label_last_received.get(l).copied().unwrap_or(0);
+                        (received as f64 / *total as f64 * 100.0).clamp(0.0, 100.0)
+                    });
+                    ActiveFileProgress { name, percent }
+                })
                 .collect();
             let in_flight_frac_sum: f64 = active_labels
                 .iter()
@@ -1090,13 +1104,30 @@ pub async fn launch_minecraft(
     }
 
     // Get active account
-    let username = {
+    let (username, active_account_id, active_account_type) = {
         let accounts = state.accounts.lock().unwrap();
-        accounts
+        let account = accounts
             .iter()
             .find(|a| a.is_active)
-            .map(|a| a.username.clone())
-            .ok_or_else(|| "No active account. Please add an account first.".to_string())?
+            .ok_or_else(|| "No active account. Please add an account first.".to_string())?;
+        (account.username.clone(), account.id.clone(), account.account_type.clone())
+    };
+
+    // Microsoft accounts need a fresh Minecraft access token minted right
+    // before launch (Xbox Live/XSTS/Minecraft-services tokens are
+    // short-lived) — this also rotates and persists the refresh token.
+    // Offline accounts skip straight past this with an empty token.
+    let mc_account = if active_account_type == "microsoft" {
+        let (login, _updated) = crate::commands::msa::refresh_microsoft_login(&state, &active_account_id)
+            .await
+            .map_err(|e| format!("Microsoft sign-in failed: {e}"))?;
+        mc_launcher_core::account::Account::Microsoft {
+            username: login.name,
+            uuid: login.id,
+            access_token: login.access_token,
+        }
+    } else {
+        mc_launcher_core::account::Account::offline(&username)
     };
 
     // Use whichever directory this instance was actually installed into (if
@@ -1220,7 +1251,7 @@ pub async fn launch_minecraft(
     // instance's own game directory is.
     let mc_dir = minecraft_dir.clone();
     let dir = game_dir.clone();
-    let user = username.clone();
+    let account_for_launch = mc_account;
 
     // Load the version metadata first (blocking, but fast — just reads the
     // version json off disk). We need it before we can figure out which
@@ -1256,7 +1287,7 @@ pub async fn launch_minecraft(
             .build_launch_command_from_version(
                 &version,
                 LaunchOptions {
-                    account: Account::offline(&user),
+                    account: account_for_launch,
                     java_executable: Some(java_executable),
                     // ...while `--gameDir` (and the process's working
                     // directory, set further down) points at `dir`, this

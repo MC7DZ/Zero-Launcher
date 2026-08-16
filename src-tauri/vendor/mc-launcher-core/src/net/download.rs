@@ -37,6 +37,12 @@ pub enum Checksum {
 pub struct DownloadTask {
     /// Source URL.
     pub url: String,
+    /// Additional mirrors tried, in order, if `url` 404s. Used for
+    /// bare Fabric/Quilt-style library coordinates whose loader profile
+    /// doesn't say which repo actually hosts them — some (e.g. legacy
+    /// `net.minecraft:launchwrapper`) live on Maven Central or Mojang's
+    /// own library host rather than `maven.fabricmc.net`.
+    pub fallback_urls: Vec<String>,
     /// Destination path.
     pub destination: PathBuf,
     /// Optional checksum used for skip and validation decisions.
@@ -83,11 +89,11 @@ const CHUNK_SIZE: usize = 64 * 1024;
 /// live byte-level progress for every file — not just "started"/"finished"
 /// with nothing in between. Doesn't report `TaskStarted`/`TaskFinished`
 /// itself — the caller does that around this call.
-fn fetch_task(client: &reqwest::blocking::Client, task: &DownloadTask, tx: &Sender<Msg>) -> Result<()> {
+fn fetch_task(client: &reqwest::blocking::Client, url: &str, task: &DownloadTask, tx: &Sender<Msg>) -> Result<()> {
     if let Some(parent) = task.destination.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut response = client.get(&task.url).send()?.error_for_status()?;
+    let mut response = client.get(url).send()?.error_for_status()?;
     let total = response.content_length();
     let mut file = File::create(&task.destination)?;
 
@@ -135,19 +141,37 @@ fn looks_transient(err: &LauncherError) -> bool {
         || msg.contains("reset")
 }
 
+/// Returns whether an error is an HTTP 404, worth trying the next mirror
+/// for rather than retrying the same URL.
+fn looks_not_found(err: &LauncherError) -> bool {
+    err.to_string().contains("404")
+}
+
 fn fetch_task_with_retry(client: &reqwest::blocking::Client, task: &DownloadTask, tx: &Sender<Msg>) -> Result<()> {
-    let mut attempt = 0;
-    loop {
-        attempt += 1;
-        match fetch_task(client, task, tx) {
-            Ok(()) => return Ok(()),
-            Err(e) if attempt < MAX_TASK_ATTEMPTS && looks_transient(&e) => {
-                std::thread::sleep(std::time::Duration::from_millis(300 * attempt as u64));
-                continue;
+    // Try the primary URL, then each configured mirror in turn — a mirror
+    // is only worth trying on a 404 (wrong repo for this coordinate), not
+    // on every transient error, since each mirror already gets its own
+    // full transient-error retry budget below.
+    let mut last_err = None;
+    for url in std::iter::once(task.url.as_str()).chain(task.fallback_urls.iter().map(String::as_str)) {
+        let mut attempt = 0;
+        loop {
+            attempt += 1;
+            match fetch_task(client, url, task, tx) {
+                Ok(()) => return Ok(()),
+                Err(e) if attempt < MAX_TASK_ATTEMPTS && looks_transient(&e) => {
+                    std::thread::sleep(std::time::Duration::from_millis(300 * attempt as u64));
+                    continue;
+                }
+                Err(e) if looks_not_found(&e) => {
+                    last_err = Some(e);
+                    break;
+                }
+                Err(e) => return Err(e),
             }
-            Err(e) => return Err(e),
         }
     }
+    Err(last_err.expect("at least one URL was tried"))
 }
 
 /// Every worker reports through this channel so the caller's `reporter` is

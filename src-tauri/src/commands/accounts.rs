@@ -1,5 +1,5 @@
 use tauri::State;
-use crate::models::AccountInfo;
+use crate::models::{normalize_single_active_account, AccountInfo};
 use crate::state::AppState;
 
 /// Add a new offline account.
@@ -20,6 +20,9 @@ pub async fn add_offline_account(
         username: username.trim().to_string(),
         account_type: "offline".to_string(),
         is_active: false,
+        mc_uuid: None,
+        ms_refresh_token: None,
+        needs_reauth: false,
     };
 
     let result = {
@@ -65,11 +68,20 @@ pub async fn remove_account(
 pub async fn list_accounts(
     state: State<'_, AppState>,
 ) -> Result<Vec<AccountInfo>, String> {
-    let accounts = state.accounts.lock().unwrap().clone();
-    Ok(accounts)
+    // Self-heals a bad on-disk/in-memory state (more than one `is_active`)
+    // every time the frontend asks for the list, not just at startup.
+    let mut accounts = state.accounts.lock().unwrap();
+    let before = accounts.clone();
+    normalize_single_active_account(&mut accounts);
+    if *accounts != before {
+        drop(accounts);
+        state.save_accounts();
+        return Ok(state.accounts.lock().unwrap().clone());
+    }
+    Ok(accounts.clone())
 }
 
-/// Set an account as the active one.
+/// Set an account as the active ("in use") one.
 #[tauri::command]
 pub async fn set_active_account(
     state: State<'_, AppState>,

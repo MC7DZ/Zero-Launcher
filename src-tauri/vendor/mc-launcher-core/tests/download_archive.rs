@@ -13,6 +13,7 @@ fn skips_existing_file_when_sha1_matches() {
 
     let task = DownloadTask {
         url: "https://example.invalid/hello.txt".to_string(),
+        fallback_urls: Vec::new(),
         destination: file,
         checksum: Some(Checksum::Sha1(
             "624c22a8c8f8c93f18fe5ecd4713100c8d754507".to_string(),

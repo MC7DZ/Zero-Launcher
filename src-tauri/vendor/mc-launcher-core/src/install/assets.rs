@@ -66,6 +66,7 @@ pub fn plan_asset_index_download(
     };
     Ok(vec![DownloadTask {
         url: asset_index.url.clone(),
+        fallback_urls: Vec::new(),
         destination: asset_index_path(minecraft_dir, &asset_index.id),
         checksum: Some(Checksum::Sha1(asset_index.sha1.clone())),
         label: format!("assets index {}", asset_index.id),
@@ -88,6 +89,7 @@ pub fn plan_asset_object_downloads_from_index(
                 let prefix = object.hash.get(..2).unwrap_or(&object.hash);
                 DownloadTask {
                     url: format!("{RESOURCES_BASE}/{prefix}/{}", object.hash),
+                    fallback_urls: Vec::new(),
                     destination: asset_object_path(minecraft_dir, &object.hash),
                     checksum: Some(Checksum::Sha1(object.hash.clone())),
                     label: format!("asset {name}"),

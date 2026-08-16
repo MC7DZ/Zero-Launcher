@@ -5,9 +5,11 @@ pub mod java;
 pub mod logs;
 pub mod minecraft;
 pub mod mods;
+pub mod msa;
 pub mod music;
 pub mod presets;
 pub mod settings;
+pub mod skins;
 pub mod updater;
 
 use tauri::State;

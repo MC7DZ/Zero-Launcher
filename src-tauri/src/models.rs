@@ -2,15 +2,62 @@ use serde::{Deserialize, Serialize};
 
 // ── Account ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AccountInfo {
     pub id: String,
     pub username: String,
     pub account_type: String, // "offline" or "microsoft"
     pub is_active: bool,
+    /// Minecraft profile UUID — set for Microsoft accounts, used to launch
+    /// with the real profile identity instead of a random offline UUID.
+    #[serde(default)]
+    pub mc_uuid: Option<String>,
+    /// Microsoft OAuth refresh token — set for Microsoft accounts. Used to
+    /// silently obtain a fresh Minecraft access token at launch time
+    /// (Xbox Live/XSTS/Minecraft services tokens are short-lived, so we
+    /// don't persist an access token, just what's needed to mint one).
+    #[serde(default)]
+    pub ms_refresh_token: Option<String>,
+    /// Set when a Microsoft sign-in attempt (at launch or via "Verify")
+    /// fails — e.g. the refresh token was revoked or expired. Lets the UI
+    /// flag the account as needing attention (yellow account button) until
+    /// the user signs in again. Never set for offline accounts.
+    #[serde(default)]
+    pub needs_reauth: bool,
+}
+
+/// Ensures at most one account is marked `is_active`. If more than one is
+/// found (e.g. from a hand-edited `accounts.json`, or an older buggy
+/// build), the first is kept active and every other one is corrected to
+/// inactive. Idempotent and cheap, so it's safe to call defensively
+/// anywhere accounts are loaded or mutated.
+pub fn normalize_single_active_account(accounts: &mut [AccountInfo]) {
+    let mut seen_active = false;
+    for account in accounts.iter_mut() {
+        if account.is_active {
+            if seen_active {
+                account.is_active = false;
+            } else {
+                seen_active = true;
+            }
+        }
+    }
 }
 
 // ── Download / install progress ────────────────────────────────────────────
+
+/// One file currently downloading, with its own real byte-level progress
+/// when the server reported a content length for it.
+#[derive(Debug, Clone, Serialize)]
+pub struct ActiveFileProgress {
+    /// Human-readable filename shown in the UI.
+    pub name: String,
+    /// 0-100 completion for this specific file, when known. `None` when the
+    /// server didn't report a content length for it (e.g. chunked
+    /// responses) — the UI falls back to an indeterminate indicator for
+    /// that file only.
+    pub percent: Option<f64>,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DownloadProgressInfo {
@@ -29,7 +76,7 @@ pub struct DownloadProgressInfo {
     /// started (up to the downloader's concurrency limit). With the
     /// parallel downloader, several files are in flight at once — this is
     /// the real list, `current_file` above only ever showed the latest one.
-    pub active_files: Vec<String>,
+    pub active_files: Vec<ActiveFileProgress>,
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
     /// Best-effort overall completion percentage (0-100).
@@ -240,6 +287,14 @@ pub struct LauncherSettings {
     #[serde(default = "default_true")]
     pub hide_launch_command: bool,
 
+    // Accounts
+    /// Azure AD "Application (client) ID" the user registered for Microsoft
+    /// sign-in. Each launcher needs its own registered Azure app to use
+    /// Microsoft/Xbox Live authentication — see the note next to the field
+    /// in Settings → Accounts.
+    #[serde(default)]
+    pub microsoft_client_id: String,
+
     // Discord RPC
     #[serde(default = "default_true")]
     pub enable_discord_rpc: bool,
@@ -317,12 +372,34 @@ pub struct LauncherSettings {
     #[serde(default)]
     pub enable_crash_analysis: bool,
 
+    // 3D Skin Standee Settings
+    #[serde(default = "default_skin_animation")]
+    pub skin_animation: String,
+    #[serde(default = "default_skin_speed")]
+    pub skin_speed: f64,
+    #[serde(default = "default_skin_facing")]
+    pub skin_facing: String,
+    #[serde(default = "default_skin_cape_key")]
+    pub skin_cape_key: String,
+    #[serde(default = "default_skin_equip_type")]
+    pub skin_equip_type: String,
+    #[serde(default)]
+    pub skin_anonymous_skin: bool,
+    #[serde(default)]
+    pub skin_anonymous_nametag: bool,
+
     // Setup Wizard
     #[serde(default, rename = "Finished_setup")]
     pub finished_setup_upper: bool,
     #[serde(default)]
     pub setup_finished: bool,
 }
+
+fn default_skin_animation() -> String { "walk".to_string() }
+fn default_skin_speed() -> f64 { 0.5 }
+fn default_skin_facing() -> String { "left".to_string() }
+fn default_skin_cape_key() -> String { "migrator".to_string() }
+fn default_skin_equip_type() -> String { "cape".to_string() }
 
 fn default_true() -> bool { true }
 fn default_on_game_close() -> String { "show".to_string() }
@@ -476,6 +553,8 @@ impl Default for LauncherSettings {
             clear_session_on_exit: false,
             hide_launch_command: true,
 
+            microsoft_client_id: String::new(),
+
             enable_discord_rpc: true,
             rpc_show_in_launcher: true,
             rpc_show_instance_name: true,
@@ -505,6 +584,14 @@ impl Default for LauncherSettings {
             music_disabled_tracks: Vec::new(),
 
             enable_crash_analysis: false,
+
+            skin_animation: default_skin_animation(),
+            skin_speed: default_skin_speed(),
+            skin_facing: default_skin_facing(),
+            skin_cape_key: default_skin_cape_key(),
+            skin_equip_type: default_skin_equip_type(),
+            skin_anonymous_skin: false,
+            skin_anonymous_nametag: false,
 
             finished_setup_upper: false,
             setup_finished: false,

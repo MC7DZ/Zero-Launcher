@@ -206,6 +206,7 @@ pub fn run() {
             commands::updater::check_for_update,
             commands::updater::download_update,
             commands::updater::install_update,
+            commands::updater::open_current_exe_folder,
             // Minecraft
             commands::minecraft::get_available_versions,
             commands::minecraft::get_cached_versions,
@@ -233,6 +234,14 @@ pub fn run() {
             commands::accounts::remove_account,
             commands::accounts::list_accounts,
             commands::accounts::set_active_account,
+            commands::msa::microsoft_device_code_start,
+            commands::msa::microsoft_device_code_poll,
+            commands::msa::microsoft_device_code_cancel,
+            commands::msa::refresh_microsoft_account,
+            commands::msa::refresh_all_microsoft_accounts,
+            // Skin cache
+            commands::skins::cache_account_skin,
+            commands::skins::list_cached_skins,
             // Mods
             commands::mods::list_mods,
             commands::mods::toggle_mod,

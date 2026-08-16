@@ -7,6 +7,7 @@
 
 pub mod assets;
 pub mod client;
+pub mod legacy_forge;
 pub mod libraries;
 pub mod loader;
 pub mod natives;

@@ -23,7 +23,185 @@ use crate::{
 
 const AUTH_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 const TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
+const DEVICE_CODE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
 const SCOPE: &str = "XboxLive.signin offline_access";
+
+/// Turns a `reqwest::Error` from a failed *send* (i.e. the request never got
+/// a response at all — DNS, TLS/certificate, connect, or timeout failure)
+/// into a message that actually says which of those it was, instead of
+/// reqwest's generic top-level "error sending request for url (...)" that
+/// hides the real cause in a `source()` chain nothing was printing.
+fn describe_send_error(e: reqwest::Error) -> Box<dyn std::error::Error> {
+    let mut parts = vec![e.to_string()];
+    let mut source = std::error::Error::source(&e);
+    while let Some(s) = source {
+        parts.push(s.to_string());
+        source = s.source();
+    }
+    // Cheap heuristics on the assembled chain so the message is actionable
+    // without the user having to interpret raw TLS/DNS internals themselves.
+    let joined = parts.join(" -> ");
+    let hint = if joined.contains("dns error") || joined.contains("failed to lookup address") {
+        "\n\nThis looks like a DNS resolution failure — check your internet connection, VPN, or DNS settings."
+    } else if joined.contains("certificate") || joined.contains("InvalidCertificate") || joined.contains("UnknownIssuer") {
+        "\n\nThis looks like a TLS certificate validation failure — often caused by an antivirus/firewall that intercepts HTTPS traffic (SSL/TLS scanning), a corporate proxy, or your system clock being wrong. Try disabling HTTPS scanning in your antivirus, or check that your system date/time is correct."
+    } else if joined.contains("timed out") || joined.contains("timeout") {
+        "\n\nThe request timed out — check your internet connection, or whether a firewall/VPN is blocking login.microsoftonline.com."
+    } else if joined.contains("Connection refused") || joined.contains("connect error") {
+        "\n\nThe connection was refused/blocked — check your firewall, proxy, or VPN settings for login.microsoftonline.com."
+    } else {
+        ""
+    };
+    format!("Could not reach Microsoft's sign-in servers: {joined}{hint}").into()
+}
+
+/// Builds the blocking HTTP client used for every Microsoft/Xbox/Minecraft
+/// services call in this module. Binds to an IPv4-only local address so
+/// that machines with a broken/absent IPv6 route (common on some home and
+/// mobile networks) don't waste the connection attempt on an unreachable
+/// IPv6 address before falling back — some environments' IPv6-then-IPv4
+/// fallback handling is less reliable than tools like `curl`, and forcing
+/// IPv4 here sidesteps that class of failure entirely. Falls back to a
+/// plain default client if, for whatever reason, building the IPv4-bound
+/// one fails.
+fn http_client() -> Client {
+    Client::builder()
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        .build()
+        .unwrap_or_else(|_| Client::new())
+}
+
+/// Response from starting a device-code sign-in — the code and URL to show
+/// the user, plus polling parameters.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeviceCodeStart {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_in: u64,
+    pub interval: u64,
+    pub message: String,
+}
+
+/// Outcome of polling a device-code sign-in.
+pub enum DeviceCodePoll {
+    /// User hasn't finished signing in yet — caller should wait `interval`
+    /// seconds and poll again.
+    Pending,
+    /// Signed in successfully.
+    Success(AuthorizationTokenResponse),
+}
+
+/// Starts a device-code sign-in: Microsoft returns a short code plus a URL
+/// (typically microsoft.com/link) for the user to enter it on any browser
+/// or device — no embedded webview needed. Poll with
+/// [`poll_device_code_token`] using the returned `device_code` until the
+/// user finishes.
+///
+/// # Errors
+///
+/// Returns an error if the HTTP request fails or Microsoft rejects the
+/// request (e.g. bad client ID).
+pub fn start_device_code(client_id: &str) -> Result<DeviceCodeStart, Box<dyn std::error::Error>> {
+    let mut parameters = HashMap::new();
+    parameters.insert("client_id", client_id);
+    parameters.insert("scope", SCOPE);
+
+    let client = http_client();
+    let res = client
+        .post(DEVICE_CODE_URL)
+        .form(&parameters)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("user-agent", get_user_agent())
+        .send().map_err(describe_send_error)?;
+
+    let body = res.text()?;
+
+    if let Ok(start) = serde_json::from_str::<DeviceCodeStart>(&body) {
+        return Ok(start);
+    }
+
+    if let Some(desc) = extract_oauth_error(&body) {
+        return Err(format!("Could not start device sign-in: {desc}").into());
+    }
+
+    Err(format!("Microsoft returned an unexpected response: {body}").into())
+}
+
+/// Polls Microsoft once to check whether the user has completed a
+/// device-code sign-in started with [`start_device_code`]. Call this on a
+/// timer at the `interval` returned by that function until it returns
+/// [`DeviceCodePoll::Success`] or an error (e.g. expired or denied).
+///
+/// # Errors
+///
+/// Returns an error if the HTTP request fails, the code expired, the user
+/// declined, or Microsoft otherwise rejects the request. `authorization_pending`
+/// (the normal "still waiting" case) is returned as `Ok(DeviceCodePoll::Pending)`,
+/// not an error.
+pub fn poll_device_code_token(
+    client_id: &str,
+    device_code: &str,
+) -> Result<DeviceCodePoll, Box<dyn std::error::Error>> {
+    let mut parameters = HashMap::new();
+    parameters.insert("client_id", client_id);
+    parameters.insert("grant_type", "urn:ietf:params:oauth:grant-type:device_code");
+    parameters.insert("device_code", device_code);
+
+    let client = http_client();
+    let res = client
+        .post(TOKEN_URL)
+        .form(&parameters)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("user-agent", get_user_agent())
+        .send().map_err(describe_send_error)?;
+
+    let body = res.text()?;
+
+    if let Ok(token_response) = serde_json::from_str::<AuthorizationTokenResponse>(&body) {
+        return Ok(DeviceCodePoll::Success(token_response));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct OAuthError {
+        error: Option<String>,
+        error_description: Option<String>,
+    }
+
+    if let Ok(err) = serde_json::from_str::<OAuthError>(&body) {
+        match err.error.as_deref() {
+            Some("authorization_pending") | Some("slow_down") => return Ok(DeviceCodePoll::Pending),
+            Some("expired_token") => {
+                return Err("The device code expired before you finished signing in — start over.".into())
+            }
+            Some("authorization_declined") => {
+                return Err("Sign-in was declined.".into())
+            }
+            _ => {
+                let code = err.error.unwrap_or_default();
+                let desc = err.error_description.unwrap_or_default();
+                let first_line = desc.lines().next().unwrap_or(&desc);
+                return Err(format!("Microsoft sign-in failed ({code}): {first_line}").into());
+            }
+        }
+    }
+
+    Err(format!("Microsoft returned an unexpected response: {body}").into())
+}
+
+fn extract_oauth_error(body: &str) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct OAuthError {
+        error: Option<String>,
+        error_description: Option<String>,
+    }
+    let err: OAuthError = serde_json::from_str(body).ok()?;
+    let code = err.error?;
+    let desc = err.error_description.unwrap_or_default();
+    let first_line = desc.lines().next().unwrap_or(&desc);
+    Some(format!("{code}: {first_line}"))
+}
+
 
 /// Builds a Microsoft OAuth login URL without PKCE.
 ///
@@ -189,14 +367,17 @@ pub fn parse_auth_code_url(
 ///
 /// # Errors
 ///
-/// Returns a [`reqwest::Error`] if the HTTP request or response decoding fails.
+/// Returns an error if the HTTP request fails, or if Microsoft rejects the
+/// exchange (expired/used code, wrong client ID, redirect URI mismatch,
+/// etc.) — the error message explains why instead of a raw JSON-decode
+/// failure.
 pub fn get_authorization_token(
     client_id: &str,
     client_secret: Option<&str>,
     redirect_uri: &str,
     auth_code: &str,
     code_verifier: Option<&str>,
-) -> Result<AuthorizationTokenResponse, reqwest::Error> {
+) -> Result<AuthorizationTokenResponse, Box<dyn std::error::Error>> {
     let mut parameters = HashMap::new();
     parameters.insert("client_id", client_id);
     parameters.insert("scope", SCOPE);
@@ -212,28 +393,29 @@ pub fn get_authorization_token(
         parameters.insert("code_verifier", verifier);
     }
 
-    let client = Client::new();
+    let client = http_client();
     let res = client
         .post(TOKEN_URL)
         .form(&parameters)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("user-agent", get_user_agent())
-        .send()?;
+        .send().map_err(describe_send_error)?;
 
-    let token_response: AuthorizationTokenResponse = res.json()?;
-    Ok(token_response)
+    parse_token_response(res)
 }
 
 /// Refreshes Microsoft OAuth tokens using a refresh token.
 ///
 /// # Errors
 ///
-/// Returns a [`reqwest::Error`] if the HTTP request or response decoding fails.
+/// Returns an error if the HTTP request fails, or if Microsoft rejects the
+/// refresh (expired/revoked token, wrong client ID, etc.) — the error
+/// message explains why instead of a raw JSON-decode failure.
 pub fn refresh_authorization_token(
     client_id: &str,
     client_secret: Option<&str>,
     refresh_token: &str,
-) -> Result<AuthorizationTokenResponse, reqwest::Error> {
+) -> Result<AuthorizationTokenResponse, Box<dyn std::error::Error>> {
     let mut parameters = HashMap::new();
     parameters.insert("client_id", client_id);
     parameters.insert("scope", SCOPE);
@@ -244,15 +426,52 @@ pub fn refresh_authorization_token(
         parameters.insert("client_secret", secret);
     }
 
-    let client = Client::new();
+    let client = http_client();
     let res = client
         .post("https://login.live.com/oauth20_token.srf")
         .form(&parameters)
         .header("user-agent", get_user_agent())
-        .send()?;
+        .send().map_err(describe_send_error)?;
 
-    let token_response: AuthorizationTokenResponse = res.json()?;
-    Ok(token_response)
+    parse_token_response(res)
+}
+
+/// Shared response handling for both the initial code exchange and the
+/// refresh-token exchange: reads the body once, tries the success shape,
+/// and if that fails, tries to pull out the standard OAuth `error` /
+/// `error_description` fields so failures are explainable instead of a
+/// raw decode error.
+fn parse_token_response(
+    res: reqwest::blocking::Response,
+) -> Result<AuthorizationTokenResponse, Box<dyn std::error::Error>> {
+    let body = res.text()?;
+
+    if let Ok(token_response) = serde_json::from_str::<AuthorizationTokenResponse>(&body) {
+        return Ok(token_response);
+    }
+
+    #[derive(serde::Deserialize)]
+    struct OAuthError {
+        error: Option<String>,
+        error_description: Option<String>,
+    }
+
+    if let Ok(err) = serde_json::from_str::<OAuthError>(&body) {
+        if err.error.is_some() || err.error_description.is_some() {
+            let code = err.error.unwrap_or_default();
+            let desc = err.error_description.unwrap_or_default();
+            // Microsoft's error_description is a long multi-line block with
+            // a doc link tacked on — keep just the first line, which has
+            // the actual message (e.g. "AADSTS70000: ...").
+            let first_line = desc.lines().next().unwrap_or(&desc);
+            return Err(format!(
+                "Microsoft sign-in failed ({code}): {first_line}"
+            )
+            .into());
+        }
+    }
+
+    Err(format!("Microsoft returned an unexpected response: {body}").into())
 }
 
 /// Authenticates a Microsoft access token with Xbox Live.
@@ -275,14 +494,14 @@ pub fn authenticate_with_xbl(
     parameters.insert("RelyingParty", "http://auth.xboxlive.com".into());
     parameters.insert("TokenType", "JWT".into());
 
-    let client = Client::new();
+    let client = http_client();
     let res = client
         .post("https://user.auth.xboxlive.com/user/authenticate")
         .json(&parameters)
         .header("Content-Type", "application/json")
         .header("user-agent", get_user_agent())
         .header("Accept", "application/json")
-        .send()?;
+        .send().map_err(describe_send_error)?;
 
     let xbl_response: XBLResponse = res.json()?;
     Ok(xbl_response)
@@ -292,8 +511,11 @@ pub fn authenticate_with_xbl(
 ///
 /// # Errors
 ///
-/// Returns a [`reqwest::Error`] if the HTTP request or response decoding fails.
-pub fn authenticate_with_xsts(xbl_token: &str) -> Result<XSTSResponse, reqwest::Error> {
+/// Returns an error if the HTTP request fails, or if Xbox Live rejects the
+/// sign-in (e.g. no Xbox profile, needs adult verification, region-banned,
+/// or child account not in a family) — in which case the error message
+/// explains why instead of a raw JSON-decode failure.
+pub fn authenticate_with_xsts(xbl_token: &str) -> Result<XSTSResponse, Box<dyn std::error::Error>> {
     let mut parameters = HashMap::new();
     parameters.insert(
         "Properties",
@@ -305,43 +527,128 @@ pub fn authenticate_with_xsts(xbl_token: &str) -> Result<XSTSResponse, reqwest::
     parameters.insert("RelyingParty", "rp://api.minecraftservices.com/".into());
     parameters.insert("TokenType", "JWT".into());
 
-    let client = Client::new();
+    let client = http_client();
     let res = client
         .post("https://xsts.auth.xboxlive.com/xsts/authorize")
         .json(&parameters)
         .header("Content-Type", "application/json")
         .header("user-agent", get_user_agent())
         .header("Accept", "application/json")
-        .send()?;
+        .send().map_err(describe_send_error)?;
 
-    let xsts_response: XSTSResponse = res.json()?;
-    Ok(xsts_response)
+    let body = res.text()?;
+
+    if let Ok(xsts_response) = serde_json::from_str::<XSTSResponse>(&body) {
+        return Ok(xsts_response);
+    }
+
+    // Not a success shape — Xbox Live returned an error object instead.
+    // Try to pull out the well-known XErr code so we can explain what
+    // actually went wrong, rather than surfacing a raw decode error.
+    #[derive(serde::Deserialize)]
+    struct XstsError {
+        #[serde(rename = "XErr")]
+        xerr: Option<u64>,
+        #[serde(rename = "Message")]
+        message: Option<String>,
+    }
+
+    if let Ok(err) = serde_json::from_str::<XstsError>(&body) {
+        let explanation = match err.xerr {
+            Some(2148916233) => {
+                "This Microsoft account has no Xbox profile. Sign in once at \
+                 https://www.xbox.com to create one, then try again."
+            }
+            Some(2148916235) => "Xbox Live is not available in this account's region/country.",
+            Some(2148916236) | Some(2148916237) => {
+                "This account needs adult verification on the Xbox website before it can sign in."
+            }
+            Some(2148916238) => {
+                "This is a child account that isn't part of a Microsoft family. Add it to a \
+                 family group at https://account.microsoft.com/family, then try again."
+            }
+            _ => "",
+        };
+        let code_str = err
+            .xerr
+            .map(|c| format!(" (XErr {c})"))
+            .unwrap_or_default();
+        let msg = err.message.unwrap_or_default();
+        return Err(format!(
+            "Xbox Live sign-in failed{code_str}.{}{}",
+            if explanation.is_empty() { "" } else { " " },
+            if explanation.is_empty() { msg.as_str() } else { explanation }
+        )
+        .into());
+    }
+
+    Err(format!("Xbox Live returned an unexpected response: {body}").into())
 }
+
 
 /// Exchanges XSTS identity data for a Minecraft services access token.
 ///
 /// # Errors
 ///
-/// Returns a [`reqwest::Error`] if the HTTP request or response decoding fails.
+/// Returns an error if the HTTP request fails, or if Minecraft services
+/// rejects/errors the login — in which case the error message explains why
+/// instead of a raw JSON-decode failure.
 pub fn authenticate_with_minecraft(
     userhash: &str,
     xsts_token: &str,
-) -> Result<MinecraftAuthenticateResponse, reqwest::Error> {
+) -> Result<MinecraftAuthenticateResponse, Box<dyn std::error::Error>> {
     let parameters = json!({
         "identityToken": format!("XBL3.0 x={};{}", userhash, xsts_token),
     });
 
-    let client = Client::new();
+    let client = http_client();
     let res = client
         .post("https://api.minecraftservices.com/authentication/login_with_xbox")
         .json(&parameters)
         .header("Content-Type", "application/json")
         .header("user-agent", get_user_agent())
         .header("Accept", "application/json")
-        .send()?;
+        .send().map_err(describe_send_error)?;
 
-    let minecraft_response: MinecraftAuthenticateResponse = res.json()?;
-    Ok(minecraft_response)
+    let status = res.status();
+    let body = res.text()?;
+
+    // On success this is a MinecraftAuthenticateResponse. On failure it's a
+    // differently-shaped error object (or, occasionally, an HTML error page
+    // from a gateway/CDN in front of the API) — trying to force that into
+    // MinecraftAuthenticateResponse is exactly what produced the old
+    // "error decoding response body" message instead of a real reason.
+    if let Ok(minecraft_response) =
+        serde_json::from_str::<MinecraftAuthenticateResponse>(&body)
+    {
+        return Ok(minecraft_response);
+    }
+
+    #[derive(serde::Deserialize)]
+    struct MinecraftError {
+        #[serde(rename = "errorMessage")]
+        error_message: Option<String>,
+        error: Option<String>,
+    }
+
+    if let Ok(err) = serde_json::from_str::<MinecraftError>(&body) {
+        let msg = err
+            .error_message
+            .or(err.error)
+            .unwrap_or_else(|| "no error message given".to_string());
+        return Err(format!(
+            "Minecraft services login failed ({status}): {msg}"
+        )
+        .into());
+    }
+
+    Err(format!(
+        "Minecraft services returned an unexpected {status} response \
+         (not valid JSON — likely a temporary outage or a request that \
+         was blocked before reaching the API): {}",
+        if body.len() > 300 { &body[..300] } else { &body }
+    )
+    .into())
 }
 
 /// Fetches Minecraft store entitlement information for an access token.
@@ -350,7 +657,7 @@ pub fn authenticate_with_minecraft(
 ///
 /// Returns a [`reqwest::Error`] if the HTTP request or response decoding fails.
 pub fn get_store_information(access_token: &str) -> Result<MinecraftStoreResponse, reqwest::Error> {
-    let client = Client::new();
+    let client = http_client();
     let res = client
         .get("https://api.minecraftservices.com/entitlements/mcstore")
         .header("Authorization", format!("Bearer {}", access_token))
@@ -369,12 +676,12 @@ pub fn get_store_information(access_token: &str) -> Result<MinecraftStoreRespons
 pub fn get_profile(
     access_token: &str,
 ) -> Result<MinecraftProfileResponse, Box<dyn std::error::Error>> {
-    let client = Client::new();
+    let client = http_client();
     let res = client
         .get("https://api.minecraftservices.com/minecraft/profile")
         .header("Authorization", format!("Bearer {}", access_token))
         .header("user-agent", get_user_agent())
-        .send()?;
+        .send().map_err(describe_send_error)?;
 
     let profile_response: MinecraftProfileResponse = res.json()?;
     Ok(profile_response)
@@ -403,7 +710,22 @@ pub fn complete_login(
         auth_code,
         code_verifier,
     )?;
-    let token = token_request.access_token;
+    complete_login_from_token(token_request)
+}
+
+/// Finishes the Microsoft-to-Minecraft login flow starting from an already
+/// obtained OAuth token response (e.g. from [`poll_device_code_token`]'s
+/// `Success` case), rather than an authorization code. Shared by both the
+/// popup-webview flow ([`complete_login`]) and the device-code flow.
+///
+/// # Errors
+///
+/// Returns an error if any network step fails, the app is not permitted, or
+/// the account does not own Minecraft.
+pub fn complete_login_from_token(
+    token_request: AuthorizationTokenResponse,
+) -> Result<CompleteLoginResponse, Box<dyn std::error::Error>> {
+    let token = token_request.access_token.clone();
 
     let xbl_request = authenticate_with_xbl(&token)?;
     let xbl_token = xbl_request.token;

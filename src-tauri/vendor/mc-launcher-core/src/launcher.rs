@@ -117,14 +117,24 @@ impl Launcher {
                         &loader_version,
                         &crate::loader::forge::installer_url(&loader_version),
                     )?;
-                    run_loader_installer(&InstallerInvocation {
-                        loader: LoaderKind::Forge,
-                        java_executable: PathBuf::from("java"),
-                        installer_path,
-                        minecraft_dir: self.minecraft_dir.clone(),
-                    })?;
-                    let version_id =
-                        crate::loader::forge::forge_installed_version_id(&loader_version)?;
+                    let version_id = if crate::install::legacy_forge::is_legacy_installer(&installer_path)? {
+                        // Pre-1.13-era Forge builds ship a GUI-only
+                        // installer with no headless CLI support at all —
+                        // install the same two effects it would have had
+                        // natively instead of trying to run it.
+                        crate::install::legacy_forge::install_legacy_forge(
+                            &installer_path,
+                            &self.minecraft_dir,
+                        )?
+                    } else {
+                        run_loader_installer(&InstallerInvocation {
+                            loader: LoaderKind::Forge,
+                            java_executable: PathBuf::from("java"),
+                            installer_path,
+                            minecraft_dir: self.minecraft_dir.clone(),
+                        })?;
+                        crate::loader::forge::forge_installed_version_id(&loader_version)?
+                    };
                     let merged = self.load_version(&version_id)?;
                     install_version_files(&merged, &self.minecraft_dir, reporter)?;
                     return Ok(InstallResult { version_id });
@@ -278,6 +288,7 @@ fn download_installer(
     let plan = DownloadPlan {
         tasks: vec![DownloadTask {
             url: url.to_string(),
+            fallback_urls: Vec::new(),
             destination: destination.clone(),
             checksum: None,
             label: format!("{loader_name} installer {loader_version}"),

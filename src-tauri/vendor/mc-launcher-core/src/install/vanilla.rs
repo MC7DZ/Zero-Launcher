@@ -59,6 +59,7 @@ pub fn plan_vanilla_downloads_for_platform(
     if let Some(client) = version.downloads.get("client") {
         plan.tasks.push(DownloadTask {
             url: client.url.clone(),
+            fallback_urls: Vec::new(),
             destination: minecraft_dir
                 .join("versions")
                 .join(jar_id)
