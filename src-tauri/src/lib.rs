@@ -28,6 +28,10 @@ pub fn run() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
+    // If running as an update from the cache folder, replace the installed
+    // version in the Zero Launcher folder, launch it, and exit.
+    first_run_setup::handle_early_install_or_update();
+
     tauri::Builder::default()
         // Must be the first plugin registered. If the launcher is opened
         // again while it's already running, this fires in the *existing*

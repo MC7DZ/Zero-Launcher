@@ -22,7 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
-fn install_dir() -> PathBuf {
+pub fn install_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
         let mut dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -37,7 +37,13 @@ fn install_dir() -> PathBuf {
     }
 }
 
-fn target_exe_name() -> &'static str {
+pub fn cache_dir() -> PathBuf {
+    let dir = install_dir().join("cache");
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+pub fn target_exe_name() -> &'static str {
     #[cfg(target_os = "windows")]
     {
         "ZeroLauncher.exe"
@@ -48,21 +54,117 @@ fn target_exe_name() -> &'static str {
     }
 }
 
-fn needs_setup() -> bool {
+/// Checks if the running executable is running from the cache folder (or outside install_dir).
+/// If it is running from the cache folder:
+/// 1. Waits for any previous instance to release file locks on install_dir
+/// 2. Deletes the old version in install_dir (Zero Launcher folder)
+/// 3. Copies itself from the cache folder to install_dir
+/// 4. Deletes itself from the cache folder
+/// 5. Relaunches itself from install_dir
+/// 6. Exits the current process
+pub fn handle_early_install_or_update() {
     if !is_relevant_build() {
-        return false;
+        return;
     }
-    // The only thing that actually matters is "is the running exe/AppImage
-    // already sitting where it's supposed to live" - if it is, there's
-    // nothing to copy and the shortcut from a previous run already points
-    // at the right place, so there's no reason to touch anything. This is
-    // deliberately not marker-file based: a stray leftover marker (or one
-    // that's missing) shouldn't be what decides whether shortcuts get
-    // rewritten - the actual file location is the source of truth.
-    match source_exe_path() {
-        Some(src) => src != install_dir().join(target_exe_name()),
-        None => false,
+
+    let Some(src) = source_exe_path() else { return; };
+    let dir = install_dir();
+    let dest = dir.join(target_exe_name());
+
+    if src == dest {
+        return;
     }
+
+    let _ = fs::create_dir_all(&dir);
+
+    // Wait briefly (up to 3 seconds) for the previous instance to fully exit
+    for _ in 0..15 {
+        #[cfg(target_os = "linux")]
+        {
+            let _ = fs::remove_file(&dest);
+            if !dest.exists() {
+                break;
+            }
+        }
+        #[cfg(target_os = "windows")]
+        {
+            if !dest.exists() {
+                break;
+            }
+            let old_path = dest.with_extension("exe.old");
+            let _ = fs::remove_file(&old_path);
+            let _ = fs::rename(&dest, &old_path);
+            let _ = fs::remove_file(&dest);
+            let _ = fs::remove_file(&old_path);
+            if !dest.exists() {
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+
+    // Copy ourselves from cache/outside to permanent install location
+    if let Err(e) = fs::copy(&src, &dest) {
+        eprintln!("[updater/setup] Failed to copy to {}: {e}", dest.display());
+        return;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(&dest) {
+            let mut perm = meta.permissions();
+            perm.set_mode(perm.mode() | 0o755);
+            let _ = fs::set_permissions(&dest, perm);
+        }
+    }
+
+    // Update shortcuts
+    #[cfg(target_os = "linux")]
+    let _ = create_linux_shortcut(&dest);
+    #[cfg(target_os = "windows")]
+    let _ = create_windows_shortcuts(&dest);
+
+    // Launch the permanent executable from install_dir
+    #[cfg(target_os = "linux")]
+    {
+        let mut cmd = std::process::Command::new(&dest);
+        cmd.env_remove("APPDIR");
+        cmd.env_remove("APPIMAGE");
+        cmd.env_remove("ARGV0");
+        cmd.env_remove("OWD");
+        let _ = cmd.spawn();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        let _ = std::process::Command::new(&dest)
+            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+            .spawn();
+    }
+
+    // Delete ourselves from the cache location
+    #[cfg(target_os = "linux")]
+    {
+        let _ = fs::remove_file(&src);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        let del_cmd = format!("ping 127.0.0.1 -n 2 > nul & del /F /Q \"{}\"", src.display());
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", &del_cmd])
+            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+            .spawn();
+    }
+
+    // Exit this temporary instance
+    std::process::exit(0);
 }
 
 #[cfg(target_os = "linux")]
@@ -113,6 +215,16 @@ const SETUP_HTML: &str = r#"<!DOCTYPE html>
   <h1>Setting up Zero Launcher&hellip;</h1>
   <p>Installing files and creating a shortcut.<br>This only happens once.</p>
 </div></body></html>"#;
+
+fn needs_setup() -> bool {
+    if !is_relevant_build() {
+        return false;
+    }
+    match source_exe_path() {
+        Some(src) => src != install_dir().join(target_exe_name()),
+        None => false,
+    }
+}
 
 /// Entry point - call before anything else in `run()`.
 pub fn run_first_time_setup(app: &AppHandle) {

@@ -167,15 +167,18 @@ pub async fn check_for_update() -> Result<Option<UpdateAvailable>, String> {
 /// Download the update file to `<data_dir>/updates/`, emitting
 /// `update-download-progress` events as it goes. Returns the path to the
 /// downloaded file so the frontend can pass it to [`install_update`].
+/// Download the update file to the cache folder (`<data_dir>/cache/`), emitting
+/// `update-download-progress` events as it goes. Returns the path to the
+/// downloaded file so the frontend can pass it to [`install_update`].
 #[tauri::command]
 pub async fn download_update(
     app: AppHandle,
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
     url: String,
 ) -> Result<String, String> {
-    let updates_dir = state.data_dir.join("updates");
-    std::fs::create_dir_all(&updates_dir)
-        .map_err(|e| format!("Failed to create updates folder: {e}"))?;
+    let cache_dir = crate::first_run_setup::cache_dir();
+    std::fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create cache folder: {e}"))?;
 
     let file_name = url
         .rsplit('/')
@@ -186,7 +189,7 @@ pub async fn download_update(
         } else {
             "ZeroLauncher-Update.AppImage"
         });
-    let dest_path = updates_dir.join(file_name);
+    let dest_path = cache_dir.join(file_name);
 
     let response = reqwest::Client::new()
         .get(&url)
@@ -236,10 +239,7 @@ pub async fn download_update(
 }
 
 /// Opens the system file manager at the folder containing the currently
-/// running exe/AppImage. Used by the "you can grab the exe/AppImage from
-/// here and scan it yourself" trust note in the update window, so people
-/// who don't trust the launcher can find the actual file to run through
-/// VirusTotal themselves.
+/// running exe/AppImage.
 #[tauri::command]
 pub fn open_current_exe_folder() -> Result<(), String> {
     let current_exe = std::env::var_os("APPIMAGE")
@@ -261,15 +261,15 @@ pub fn cleanup_updater_leftovers(data_dir: &std::path::Path) {
     if let Ok(entries) = std::fs::read_dir(&updates_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.ends_with(".old")
-                    || name.ends_with(".bak")
-                    || name.ends_with(".tmp")
-                    || name.contains("update_helper")
-                {
-                    let _ = std::fs::remove_file(&path);
-                }
-            }
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    let cache_dir = crate::first_run_setup::cache_dir();
+    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let _ = std::fs::remove_file(&path);
         }
     }
 
@@ -291,166 +291,47 @@ pub fn cleanup_updater_leftovers(data_dir: &std::path::Path) {
     let _ = std::fs::remove_file(temp.join("zerolauncher_update.bat"));
 }
 
-/// Replace the currently-running executable/AppImage with the downloaded
-/// update. `relaunch` controls whether the app starts itself back up
-/// afterwards.
+/// Launch the downloaded update from the cache folder and exit the current process.
+/// The launched cached instance will detect it is running from cache, overwrite the
+/// version in the Zero Launcher folder, and launch the newly installed copy.
 #[tauri::command]
-pub fn install_update(downloaded_path: String, relaunch: bool) -> Result<(), String> {
+pub fn install_update(downloaded_path: String, _relaunch: bool) -> Result<(), String> {
     let downloaded_path = PathBuf::from(downloaded_path);
     if !downloaded_path.is_file() {
         return Err("Downloaded update file is missing.".to_string());
     }
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&downloaded_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = std::fs::set_permissions(&downloaded_path, perms);
+        }
+    }
+
     #[cfg(target_os = "windows")]
     {
-        install_update_windows(&downloaded_path, relaunch)
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        std::process::Command::new(&downloaded_path)
+            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+            .spawn()
+            .map_err(|e| format!("Failed to launch update from cache: {e}"))?;
+        std::process::exit(0);
     }
+
     #[cfg(not(target_os = "windows"))]
     {
-        install_update_linux(&downloaded_path, relaunch)
+        let mut cmd = std::process::Command::new(&downloaded_path);
+        cmd.env_remove("APPDIR");
+        cmd.env_remove("APPIMAGE");
+        cmd.env_remove("ARGV0");
+        cmd.env_remove("OWD");
+        cmd.spawn()
+            .map_err(|e| format!("Failed to launch update from cache: {e}"))?;
+        std::process::exit(0);
     }
-}
-
-/// Windows Update Helper: spawns a detached helper script (PowerShell + CMD fallback)
-/// that waits for this process to exit, safely swaps the executable (with retry and .old rename),
-/// relaunches the application if requested, and cleans up temporary files.
-#[cfg(target_os = "windows")]
-fn install_update_windows(downloaded_path: &std::path::Path, relaunch: bool) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-
-    let current_exe =
-        std::env::current_exe().map_err(|e| format!("Failed to locate running exe: {e}"))?;
-    let current_pid = std::process::id();
-
-    let updater_ps1 = std::env::temp_dir().join("zerolauncher_update_helper.ps1");
-    let updater_bat = std::env::temp_dir().join("zerolauncher_update_helper.bat");
-
-    let ps1_content = format!(
-        r#"param([int]$TargetPid, [string]$SourcePath, [string]$DestPath, [bool]$Relaunch)
-$ErrorActionPreference = 'SilentlyContinue'
-
-# Wait for parent process to exit
-if ($TargetPid -gt 0) {{
-    try {{
-        $proc = Get-Process -Id $TargetPid -ErrorAction SilentlyContinue
-        if ($proc) {{
-            $proc.WaitForExit(15000)
-        }}
-    }} catch {{}}
-}}
-Start-Sleep -Milliseconds 300
-
-# Retry replacement loop
-$success = $false
-for ($i = 0; $i -lt 30; $i++) {{
-    try {{
-        $oldPath = "$DestPath.old"
-        if (Test-Path -LiteralPath $oldPath) {{
-            Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue
-        }}
-        if (Test-Path -LiteralPath $DestPath) {{
-            Rename-Item -LiteralPath $DestPath -NewName (Split-Path $oldPath -Leaf) -Force -ErrorAction SilentlyContinue
-        }}
-        Move-Item -LiteralPath $SourcePath -Destination $DestPath -Force -ErrorAction Stop
-        $success = $true
-        break
-    }} catch {{
-        Start-Sleep -Milliseconds 300
-    }}
-}}
-
-# Remove backup if possible
-if (Test-Path -LiteralPath "$DestPath.old") {{
-    Remove-Item -LiteralPath "$DestPath.old" -Force -ErrorAction SilentlyContinue
-}}
-
-# Relaunch if requested and successful
-if ($Relaunch -and $success) {{
-    Start-Process -FilePath $DestPath
-}}
-
-# Clean up helper
-Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
-"#,
-    );
-
-    std::fs::write(&updater_ps1, ps1_content)
-        .map_err(|e| format!("Failed to write update helper script: {e}"))?;
-
-    let bat_content = format!(
-        "@echo off\r\n\
-         powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{ps1}\" -TargetPid {pid} -SourcePath \"{src}\" -DestPath \"{dst}\" -Relaunch {relaunch}\r\n\
-         del \"%~f0\"\r\n",
-        ps1 = updater_ps1.display(),
-        pid = current_pid,
-        src = downloaded_path.display(),
-        dst = current_exe.display(),
-        relaunch = if relaunch { "$true" } else { "$false" }
-    );
-
-    std::fs::write(&updater_bat, bat_content)
-        .map_err(|e| format!("Failed to write update launcher batch: {e}"))?;
-
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-    const DETACHED_PROCESS: u32 = 0x00000008;
-    std::process::Command::new("cmd")
-        .args(["/C", &updater_bat.to_string_lossy()])
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-        .spawn()
-        .map_err(|e| format!("Failed to launch update helper: {e}"))?;
-
-    std::process::exit(0);
-}
-
-/// Linux Update: unlinks the current executable/AppImage (preventing ETXTBSY errors),
-/// replaces it with the newly downloaded file, sets 0755 permissions, and if relaunch is
-/// requested, cleanly spawns the new process with cleared AppImage environment variables.
-#[cfg(not(target_os = "windows"))]
-fn install_update_linux(downloaded_path: &std::path::Path, relaunch: bool) -> Result<(), String> {
-    let current_exe = std::env::var_os("APPIMAGE")
-        .map(PathBuf::from)
-        .or_else(|| std::env::current_exe().ok())
-        .ok_or_else(|| "Failed to locate the running executable.".to_string())?;
-
-    // Unlink the current executable first. Linux allows unlinking a running
-    // file from directory entries without affecting the active in-memory process.
-    // This eliminates ETXTBSY ("Text file busy") errors when copying or renaming.
-    let _ = std::fs::remove_file(&current_exe);
-
-    // Rename is atomic within the same filesystem; fall back to copy+remove if across mounts.
-    if std::fs::rename(downloaded_path, &current_exe).is_err() {
-        std::fs::copy(downloaded_path, &current_exe)
-            .map_err(|e| format!("Failed to replace current executable: {e}"))?;
-        let _ = std::fs::remove_file(downloaded_path);
-    }
-
-    use std::os::unix::fs::PermissionsExt;
-    if let Ok(metadata) = std::fs::metadata(&current_exe) {
-        let mut perms = metadata.permissions();
-        perms.set_mode(0o755);
-        let _ = std::fs::set_permissions(&current_exe, perms);
-    }
-
-    if !relaunch {
-        return Ok(());
-    }
-
-    // When relaunching from an AppImage, AppImage runtime environment variables
-    // (APPDIR, APPIMAGE, ARGV0, OWD) must be cleared so the updated AppImage
-    // initializes its own environment cleanly.
-    let exe_str = current_exe.to_string_lossy().to_string();
-    let script = format!(
-        "sleep 0.3; exec \"{}\" >/dev/null 2>&1 &",
-        exe_str.replace('"', "\\\"")
-    );
-
-    let mut cmd = std::process::Command::new("/bin/sh");
-    cmd.arg("-c").arg(script);
-    cmd.env_remove("APPDIR");
-    cmd.env_remove("APPIMAGE");
-    cmd.env_remove("ARGV0");
-    cmd.env_remove("OWD");
-
-    let _ = cmd.spawn();
-    std::process::exit(0);
 }
