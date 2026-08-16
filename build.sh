@@ -8,10 +8,13 @@
 #   ./build.sh --debug     Build the app in debug mode (faster, unoptimized)
 #   ./build.sh --all       Run --deps then --release
 #
-# This script targets Debian/Ubuntu-based systems (apt). It installs a
-# fixed, known-good WebKitGTK version by relying on Ubuntu 24.04's default
-# package set, which avoids a WebKitGTK EGL/blank-screen regression present
-# in some intermediate WebKitGTK releases used by other distros/versions.
+# This script targets Debian/Ubuntu-based systems (apt) and is built/tested
+# against Ubuntu 20.04 (glibc/webkit baseline chosen for AppImage
+# compatibility with older distros — AppImages built here will also run
+# fine on newer distros, since glibc is backward-compatible). Ubuntu 20.04
+# ships libwebkit2gtk-4.0 rather than the 4.1 package used on 22.04+, so
+# this script installs whichever of the two is available and builds
+# against it accordingly (see WEBKIT_PKG below).
 
 set -euo pipefail
 
@@ -37,9 +40,7 @@ install_deps() {
 
     log "Installing system dependencies"
     sudo apt-get install -y \
-        libwebkit2gtk-4.1-dev \
         libgtk-3-dev \
-        libayatana-appindicator3-dev \
         librsvg2-dev \
         patchelf \
         build-essential \
@@ -49,7 +50,41 @@ install_deps() {
         fuse \
         libfuse2 \
         desktop-file-utils \
-        ca-certificates
+        ca-certificates \
+        pkg-config
+
+    # libayatana-appindicator3-dev isn't in Ubuntu 20.04's default repos
+    # (it landed in 22.04); fall back to the older libappindicator3-dev,
+    # which provides the same pkg-config name Tauri looks for.
+    if apt-cache show libayatana-appindicator3-dev >/dev/null 2>&1; then
+        sudo apt-get install -y libayatana-appindicator3-dev
+    else
+        log "libayatana-appindicator3-dev not found, falling back to libappindicator3-dev (Ubuntu 20.04)"
+        sudo apt-get install -y libappindicator3-dev
+    fi
+
+    # Tauri 2 (via wry) links against webkit2gtk-4.1, which only exists on
+    # Ubuntu 22.04+. Ubuntu 20.04 ships webkit2gtk-4.0 instead — same
+    # underlying WebKitGTK API, just an older soname/pkg-config name — so
+    # on 20.04 we install the 4.0 dev package and add pkg-config alias
+    # files so the 4.1 lookup resolves to it at build time.
+    if apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
+        log "Installing libwebkit2gtk-4.1-dev"
+        sudo apt-get install -y libwebkit2gtk-4.1-dev
+    else
+        log "libwebkit2gtk-4.1-dev not found, installing libwebkit2gtk-4.0-dev (Ubuntu 20.04) with a 4.1 pkg-config alias"
+        sudo apt-get install -y libwebkit2gtk-4.0-dev
+
+        PC_DIR="/usr/lib/x86_64-linux-gnu/pkgconfig"
+        for pair in "webkit2gtk-4.0:webkit2gtk-4.1" "javascriptcoregtk-4.0:javascriptcoregtk-4.1"; do
+            src="${pair%%:*}"
+            dst="${pair##*:}"
+            if [ -f "$PC_DIR/$src.pc" ] && [ ! -f "$PC_DIR/$dst.pc" ]; then
+                sudo sed "s/${src}/${dst}/g" "$PC_DIR/$src.pc" | sudo tee "$PC_DIR/$dst.pc" >/dev/null
+                log "Created pkg-config alias: $dst.pc -> $src.pc"
+            fi
+        done
+    fi
 
     if ! command -v node >/dev/null 2>&1; then
         log "Installing Node.js 20"
