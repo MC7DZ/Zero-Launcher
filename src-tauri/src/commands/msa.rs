@@ -62,6 +62,16 @@ fn save_microsoft_login(state: &State<'_, AppState>, login: &CompleteLoginRespon
     accounts.push(acc.clone());
     drop(accounts);
     state.save_accounts();
+
+    // Cache the valid login session (valid for ~24 hours)
+    state.msa_session_cache.lock().unwrap().insert(
+        acc.id.clone(),
+        crate::state::CachedMsaSession {
+            login: login.clone(),
+            expires_at: std::time::Instant::now() + std::time::Duration::from_secs(82_800),
+        },
+    );
+
     acc
 }
 
@@ -138,14 +148,41 @@ pub async fn microsoft_device_code_cancel(state: State<'_, AppState>) -> Result<
 /// Re-authenticates a saved Microsoft account with its stored refresh
 /// token, persists the rotated refresh token, and returns everything
 /// needed to launch (username, Minecraft profile UUID, access token) plus
-/// the updated [`AccountInfo`]. Xbox Live/XSTS/Minecraft-services tokens
-/// are short-lived, so this is run fresh right before every launch rather
-/// than trying to track an expiry — and it's what `refresh_microsoft_account`
-/// below calls too.
+/// the updated [`AccountInfo`]. Uses cached sessions to prevent refresh token
+/// burning and race condition invalidations.
 pub(crate) async fn refresh_microsoft_login(
     state: &State<'_, AppState>,
     id: &str,
 ) -> Result<(CompleteLoginResponse, AccountInfo), String> {
+    // 1. Check in-memory session cache first
+    {
+        let cache = state.msa_session_cache.lock().unwrap();
+        if let Some(cached) = cache.get(id) {
+            if std::time::Instant::now() < cached.expires_at {
+                let accounts = state.accounts.lock().unwrap();
+                if let Some(account) = accounts.iter().find(|a| a.id == id) {
+                    return Ok((cached.login.clone(), account.clone()));
+                }
+            }
+        }
+    }
+
+    // 2. Acquire global refresh lock to serialize OAuth token exchanges
+    let _guard = state.msa_refresh_lock.lock().await;
+
+    // 3. Double-check cache in case another task refreshed it while waiting for the lock
+    {
+        let cache = state.msa_session_cache.lock().unwrap();
+        if let Some(cached) = cache.get(id) {
+            if std::time::Instant::now() < cached.expires_at {
+                let accounts = state.accounts.lock().unwrap();
+                if let Some(account) = accounts.iter().find(|a| a.id == id) {
+                    return Ok((cached.login.clone(), account.clone()));
+                }
+            }
+        }
+    }
+
     let refresh_token = {
         let accounts = state.accounts.lock().unwrap();
         let account = accounts
@@ -176,12 +213,17 @@ pub(crate) async fn refresh_microsoft_login(
     {
         Ok(login) => login,
         Err(e) => {
-            // The stored refresh token is no longer good (expired,
-            // revoked, password changed, etc.) — flag the account so the
-            // UI can surface it (yellow account button) instead of the
-            // user only finding out the next time they try to launch.
-            mark_needs_reauth(state, id);
-            return Err(format!("Microsoft sign-in expired — please sign in again: {e}"));
+            let lower = e.to_lowercase();
+            // ONLY flag needs_reauth if Microsoft permanently rejected the token
+            if lower.contains("invalid_grant")
+                || lower.contains("aadsts70008")
+                || lower.contains("aadsts70000")
+                || lower.contains("revoked")
+            {
+                mark_needs_reauth(state, id);
+                return Err(format!("Microsoft sign-in expired — please sign in again: {e}"));
+            }
+            return Err(format!("Microsoft authentication error: {e}"));
         }
     };
 
@@ -197,6 +239,16 @@ pub(crate) async fn refresh_microsoft_login(
     let updated = account.clone();
     drop(accounts);
     state.save_accounts();
+
+    // Cache the fresh login session
+    state.msa_session_cache.lock().unwrap().insert(
+        id.to_string(),
+        crate::state::CachedMsaSession {
+            login: login.clone(),
+            expires_at: std::time::Instant::now() + std::time::Duration::from_secs(82_800),
+        },
+    );
+
     Ok((login, updated))
 }
 

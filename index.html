@@ -7,8 +7,12 @@
   <title>ZeroLauncher</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/styles/main.css" />
+  <script>
+    if (navigator.userAgent.includes('Linux') || navigator.platform.includes('Linux') || /WebKit/.test(navigator.userAgent)) {
+      document.documentElement.classList.add('is-webkit-gtk');
+    }
+  </script>
 </head>
 
 <body>
@@ -94,8 +98,8 @@
           <!-- Device-code panel: shown after choosing the code option -->
           <div id="msa-device-panel" class="hidden">
             <div style="text-align:center; padding:16px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);">
-              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Your code</div>
-              <div id="msa-device-code" style="font-size:26px; font-weight:800; letter-spacing:3px; color:var(--accent); margin-bottom:12px;">— — — — —</div>
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Your code <span style="font-size:10px; opacity:0.75; text-transform:none;">(Click to copy)</span></div>
+              <div id="msa-device-code" style="font-size:26px; font-weight:800; letter-spacing:3px; color:var(--accent); margin-bottom:12px; cursor:pointer;" title="Click to copy code">— — — — —</div>
               <button id="btn-msa-device-open" class="btn-accent btn-sm" style="margin-bottom:8px;">Open microsoft.com/link</button>
               <div id="msa-device-status" style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; gap:6px;">
                 <span class="msa-device-spinner" style="width:10px; height:10px; border-radius:50%; border:2px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span>
@@ -217,6 +221,11 @@
           <button class="overlay-close" id="btn-close-dressing-room" title="Close Dressing Room">✕</button>
         </div>
 
+        <div id="dressing-room-busy-overlay" class="dressing-room-busy-overlay hidden">
+          <span class="msa-device-spinner" style="width:32px; height:32px; border-radius:50%; border:3px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span>
+          <span id="dressing-room-busy-text" class="dressing-room-busy-text">Updating Mojang servers…</span>
+        </div>
+
         <div class="dressing-room-content" id="dressing-room-content">
 
           <div class="dressing-room-tabs" id="dressing-room-tabs">
@@ -225,17 +234,6 @@
           </div>
 
           <div class="dressing-room-body">
-
-            <!-- Coming Soon banner -->
-            <div class="dressing-room-soon">
-              <svg class="dressing-room-soon-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 9V13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <path d="M12 16.5V16.51" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <path d="M10.29 3.86L1.82 18a1.5 1.5 0 0 0 1.28 2.25h17.8a1.5 1.5 0 0 0 1.28-2.25L13.71 3.86a1.5 1.5 0 0 0-2.42 0Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-              </svg>
-              <span class="dressing-room-soon-badge">Coming Soon</span>
-              <p class="dressing-room-soon-text">Changing skins &amp; capes from here isn't available yet — this is a preview of what's coming.</p>
-            </div>
 
             <!-- Skins Section -->
             <div class="dressing-room-section active" id="dressing-room-skins" data-dressing-section="skins">
@@ -247,8 +245,9 @@
                   </svg>
                   <span class="dressing-room-add-label">Add a Skin</span>
                 </button>
+                <input type="file" id="dressing-skin-file-input" accept="image/png" style="display:none;" />
                 <div class="dressing-room-grid" id="dressing-room-skins-grid" style="display:contents;">
-                  <!-- Previously-used skins are populated here -->
+                  <!-- Usable skins rendered with 3D player cards are populated here -->
                 </div>
               </div>
             </div>
@@ -263,16 +262,6 @@
 
           </div>
 
-        </div>
-
-        <!-- Microsoft-only lock shown over the blurred content for offline accounts -->
-        <div class="dressing-room-msa-lock hidden" id="dressing-room-msa-lock">
-          <svg class="dressing-room-msa-lock-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="2"/>
-            <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          <p class="dressing-room-msa-lock-text">This is a Microsoft accounts only feature</p>
-          <p class="dressing-room-msa-lock-subtext">Sign in with a Microsoft account to use the Dressing Room.</p>
         </div>
 
       </div>
@@ -718,6 +707,18 @@
             <option value="">Select a target instance…</option>
           </select>
         </div>
+
+        <!-- GitHub sync progress banner -->
+        <div id="preset-sync-banner" class="preset-sync-banner hidden">
+          <div class="preset-sync-banner-top">
+            <span class="preset-sync-banner-label" id="preset-sync-label">Syncing presets from GitHub…</span>
+            <span class="preset-sync-banner-count" id="preset-sync-count"></span>
+          </div>
+          <div class="preset-sync-track">
+            <div class="preset-sync-bar" id="preset-sync-bar"></div>
+          </div>
+        </div>
+
         <div id="presets-grid" class="presets-container"></div>
       </section>
 
@@ -1705,8 +1706,8 @@
 
                   <div id="setup-msa-device-panel" class="hidden">
                     <div style="text-align:center; padding:16px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);">
-                      <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Your code</div>
-                      <div id="setup-msa-device-code" style="font-size:26px; font-weight:800; letter-spacing:3px; color:var(--accent); margin-bottom:12px;">— — — — —</div>
+                      <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Your code <span style="font-size:10px; opacity:0.75; text-transform:none;">(Click to copy)</span></div>
+                      <div id="setup-msa-device-code" style="font-size:26px; font-weight:800; letter-spacing:3px; color:var(--accent); margin-bottom:12px; cursor:pointer;" title="Click to copy code">— — — — —</div>
                       <button id="setup-btn-msa-device-open" type="button" class="btn-accent btn-sm" style="margin-bottom:8px;">Open microsoft.com/link</button>
                       <div id="setup-msa-device-status" style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; gap:6px;">
                         <span class="msa-device-spinner" style="width:10px; height:10px; border-radius:50%; border:2px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span>

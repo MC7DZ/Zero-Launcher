@@ -48,6 +48,17 @@ pub struct AppState {
     /// `microsoft_device_code_poll`. Only one device-code sign-in can be
     /// in flight at a time.
     pub device_code_session: Mutex<Option<String>>,
+    /// In-memory cache of valid Minecraft access tokens / login sessions keyed by account id.
+    /// Prevents repeated and concurrent OAuth refreshes that burn refresh tokens or rate limit.
+    pub msa_session_cache: Mutex<HashMap<String, CachedMsaSession>>,
+    /// Mutex ensuring only one Microsoft OAuth refresh occurs at a time globally.
+    pub msa_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+#[derive(Clone)]
+pub struct CachedMsaSession {
+    pub login: mc_launcher_core::types::microsoft_types::CompleteLoginResponse,
+    pub expires_at: std::time::Instant,
 }
 
 const MAX_LOG_ENTRIES: usize = 10_000;
@@ -105,6 +116,8 @@ impl AppState {
             generic_cancels: Mutex::new(HashMap::new()),
             log_file: Mutex::new(log_file),
             device_code_session: Mutex::new(None),
+            msa_session_cache: Mutex::new(HashMap::new()),
+            msa_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 

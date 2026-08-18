@@ -26,26 +26,26 @@
   --field-bg: rgba(0, 0, 0, 0.25);
 }
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
 
-/* Smooth Scrolling — opt-in via Settings > Behavior (default on). Applied
-   with the universal selector since scroll-behavior only has any effect on
-   elements that actually scroll (the instance list, mods grid, discover
-   results, logs, settings page, etc.) — harmless everywhere else. Scoped
-   under the .smooth-scroll class (toggled on <html> by applyThemeFromSettings)
-   so it's fully removed rather than just "smooth: none" when disabled. */
+/* Scrollbar styling (standard + WebKitGTK) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--overlay-rgb), 0.12) transparent;
+}
+
+/* Smooth Scrolling — opt-in via Settings > Behavior (default on). */
 html.smooth-scroll,
 html.smooth-scroll * {
   scroll-behavior: smooth;
 }
-/* The long, frequently-scrolled lists (instances, mods, discover results)
-   are exactly where the smooth-scroll easing ramp is most noticeable as a
-   delay before a scroll "catches up" to the input — every wheel tick has to
-   animate into place instead of tracking the input directly, which is what
-   read as scrolling being slow to respond. These opt back out to instant,
-   directly-tracking scroll; the setting still applies everywhere else
-   (settings page, dropdowns, etc.) where it's a nice touch with no list to
-   drag behind it. */
 html.smooth-scroll #instance-list,
 html.smooth-scroll #hidden-instances-list,
 html.smooth-scroll #mods-grid,
@@ -57,9 +57,33 @@ html, body {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: var(--font);
+  font-family: var(--font), system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, sans-serif;
   background: transparent;
   color: var(--text);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+input, textarea, select, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Crisp rendering for Minecraft pixel-art assets in WebKitGTK */
+.pixelated,
+.instance-card-icon,
+.instance-icon,
+.account-avatar,
+.account-item-avatar,
+.loader-badge-icon,
+.mod-icon,
+.dressing-room-cape-svg image,
+.dressing-room-skin-svg image {
+  image-rendering: pixelated;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 
 /* ═══ Background Engine ═══ */
@@ -131,11 +155,12 @@ html, body {
   background: transparent;
 }
 
-/* ─── Scrollbar ─── */
-::-webkit-scrollbar { width: 6px; }
+/* ─── Scrollbar (WebKitGTK) ─── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(var(--overlay-rgb),0.08); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(var(--overlay-rgb),0.14); }
+::-webkit-scrollbar-thumb { background: rgba(var(--overlay-rgb), 0.12); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(var(--overlay-rgb), 0.22); }
+::-webkit-scrollbar-corner { background: transparent; }
 
 /* ═══ Top Bar ═══ */
 #top-bar {
@@ -2515,18 +2540,13 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 /* ═══ Ultra-Lightweight Discover Grid & Cards ═══ */
 .discover-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   min-height: 120px;
 }
 
 .discover-grid .empty-state { grid-column: 1 / -1; }
 
-@media (max-width: 1280px) {
-  .discover-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 @media (max-width: 780px) {
   .discover-grid {
     grid-template-columns: 1fr;
@@ -2538,16 +2558,28 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 14px;
+  padding: clamp(14px, 1.6vh, 22px);
   border-radius: var(--radius);
   background: var(--panel, rgba(22, 22, 30, 0.90));
   border: 1px solid var(--panel-border, rgba(var(--overlay-rgb), 0.08));
-  gap: 10px;
+  gap: clamp(10px, 1.3vh, 16px);
   contain: layout style paint;
   transform: translateZ(0);
   backface-visibility: hidden;
   transition: border-color 0.15s ease, background 0.15s ease;
-  min-height: 170px;
+  min-height: clamp(170px, 22vh, 240px);
+}
+
+@media (min-height: 850px) {
+  .discover-card-desc {
+    -webkit-line-clamp: 3;
+  }
+}
+
+@media (min-height: 1050px) {
+  .discover-card-desc {
+    -webkit-line-clamp: 4;
+  }
 }
 
 .discover-card.is-unloaded {
@@ -2557,7 +2589,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-color: transparent !important;
   box-shadow: none !important;
   pointer-events: none !important;
-  min-height: 170px;
+  min-height: clamp(170px, 22vh, 240px);
 }
 
 .discover-grid.view-list .discover-card.is-unloaded {
@@ -2580,9 +2612,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .discover-card-icon {
-  width: 56px;
-  height: 56px;
-  min-width: 56px;
+  width: clamp(52px, 4.8vw, 68px);
+  height: clamp(52px, 4.8vw, 68px);
+  min-width: clamp(52px, 4.8vw, 68px);
   border-radius: 12px;
   background: rgba(var(--overlay-rgb), 0.06);
   overflow: hidden;
@@ -3068,11 +3100,23 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: 14px;
   padding: 14px 16px 12px 16px;
   width: 100%;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  /* Smaller blur radius than a typical card shadow — large soft shadows
+     are one of the more expensive things to rasterize under WebKitGTK's
+     software-leaning compositor, and it's barely visible on a small toast
+     anyway. */
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
   animation: toastSlideIn 0.16s ease-out both;
   overflow: hidden;
   pointer-events: auto;
   cursor: default;
+}
+
+/* Layer promotion only while a toast is actively animating (entrance or
+   exit) — applied/removed by JS in spawnToast/dismissToast. Idle toasts
+   sitting on screen for their 5-8s duration stay un-promoted so they don't
+   cost extra compositor memory the whole time they're visible. */
+.toast-animating {
+  will-change: transform, opacity;
 }
 
 /* Entrance: simple fade + short slide, no scale/rotate/spring math */
@@ -3217,7 +3261,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: var(--notif-bg, #14141e) !important;
   border: 1px solid rgba(var(--toast-color-rgb), 0.22) !important;
   border-radius: 16px !important;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22) !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2) !important;
 }
 .toast-style-glass .toast-icon-badge {
   background: rgba(var(--toast-color-rgb), 0.18);
@@ -3233,7 +3277,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: rgba(8, 8, 14, 0.96) !important;
   border: 1px solid rgba(var(--toast-color-rgb), 0.6) !important;
   border-radius: 14px !important;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35) !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3) !important;
 }
 .toast-style-neon .toast-icon-badge {
   background: rgba(var(--toast-color-rgb), 0.12);
@@ -3259,7 +3303,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border: 1px solid rgba(var(--overlay-rgb), 0.12) !important;
   border-top: 3px solid rgba(var(--toast-color-rgb), 1) !important;
   border-radius: 12px !important;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3) !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.26) !important;
 }
 .toast-style-solid-card .toast-icon-badge {
   background: var(--toast-color);
@@ -3270,22 +3314,35 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .toast-style-solid-card .toast-progress { background: rgba(var(--overlay-rgb), 0.1); }
 .toast-style-solid-card .toast-progress-bar { background: var(--toast-color); }
 
-/* ── 4. PILL ─── Compact fully-rounded pill, color-tinted bg. */
+/* ── 4. PILL ─── Fully-rounded capsule shape, but sized like the other
+   styles so title + full description are readable, not just an icon and
+   a truncated one-liner. */
 .toast-style-pill {
   background: rgba(var(--toast-color-rgb), 0.1) !important;
   border: 1px solid rgba(var(--toast-color-rgb), 0.25) !important;
   border-radius: 999px !important;
-  padding: 10px 18px !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18) !important;
+  padding: 12px 20px 12px 12px !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18) !important;
 }
 .toast-style-pill .toast-main { align-items: center; }
 .toast-style-pill .toast-icon-badge {
-  width: 34px; height: 34px;
+  width: 38px; height: 38px;
   border-radius: 999px;
   background: rgba(var(--toast-color-rgb), 0.2);
   border: 1px solid rgba(var(--toast-color-rgb), 0.3);
+  flex-shrink: 0;
+}
+.toast-style-pill .toast-content {
+  padding-top: 0;
+}
+.toast-style-pill .toast-message {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 .toast-style-pill .toast-close { border-radius: 999px; }
+/* Progress bar stays full-width like the other styles, just with pill-
+   matching rounded ends. */
 .toast-style-pill .toast-progress { border-radius: 999px; }
 
 /* ── 5. MINIMAL ─── Barely-there card with thin accent-colored border only. */
@@ -3293,7 +3350,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: rgba(var(--notif-bg-rgb, 19, 19, 26), 0.9) !important;
   border: 1px solid rgba(var(--toast-color-rgb), 0.38) !important;
   border-radius: 12px !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14) !important;
 }
 .toast-style-minimal .toast-icon-badge {
   background: transparent;
@@ -3670,8 +3727,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   top: 50%;
   transform: translateY(-50%);
 }
-.dl-files-list { position: relative; max-height: 480px; overflow-y: auto; overflow-x: hidden; margin-top: 4px; }
-.dl-files-viewport { position: relative; width: 100%; }
+.dl-files-list { position: relative; max-height: 480px; overflow-y: auto; overflow-x: hidden; margin-top: 4px; will-change: scroll-position; }
+.dl-files-viewport { position: relative; width: 100%; contain: layout style; }
 .dl-files-empty { color: var(--text-muted); font-size: 13px; padding: 8px 2px; }
 .dl-file-row {
   display: flex;
@@ -3682,15 +3739,14 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-bottom: 1px solid var(--panel-border);
   font-size: 13px;
   color: var(--text);
-  /* Fixed height (see ROW_STEP in app.js) so the Files window can
-     virtualize this list — with hundreds of files in flight (big
-     modpacks), only rows actually scrolled into view are ever real DOM
-     nodes; this height is what the scroll-position math is based on. */
   position: absolute;
   left: 0;
   right: 0;
   height: 44px;
   box-sizing: border-box;
+  contain: strict;
+  will-change: transform;
+  transform: translateZ(0);
 }
 .dl-file-row .dl-file-name-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .dl-file-row .dl-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3725,7 +3781,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   width: 0%;
   border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--accent), #34e0a1);
-  transition: width 0.25s ease;
 }
 .dl-file-row.dl-file-completed .dl-file-bar { background: rgba(var(--overlay-rgb), 0.25); }
 .dl-file-row.dl-file-failed .dl-file-bar { background: #f87171; width: 100% !important; }
@@ -3751,6 +3806,69 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 /* ══════════════════════════════════════════════════════════════════
    PRESETS TAB
    ══════════════════════════════════════════════════════════════════ */
+/* ── Preset GitHub Sync Progress Banner ── */
+.preset-sync-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  background: rgba(var(--overlay-rgb), 0.06);
+  border: 1px solid rgba(var(--overlay-rgb), 0.10);
+  border-radius: var(--radius-sm);
+  transition: opacity 0.4s ease, max-height 0.4s ease;
+  overflow: hidden;
+  max-height: 80px;
+}
+.preset-sync-banner.hidden {
+  display: none;
+}
+.preset-sync-banner.is-done {
+  opacity: 0;
+  max-height: 0;
+  padding: 0;
+  margin-bottom: 0;
+  pointer-events: none;
+}
+.preset-sync-banner-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.preset-sync-banner-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.preset-sync-banner-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.preset-sync-track {
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(var(--overlay-rgb), 0.10);
+  overflow: hidden;
+}
+.preset-sync-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--accent), #34e0a1);
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.preset-sync-bar.is-indeterminate {
+  width: 35% !important;
+  animation: preset-sync-indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes preset-sync-indeterminate {
+  0%   { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
 .presets-container { display: block; }
 
 .presets-grid {
@@ -4916,6 +5034,37 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: var(--accent);
 }
 
+.dressing-room-modal {
+  position: relative;
+}
+
+.dressing-room-busy-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 15, 0.72);
+  backdrop-filter: blur(4px);
+  z-index: 99;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border-radius: inherit;
+  pointer-events: all;
+  user-select: none;
+}
+
+.dressing-room-busy-overlay.hidden {
+  display: none !important;
+}
+
+.dressing-room-busy-text {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.2px;
+}
+
 .dressing-room-body {
   position: relative;
   flex: 1;
@@ -4930,16 +5079,33 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   overflow-y: auto;
   flex: 1;
   min-height: 0;
+  flex-direction: column;
 }
 
 .dressing-room-section.active {
-  display: block;
+  display: flex;
 }
 
 .dressing-room-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 16px;
+  padding: 4px;
+  flex: 1;
+}
+
+.dressing-room-empty-center {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+  padding: 24px;
 }
 
 .dressing-room-add-card {
@@ -4947,14 +5113,14 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  aspect-ratio: 3 / 4;
+  gap: 10px;
+  min-height: 220px;
   background: var(--panel);
-  border: 1px dashed rgba(var(--overlay-rgb), 0.18);
-  border-radius: var(--radius-sm);
+  border: 1.5px dashed rgba(var(--overlay-rgb), 0.22);
+  border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  transition: background var(--transition), border-color var(--transition), color var(--transition), transform var(--transition);
   font-family: var(--font);
 }
 
@@ -4962,17 +5128,124 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: var(--panel-hover);
   border-color: var(--accent);
   color: var(--accent);
+  transform: translateY(-2px);
 }
 
 .dressing-room-add-icon {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   color: currentColor;
 }
 
 .dressing-room-add-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dressing-room-skin-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 220px;
+  height: 220px;
+  background: var(--panel);
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
+  border-radius: var(--radius);
+  padding: 10px 8px 8px;
+  cursor: pointer;
+  position: relative;
+  transition: transform var(--transition), border-color var(--transition), background var(--transition), box-shadow var(--transition);
+  overflow: hidden;
+  user-select: none;
+}
+
+.dressing-room-skin-card:hover {
+  background: var(--panel-hover);
+  border-color: rgba(var(--accent-rgb, 183, 183, 183), 0.45);
+  transform: translateY(-2px);
+}
+
+.dressing-room-skin-card.equipped {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent), 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.dressing-room-skin-card .dressing-room-card-badge {
+  display: none;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--accent);
+  color: #0d0d14;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.4px;
+  z-index: 2;
+}
+
+.dressing-room-skin-card.equipped .dressing-room-card-badge {
+  display: block;
+}
+
+.dressing-room-card-delete-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-muted);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition), background var(--transition), color var(--transition);
+  z-index: 2;
+}
+
+.dressing-room-skin-card:hover .dressing-room-card-delete-btn {
+  opacity: 1;
+}
+
+.dressing-room-card-delete-btn:hover {
+  background: #ff4757;
+  color: #ffffff;
+  border-color: #ff4757;
+}
+
+.dressing-room-card-canvas-wrap {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.dressing-room-card-canvas {
+  width: 130px;
+  height: 165px;
+  display: block;
+}
+
+.dressing-room-skin-name {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .dressing-room-cape-card {
@@ -5017,7 +5290,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .dressing-room-note {
-  margin: 12px 2px 0;
+  margin-top: auto;
+  margin-left: 2px;
+  margin-right: 2px;
+  margin-bottom: 0;
   padding: 12px 14px;
   font-size: 12.5px;
   line-height: 1.5;
@@ -5080,6 +5356,106 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   font-size: 13px;
   line-height: 1.5;
   color: #f5c518;
+}
+
+/* ── WebKitGTK & Linux Performance Engine ─────────────────────────────────── */
+.is-webkit-gtk {
+  --transition: 0.12s ease;
+  --transition-fast: 0.08s ease;
+}
+
+/* Force hardware accelerated compositing on cards and overlays */
+.is-webkit-gtk .instance-card,
+.is-webkit-gtk .discover-card,
+.is-webkit-gtk .mod-item,
+.is-webkit-gtk .preset-card,
+.is-webkit-gtk .overlay-card,
+.is-webkit-gtk .toast,
+.is-webkit-gtk .dressing-room-skin-card,
+.is-webkit-gtk .settings-card {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  contain: layout style paint;
+}
+
+/* Content visibility optimizations for large scrollable lists.
+   .settings-card is deliberately excluded from the shared rule below —
+   see the dedicated open/closed split further down. Unlike mod/preset/
+   discover cards (roughly uniform height), a settings card's real height
+   swings from ~60px closed to 400px+ open, and content-visibility's
+   placeholder guess (contain-intrinsic-size) has no way to know which.
+   Applying one static guess to both states means every open card that
+   straddles the viewport edge during scroll forces a full relayout each
+   time it crosses — that's the "open a dropdown then scroll = death"
+   lag. So: closed cards get content-visibility (their height matches the
+   placeholder closely enough), open cards opt out and always render. */
+.is-webkit-gtk .discover-card,
+.is-webkit-gtk .mod-item,
+.is-webkit-gtk .preset-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 100px;
+}
+
+.is-webkit-gtk .settings-card:not(.active) {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 60px;
+}
+
+.is-webkit-gtk .settings-card.active {
+  content-visibility: visible;
+}
+
+/* NOTE: a rule used to live here forcing backdrop-filter: blur(4px)
+   !important onto .overlay/.toast for WebKitGTK. That directly undid the
+   solid-scrim fix on .overlay (see comment above that rule) on exactly the
+   platform where blur is most expensive — removed. */
+
+.is-webkit-gtk .dl-files-viewport,
+.is-webkit-gtk .instances-grid,
+.is-webkit-gtk .discover-grid,
+.is-webkit-gtk .mods-list,
+.is-webkit-gtk .tab-page {
+  will-change: scroll-position;
+  overflow-anchor: none;
+}
+
+/* will-change hints the compositor ahead of an accordion open, scoped to
+   .active only so cards at rest don't carry extra layer cost. This only
+   matters on platforms that actually animate grid-template-rows — see the
+   WebKitGTK rebuild below, which bypasses that animation entirely. */
+.settings-card.active .settings-card-body {
+  will-change: grid-template-rows;
+}
+
+/* ── WebKitGTK-specific accordion rebuild ─────────────────────────────────
+   The default accordion (see .settings-card-body / .settings-card-body-inner
+   above) animates grid-template-rows AND padding together. Both are layout
+   properties: the browser must re-measure the content's natural height on
+   every single frame of the transition to know what "1fr" or "20px" even
+   means right now. On a GPU compositor that's tolerable; on WebKitGTK's
+   software rasterizer it's a full relayout+repaint per frame, and it's the
+   dominant lag source when opening/closing a settings section.
+
+   Fix: for WebKitGTK, snap the grid-template-rows/padding change instantly
+   (one layout calculation, not one per frame) and do the actual animated
+   "reveal" purely with opacity + transform, which are compositor-only
+   properties — no layout involved, however fast the software rasterizer is
+   or isn't. This keeps the open/close feeling animated without the frame-
+   by-frame measurement cost. */
+.is-webkit-gtk .settings-card-body {
+  transition: visibility 0s linear 0.16s;
+}
+.is-webkit-gtk .settings-card.active .settings-card-body {
+  transition: visibility 0s linear;
+}
+.is-webkit-gtk .settings-card-body-inner {
+  padding: 0 20px;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.is-webkit-gtk .settings-card.active .settings-card-body-inner {
+  padding: 20px;
 }
 
 

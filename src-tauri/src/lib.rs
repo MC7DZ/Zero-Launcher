@@ -26,6 +26,9 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "0");
+        }
     }
 
     tauri::Builder::default()
@@ -36,10 +39,11 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
-                let _ = window.set_focus();
                 let _ = window.unminimize();
+                let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
@@ -123,6 +127,7 @@ pub fn run() {
                                 let _ = window.hide();
                             } else {
                                 let _ = window.show();
+                                let _ = window.unminimize();
                                 let _ = window.set_focus();
                             }
                         }
@@ -143,6 +148,7 @@ pub fn run() {
                                 let _ = window.hide();
                             } else {
                                 let _ = window.show();
+                                let _ = window.unminimize();
                                 let _ = window.set_focus();
                             }
                         }
@@ -176,22 +182,38 @@ pub fn run() {
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         let state = app_handle_clone.state::<AppState>();
-                        let settings = state.settings.lock().unwrap();
-                        let running = state.running_instances.lock().unwrap()
-                            .values()
-                            .any(|info| info.running);
-                        // Window Behavior → "On Launcher Close": hide to
-                        // tray instead of quitting when either a game is
-                        // running (the classic case — don't lose track of
-                        // it), or "always hide to tray" is on regardless
-                        // of whether anything's running. Either way this
-                        // only applies if the tray icon actually exists.
-                        let should_hide = settings.enable_system_tray
-                            && settings.on_launcher_close == "tray"
-                            && (running || settings.always_hide_to_tray);
+                        let (should_hide, notify_tray) = {
+                            let mut settings = state.settings.lock().unwrap();
+                            let running = state.running_instances.lock().unwrap()
+                                .values()
+                                .any(|info| info.running);
+                            // Window Behavior → "On Launcher Close": hide to
+                            // tray instead of quitting when either a game is
+                            // running (the classic case — don't lose track of
+                            // it), or "always hide to tray" is on regardless
+                            // of whether anything's running. Either way this
+                            // only applies if the tray icon actually exists.
+                            let should_hide = settings.enable_system_tray
+                                && settings.on_launcher_close == "tray"
+                                && (running || settings.always_hide_to_tray);
+                            let notify_tray = should_hide && !settings.tray_notification_shown;
+                            if notify_tray {
+                                settings.tray_notification_shown = true;
+                            }
+                            (should_hide, notify_tray)
+                        };
                         if should_hide {
                             api.prevent_close();
                             let _ = window_clone.hide();
+                            if notify_tray {
+                                state.save_settings_to_disk();
+                                use tauri_plugin_notification::NotificationExt;
+                                let _ = app_handle_clone.notification()
+                                    .builder()
+                                    .title("Zero Launcher")
+                                    .body("Zero Launcher is running in the system tray. Click the tray icon to restore.")
+                                    .show();
+                            }
                         }
                     }
                 });
@@ -239,9 +261,17 @@ pub fn run() {
             commands::msa::microsoft_device_code_cancel,
             commands::msa::refresh_microsoft_account,
             commands::msa::refresh_all_microsoft_accounts,
-            // Skin cache
+            // Skin management
+            commands::skins::list_skins,
+            commands::skins::import_skin,
+            commands::skins::delete_skin,
+            commands::skins::cache_skin_texture,
             commands::skins::cache_account_skin,
             commands::skins::list_cached_skins,
+            commands::skins::upload_skin_to_mojang,
+            commands::skins::reset_mojang_skin,
+            commands::skins::get_account_capes,
+            commands::skins::equip_mojang_cape,
             // Mods
             commands::mods::list_mods,
             commands::mods::toggle_mod,
@@ -252,6 +282,8 @@ pub fn run() {
             commands::mods::read_mods_list_file,
             // Presets
             commands::presets::list_presets,
+            commands::presets::get_local_presets,
+            commands::presets::sync_presets,
             commands::presets::get_preset_icon_path,
             commands::presets::resolve_preset_mod_url,
             commands::presets::get_preset_installed_mods,

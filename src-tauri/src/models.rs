@@ -184,8 +184,10 @@ pub struct LauncherSettings {
     pub restore_launcher_on_game_close: bool,
     #[serde(default = "default_true")]
     pub enable_system_tray: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub close_after_launch: bool,
+    #[serde(default)]
+    pub tray_notification_shown: bool,
 
     // ── Window Behavior ─────────────────────────────────────────────────
     // What the launcher does around a game instance's lifecycle and its
@@ -504,7 +506,8 @@ impl Default for LauncherSettings {
             minimize_on_launch: false,
             restore_launcher_on_game_close: true,
             enable_system_tray: true,
-            close_after_launch: false,
+            close_after_launch: true,
+            tray_notification_shown: false,
             on_game_close: default_on_game_close(),
             on_launcher_close: default_on_launcher_close(),
             always_hide_to_tray: false,

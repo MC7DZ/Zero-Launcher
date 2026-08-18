@@ -168,6 +168,15 @@ const api = {
   refreshAllMicrosoftAccounts: () => invoke('refresh_all_microsoft_accounts'),
   cacheAccountSkin: (username, renderUrl) => invoke('cache_account_skin', { username, renderUrl }),
   listCachedSkins: () => invoke('list_cached_skins'),
+  listSkins: () => invoke('list_skins'),
+  importSkin: (sourcePath, name) => invoke('import_skin', { sourcePath, name }),
+  deleteSkin: (pathOrId) => invoke('delete_skin', { pathOrId }),
+  cacheSkinTexture: (name, textureUrl) => invoke('cache_skin_texture', { name, textureUrl }),
+  uploadSkinToMojang: (skinPath, variant, accountId) => invoke('upload_skin_to_mojang', { skinPath, variant: variant || null, accountId: accountId || null }),
+  resetMojangSkin: (accountId) => invoke('reset_mojang_skin', { accountId: accountId || null }),
+  getAccountCapes: (accountId) => invoke('get_account_capes', { accountId: accountId || null }),
+  equipMojangCape: (capeId, accountId) => invoke('equip_mojang_cape', { capeId: capeId || null, accountId: accountId || null }),
+  syncPresets: () => invoke('sync_presets'),
   getSettings: () => invoke('get_settings'),
   updateSettings: (settings) => invoke('save_settings', { settings }),
   getMusicDir: () => invoke('get_music_dir'),
@@ -257,6 +266,11 @@ const api = {
   identifyModsByHash: (hashes) => invoke('identify_mods_by_hash', { hashes }),
   discoverGetProjectsBatch: (ids) => invoke('discover_get_projects_batch', { ids }),
   listPresets: () => invoke('list_presets'),
+  getLocalPresets: () => invoke('get_local_presets'),
+  syncPresets: () => invoke('sync_presets'),
+  onPresetSynced: (cb) => listen('preset-synced', cb),
+  onPresetSyncStart: (cb) => listen('preset-sync-start', cb),
+  onPresetSyncDone: (cb) => listen('preset-sync-done', cb),
   getPresetIconPath: (presetId) => invoke('get_preset_icon_path', { presetId }),
   resolvePresetModUrl: (modrinthId, loader, mcVersion) =>
     invoke('resolve_preset_mod_url', { modrinthId, loader: loader || null, mcVersion: mcVersion || null }),
@@ -269,10 +283,20 @@ const api = {
   openInstanceConsoleWindow: async (versionId, name) => {
     const { WebviewWindow } = window.__TAURI__.webviewWindow;
     const label = 'console-' + versionId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const existing = await WebviewWindow.getByLabel(label);
-    if (existing) {
-      await existing.setFocus();
-      return;
+    try {
+      const existing = await WebviewWindow.getByLabel(label);
+      if (existing) {
+        try {
+          if (existing.unminimize) await existing.unminimize();
+          if (existing.show) await existing.show();
+          if (existing.setFocus) await existing.setFocus();
+        } catch (focusErr) {
+          console.warn('Could not focus existing console window:', focusErr);
+        }
+        return;
+      }
+    } catch (checkErr) {
+      console.warn('Error checking existing console window:', checkErr);
     }
     const url = 'console.html?instance=' + encodeURIComponent(versionId) + '&name=' + encodeURIComponent(name || versionId);
     new WebviewWindow(label, {
@@ -282,6 +306,7 @@ const api = {
       height: 560,
       minWidth: 480,
       minHeight: 320,
+      focus: true,
     });
   },
 };
@@ -395,6 +420,13 @@ function spawnToast(message, type, title, actions) {
   `;
   c.appendChild(t);
 
+  // Only promote to a composited layer while actually animating (entrance
+  // now, exit in dismissToast) — see .toast-animating in main.css.
+  t.classList.add('toast-animating');
+  t.addEventListener('animationend', (e) => {
+    if (e.animationName === 'toastSlideIn') t.classList.remove('toast-animating');
+  });
+
   const entry = { el: t, removed: false };
   activeToasts.push(entry);
 
@@ -433,7 +465,7 @@ function spawnToast(message, type, title, actions) {
 function dismissToast(entry) {
   if (entry.removed) return;
   entry.removed = true;
-  entry.el.classList.add('toast-fade-out');
+  entry.el.classList.add('toast-animating', 'toast-fade-out');
   setTimeout(() => {
     entry.el.remove();
     activeToasts = activeToasts.filter(e => e !== entry);
@@ -785,6 +817,39 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
     }
   }
 
+  if (deviceCodeEl && !deviceCodeEl.dataset.copyBound) {
+    deviceCodeEl.dataset.copyBound = '1';
+    deviceCodeEl.style.cursor = 'pointer';
+    deviceCodeEl.title = 'Click to copy code';
+    deviceCodeEl.addEventListener('click', async () => {
+      const code = (deviceCodeEl.textContent || '').trim();
+      if (code && code !== '— — — — —') {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(code);
+          } else {
+            throw new Error('Clipboard API not available');
+          }
+          showToast(`Copied code "${code}" to clipboard!`, 'info');
+        } catch (_) {
+          const ta = document.createElement('textarea');
+          ta.value = code;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand('copy');
+            showToast(`Copied code "${code}" to clipboard!`, 'info');
+          } catch (e) {
+            showToast(`Failed to copy code: ${e}`, 'error');
+          }
+          document.body.removeChild(ta);
+        }
+      }
+    });
+  }
+
   async function start() {
     if (!devicePanelEl) return;
     if (methodChoiceEl) methodChoiceEl.classList.add('hidden');
@@ -794,7 +859,10 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
     try {
       const startRes = await api.microsoftDeviceCodeStart();
       deviceVerificationUri = startRes.verification_uri || 'https://microsoft.com/link';
-      if (deviceCodeEl) deviceCodeEl.textContent = startRes.user_code;
+      if (deviceCodeEl) {
+        deviceCodeEl.textContent = startRes.user_code;
+        deviceCodeEl.title = 'Click to copy code';
+      }
       setDeviceStatus('Waiting for you to sign in…', false);
       const interval = Math.max(startRes.interval || 5, 3);
       devicePollTimer = setTimeout(() => pollDeviceCode(interval), interval * 1000);
@@ -1196,10 +1264,16 @@ function initDownloadWidget() {
     renderFilesList(card);
     filesOverlay.classList.remove('hidden');
   }
+  let refreshFilesRaf = null;
   function refreshFilesWindowIfOpen(id) {
     if (filesWindowCardId !== id || filesOverlay.classList.contains('hidden')) return;
-    const card = cards.get(id);
-    if (card) renderFilesList(card);
+    if (refreshFilesRaf) return;
+    refreshFilesRaf = requestAnimationFrame(() => {
+      refreshFilesRaf = null;
+      if (filesWindowCardId !== id || filesOverlay.classList.contains('hidden')) return;
+      const card = cards.get(id);
+      if (card) renderFilesList(card);
+    });
   }
   const closeFilesBtn = document.getElementById('btn-close-dl-files');
   if (closeFilesBtn) closeFilesBtn.addEventListener('click', () => filesOverlay.classList.add('hidden'));
@@ -1820,6 +1894,10 @@ let currentSkinFacing = 'left';
 let currentSkinAnonSkin = false;
 let currentSkinAnonTag = false;
 let currentSkinAnonPic = false;
+let currentSkinEquippedPath = null;
+let currentSkinEquippedId = null;
+let currentSkinEquippedName = null;
+let currentSkinModelType = 'auto-detect';
 
 function getFacingYaw(facing) {
   switch (facing) {
@@ -2019,6 +2097,10 @@ function loadSkinSettingsForAccount(acc, globalSettings) {
   } else {
     currentSkinAnonPic = isOffline;
   }
+
+  currentSkinEquippedPath = (saved && saved.equippedSkinPath) || null;
+  currentSkinEquippedId = (saved && saved.equippedSkinId) || null;
+  currentSkinEquippedName = (saved && saved.equippedSkinName) || null;
 }
 
 /// Whether a given account's profile picture (header/account-list avatar)
@@ -2051,6 +2133,9 @@ function saveSkinSettingsForAccount(acc, customSettings) {
     anonSkin: Boolean(currentSkinAnonSkin),
     anonTag: Boolean(currentSkinAnonTag),
     anonPic: Boolean(currentSkinAnonPic),
+    equippedSkinPath: currentSkinEquippedPath,
+    equippedSkinId: currentSkinEquippedId,
+    equippedSkinName: currentSkinEquippedName,
     ...customSettings
   };
   try {
@@ -2172,77 +2257,121 @@ function closeSkinViewerModal() {
   }
 }
 
-/// Dressing Room — coming-soon preview of a wardrobe for switching skins
-/// and capes. Capes shown here are just the active Microsoft account's
-/// known cape (via crafatar) for preview purposes; nothing here is wired
-/// up to actually change the account's skin/cape yet.
+let dressingRoomCardRenders = new Map();
+let dressingRoomIntersectionObserver = null;
+
+// Best-effort trim of a per-card skin3d Render's WebGL cost: cap the
+// device pixel ratio (a 130x165 card doesn't need to render at a laptop's
+// full 2x/3x retina density) and drop antialiasing on the underlying
+// three.js renderer. WebKitGTK's GL path is noticeably more expensive per
+// pixel than Chromium/macOS WebKit, so this matters more here than it
+// would elsewhere. Wrapped defensively since skin3d doesn't officially
+// document `.renderer` as public API — if a future version renames or
+// removes it, this just silently no-ops instead of breaking the card.
+function lightenCardRenderer(render) {
+  try {
+    const renderer = render && render.renderer;
+    if (renderer && typeof renderer.setPixelRatio === 'function') {
+      renderer.setPixelRatio(1);
+    }
+  } catch (_) {}
+}
+
+function setupDressingRoomObserver() {
+  if (dressingRoomIntersectionObserver) {
+    dressingRoomIntersectionObserver.disconnect();
+  }
+  const scrollContainer = document.getElementById('dressing-room-skins');
+  try {
+    dressingRoomIntersectionObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const card = entry.target;
+        const skinId = card.dataset.skinId;
+        const item = dressingRoomCardRenders.get(skinId);
+        if (!item) continue;
+        if (entry.isIntersecting) {
+          item.isVisible = true;
+          if (item.render) {
+            item.render.renderPaused = false;
+          } else if (item.lazyInit) {
+            item.lazyInit();
+          }
+        } else {
+          item.isVisible = false;
+          if (item.render) {
+            item.render.renderPaused = true;
+          }
+        }
+      }
+    }, {
+      root: scrollContainer || null,
+      rootMargin: '120px 0px 120px 0px',
+      threshold: 0.01
+    });
+  } catch (err) {
+    console.warn('IntersectionObserver init error:', err);
+  }
+}
+
+function pauseAllDressingRoomCards() {
+  for (const item of dressingRoomCardRenders.values()) {
+    if (item.render) {
+      item.render.renderPaused = true;
+    }
+  }
+}
+
+function cleanupDressingRoomCards() {
+  if (dressingRoomIntersectionObserver) {
+    dressingRoomIntersectionObserver.disconnect();
+  }
+  for (const item of dressingRoomCardRenders.values()) {
+    if (item.render && typeof item.render.dispose === 'function') {
+      try { item.render.dispose(); } catch (_) {}
+    }
+  }
+  dressingRoomCardRenders.clear();
+}
+
+/// Dressing Room — 3D Wardrobe for browsing, adding, and equipping skins and capes.
 async function openDressingRoomModal() {
   const overlay = document.getElementById('dressing-room-overlay');
   if (!overlay) return;
   overlay.classList.remove('hidden');
 
-  // Same as the Skin Settings modal — the standee is fully covered here,
-  // so pause its WebGL render loop instead of burning GPU on hidden frames.
+  // Pause main menu standee while Dressing Room is open
   if (skinMiniPreviewInstance) {
     skinMiniPreviewInstance.renderPaused = true;
   }
 
-  const content = document.getElementById('dressing-room-content');
-  const lock = document.getElementById('dressing-room-msa-lock');
-  const accounts = await api.getAccounts().catch(() => []);
-  const active = accounts.find(a => a.is_active);
-  const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
-
-  if (content) content.classList.toggle('is-locked', isOffline);
-  if (lock) lock.classList.toggle('hidden', !isOffline);
-
-  if (isOffline) return;
-
+  setupDressingRoomObserver();
   await populateDressingRoomSkins();
-  await populateDressingRoomCapes();
 }
 
 function closeDressingRoomModal() {
   const overlay = document.getElementById('dressing-room-overlay');
   if (!overlay) return;
   overlay.classList.add('hidden');
+
+  // Pause all 3D cards in the Dressing Room
+  pauseAllDressingRoomCards();
+
+  // Resume main menu standee
   if (skinMiniPreviewInstance) {
     skinMiniPreviewInstance.renderPaused = false;
   }
 }
 
-/// Records a real, account-derived skin by caching it to disk, at
-/// `<Zero Launcher folder>/skins/<username>.png` — the file is named
-/// after the account's username, and re-caching the same username
-/// overwrites the old file, so switching skins or uploading a new one
-/// for an account always replaces what's stored rather than piling up.
-/// This runs every time a skin is loaded for the active account, so the
-/// cache is always kept in sync with whatever skin that account is
-/// currently wearing.
-async function recordUsedSkin(url, username) {
-  if (!url || !username) return;
-  const renderUrl = `https://mc-heads.net/player/${encodeURIComponent(username)}/100`;
-  try {
-    await api.cacheAccountSkin(username, renderUrl);
-  } catch (e) {
-    console.warn('Could not cache skin to disk:', e);
+function setDressingRoomBusy(busy, message = 'Updating Mojang servers…') {
+  const overlay = document.getElementById('dressing-room-busy-overlay');
+  const textEl = document.getElementById('dressing-room-busy-text');
+  const modal = document.querySelector('.dressing-room-modal');
+  if (textEl && message) textEl.textContent = message;
+  if (overlay) {
+    overlay.classList.toggle('hidden', !busy);
   }
-}
-
-/// Reads the on-disk skin cache (Zero Launcher/skins/*.png) and returns
-/// it as file:// (asset protocol) URLs the Dressing Room can render
-/// directly, with no network round-trip.
-async function getCachedSkins() {
-  try {
-    const cached = await api.listCachedSkins();
-    const convert = window.__TAURI__.core.convertFileSrc;
-    return (cached || []).map(entry => ({
-      username: entry.username,
-      renderUrl: convert(entry.path),
-    }));
-  } catch (e) {
-    console.warn('Could not read skin cache:', e);
-    return [];
+  if (modal) {
+    modal.style.pointerEvents = busy ? 'none' : 'auto';
   }
 }
 
@@ -2250,69 +2379,234 @@ async function populateDressingRoomSkins() {
   const grid = document.getElementById('dressing-room-skins-grid');
   if (!grid) return;
 
-  // Clear out any previously rendered skin cards, but keep the "Add a
-  // Skin" card (it lives outside this grid, in its own section).
+  cleanupDressingRoomCards();
+  setupDressingRoomObserver();
   grid.innerHTML = '';
 
   const accounts = await api.getAccounts().catch(() => []);
   const active = accounts.find(a => a.is_active);
-  const activeUsername = active ? active.username : null;
+  loadSkinSettingsForAccount(active);
 
-  if (!activeUsername) {
-    const note = document.createElement('div');
-    note.className = 'skin-control-label';
-    note.style.gridColumn = '1 / -1';
-    note.textContent = 'No skins used yet — the selected account\'s skin will show up here.';
-    grid.appendChild(note);
+  // Auto-cache active account's skin to Zero Launcher/skins/ if available
+  if (active && active.username) {
+    const isOffline = active.account_type === 'offline' || !active.mc_uuid;
+    const remoteUrl = !isOffline ? `https://mineskin.eu/skin/${encodeURIComponent(active.username)}` : null;
+    if (remoteUrl) {
+      api.cacheSkinTexture(active.username, remoteUrl).catch(() => {});
+    }
+  }
+
+  let skins = await api.listSkins().catch(() => []);
+
+  if (!skins || skins.length === 0) {
+    const emptyNotice = document.createElement('div');
+    emptyNotice.className = 'skin-control-label';
+    emptyNotice.style.gridColumn = '1 / -1';
+    emptyNotice.style.padding = '24px 0';
+    emptyNotice.textContent = 'No skins stored in skins folder yet. Click "Add a Skin" to import your Minecraft skin (.png)!';
+    grid.appendChild(emptyNotice);
     return;
   }
 
-  // Only show the currently-selected account's own cached skin, not
-  // every account's history — the cache file is named after the
-  // username, so switching or uploading a new skin for this account
-  // overwrites it here automatically next time it's used.
-  const cachedSkins = await getCachedSkins();
-  const entry = cachedSkins.find(s => s.username === activeUsername);
+  for (const skin of skins) {
+    const card = document.createElement('div');
+    card.className = 'dressing-room-skin-card';
+    card.dataset.skinId = skin.id;
+    card.dataset.skinPath = skin.path;
 
-  if (!entry) {
-    const note = document.createElement('div');
-    note.className = 'skin-control-label';
-    note.style.gridColumn = '1 / -1';
-    note.textContent = `No cached skin for ${activeUsername} yet — it'll be cached next time this account's skin loads.`;
-    grid.appendChild(note);
-    return;
+    const isEquipped = (currentSkinEquippedPath && (currentSkinEquippedPath === skin.path || currentSkinEquippedId === skin.id))
+      || (!currentSkinEquippedPath && active && skin.id === active.username);
+
+    if (isEquipped) {
+      card.classList.add('equipped');
+    }
+
+    // Equipped badge
+    const badge = document.createElement('span');
+    badge.className = 'dressing-room-card-badge';
+    badge.textContent = 'EQUIPPED';
+    card.appendChild(badge);
+
+    // Delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'dressing-room-card-delete-btn';
+    deleteBtn.title = 'Delete Skin';
+    deleteBtn.innerHTML = '✕';
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await api.deleteSkin(skin.path);
+        showToast(`Deleted skin "${skin.name}"`, 'success');
+        if (currentSkinEquippedPath === skin.path) {
+          currentSkinEquippedPath = null;
+          currentSkinEquippedId = null;
+          currentSkinEquippedName = null;
+          saveSkinSettingsForAccount(active, {
+            equippedSkinPath: null,
+            equippedSkinId: null,
+            equippedSkinName: null,
+          });
+          updateSkinMiniPreview();
+        }
+        await populateDressingRoomSkins();
+      } catch (err) {
+        showToast(`Failed to delete skin: ${err}`, 'error');
+      }
+    });
+    card.appendChild(deleteBtn);
+
+    // Canvas container
+    const canvasWrap = document.createElement('div');
+    canvasWrap.className = 'dressing-room-card-canvas-wrap';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'dressing-room-card-canvas';
+    canvasWrap.appendChild(canvas);
+    card.appendChild(canvasWrap);
+
+    // Skin label
+    const nameLabel = document.createElement('span');
+    nameLabel.className = 'dressing-room-skin-name';
+    nameLabel.textContent = skin.name || skin.id;
+    nameLabel.title = skin.name || skin.id;
+    card.appendChild(nameLabel);
+
+    // Click handler -> equip skin (only equips after server confirms)
+    card.addEventListener('click', async () => {
+      if (card.classList.contains('equipped')) return;
+
+      const isMsa = active && active.account_type === 'microsoft' && active.mc_uuid;
+
+      if (isMsa) {
+        setDressingRoomBusy(true, `Uploading skin "${skin.name}" to Mojang servers…`);
+        try {
+          await api.uploadSkinToMojang(skin.path, 'classic', active.id);
+          showToast(`Skin "${skin.name}" accepted by Mojang and equipped!`, 'success');
+        } catch (err) {
+          console.warn('Mojang skin upload rejected:', err);
+          showToast(`Mojang rejected skin upload: ${err}`, 'error');
+          setDressingRoomBusy(false);
+          return; // Do NOT equip locally if rejected by server
+        }
+        setDressingRoomBusy(false);
+      }
+
+      // Apply locally once confirmed
+      currentSkinEquippedPath = skin.path;
+      currentSkinEquippedId = skin.id;
+      currentSkinEquippedName = skin.name;
+      currentSkinAnonSkin = false;
+
+      saveSkinSettingsForAccount(active, {
+        equippedSkinPath: skin.path,
+        equippedSkinId: skin.id,
+        equippedSkinName: skin.name,
+        anonSkin: false,
+      });
+
+      // Update equipped class across cards
+      grid.querySelectorAll('.dressing-room-skin-card').forEach(c => c.classList.remove('equipped'));
+      card.classList.add('equipped');
+
+      // Update main menu 3D player standee
+      const assetUrl = window.__TAURI__.core.convertFileSrc(skin.path);
+      if (skinMiniPreviewInstance) {
+        try {
+          currentMiniPreviewSkinUrl = assetUrl;
+          await skinMiniPreviewInstance.loadSkin(assetUrl, { model: 'auto-detect' });
+        } catch (err) {
+          console.warn('Could not sync mini preview skin:', err);
+        }
+      }
+
+      if (!isMsa) {
+        showToast(`Equipped skin "${skin.name}"`, 'success');
+      }
+    });
+
+    // 3D Player Viewer initialization (Lazy loaded per card when visible).
+    // This used to also be called eagerly right below, which meant every
+    // single skin card spun up its own WebGL context + render loop the
+    // instant the grid was built, regardless of whether it was ever
+    // scrolled into view. WebKitGTK handles many concurrent GL contexts
+    // far worse than Chromium/WebKit-on-macOS does, so a wardrobe with
+    // 20-30 skins was opening 20-30 live contexts at once — that's the
+    // main source of the lag. Now init only happens via the
+    // IntersectionObserver below (which already fires immediately for
+    // any card visible at the time it's observed, so on-screen cards
+    // still render right away — off-screen ones just don't, until scrolled
+    // into the 120px margin).
+    const skinAssetUrl = window.__TAURI__.core.convertFileSrc(skin.path);
+    let cardRender = null;
+    const initCardRender = async () => {
+      if (cardRender) return;
+      try {
+        canvas.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
+        const anim = new IdleAnimation();
+        anim.speed = 1.0;
+        cardRender = new Render({
+          canvas: canvas,
+          width: 130,
+          height: 165,
+          fov: 42,
+          zoom: 0.88,
+          preserveDrawingBuffer: false,
+          enableControls: false,
+          enableRotation: false,
+          allowZoom: false,
+          animation: anim,
+        });
+        if (cardRender.controls) {
+          cardRender.controls.enabled = false;
+          cardRender.controls.enableRotate = false;
+          cardRender.controls.enableZoom = false;
+          cardRender.controls.enablePan = false;
+        }
+        if (cardRender.playerWrapper) {
+          cardRender.playerWrapper.position.y = -1.2;
+        }
+        lightenCardRenderer(cardRender);
+        await cardRender.loadSkin(skinAssetUrl, { model: 'auto-detect' });
+
+        const entry = dressingRoomCardRenders.get(skin.id);
+        if (entry) {
+          entry.render = cardRender;
+          if (!entry.isVisible) {
+            cardRender.renderPaused = true;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load 3D skin for card:', skin.name, err);
+      }
+    };
+
+    dressingRoomCardRenders.set(skin.id, {
+      render: null,
+      canvas,
+      card,
+      lazyInit: initCardRender,
+      isVisible: true,
+    });
+
+    grid.appendChild(card);
+    if (dressingRoomIntersectionObserver) {
+      dressingRoomIntersectionObserver.observe(card);
+    }
   }
-
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const card = document.createElement('button');
-  card.type = 'button';
-  card.className = 'dressing-room-cape-card equipped';
-
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('viewBox', '0 0 100 150');
-  svg.setAttribute('class', 'dressing-room-cape-svg dressing-room-skin-svg');
-  const image = document.createElementNS(svgNS, 'image');
-  image.setAttributeNS('http://www.w3.org/1999/xlink', 'href', entry.renderUrl);
-  image.setAttribute('href', entry.renderUrl);
-  image.setAttribute('x', '0');
-  image.setAttribute('y', '0');
-  image.setAttribute('width', '100');
-  image.setAttribute('height', '150');
-  image.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  svg.appendChild(image);
-
-  const label = document.createElement('span');
-  label.className = 'dressing-room-cape-name';
-  label.textContent = entry.username;
-
-  card.appendChild(svg);
-  card.appendChild(label);
-  grid.appendChild(card);
 }
 
 async function populateDressingRoomCapes() {
   const grid = document.getElementById('dressing-room-capes-grid');
   if (!grid) return;
+
+  // Same reasoning as populateDressingRoomSkins: without this, switching
+  // from the Skins tab to Capes tab left every skin card's WebGL context
+  // alive underneath while a full new set of cape contexts spun up on top
+  // of them — effectively doubling the live GL context count for as long
+  // as the wardrobe stayed open. Tear down whatever the previous tab had
+  // before building this one.
+  cleanupDressingRoomCards();
+  setupDressingRoomObserver();
   grid.innerHTML = '';
 
   const accounts = await api.getAccounts().catch(() => []);
@@ -2321,52 +2615,231 @@ async function populateDressingRoomCapes() {
 
   if (isOffline) {
     const note = document.createElement('div');
-    note.className = 'skin-control-label';
-    note.style.gridColumn = '1 / -1';
-    note.textContent = 'Sign in with a Microsoft account to see owned capes here.';
+    note.className = 'dressing-room-empty-center';
+    note.innerHTML = `
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:10px; opacity:0.6;"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+      <span>Sign in with a Microsoft account to view and equip your official Mojang capes.</span>
+    `;
     grid.appendChild(note);
     return;
   }
 
-  const capeUrl = `https://crafatar.com/capes/${active.mc_uuid}`;
-  const hasCape = await new Promise((resolve) => {
-    const probe = new Image();
-    probe.onload = () => resolve(true);
-    probe.onerror = () => resolve(false);
-    probe.src = capeUrl;
+  // Centered Loading State
+  const loading = document.createElement('div');
+  loading.className = 'dressing-room-empty-center';
+  loading.innerHTML = `
+    <span class="msa-device-spinner" style="width:28px; height:28px; border-radius:50%; border:3px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite; margin-bottom:12px;"></span>
+    <span>Fetching official Mojang capes…</span>
+  `;
+  grid.appendChild(loading);
+
+  let capes = [];
+  try {
+    capes = await api.getAccountCapes(active.id);
+  } catch (err) {
+    console.warn('Failed to fetch capes from Mojang:', err);
+    grid.innerHTML = '';
+    const errNotice = document.createElement('div');
+    errNotice.className = 'dressing-room-empty-center';
+    errNotice.innerHTML = `
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--danger, #ef4444)" stroke-width="1.5" style="margin-bottom:10px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span>Could not load capes from Mojang: ${escapeHtml(String(err))}</span>
+    `;
+    grid.appendChild(errNotice);
+    return;
+  }
+
+  grid.innerHTML = '';
+
+  const activeCape = (capes || []).find(c => c.state === 'ACTIVE');
+
+  // 1. "None / Unequip" Card
+  const noneCard = document.createElement('div');
+  noneCard.className = 'dressing-room-skin-card';
+  if (!activeCape) {
+    noneCard.classList.add('equipped');
+  }
+
+  const noneBadge = document.createElement('span');
+  noneBadge.className = 'dressing-room-card-badge';
+  noneBadge.textContent = 'EQUIPPED';
+  noneCard.appendChild(noneBadge);
+
+  const noneCanvasWrap = document.createElement('div');
+  noneCanvasWrap.className = 'dressing-room-card-canvas-wrap';
+  noneCanvasWrap.style.display = 'flex';
+  noneCanvasWrap.style.flexDirection = 'column';
+  noneCanvasWrap.style.alignItems = 'center';
+  noneCanvasWrap.style.justifyContent = 'center';
+  noneCanvasWrap.style.color = 'var(--text-muted)';
+  noneCanvasWrap.innerHTML = `
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.6;"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
+    <span style="font-size:11px; margin-top:8px; opacity:0.8;">No Cape</span>
+  `;
+  noneCard.appendChild(noneCanvasWrap);
+
+  const noneLabel = document.createElement('span');
+  noneLabel.className = 'dressing-room-skin-name';
+  noneLabel.textContent = 'None (Unequip)';
+  noneCard.appendChild(noneLabel);
+
+  noneCard.addEventListener('click', async () => {
+    if (noneCard.classList.contains('equipped')) return;
+
+    setDressingRoomBusy(true, 'Removing cape on Mojang servers…');
+    try {
+      await api.equipMojangCape(null, active.id);
+      showToast('Cape unequipped on Mojang servers!', 'success');
+    } catch (err) {
+      console.warn('Failed to unequip cape:', err);
+      showToast(`Failed to unequip cape on Mojang: ${err}`, 'error');
+      setDressingRoomBusy(false);
+      return; // Do NOT update equipped UI if rejected by server
+    }
+    setDressingRoomBusy(false);
+
+    grid.querySelectorAll('.dressing-room-skin-card').forEach(c => c.classList.remove('equipped'));
+    noneCard.classList.add('equipped');
+
+    // Force clear cape on 3D player standee
+    if (skinMiniPreviewInstance) {
+      skinMiniPreviewInstance.loadCape(null).catch(() => {});
+      if (skinMiniPreviewInstance.playerObject) {
+        if (skinMiniPreviewInstance.playerObject.cape) skinMiniPreviewInstance.playerObject.cape.visible = false;
+        if (skinMiniPreviewInstance.playerObject.elytra) skinMiniPreviewInstance.playerObject.elytra.visible = false;
+      }
+    }
   });
 
-  if (!hasCape) {
-    const note = document.createElement('div');
-    note.className = 'skin-control-label';
-    note.style.gridColumn = '1 / -1';
-    note.textContent = 'No cape equipped on this account.';
-    grid.appendChild(note);
+  grid.appendChild(noneCard);
+
+  // 2. Render each owned cape
+  if (!capes || capes.length === 0) {
     return;
   }
 
-  const card = document.createElement('button');
-  card.type = 'button';
-  card.className = 'dressing-room-cape-card equipped';
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('viewBox', '0 0 64 64');
-  svg.setAttribute('class', 'dressing-room-cape-svg');
-  const image = document.createElementNS(svgNS, 'image');
-  image.setAttributeNS('http://www.w3.org/1999/xlink', 'href', capeUrl);
-  image.setAttribute('href', capeUrl);
-  image.setAttribute('x', '0');
-  image.setAttribute('y', '0');
-  image.setAttribute('width', '64');
-  image.setAttribute('height', '64');
-  image.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  svg.appendChild(image);
-  const label = document.createElement('span');
-  label.className = 'dressing-room-cape-name';
-  label.textContent = 'Current Cape';
-  card.appendChild(svg);
-  card.appendChild(label);
-  grid.appendChild(card);
+  for (const cape of capes) {
+    const card = document.createElement('div');
+    card.className = 'dressing-room-skin-card';
+    card.dataset.capeId = cape.id;
+
+    const isEquipped = cape.state === 'ACTIVE';
+    if (isEquipped) {
+      card.classList.add('equipped');
+    }
+
+    // Equipped badge
+    const badge = document.createElement('span');
+    badge.className = 'dressing-room-card-badge';
+    badge.textContent = 'EQUIPPED';
+    card.appendChild(badge);
+
+    // Cape preview container
+    const canvasWrap = document.createElement('div');
+    canvasWrap.className = 'dressing-room-card-canvas-wrap';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'dressing-room-card-canvas';
+    canvasWrap.appendChild(canvas);
+    card.appendChild(canvasWrap);
+
+    // Cape label
+    const nameLabel = document.createElement('span');
+    nameLabel.className = 'dressing-room-skin-name';
+    nameLabel.textContent = cape.alias || 'Minecraft Cape';
+    nameLabel.title = cape.alias || 'Minecraft Cape';
+    card.appendChild(nameLabel);
+
+    // Click handler -> Equip Cape on Mojang servers (only updates after server confirms)
+    card.addEventListener('click', async () => {
+      if (card.classList.contains('equipped')) return;
+
+      setDressingRoomBusy(true, `Equipping "${cape.alias || 'Cape'}" on Mojang servers…`);
+      try {
+        await api.equipMojangCape(cape.id, active.id);
+        showToast(`Equipped "${cape.alias || 'Cape'}" on Mojang servers!`, 'success');
+      } catch (err) {
+        console.warn('Failed to equip cape on Mojang:', err);
+        showToast(`Failed to equip cape on Mojang: ${err}`, 'error');
+        setDressingRoomBusy(false);
+        return; // Do NOT update equipped UI if rejected by server
+      }
+      setDressingRoomBusy(false);
+
+      grid.querySelectorAll('.dressing-room-skin-card').forEach(c => c.classList.remove('equipped'));
+      card.classList.add('equipped');
+
+      if (skinMiniPreviewInstance) {
+        skinMiniPreviewInstance.loadCape(cape.url).catch(() => {});
+        if (skinMiniPreviewInstance.playerObject) {
+          if (skinMiniPreviewInstance.playerObject.cape) skinMiniPreviewInstance.playerObject.cape.visible = true;
+        }
+      }
+    });
+
+    grid.appendChild(card);
+
+    // 3D cape viewer — now lazy via the shared IntersectionObserver instead
+    // of firing for every cape the instant the tab opens. This mirrors the
+    // skins tab fix: previously every cape card opened its own WebGL
+    // context immediately (and there wasn't even an observer wired up for
+    // this grid at all), so a wardrobe with many capes meant that many
+    // concurrent GL contexts — a major lag source on WebKitGTK.
+    const capeKey = `cape-${cape.id}`;
+    card.dataset.skinId = capeKey; // key the shared observer looks up by
+    let capeRender = null;
+    const initCapeRender = async () => {
+      if (capeRender) return;
+      try {
+        canvas.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
+        const anim = new IdleAnimation();
+        anim.speed = 0.8;
+        capeRender = new Render({
+          canvas: canvas,
+          width: 130,
+          height: 165,
+          fov: 42,
+          zoom: 0.88,
+          preserveDrawingBuffer: false,
+          enableControls: false,
+          enableRotation: false,
+          animation: anim,
+        });
+        lightenCardRenderer(capeRender);
+
+        // Rotate scene 180 degrees so the back/cape is fully displayed
+        if (capeRender.playerObject) {
+          capeRender.playerObject.rotation.y = Math.PI;
+        }
+
+        // Load skin and cape
+        const skinUrl = currentMiniPreviewSkinUrl || `https://mineskin.eu/skin/${encodeURIComponent(active.username)}`;
+        await capeRender.loadSkin(skinUrl, { model: 'auto-detect' }).catch(() => {});
+        await capeRender.loadCape(cape.url).catch(() => {});
+
+        const entry = dressingRoomCardRenders.get(capeKey);
+        if (entry) {
+          entry.render = capeRender;
+          if (!entry.isVisible) {
+            capeRender.renderPaused = true;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not initialize cape card 3D viewer:', err);
+      }
+    };
+
+    dressingRoomCardRenders.set(capeKey, {
+      render: null,
+      canvas,
+      card,
+      lazyInit: initCapeRender,
+      isVisible: true,
+    });
+
+    if (dressingRoomIntersectionObserver) {
+      dressingRoomIntersectionObserver.observe(card);
+    }
+  }
 }
 
 function initDressingRoomUI() {
@@ -2390,17 +2863,86 @@ function initDressingRoomUI() {
         overlay.querySelectorAll('.dressing-room-section').forEach(sec => {
           sec.classList.toggle('active', sec.dataset.dressingSection === target);
         });
+        if (target === 'capes') {
+          populateDressingRoomCapes();
+        }
       });
     });
   }
 
-  // "Add a Skin" card is a coming-soon placeholder for now.
-  document.getElementById('btn-dressing-add-skin')?.addEventListener('click', (e) => {
-    e.preventDefault();
-  });
+  // "Add a Skin" button
+  const addBtn = document.getElementById('btn-dressing-add-skin');
+  const fileInput = document.getElementById('dressing-skin-file-input');
 
-  // Capes note link — opens the official Minecraft skin/cape editor in
-  // the system browser, same convention used elsewhere in the app.
+  const handleImport = async (sourcePath) => {
+    if (!sourcePath) return;
+    try {
+      const imported = await api.importSkin(sourcePath);
+      showToast(`Added skin "${imported.name}"!`, 'success');
+
+      // Automatically equip the newly imported skin
+      const accounts = await api.getAccounts().catch(() => []);
+      const active = accounts.find(a => a.is_active);
+      if (active) {
+        currentSkinEquippedPath = imported.path;
+        currentSkinEquippedId = imported.id;
+        currentSkinEquippedName = imported.name;
+        currentSkinAnonSkin = false;
+        saveSkinSettingsForAccount(active, {
+          equippedSkinPath: imported.path,
+          equippedSkinId: imported.id,
+          equippedSkinName: imported.name,
+          anonSkin: false,
+        });
+        updateSkinMiniPreview();
+
+        // Debounced & serialized sync to Mojang servers if this is a Microsoft account
+        syncSkinToMojangDebounced(imported.path, imported.name, active);
+      }
+      await populateDressingRoomSkins();
+    } catch (err) {
+      showToast(`Failed to add skin: ${err}`, 'error');
+    }
+  };
+
+  if (addBtn && !addBtn.dataset.bound) {
+    addBtn.dataset.bound = '1';
+    addBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        let selected = null;
+        if (window.__TAURI__ && window.__TAURI__.dialog && window.__TAURI__.dialog.open) {
+          selected = await window.__TAURI__.dialog.open({
+            title: 'Select Minecraft Skin (.png)',
+            filters: [{ name: 'Minecraft Skin (*.png)', extensions: ['png'] }],
+            multiple: false,
+          });
+        }
+        if (selected) {
+          await handleImport(selected);
+        } else if (!window.__TAURI__ || !window.__TAURI__.dialog) {
+          fileInput?.click();
+        }
+      } catch (err) {
+        showToast(`Failed to open file dialog: ${err}`, 'error');
+      }
+    });
+  }
+
+  // Fallback file input change
+  if (fileInput && !fileInput.dataset.bound) {
+    fileInput.dataset.bound = '1';
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      if (file.path) {
+        await handleImport(file.path);
+      }
+      fileInput.value = '';
+    });
+  }
+
+  // Capes note link
   document.getElementById('dressing-room-editskin-link')?.addEventListener('click', async () => {
     const url = 'https://www.minecraft.net/en-us/msaprofile/mygames/editskin';
     if (window.__TAURI__ && window.__TAURI__.shell && window.__TAURI__.shell.open) {
@@ -2591,6 +3133,8 @@ async function initSkinMiniPreview() {
   const anim = createSkinAnimation(currentSkinAnimName);
   if (anim) anim.speed = currentSkinSpeed;
 
+  canvas.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
+
   skinMiniPreviewInstance = new Render({
     canvas: canvas,
     width: w,
@@ -2687,16 +3231,25 @@ async function updateSkinMiniPreview() {
 
     const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
 
-    // Skin choice now follows the Anonymous "Skin" setting for both
-    // offline and Microsoft accounts (offline just defaults to Unknown).
     const useUnknownSkin = Boolean(currentSkinAnonSkin);
     const useUnknownTag = Boolean(currentSkinAnonTag);
 
-    // Skin resolution: unknown -> placeholder skin, otherwise the
-    // account's real/offline-name-derived skin.
+    // Skin resolution:
+    // 1) If anonymous skin is on -> unknownSkin placeholder
+    // 2) If account has an equipped custom skin -> load local file via convertFileSrc
+    // 3) Else if Microsoft account -> mineskin.eu/skin/{username}
+    // 4) Fallback -> defaultOfflineSkin
     let skinUrl = unknownSkin;
-    if (!useUnknownSkin && active && active.username) {
-      skinUrl = `https://mineskin.eu/skin/${encodeURIComponent(active.username)}`;
+    if (!useUnknownSkin) {
+      if (currentSkinEquippedPath) {
+        skinUrl = window.__TAURI__.core.convertFileSrc(currentSkinEquippedPath);
+      } else if (active && active.username && !isOffline) {
+        skinUrl = `https://mineskin.eu/skin/${encodeURIComponent(active.username)}`;
+      } else if (active && active.username) {
+        skinUrl = `https://mineskin.eu/skin/${encodeURIComponent(active.username)}`;
+      } else {
+        skinUrl = defaultOfflineSkin;
+      }
     } else {
       skinUrl = unknownSkin;
     }
@@ -2734,10 +3287,9 @@ async function updateSkinMiniPreview() {
     currentMiniPreviewSkinUrl = skinUrl;
     try {
       await skinMiniPreviewInstance.loadSkin(skinUrl, { model: 'auto-detect' });
-      // Only record real, account-derived skins into the "used skins"
-      // history — not the Unknown/default placeholder art.
-      if (!useUnknownSkin && active && active.username) {
-        await recordUsedSkin(skinUrl, active.username);
+      // Auto cache account skin texture if remote
+      if (!useUnknownSkin && !currentSkinEquippedPath && active && active.username && !isOffline) {
+        api.cacheSkinTexture(active.username, `https://mineskin.eu/skin/${encodeURIComponent(active.username)}`).catch(() => {});
       }
     } catch (skinErr) {
       console.warn('Could not load skin, falling back to default:', skinErr);
@@ -2758,15 +3310,22 @@ async function updateSkinMiniPreview() {
     skinMiniPreviewInstance.animation = anim;
     skinMiniPreviewInstance.renderPaused = false;
 
-    // Load equipped cape onto mini preview. Offline accounts have no real
-    // Mojang cape to fetch, so previously this just force-cleared the
-    // cape no matter what — meaning Cape/Elytra selections silently did
-    // nothing for offline accounts. Now it shows a preset cape texture
-    // instead, so the choice is actually visible.
-    // Capes/elytra are intentionally disabled on the 3D player model
-    // preview for all account types — always keep it unequipped.
+    // Load equipped cape onto mini preview
     try {
-      await skinMiniPreviewInstance.loadCape(null);
+      if (!useUnknownSkin && !isOffline && active && active.mc_uuid) {
+        api.getAccountCapes(active.id).then(capes => {
+          const activeCape = (capes || []).find(c => c.state === 'ACTIVE');
+          if (activeCape && activeCape.url) {
+            skinMiniPreviewInstance.loadCape(activeCape.url).catch(() => {});
+          } else {
+            skinMiniPreviewInstance.loadCape(null).catch(() => {});
+          }
+        }).catch(() => {
+          skinMiniPreviewInstance.loadCape(null).catch(() => {});
+        });
+      } else {
+        await skinMiniPreviewInstance.loadCape(null);
+      }
     } catch (_) {}
 
     // Apply facing last, once skin/animation/cape are all settled, so
@@ -3228,7 +3787,7 @@ function initInstanceActions() {
         }
       }).catch(() => { });
 
-      const TIMEOUT_MS = 5000;
+      const TIMEOUT_MS = 20000;
       const timeoutPromise = new Promise((_, reject) => {
         const check = () => {
           setTimeout(() => {
@@ -3239,7 +3798,7 @@ function initInstanceActions() {
               return;
             }
             timedOut = true;
-            reject(new Error('Launch timed out after 5 seconds'));
+            reject(new Error('Launch timed out after 20 seconds'));
           }, TIMEOUT_MS);
         };
         check();
@@ -3249,8 +3808,8 @@ function initInstanceActions() {
       showToast('Game launched!', 'success');
     } catch (e) {
       if (timedOut) {
-        showToast('Launch timed out — the instance may be broken', 'error');
-        showCrashTroubleshootWindow(inst, 'Launch timed out after 5 seconds. This usually means the instance is broken or missing files.');
+        showToast('Launch timed out — the instance may be slow to start or broken', 'error');
+        showCrashTroubleshootWindow(inst, 'Launch timed out after 20 seconds. This usually means the instance is broken or missing files.');
       } else {
         showToast('Launch failed: ' + e, 'error');
         showCrashTroubleshootWindow(inst, e);
@@ -5076,6 +5635,9 @@ const presetsState = {
   loaded: false,
   presets: [],
   syncedInstanceId: undefined,
+  syncTotal: 0,
+  syncDone: 0,
+  syncing: false,
 };
 
 let presetsInstanceSelectWired = false;
@@ -5093,6 +5655,84 @@ function initPresetsTabIfNeeded() {
     // time the presets grid was originally built.
     if (sel) sel.addEventListener('change', () => renderPresets());
   }
+
+  // Wire progress-bar events once
+  if (!presetsState.listening) {
+    presetsState.listening = true;
+
+    // Sync started: show banner in indeterminate mode until first preset arrives
+    api.onPresetSyncStart((event) => {
+      const total = event.payload?.total || 0;
+      presetsState.syncTotal = total;
+      presetsState.syncDone = 0;
+      presetsState.syncing = true;
+      const banner = document.getElementById('preset-sync-banner');
+      const bar = document.getElementById('preset-sync-bar');
+      const label = document.getElementById('preset-sync-label');
+      const countEl = document.getElementById('preset-sync-count');
+      if (!banner) return;
+      banner.classList.remove('hidden', 'is-done');
+      bar.classList.toggle('is-indeterminate', total === 0);
+      bar.style.width = '0%';
+      label.textContent = 'Syncing presets from GitHub…';
+      countEl.textContent = total > 0 ? `0 / ${total}` : '';
+    });
+
+    // One preset finished: advance bar
+    api.onPresetSynced(async (event) => {
+      const { done = 0, total = 0 } = event.payload || {};
+      presetsState.syncDone = done;
+      presetsState.syncTotal = total;
+      const bar = document.getElementById('preset-sync-bar');
+      const countEl = document.getElementById('preset-sync-count');
+      if (bar && total > 0) {
+        bar.classList.remove('is-indeterminate');
+        bar.style.width = `${Math.round((done / total) * 100)}%`;
+      }
+      if (countEl && total > 0) countEl.textContent = `${done} / ${total}`;
+
+      // Use getLocalPresets (NOT listPresets) — listPresets spawns a new background
+      // sync which would create an infinite event loop and hide new presets.
+      try {
+        const presets = await api.getLocalPresets();
+        presetsState.presets = presets || [];
+        const tab = document.getElementById('tab-presets');
+        if (tab && tab.classList.contains('active')) renderPresets();
+      } catch (_) {}
+    });
+
+    // All presets done: complete bar, do a final read of all local presets
+    // to catch any that were added, then fade the banner out.
+    api.onPresetSyncDone(async (event) => {
+      const { done = 0, total = 0 } = event.payload || {};
+      presetsState.syncing = false;
+      const banner = document.getElementById('preset-sync-banner');
+      const bar = document.getElementById('preset-sync-bar');
+      const label = document.getElementById('preset-sync-label');
+      const countEl = document.getElementById('preset-sync-count');
+      if (bar && total > 0) {
+        bar.classList.remove('is-indeterminate');
+        bar.style.width = '100%';
+      }
+      if (label) label.textContent = 'Presets up to date!';
+      if (countEl && total > 0) countEl.textContent = `${done} / ${total}`;
+
+      // Final authoritative read — picks up every preset now on disk,
+      // including newly added ones that only appeared during this sync.
+      try {
+        const presets = await api.getLocalPresets();
+        presetsState.presets = presets || [];
+        const tab = document.getElementById('tab-presets');
+        if (tab && tab.classList.contains('active')) renderPresets();
+      } catch (_) {}
+
+      // Fade banner out after a short delay
+      setTimeout(() => {
+        if (banner) banner.classList.add('is-done');
+      }, 1400);
+    });
+  }
+
   if (!presetsState.loaded) {
     presetsState.loaded = true;
     loadPresets();
@@ -5102,6 +5742,27 @@ function initPresetsTabIfNeeded() {
     // only runs for the active tab; see `syncInstanceSelectionAcrossTabs`)
     // — this catches re-entering the tab after switching elsewhere.
     renderPresets();
+  }
+
+  // Every time the Presets window/tab is opened: show whatever is on disk
+  // instantly (above), then silently diff against GitHub in the background
+  // and pull down anything missing. onPresetSynced/onPresetSyncDone above
+  // merge new presets into presetsState + re-render as they land, so this
+  // is fire-and-forget — no loading blocker, no need to wait on it here.
+  triggerBackgroundPresetSync();
+}
+
+// Kicks off a GitHub preset sync in the background, guarded so we never
+// have two overlapping syncs running (e.g. rapidly switching tabs).
+async function triggerBackgroundPresetSync() {
+  if (presetsState.syncing) return;
+  presetsState.syncing = true;
+  try {
+    await api.syncPresets();
+  } catch (_) {
+    // Offline / GitHub unreachable — silently keep whatever is local.
+  } finally {
+    presetsState.syncing = false;
   }
 }
 
@@ -5125,7 +5786,6 @@ function populatePresetsInstanceSelect() {
 async function loadPresets() {
   const grid = document.getElementById('presets-grid');
   if (!grid) return;
-  grid.innerHTML = '<div class="empty-state"><span>Loading presets…</span></div>';
   try {
     const presets = await api.listPresets();
     presetsState.presets = presets || [];
@@ -5155,7 +5815,7 @@ function renderPresets() {
   if (!grid) return;
   const presets = presetsState.presets;
   if (!presets.length) {
-    grid.innerHTML = '<div class="empty-state"><span>No bundled presets found</span></div>';
+    grid.innerHTML = '<div class="empty-state"><span>No presets found in Zero Launcher/presets</span></div>';
     return;
   }
   grid.innerHTML = '';
@@ -6816,6 +7476,18 @@ function currentAccentColor() {
   return settings.accent_color || ACCENT_DEFAULT;
 }
 
+function applyAccentColorLive(hex) {
+  if (!hex) return;
+  if (settings) settings.accent_color = hex;
+  const root = document.documentElement;
+  root.style.setProperty('--accent', hex);
+  root.style.setProperty('--accent-dim', hexToRgba(hex, 0.15));
+  root.style.setProperty('--accent-glow', hexToRgba(hex, 0.35));
+  if (typeof BG !== 'undefined' && BG._staticKey) {
+    BG._staticKey = '';
+  }
+}
+
 async function loadSettings() {
   try {
     // Only fetch from backend if we haven't loaded yet
@@ -7400,9 +8072,8 @@ function initSettings() {
     });
   }
 
-  // Text, number, color, and range inputs use debounced save
+  // Text, number, and range inputs use debounced save
   const debouncedIds = [
-    'setting-accent-color',
     'setting-bg-anim-speed', 'setting-bg-anim-fps',
     'setting-bg-image-path',
     'setting-game-dir', 'setting-min-ram', 'setting-max-ram',
@@ -7586,12 +8257,16 @@ function initSettings() {
     }
   });
 
-  // Live-preview accent color as you drag the picker
+  // Live-preview accent color as you drag the picker (zero lag, instant CSS update)
   const accentEl = document.getElementById('setting-accent-color');
   if (accentEl) {
     accentEl.addEventListener('input', () => {
+      applyAccentColorLive(accentEl.value);
+      saveSettingsDebounced();
+    });
+    accentEl.addEventListener('change', () => {
       collectSettingsFromUI();
-      applyThemeFromSettings();
+      saveSettingsNow();
     });
   }
 
@@ -7661,7 +8336,7 @@ function initSettings() {
           background_image_tint: false,
           background_image_vignette: true,
           notification_style: 'Minimal Outline',
-          close_after_launch: false,
+          close_after_launch: true,
           minimize_on_launch: false,
           on_game_close: 'show',
           enable_system_tray: true,
@@ -8011,7 +8686,7 @@ const BG = {
   init() {
     this.canvas = document.getElementById('bg-canvas');
     if (!this.canvas) return;
-    this.ctx = this.canvas.getContext('2d', { alpha: true, desynchronized: true });
+    this.ctx = this.canvas.getContext('2d', { alpha: true });
     this.resize();
     window.addEventListener('resize', () => { this.resize(); this.requestRedraw(); });
     // Pause entirely while the window is minimized/hidden/unfocused instead
@@ -9055,9 +9730,21 @@ function initSetupWizard() {
   }
 
   // Live listeners for Step 1 fields
+  const setupAccentEl = document.getElementById('setup-accent');
+  if (setupAccentEl) {
+    setupAccentEl.addEventListener('input', () => {
+      applyAccentColorLive(setupAccentEl.value);
+      saveSettingsDebounced();
+    });
+    setupAccentEl.addEventListener('change', () => {
+      if (!settings) settings = {};
+      settings.accent_color = setupAccentEl.value;
+      saveSettingsNow();
+    });
+  }
+
   const liveThemeInputs = [
     'setup-notif-style',
-    'setup-accent',
     'setup-bg-style',
     'setup-bg-anim-style'
   ];
@@ -9070,12 +9757,10 @@ function initSetupWizard() {
         const newNotif = document.getElementById('setup-notif-style').value;
         const notifChanged = settings.notification_style !== newNotif;
         settings.notification_style = newNotif;
-        settings.accent_color = document.getElementById('setup-accent').value;
         settings.background_style = document.getElementById('setup-bg-style').value;
         settings.background_animation_style = document.getElementById('setup-bg-anim-style').value;
 
         applyThemeFromSettings();
-        populateSettingsUI();
         saveSettingsDebounced();
 
         if (notifChanged && id === 'setup-notif-style') {

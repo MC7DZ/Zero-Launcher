@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
@@ -68,14 +68,14 @@ pub struct MinecraftAuthenticateResponse {
     pub expires_in: i32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MinecraftProfileInfo {
     pub id: String,
     pub state: String,
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MinecraftProfileSkin {
     pub id: String,
     pub state: String,
@@ -83,7 +83,7 @@ pub struct MinecraftProfileSkin {
     pub variant: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MinecraftProfileCape {
     pub id: String,
     pub state: String,
@@ -91,7 +91,7 @@ pub struct MinecraftProfileCape {
     pub alias: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MinecraftProfileResponse {
     pub id: String,
     pub name: String,
@@ -101,7 +101,7 @@ pub struct MinecraftProfileResponse {
     pub error_message: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompleteLoginResponse {
     pub id: String,
     pub name: String,

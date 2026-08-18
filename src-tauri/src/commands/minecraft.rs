@@ -1567,8 +1567,8 @@ fn apply_on_game_close_action(app: &tauri::AppHandle) {
         "show" => {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
-                let _ = window.set_focus();
                 let _ = window.unminimize();
+                let _ = window.set_focus();
             }
         }
         "quit" => {
