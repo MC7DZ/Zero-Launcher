@@ -16,6 +16,18 @@ use std::{
 use sysinfo::System;
 #[cfg(windows)]
 use winver::WindowsVersion;
+
+/// Same IPv4-first fix used throughout this crate (see
+/// `auth::microsoft_account::http_client`): binds to an IPv4-only local
+/// address so a broken/absent IPv6 route can't stall this one-off request
+/// waiting on a dead address before falling back. Falls back to a plain
+/// default client if building the IPv4-bound one somehow fails.
+fn ipv4_client() -> Client {
+    Client::builder()
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        .build()
+        .unwrap_or_else(|_| Client::new())
+}
 use xz2::read::XzDecoder;
 use zip::ZipArchive;
 
@@ -337,7 +349,7 @@ pub fn get_requests_response_cache(url: &str) -> Result<String, reqwest::Error> 
     if let Some(cache_entry) = cache.get(url) {
         let elapsed = Utc::now().signed_duration_since(cache_entry.datetime);
         if elapsed.num_seconds() > 3600 {
-            let response = reqwest::blocking::get(url)?.text()?;
+            let response = ipv4_client().get(url).send()?.text()?;
             let res = response.clone();
             let cache_entry = RequestsResponseCache {
                 response,
@@ -349,7 +361,7 @@ pub fn get_requests_response_cache(url: &str) -> Result<String, reqwest::Error> 
         return Ok(cache_entry.response.clone());
     }
 
-    let response = reqwest::blocking::get(url)?.text()?;
+    let response = ipv4_client().get(url).send()?.text()?;
     let res = response.clone();
     let cache_entry = RequestsResponseCache {
         response,

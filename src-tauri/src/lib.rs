@@ -249,6 +249,9 @@ pub fn run() {
             commands::minecraft::get_running_instances,
             commands::minecraft::get_instance_console_logs,
             commands::minecraft::kill_instance,
+            // Modpack import (.mrpack / CurseForge zip drag-and-drop)
+            commands::modpack::preview_modpack,
+            commands::modpack::import_modpack,
             // Java
             commands::java::list_java_installations,
             // Accounts

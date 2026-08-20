@@ -131,7 +131,16 @@ fn current_os_key() -> &'static str {
 /// can choose to ignore them quietly on a background startup check.
 #[tauri::command]
 pub async fn check_for_update() -> Result<Option<UpdateAvailable>, String> {
-    let resp = reqwest::Client::new()
+    let client = reqwest::Client::builder()
+        // Same IPv4-first fix as the other clients: without this, a
+        // broken/absent IPv6 route can stall this call — which runs
+        // automatically at launcher startup — for a long time before
+        // falling back, instead of failing over instantly.
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let resp = client
         .get(MANIFEST_URL)
         .header("User-Agent", "ZeroLauncher-Updater")
         .send()
@@ -188,7 +197,12 @@ pub async fn download_update(
         });
     let dest_path = updates_dir.join(file_name);
 
-    let response = reqwest::Client::new()
+    let client = reqwest::Client::builder()
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let response = client
         .get(&url)
         .header("User-Agent", "ZeroLauncher-Updater")
         .send()

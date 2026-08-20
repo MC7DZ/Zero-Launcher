@@ -172,6 +172,9 @@ pub async fn sync_presets_from_github_internal(data_dir: PathBuf, app: Option<Ap
     std::fs::create_dir_all(&presets_dir).map_err(|e| format!("Failed to create presets dir: {e}"))?;
 
     let client = reqwest::Client::builder()
+        // See vendor/mc-launcher-core's http.rs client() for why: forces
+        // IPv4 so a broken/non-routable IPv6 setup can't stall requests.
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .map_err(|e| e.to_string())?;
 

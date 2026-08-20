@@ -119,6 +119,35 @@ pub fn analyze(
         });
     }
 
+    // 3b. Missing `xrandr` binary — LWJGL2 (used by every pre-1.13
+    //    version, e.g. 1.8.9/1.12.2 Forge) shells out to the `xrandr`
+    //    command to enumerate display modes on Linux, even under Wayland
+    //    (via XWayland). When it's not installed, that call returns
+    //    nothing and LWJGL2 throws exactly this signature. Most Wayland
+    //    desktops don't ship `xrandr` by default, so this is by far the
+    //    most common reason an old instance won't launch there. This is
+    //    normally caught before launch even starts (see `launch_minecraft`),
+    //    but stays here too as a fallback for anything that reaches the
+    //    game process anyway.
+    if text.contains("LinuxDisplay.getAvailableDisplayModes") && text_lower.contains("arrayindexoutofboundsexception") {
+        return Some(CrashReport {
+            version_id: version_id.to_string(),
+            instance_name: instance_name.to_string(),
+            title: "Missing `xrandr` — required by this Minecraft version".to_string(),
+            category: "missing_xrandr".to_string(),
+            signature: extract_signature(&text, 6),
+            fixes: vec![CrashFix {
+                kind: "info".to_string(),
+                label: "Install the `xrandr` package".to_string(),
+                detail: "This version uses LWJGL2, which calls the `xrandr` command-line tool to list display modes — even under Wayland, via XWayland. If `xrandr` isn't installed, it crashes immediately with this error.\n\nInstall it and relaunch:\n\u{2022} Arch/CachyOS: sudo pacman -S xorg-xrandr\n\u{2022} Debian/Ubuntu: sudo apt install x11-xserver-utils\n\u{2022} Fedora: sudo dnf install xrandr\n\nThis isn't a launcher or install problem — no reinstall needed.".to_string(),
+                mod_path: None,
+                mod_name: None,
+                folder: None,
+                url: None,
+            }],
+        });
+    }
+
     // 4a. Mixin/class-loading failures where the log itself names the mod
     //     responsible (Fabric prints "... from mod <id>" on mixin-target
     //     lines). This looks superficially like the generic "stale cache"

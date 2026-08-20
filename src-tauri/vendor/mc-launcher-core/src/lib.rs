@@ -36,6 +36,7 @@
 //!             version: LoaderVersion::LatestStable,
 //!         }),
 //!         java: JavaInstallPolicy::Auto,
+//!         java_executable: None,
 //!     })?;
 //!     let version = launcher.load_version(&install.version_id)?;
 //!

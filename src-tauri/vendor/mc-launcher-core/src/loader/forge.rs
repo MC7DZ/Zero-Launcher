@@ -102,8 +102,36 @@ pub fn forge_installed_version_id(forge_version: &str) -> Result<String> {
 
 /// Returns the Forge installer jar URL for a Forge version.
 pub fn installer_url(forge_version: &str) -> String {
-    format!(
-        "https://maven.minecraftforge.net/net/minecraftforge/forge/{0}/forge-{0}-installer.jar",
-        forge_version
-    )
+    installer_urls(forge_version)
+        .into_iter()
+        .next()
+        .expect("installer_urls always returns at least one URL")
+}
+
+/// Returns the Forge installer jar URL for a Forge version, followed by a
+/// handful of known-good mirrors of the same file.
+///
+/// `maven.minecraftforge.net` alone is a single point of failure — it 404s
+/// or times out occasionally even for perfectly valid, still-published
+/// builds (rate limiting, CDN hiccups, brief propagation gaps after a new
+/// build lands). Other launchers such as PrismLauncher handle this by
+/// resolving installers through a maintained metadata index with several
+/// mirrors behind it rather than hard-coding the single official URL; this
+/// launcher doesn't run that infrastructure, but gets the same practical
+/// resilience by trying a short list of mirrors that carry the same Forge
+/// maven layout, each within the retry-per-URL budget in
+/// [`crate::net::download`].
+pub fn installer_urls(forge_version: &str) -> Vec<String> {
+    let coordinate = format!("net/minecraftforge/forge/{forge_version}/forge-{forge_version}-installer.jar");
+    vec![
+        format!("https://maven.minecraftforge.net/{coordinate}"),
+        // BMCLAPI — a long-running community mirror of the Forge (and
+        // Mojang/Fabric/etc.) maven trees, used as a fallback by several
+        // other launchers for exactly this kind of flakiness.
+        format!("https://bmclapi2.bangbang93.com/maven/{coordinate}"),
+        // CreeperHost mirrors the Forge maven tree for modpack platforms
+        // (e.g. FTB/CurseForge) that depend on Forge installers staying
+        // reachable at scale.
+        format!("https://maven.creeperhost.net/{coordinate}"),
+    ]
 }

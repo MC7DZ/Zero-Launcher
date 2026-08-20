@@ -129,7 +129,7 @@ fn fetch_task(client: &reqwest::blocking::Client, url: &str, task: &DownloadTask
 /// Retries a single file this many times on transient network errors before
 /// giving up on it. Keeps one flaky connection from failing an otherwise
 /// healthy install.
-const MAX_TASK_ATTEMPTS: u32 = 3;
+const MAX_TASK_ATTEMPTS: u32 = 5;
 
 fn looks_transient(err: &LauncherError) -> bool {
     let msg = err.to_string();
@@ -147,6 +147,15 @@ fn looks_not_found(err: &LauncherError) -> bool {
     err.to_string().contains("404")
 }
 
+/// Returns whether an error is a checksum mismatch — almost always a
+/// corrupted/truncated transfer (a flaky mirror, a proxy that mangled the
+/// response, a connection that dropped mid-write) rather than a permanent
+/// problem with the file itself. Worth a clean re-download on the same URL
+/// before giving up on it.
+fn looks_checksum_mismatch(err: &LauncherError) -> bool {
+    matches!(err, LauncherError::ChecksumMismatch { .. })
+}
+
 fn fetch_task_with_retry(client: &reqwest::blocking::Client, task: &DownloadTask, tx: &Sender<Msg>) -> Result<()> {
     // Try the primary URL, then each configured mirror in turn — a mirror
     // is only worth trying on a 404 (wrong repo for this coordinate), not
@@ -159,7 +168,37 @@ fn fetch_task_with_retry(client: &reqwest::blocking::Client, task: &DownloadTask
             attempt += 1;
             match fetch_task(client, url, task, tx) {
                 Ok(()) => return Ok(()),
+                // Transient errors (timeouts, dropped connections, DNS blips)
+                // get the full retry budget on this same URL.
                 Err(e) if attempt < MAX_TASK_ATTEMPTS && looks_transient(&e) => {
+                    std::thread::sleep(std::time::Duration::from_millis(300 * attempt as u64));
+                    continue;
+                }
+                // A checksum mismatch means the bytes we got don't match
+                // what the file is supposed to be. The bad copy is already
+                // on disk at this point (fetch_task wrote it before
+                // hashing) — remove it so a stale corrupt file never lingers
+                // if every retry below also happens to fail, then try a
+                // fresh download on the same URL. Most mismatches are a one-
+                // off transfer glitch and succeed on the very next attempt.
+                // (`last_err` isn't set on this retrying branch — it gets
+                // overwritten by the next attempt's outcome either way, and
+                // only the final exhausted-retries branch below needs it.)
+                Err(e) if attempt < MAX_TASK_ATTEMPTS && looks_checksum_mismatch(&e) => {
+                    let _ = fs::remove_file(&task.destination);
+                    std::thread::sleep(std::time::Duration::from_millis(300 * attempt as u64));
+                    continue;
+                }
+                Err(e) if looks_checksum_mismatch(&e) => {
+                    let _ = fs::remove_file(&task.destination);
+                    last_err = Some(e);
+                    break;
+                }
+                // 404s are usually permanent (wrong coordinate/version), but
+                // some hosts (e.g. Maven mirrors) briefly 404 while an
+                // upload propagates, so give this URL a few tries too
+                // before moving on to the next mirror.
+                Err(e) if attempt < MAX_TASK_ATTEMPTS && looks_not_found(&e) => {
                     std::thread::sleep(std::time::Duration::from_millis(300 * attempt as u64));
                     continue;
                 }

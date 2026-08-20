@@ -70,6 +70,15 @@ pub enum ProgressEvent {
         /// Total byte count when the server reported it.
         total: Option<u64>,
     },
+    /// One line of live output from an external installer process (e.g.
+    /// the Forge/NeoForge installer jar), forwarded as it's written
+    /// instead of only being available after the process exits. Purely
+    /// informational — callers that don't care about it can ignore it.
+    InstallerOutputLine {
+        /// The line of text the installer process wrote (stdout or
+        /// stderr, merged in the order it was received).
+        line: String,
+    },
 }
 
 /// Receives installation progress events.

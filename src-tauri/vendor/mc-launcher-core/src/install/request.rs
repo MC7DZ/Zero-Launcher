@@ -1,5 +1,7 @@
 //! Install request and result types used by [`crate::launcher::Launcher`].
 
+use std::path::PathBuf;
+
 use crate::loader::common::LoaderSpec;
 
 /// Describes the profile that should be installed.
@@ -17,6 +19,14 @@ pub struct InstallRequest {
     pub loader: Option<LoaderSpec>,
     /// Java runtime policy for installers that need to execute Java.
     pub java: JavaInstallPolicy,
+    /// Explicit path to a `java`/`java.exe` executable to run loader
+    /// installers (Forge/NeoForge) with. When `None`, install code falls
+    /// back to best-effort detection (`JAVA_HOME`, `/etc/alternatives/java`,
+    /// then `PATH`) which may not find a runtime this launcher itself
+    /// downloaded into its own managed folder. Callers that already know
+    /// about a managed/bundled JRE should set this so the installer doesn't
+    /// have to guess.
+    pub java_executable: Option<PathBuf>,
 }
 
 impl InstallRequest {
@@ -26,6 +36,7 @@ impl InstallRequest {
             minecraft_version: version.into(),
             loader: None,
             java: JavaInstallPolicy::Auto,
+            java_executable: None,
         }
     }
 }

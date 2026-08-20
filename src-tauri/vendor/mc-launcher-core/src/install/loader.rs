@@ -2,8 +2,11 @@
 
 use std::{
     fs,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
+    sync::mpsc,
+    thread,
 };
 
 use serde_json::Value;
@@ -93,21 +96,40 @@ fn ensure_launcher_profiles_json(minecraft_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Runs a Java-based loader installer.
-///
-/// Captures the installer's stdout and stderr (merged, in the order the
-/// process wrote them) instead of letting them go to the launcher's own
-/// inherited streams, so a failure comes back with the installer's actual
-/// diagnostic output attached — that's almost always what actually
-/// explains a Forge/NeoForge install failure (missing/incompatible Java,
-/// a corrupted download, a profile it doesn't like, etc.), not just the
-/// bare exit code.
+/// Runs a Java-based loader installer, ignoring its output as it streams
+/// (still captured for the error message on failure — see
+/// [`run_loader_installer_with_output`]).
 ///
 /// # Errors
 ///
 /// Returns [`crate::LauncherError`] if the installer process cannot be
 /// started or exits with a non-zero status.
 pub fn run_loader_installer(invocation: &InstallerInvocation) -> Result<()> {
+    run_loader_installer_with_output(invocation, &mut |_line: String| {})
+}
+
+/// Runs a Java-based loader installer, invoking `on_line` with each line of
+/// its output (stdout and stderr, merged in the order they arrive) as soon
+/// as it's written, instead of only becoming available once the process
+/// exits. Forge/NeoForge installers can legitimately run for a couple of
+/// minutes (they download and patch their own libraries independently of
+/// this launcher's own downloader) with no other feedback otherwise — the
+/// install isn't actually hung, but nothing said so.
+///
+/// The full output is still buffered internally regardless of `on_line`, so
+/// a failure comes back with the installer's actual diagnostic output
+/// attached — that's almost always what actually explains a Forge/NeoForge
+/// install failure (missing/incompatible Java, a corrupted download, a
+/// profile it doesn't like, etc.), not just the bare exit code.
+///
+/// # Errors
+///
+/// Returns [`crate::LauncherError`] if the installer process cannot be
+/// started or exits with a non-zero status.
+pub fn run_loader_installer_with_output(
+    invocation: &InstallerInvocation,
+    on_line: &mut dyn FnMut(String),
+) -> Result<()> {
     // The official Forge/NeoForge installer refuses to run at all if it
     // doesn't find a `launcher_profiles.json` in the target directory —
     // it treats that file's presence as proof "you've run the [Mojang]
@@ -144,14 +166,51 @@ pub fn run_loader_installer(invocation: &InstallerInvocation) -> Result<()> {
         cmd.current_dir(dir);
     }
 
-    let output = cmd.args(installer_command_args(invocation)).output()?;
+    cmd.args(installer_command_args(invocation));
+    cmd.stdin(Stdio::null());
+    let mut child = cmd.spawn()?;
 
-    if output.status.success() {
+    // Merge stdout and stderr into one ordered stream of lines via a
+    // channel fed by two reader threads, so `on_line` sees output as the
+    // process actually produces it rather than only after it exits. Also
+    // accumulate everything for the error message below, same as before.
+    let (tx, rx) = mpsc::channel::<String>();
+    let mut readers = Vec::new();
+    if let Some(stdout) = child.stdout.take() {
+        let tx = tx.clone();
+        readers.push(thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(|l| l.ok()) {
+                let _ = tx.send(line);
+            }
+        }));
+    }
+    if let Some(stderr) = child.stderr.take() {
+        let tx = tx.clone();
+        readers.push(thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(|l| l.ok()) {
+                let _ = tx.send(line);
+            }
+        }));
+    }
+    // Drop our own sender so `rx` iteration ends once both reader threads
+    // finish (each holds its own clone, dropped when its thread returns).
+    drop(tx);
+
+    let mut combined = String::new();
+    for line in rx {
+        combined.push_str(&line);
+        combined.push('\n');
+        on_line(line);
+    }
+    for reader in readers {
+        let _ = reader.join();
+    }
+
+    let status = child.wait()?;
+
+    if status.success() {
         Ok(())
     } else {
-        let mut combined = String::new();
-        combined.push_str(&String::from_utf8_lossy(&output.stdout));
-        combined.push_str(&String::from_utf8_lossy(&output.stderr));
         let trimmed = combined.trim();
 
         // Keep only the tail — installer logs can run long and the actual
@@ -187,7 +246,7 @@ pub fn run_loader_installer(invocation: &InstallerInvocation) -> Result<()> {
 
         Err(LauncherError::InstallerFailed {
             loader: invocation.loader,
-            status: output.status.code(),
+            status: status.code(),
             output: format!("{hint}{formatted_output}"),
         })
     }

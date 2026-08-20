@@ -168,6 +168,49 @@ pub fn debug(app: &tauri::AppHandle, state: &AppState, source: &str, msg: &str) 
     log(app, state, "DEBUG", source, msg);
 }
 
+/// Same as [`log`], but also pushes the entry into `version_id`'s own
+/// console history and fires `instance-log` for it — so a per-instance
+/// console window (or the running-instances panel opened right after
+/// pressing Play) sees this line immediately, instead of only picking up
+/// output from the point the game process itself is spawned onward.
+///
+/// Meant for the handful of launch-time messages (Java setup, file
+/// verification, xrandr checks, etc.) that happen before there's an
+/// actual game process to capture stdout/stderr from.
+pub fn log_for_instance(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    version_id: &str,
+    level: &str,
+    source: &str,
+    message: &str,
+) {
+    log(app, state, level, source, message);
+
+    let redacted = redact_paths(state, message);
+    let entry = crate::models::LogEntry::new(level, source, &redacted);
+    state.push_instance_log(version_id, entry.clone());
+    let _ = app.emit(
+        "instance-log",
+        &crate::models::InstanceLogEvent { version_id: version_id.to_string(), entry },
+    );
+}
+
+/// [`log_for_instance`] at INFO level.
+pub fn info_for_instance(app: &tauri::AppHandle, state: &AppState, version_id: &str, source: &str, msg: &str) {
+    log_for_instance(app, state, version_id, "INFO", source, msg);
+}
+
+/// [`log_for_instance`] at WARN level.
+pub fn warn_for_instance(app: &tauri::AppHandle, state: &AppState, version_id: &str, source: &str, msg: &str) {
+    log_for_instance(app, state, version_id, "WARN", source, msg);
+}
+
+/// [`log_for_instance`] at ERROR level.
+pub fn error_for_instance(app: &tauri::AppHandle, state: &AppState, version_id: &str, source: &str, msg: &str) {
+    log_for_instance(app, state, version_id, "ERROR", source, msg);
+}
+
 /// Redacts absolute filesystem paths (which usually embed the OS
 /// username, e.g. `C:\Users\Alice\...` or `/home/alice/...`) from a log
 /// line when "Redact Full File Paths in Logs" is enabled. Any occurrence

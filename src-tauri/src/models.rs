@@ -93,6 +93,23 @@ pub struct DownloadProgressInfo {
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LaunchVerifyStatus {
+    /// Which instance this status is for — the frontend only shows it
+    /// while that instance is the selected one.
+    pub version_id: String,
+    /// `true` while a pre-launch verify/repair pass is running; `false`
+    /// once it's finished (or was skipped for an offline launch), which is
+    /// also the frontend's signal to start its "did the launch hang?"
+    /// timeout — that timeout deliberately excludes however long this
+    /// pass took, since it can legitimately run for a while on a slow
+    /// connection when files need re-downloading.
+    pub active: bool,
+    /// Short status line shown next to the Play button, e.g. "Checking
+    /// libraries...", "Installing missing assets...".
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherSettings {
     pub game_directory: String,
     /// "Auto Check For Launcher Updates (Recommended)" - off by default.
@@ -119,6 +136,14 @@ pub struct LauncherSettings {
     ///   the `java`/`java.exe` executable itself.
     #[serde(default)]
     pub java_path: Option<String>,
+
+    /// "Always Launch Offline" — set from the gear menu next to Play.
+    /// When true, every launch skips the pre-launch libraries/assets
+    /// verification pass and starts the game immediately from whatever is
+    /// already on disk, the same as picking "Launch Offline" for that one
+    /// launch but without having to pick it every time.
+    #[serde(default)]
+    pub always_launch_offline: bool,
 
     // Appearance
     #[serde(default = "default_accent_color")]
@@ -363,6 +388,12 @@ pub struct LauncherSettings {
     /// default until it's more reliable; people can opt in from Settings.
     #[serde(default)]
     pub enable_crash_analysis: bool,
+    /// Automatically pop open the per-instance console window as soon as a
+    /// launch is kicked off, instead of waiting for the user to find it
+    /// under Running Instances. Handy for watching what a slow-starting
+    /// instance is doing instead of staring at "LAUNCHING…".
+    #[serde(default)]
+    pub auto_open_console_on_launch: bool,
 
     // 3D Skin Standee Settings
     #[serde(default = "default_skin_animation")]
@@ -475,6 +506,7 @@ impl Default for LauncherSettings {
             max_ram_mb: 4096,
             min_ram_mb: 512,
             java_path: None,
+            always_launch_offline: false,
 
             accent_color: default_accent_color(),
             bg_color: default_bg_color(),
@@ -571,6 +603,7 @@ impl Default for LauncherSettings {
             music_disabled_tracks: Vec::new(),
 
             enable_crash_analysis: false,
+            auto_open_console_on_launch: false,
 
             skin_animation: default_skin_animation(),
             skin_speed: default_skin_speed(),

@@ -165,7 +165,14 @@ pub async fn cache_skin_texture(
     let skins_dir = state.data_dir.join("skins");
     std::fs::create_dir_all(&skins_dir).map_err(|e| format!("Failed to create skins directory: {e}"))?;
 
-    let resp = reqwest::get(&texture_url)
+    let texture_client = reqwest::Client::builder()
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let resp = texture_client
+        .get(&texture_url)
+        .send()
         .await
         .map_err(|e| format!("Failed to download skin texture: {e}"))?;
     if !resp.status().is_success() {
@@ -269,6 +276,9 @@ pub async fn upload_skin_to_mojang(
 
     // 5. Send multipart/form-data request to Mojang API
     let client = reqwest::Client::builder()
+        // See vendor/mc-launcher-core's http.rs client() for why: forces
+        // IPv4 so a broken/non-routable IPv6 setup can't stall requests.
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
@@ -344,6 +354,9 @@ pub async fn reset_mojang_skin(
         .map_err(|e| format!("Authentication failed: {e}"))?;
 
     let client = reqwest::Client::builder()
+        // See vendor/mc-launcher-core's http.rs client() for why: forces
+        // IPv4 so a broken/non-routable IPv6 setup can't stall requests.
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
@@ -419,6 +432,9 @@ pub async fn get_account_capes(
         .map_err(|e| format!("Authentication failed: {e}"))?;
 
     let client = reqwest::Client::builder()
+        // See vendor/mc-launcher-core's http.rs client() for why: forces
+        // IPv4 so a broken/non-routable IPv6 setup can't stall requests.
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -490,6 +506,9 @@ pub async fn equip_mojang_cape(
         .map_err(|e| format!("Authentication failed: {e}"))?;
 
     let client = reqwest::Client::builder()
+        // See vendor/mc-launcher-core's http.rs client() for why: forces
+        // IPv4 so a broken/non-routable IPv6 setup can't stall requests.
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .map_err(|e| e.to_string())?;
 

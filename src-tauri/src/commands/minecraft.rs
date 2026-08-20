@@ -229,14 +229,19 @@ fn overall_percent(
 /// Fetch the Mojang version manifest.
 #[tauri::command]
 pub async fn get_available_versions() -> Result<Vec<VersionInfo>, String> {
-    let manifest: VersionManifest = reqwest::get(
-        "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
-    )
-    .await
-    .map_err(|e| format!("Failed to fetch versions: {e}"))?
-    .json()
-    .await
-    .map_err(|e| format!("Failed to parse versions: {e}"))?;
+    let client = reqwest::Client::builder()
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let manifest: VersionManifest = client
+        .get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch versions: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse versions: {e}"))?;
 
     Ok(manifest.versions)
 }
@@ -452,6 +457,53 @@ pub async fn install_minecraft(
     let mc_version = payload.minecraft_version.clone();
     let loader_type = payload.loader.clone();
     let loader_ver = payload.loader_version.clone();
+
+    // ── Ensure a known-good managed Java is ready *before* we run a
+    // Forge/NeoForge installer jar ────────────────────────────────────────
+    //
+    // Forge/NeoForge installers run their own "processor" step that
+    // recompresses parts of the vanilla client jar and checks the result
+    // against precomputed hashes. Some Linux distros ship `zlib-ng-compat`
+    // as the system libz, which the JVM's zip handling picks up and which
+    // produces different (but still valid) compressed bytes than stock
+    // zlib — the installer's processor then sees a "hash mismatch" even
+    // though nothing is actually corrupt (see
+    // https://github.com/MinecraftForge/Installer/issues/80). Azul's Zulu
+    // builds — what this launcher's own Smart Java Detection downloads —
+    // bundle their own zlib and aren't affected, but that managed JRE was
+    // previously only ensured to exist *after* install finished (to get
+    // ready for the next launch), not before running the loader installer
+    // itself. Do it here too so Forge/NeoForge always run on a JRE that
+    // can't hit this class of bug, instead of whatever system Java happens
+    // to be first on PATH/JAVA_HOME.
+    let is_loader_install = !(loader_type == "vanilla" || loader_type.is_empty());
+    let ensured_java_executable: Option<PathBuf> = if is_loader_install {
+        let mc_version_for_java = mc_version.clone();
+        let vanilla_version = tokio::task::spawn_blocking(move || {
+            mc_launcher_core::install::client::fetch_vanilla_version(&mc_version_for_java)
+        })
+        .await
+        .ok()
+        .and_then(|r| r.ok());
+
+        match vanilla_version {
+            Some(version) => {
+                match crate::commands::java::ensure_java_for_version(&app, &state, &version, false).await {
+                    Ok(path) => Some(path),
+                    Err(e) => {
+                        logger::warn(&app, &state, "LAUNCHER", &format!(
+                            "Couldn't prepare a managed Java for the {loader_type} installer ({e}) — falling back to autodetection, which may hit https://github.com/MinecraftForge/Installer/issues/80 on some distros"
+                        ));
+                        crate::commands::java::find_any_managed_java()
+                    }
+                }
+            }
+            None => crate::commands::java::find_any_managed_java(),
+        }
+    } else {
+        None
+    };
+
     // The installer (`Launcher`) is always rooted at the shared default
     // Minecraft directory, never the custom instance directory — this is
     // what makes `versions/`, `libraries/`, and `assets/` land in the
@@ -573,7 +625,7 @@ pub async fn install_minecraft(
                     .and_then(|r| r.ok());
 
                     if let Some(version) = version_for_java {
-                        if let Err(e) = crate::commands::java::ensure_java_for_version(&app, &state, &version).await {
+                        if let Err(e) = crate::commands::java::ensure_java_for_version(&app, &state, &version, false).await {
                             logger::warn(&app, &state, "LAUNCHER", &format!(
                                 "Couldn't prepare Java for {} yet (will retry at launch): {e}",
                                 instance.version_id
@@ -607,7 +659,6 @@ pub async fn install_minecraft(
     // Run blocking install in a separate thread
     let install_outcome = tokio::task::spawn_blocking(move || {
         let launcher = Launcher::new(&dir);
-
         let build_loader = || match loader_type.as_str() {
             "fabric" => Some(LoaderSpec::Fabric {
                 version: if loader_ver == "latest" {
@@ -644,6 +695,18 @@ pub async fn install_minecraft(
             minecraft_version: mc_version.clone(),
             loader: build_loader(),
             java: JavaInstallPolicy::Auto,
+            // Prefer the managed JRE we resolved (and downloaded if
+            // necessary) up front, before this closure started, so
+            // Forge/NeoForge installers run on a known-good Java instead
+            // of risking a system Java linked against zlib-ng, which is
+            // known to produce hash mismatches during Forge's install
+            // processor step (see
+            // https://github.com/MinecraftForge/Installer/issues/80).
+            // Falls back to whatever's already in the managed folder if
+            // that upfront resolution didn't find/download anything.
+            java_executable: ensured_java_executable
+                .clone()
+                .or_else(crate::commands::java::find_any_managed_java),
         };
 
         // ── Progress tracking state, captured by the reporter closure ──
@@ -792,6 +855,19 @@ pub async fn install_minecraft(
                     }
                     current_task_received = received;
                     current_task_total = total;
+                }
+                // Live output from the Forge/NeoForge installer jar — this
+                // is the one stage that isn't a file download at all (the
+                // installer manages its own libraries/patching), so
+                // without this the progress bar/status line would just sit
+                // there with nothing to show for a couple of minutes.
+                // Surface it straight to the log console instead, so it
+                // reads like any other in-progress output.
+                PE::InstallerOutputLine { line } => {
+                    if !line.trim().is_empty() {
+                        logger::info(&app_for_progress, &app_for_progress.state::<AppState>(), "LOADER-INSTALL", &line);
+                    }
+                    current_file = line;
                 }
             }
 
@@ -1068,7 +1144,7 @@ pub async fn install_minecraft(
         .and_then(|r| r.ok());
 
         if let Some(version) = version_for_java {
-            if let Err(e) = crate::commands::java::ensure_java_for_version(&app, &state, &version).await {
+            if let Err(e) = crate::commands::java::ensure_java_for_version(&app, &state, &version, false).await {
                 logger::warn(&app, &state, "LAUNCHER", &format!(
                     "Couldn't prepare Java for {} yet (will retry at launch): {e}",
                     instance.version_id
@@ -1086,8 +1162,14 @@ pub async fn launch_minecraft(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     version_id: String,
+    // `None` defers to the "Always Launch Offline" setting; `Some(_)` is an
+    // explicit per-launch choice from the gear menu (▶ PLAY vs Launch
+    // Offline), which always wins over the saved setting for that one launch.
+    offline: Option<bool>,
 ) -> Result<(), String> {
     use mc_launcher_core::prelude::*;
+
+    let offline = offline.unwrap_or_else(|| state.settings.lock().unwrap().always_launch_offline);
 
     // Only block re-launching the *same* instance while it's already
     // running; different instances are allowed to run side by side, each
@@ -1240,9 +1322,55 @@ pub async fn launch_minecraft(
             .unwrap_or_else(|| (version_id.clone(), version_id.clone(), "unknown".to_string()))
     };
 
-    logger::info(&app, &state, "LAUNCHER", &format!(
+    // Register this instance as "running" and give it a fresh console
+    // *now* — right as Play is pressed — instead of only once the game
+    // process actually spawns further down. `pid: None` marks it as still
+    // starting up (Java setup / file verification can take a little while,
+    // especially the first time). This means the running-instances button
+    // and its console are available immediately, so nothing that happens
+    // between now and the process actually starting is invisible. The
+    // in-memory map is updated with the real pid once the process spawns;
+    // deliberately not persisted to `running_instances.json` until then, so
+    // a launcher restart during this window doesn't mistake a
+    // not-yet-started launch for a still-running one.
+    state.instance_logs.lock().unwrap().insert(version_id.clone(), Vec::new());
+    {
+        let mut running_instances = state.running_instances.lock().unwrap();
+        running_instances.insert(
+            version_id.clone(),
+            RunningInstanceInfo {
+                version_id: version_id.clone(),
+                name: inst_name.clone(),
+                minecraft_version: inst_mc_version.clone(),
+                loader: inst_loader.clone(),
+                pid: None,
+                started_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                running: true,
+            },
+        );
+    }
+    let _ = app.emit("running-instances-changed", ());
+
+    logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
         "Launching {} as {}...", version_id, username
     ));
+
+    // If anything below fails before the game process actually spawns,
+    // this flips the "starting" entry registered above back off instead
+    // of leaving a phantom instance stuck showing as Running forever.
+    // Cheap to call more than once and a no-op once the real pid lands
+    // (see the `pid.is_none()` check) — called from every fallible step
+    // between here and the actual spawn.
+    let fail_cleanup = || {
+        let mut running = state.running_instances.lock().unwrap();
+        if let Some(info) = running.get_mut(&version_id) {
+            if info.pid.is_none() {
+                info.running = false;
+            }
+        }
+        drop(running);
+        let _ = app.emit("running-instances-changed", ());
+    };
 
     let vid = version_id.clone();
     // `mc_dir` is where `versions/`, `libraries/`, and `assets/` live (the
@@ -1265,16 +1393,267 @@ pub async fn launch_minecraft(
             .map_err(|e| format!("Failed to load version: {e}"))
     })
     .await
-    .map_err(|e| format!("Launch task failed: {e}"))??;
+    .map_err(|e| { fail_cleanup(); format!("Launch task failed: {e}") })?
+    .map_err(|e| { fail_cleanup(); e })?;
+
+    // "Play" verifies libraries/assets/the client jar before every launch
+    // and repairs anything missing or corrupted (e.g. a checksum mismatch
+    // from a bad download earlier); "Launch Offline" — either chosen for
+    // this one launch or via "Always Launch Offline" — skips this and
+    // starts immediately from whatever's already on disk, no network
+    // needed. `install_version_files` is the same pass the installer runs,
+    // so anything already valid is skipped instantly; only missing/broken
+    // files actually hit the network.
+    if !offline {
+        logger::info_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
+            "Verifying libraries/assets for {} before launch...", vid
+        ));
+        let status_id = vid.clone();
+        let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
+            version_id: status_id.clone(),
+            active: true,
+            message: "Checking libraries & assets…".to_string(),
+        });
+
+        let mc_dir_for_verify = mc_dir.clone();
+        let version_for_verify = version.clone();
+        let app_for_verify = app.clone();
+        let vid_for_verify = vid.clone();
+        // Unique id so a verify pass never collides with a concurrent
+        // instance install's own download card — reuses the same
+        // `DownloadProgressInfo`/`download-progress` event the installer
+        // uses, so when this pass actually has to fetch something it shows
+        // up in the Downloads widget exactly like any other install.
+        let download_id = format!("launch-verify-{vid}");
+        let verify_result = tokio::task::spawn_blocking(move || {
+            let mut downloading_started = false;
+            let mut downloaded_bytes: u64 = 0;
+            let mut per_label_received: HashMap<String, u64> = HashMap::new();
+            let mut current_stage = "Checking files".to_string();
+            let mut last_status_emit = std::time::Instant::now() - std::time::Duration::from_secs(1);
+
+            let mut reporter = |event: ProgressEvent| {
+                match &event {
+                    ProgressEvent::StageStarted { stage } => {
+                        current_stage = match stage {
+                            mc_launcher_core::progress::InstallStage::DownloadLibraries => "Checking libraries",
+                            mc_launcher_core::progress::InstallStage::DownloadAssets => "Checking assets",
+                            mc_launcher_core::progress::InstallStage::ExtractNatives => "Extracting natives",
+                            mc_launcher_core::progress::InstallStage::Verify => "Verifying files",
+                            _ => "Checking files",
+                        }.to_string();
+                        // Only worth telling the user about while nothing's
+                        // actually downloading yet — once real downloads are
+                        // in progress the per-file status below is more
+                        // useful than the stage name.
+                        if !downloading_started && last_status_emit.elapsed().as_millis() > 150 {
+                            last_status_emit = std::time::Instant::now();
+                            let _ = app_for_verify.emit("launch-verify-status", &LaunchVerifyStatus {
+                                version_id: vid_for_verify.clone(),
+                                active: true,
+                                message: format!("{current_stage}…"),
+                            });
+                        }
+                    }
+                    ProgressEvent::TaskStarted { label, .. } => {
+                        if !downloading_started {
+                            downloading_started = true;
+                            let _ = app_for_verify.emit("launch-verify-status", &LaunchVerifyStatus {
+                                version_id: vid_for_verify.clone(),
+                                active: true,
+                                message: "Installing missing libraries/assets…".to_string(),
+                            });
+                        }
+                        let info = DownloadProgressInfo {
+                            id: download_id.clone(),
+                            label: vid_for_verify.clone(),
+                            minecraft_version: vid_for_verify.clone(),
+                            loader: String::new(),
+                            stage: current_stage.clone(),
+                            current_file: label.clone(),
+                            active_files: vec![ActiveFileProgress { name: label.clone(), percent: None }],
+                            downloaded_bytes,
+                            total_bytes: None,
+                            percent: 0.0,
+                            speed_bps: 0.0,
+                            eta_seconds: None,
+                            status: "downloading".to_string(),
+                            message: None,
+                        };
+                        let _ = app_for_verify.emit("download-progress", &info);
+                    }
+                    ProgressEvent::BytesReceived { label, received, total } => {
+                        let prev = per_label_received.insert(label.clone(), *received).unwrap_or(0);
+                        downloaded_bytes = downloaded_bytes.saturating_add(received.saturating_sub(prev));
+                        if last_status_emit.elapsed().as_millis() > 100 {
+                            last_status_emit = std::time::Instant::now();
+                            let pct = total.map(|t| if t > 0 { (*received as f64 / t as f64 * 100.0).clamp(0.0, 100.0) } else { 0.0 });
+                            let info = DownloadProgressInfo {
+                                id: download_id.clone(),
+                                label: vid_for_verify.clone(),
+                                minecraft_version: vid_for_verify.clone(),
+                                loader: String::new(),
+                                stage: current_stage.clone(),
+                                current_file: label.clone(),
+                                active_files: vec![ActiveFileProgress { name: label.clone(), percent: pct }],
+                                downloaded_bytes,
+                                total_bytes: None,
+                                percent: pct.unwrap_or(0.0),
+                                speed_bps: 0.0,
+                                eta_seconds: None,
+                                status: "downloading".to_string(),
+                                message: None,
+                            };
+                            let _ = app_for_verify.emit("download-progress", &info);
+                        }
+                    }
+                    ProgressEvent::TaskFinished { label } => {
+                        if downloading_started {
+                            let info = DownloadProgressInfo {
+                                id: download_id.clone(),
+                                label: vid_for_verify.clone(),
+                                minecraft_version: vid_for_verify.clone(),
+                                loader: String::new(),
+                                stage: current_stage.clone(),
+                                current_file: label.clone(),
+                                active_files: Vec::new(),
+                                downloaded_bytes,
+                                total_bytes: None,
+                                percent: 0.0,
+                                speed_bps: 0.0,
+                                eta_seconds: None,
+                                status: "downloading".to_string(),
+                                message: None,
+                            };
+                            let _ = app_for_verify.emit("download-progress", &info);
+                        }
+                    }
+                    ProgressEvent::TaskSkipped { .. } => {}
+                    // This reporter only ever wraps `install_version_files`
+                    // (library/asset verification before launch), which
+                    // never emits installer output — but the match still
+                    // needs to be exhaustive against the shared enum.
+                    ProgressEvent::InstallerOutputLine { .. } => {}
+                }
+            };
+            let result = mc_launcher_core::install::client::install_version_files(
+                &version_for_verify,
+                &mc_dir_for_verify,
+                &mut reporter,
+            );
+            (result, downloading_started, downloaded_bytes)
+        })
+        .await
+        .map_err(|e| { fail_cleanup(); format!("Launch verification task failed: {e}") })?;
+
+        let (result, downloading_started, downloaded_bytes) = verify_result;
+
+        // Whatever happens next (success, failure, or nothing downloaded
+        // at all), the verify phase is over — this is the frontend's cue
+        // to stop showing the status line and to start the "is the launch
+        // actually hung?" timeout, which deliberately never runs during
+        // this pass.
+        let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
+            version_id: status_id.clone(),
+            active: false,
+            message: String::new(),
+        });
+        if downloading_started {
+            logger::info_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
+                "Downloaded {} bytes of missing/updated libraries & assets", downloaded_bytes
+            ));
+            let final_status = if result.is_ok() { "completed" } else { "error" };
+            let _ = app.emit("download-progress", &DownloadProgressInfo {
+                id: format!("launch-verify-{vid}"),
+                label: vid.clone(),
+                minecraft_version: vid.clone(),
+                loader: String::new(),
+                stage: "Done".to_string(),
+                current_file: String::new(),
+                active_files: Vec::new(),
+                downloaded_bytes,
+                total_bytes: None,
+                percent: 100.0,
+                speed_bps: 0.0,
+                eta_seconds: Some(0),
+                status: final_status.to_string(),
+                message: if result.is_ok() { None } else { Some("Verification failed".to_string()) },
+            });
+        }
+
+        result.map_err(|e| { fail_cleanup(); format!(
+            "Couldn't verify game files before launch (no connection, or a mirror is down): {e}. \
+             Use the gear icon next to Play to Launch Offline instead."
+        ) })?;
+    }
+
+    // This version's own libraries tell us definitively whether it uses
+    // LWJGL2 (pre-1.13, groupId `org.lwjgl.lwjgl`, artifact `lwjgl`)
+    // rather than LWJGL3 — cheaper and more reliable than guessing from
+    // the Minecraft version string, since some loaders (old Forge builds)
+    // shift which libraries are pulled in. Checked here, right after
+    // `version` loads and before it's moved into the launch-command
+    // closure further down.
+    let uses_lwjgl2 = version.libraries.iter().any(|lib| {
+        lib.name.starts_with("org.lwjgl.lwjgl:lwjgl:")
+            || lib.name.starts_with("org.lwjgl:lwjgl:2.")
+    });
+
+    // On Linux, LWJGL2 always shells out to the `xrandr` binary to list
+    // display modes — even when the compositor is Wayland, since it goes
+    // through XWayland's X11 protocol either way. If `xrandr` isn't
+    // installed the call comes back empty and LWJGL2 crashes immediately
+    // with an opaque ArrayIndexOutOfBoundsException deep in native code.
+    // Most Wayland desktops (GNOME, KDE, Hyprland, Sway, etc.) don't ship
+    // it by default, so this is the single most common reason an old
+    // Forge/vanilla instance won't start on modern Linux. Catch it here
+    // with a clear, actionable message instead of letting the game crash
+    // and only explaining it after the fact in the crash dialog.
+    #[cfg(target_os = "linux")]
+    if uses_lwjgl2 {
+        // Cached after the first check so relaunching the same (or another)
+        // LWJGL2 instance later in this session doesn't shell out to
+        // `which` again every single time — `xrandr`'s presence can't
+        // change without a launcher restart anyway. This is the only place
+        // in the launcher that ever touches `xrandr`/`which` at all: LWJGL3
+        // versions (i.e. every current/modern Minecraft version) skip this
+        // whole block entirely via `uses_lwjgl2` above.
+        static HAS_XRANDR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let has_xrandr = *HAS_XRANDR.get_or_init(|| {
+            std::process::Command::new("which")
+                .arg("xrandr")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        });
+        if !has_xrandr {
+            fail_cleanup();
+            return Err(
+                "This version needs the `xrandr` command, which isn't installed. \
+                 It's a small system package (not part of this launcher) — install it and try again:\n\
+                 \u{2022} Arch/CachyOS: sudo pacman -S xorg-xrandr\n\
+                 \u{2022} Debian/Ubuntu: sudo apt install x11-xserver-utils\n\
+                 \u{2022} Fedora: sudo dnf install xrandr\n\
+                 This is needed even under Wayland, since this old Minecraft version (LWJGL2) always talks to X11/XWayland for display info."
+                    .to_string(),
+            );
+        }
+    }
 
     // Smart Java Detection: use the user's manually-selected Java if one is
     // set in Settings, otherwise figure out which Java major version this
     // instance needs, reuse a matching install if we have one, or download
-    // it automatically (via Azul) into the managed java/ folder.
-    let java_executable = crate::commands::java::ensure_java_for_version(&app, &state, &version)
+    // it automatically (via Azul) into the managed java/ folder — unless
+    // this is an offline launch, in which case a missing Java fails fast
+    // with a clear message instead of silently reaching out to the
+    // network anyway (which is exactly what "Launch Offline" is supposed
+    // to avoid).
+    let java_executable = crate::commands::java::ensure_java_for_version(&app, &state, &version, offline)
         .await
-        .map_err(|e| format!("Java setup failed: {e}"))?;
-    logger::info(&app, &state, "LAUNCHER", &format!(
+        .map_err(|e| { fail_cleanup(); format!("Java setup failed: {e}") })?;
+    logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
         "Using Java: {}", java_executable.display()
     ));
 
@@ -1302,7 +1681,8 @@ pub async fn launch_minecraft(
             .map_err(|e| format!("Failed to build launch command: {e}"))
     })
     .await
-    .map_err(|e| format!("Launch task failed: {e}"))??;
+    .map_err(|e| { fail_cleanup(); format!("Launch task failed: {e}") })?
+    .map_err(|e| { fail_cleanup(); e })?;
 
     // Build JVM arguments
     let mut args: Vec<String> = Vec::new();
@@ -1317,13 +1697,33 @@ pub async fn launch_minecraft(
     //  - "Hide Launch Command from Logs" skips this line entirely
     //  - "Redact Auth Tokens in Logs" strips the offline session's
     //    --accessToken/--uuid values out of what's left
-    let hide_cmd = state.settings.lock().map(|s| s.hide_launch_command).unwrap_or(true);
+    let (hide_cmd, auto_open_console) = state.settings.lock()
+        .map(|s| (s.hide_launch_command, s.auto_open_console_on_launch))
+        .unwrap_or((true, false));
+    let command_line = format!(
+        "Command: {} {}",
+        launch_cmd.executable.display(),
+        logger::redact_sensitive(&state, &args.join(" "))
+    );
     if !hide_cmd {
-        logger::debug(&app, &state, "LAUNCHER", &format!(
-            "Command: {} {}",
-            launch_cmd.executable.display(),
-            logger::redact_sensitive(&state, &args.join(" "))
-        ));
+        logger::debug(&app, &state, "LAUNCHER", &command_line);
+    }
+    // "Auto-open console when launching" is an explicit ask to see
+    // everything about this launch, including the command — so it always
+    // shows in that instance's own console regardless of the Privacy
+    // settings above. Deliberately does NOT go through the shared
+    // launcher log file/main log viewer (unlike `info_for_instance`) —
+    // only this instance's own console gets it, so "Hide Launch Command
+    // from Logs" still holds everywhere else. Auth tokens are still
+    // redacted per "Redact Auth Tokens in Logs" via `redact_sensitive`
+    // either way.
+    if auto_open_console {
+        let entry = crate::models::LogEntry::new("INFO", "LAUNCHER", &command_line);
+        state.push_instance_log(&version_id, entry.clone());
+        let _ = app.emit(
+            "instance-log",
+            &crate::models::InstanceLogEvent { version_id: version_id.clone(), entry },
+        );
     }
 
     // Spawn the game process. Intentionally use `game_dir` (the instance's
@@ -1365,7 +1765,7 @@ pub async fn launch_minecraft(
     }
     let mut child = launch_command
         .spawn()
-        .map_err(|e| format!("Failed to start game: {e}"))?;
+        .map_err(|e| { fail_cleanup(); format!("Failed to start game: {e}") })?;
 
     // Mark this instance as running (kept in the map after exit too, with
     // `running: false`, so its console history stays reachable this
@@ -1388,8 +1788,10 @@ pub async fn launch_minecraft(
             },
         );
     }
-    // Fresh console for this run.
-    state.instance_logs.lock().unwrap().insert(version_id.clone(), Vec::new());
+    // Console history for this run was already initialized right when the
+    // instance was registered as "starting" earlier in this function —
+    // don't reset it here, or every log line from Java setup/file
+    // verification would be wiped right as the game actually starts.
     // Persist immediately: if the launcher is quit right after this (the
     // game process itself keeps running, detached — see the spawn flags
     // above), the next launch needs `running_instances.json` on disk to
@@ -1418,7 +1820,7 @@ pub async fn launch_minecraft(
         }
     }
 
-    logger::info(&app, &state, "LAUNCHER", "Game process started!");
+    logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", "Game process started!");
 
     // Capture stdout
     if let Some(stdout) = child.stdout.take() {

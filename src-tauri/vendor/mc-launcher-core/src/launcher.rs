@@ -13,7 +13,7 @@ use crate::{
         client::{
             fetch_vanilla_version, install_version_files, load_version_json, write_version_json,
         },
-        loader::{run_loader_installer, write_loader_profile, InstallerInvocation},
+        loader::{run_loader_installer_with_output, write_loader_profile, InstallerInvocation},
         request::{InstallRequest, InstallResult},
     },
     loader::{
@@ -21,7 +21,7 @@ use crate::{
         LoaderKind,
     },
     net::download::{execute_plan, DownloadPlan, DownloadTask},
-    progress::{ProgressEvent, ProgressReporter},
+    progress::{InstallStage, ProgressEvent, ProgressReporter},
     LauncherError, Result,
 };
 
@@ -115,7 +115,7 @@ impl Launcher {
                         &self.minecraft_dir,
                         "forge",
                         &loader_version,
-                        &crate::loader::forge::installer_url(&loader_version),
+                        &crate::loader::forge::installer_urls(&loader_version),
                     )?;
                     let version_id = if crate::install::legacy_forge::is_legacy_installer(&installer_path)? {
                         // Pre-1.13-era Forge builds ship a GUI-only
@@ -127,12 +127,16 @@ impl Launcher {
                             &self.minecraft_dir,
                         )?
                     } else {
-                        run_loader_installer(&InstallerInvocation {
-                            loader: LoaderKind::Forge,
-                            java_executable: PathBuf::from("java"),
-                            installer_path,
-                            minecraft_dir: self.minecraft_dir.clone(),
-                        })?;
+                        reporter.report(ProgressEvent::StageStarted { stage: InstallStage::LoaderInstall });
+                        run_loader_installer_with_output(
+                            &InstallerInvocation {
+                                loader: LoaderKind::Forge,
+                                java_executable: resolve_installer_java(request.java_executable.as_deref()),
+                                installer_path,
+                                minecraft_dir: self.minecraft_dir.clone(),
+                            },
+                            &mut |line| reporter.report(ProgressEvent::InstallerOutputLine { line }),
+                        )?;
                         crate::loader::forge::forge_installed_version_id(&loader_version)?
                     };
                     let merged = self.load_version(&version_id)?;
@@ -147,14 +151,18 @@ impl Launcher {
                         &self.minecraft_dir,
                         "neoforge",
                         &loader_version,
-                        &crate::loader::neoforge::installer_url(&loader_version),
+                        &crate::loader::neoforge::installer_urls(&loader_version),
                     )?;
-                    run_loader_installer(&InstallerInvocation {
-                        loader: LoaderKind::NeoForge,
-                        java_executable: PathBuf::from("java"),
-                        installer_path,
-                        minecraft_dir: self.minecraft_dir.clone(),
-                    })?;
+                    reporter.report(ProgressEvent::StageStarted { stage: InstallStage::LoaderInstall });
+                    run_loader_installer_with_output(
+                        &InstallerInvocation {
+                            loader: LoaderKind::NeoForge,
+                            java_executable: resolve_installer_java(request.java_executable.as_deref()),
+                            installer_path,
+                            minecraft_dir: self.minecraft_dir.clone(),
+                        },
+                        &mut |line| reporter.report(ProgressEvent::InstallerOutputLine { line }),
+                    )?;
                     let version_id = crate::loader::neoforge::neoforge_installed_version_id(
                         &request.minecraft_version,
                         &loader_version,
@@ -248,7 +256,44 @@ fn resolve_quilt_loader_version(version: LoaderVersion) -> Result<String> {
 
 fn resolve_forge_loader_version(minecraft_version: &str, version: LoaderVersion) -> Result<String> {
     match version {
-        LoaderVersion::Exact(version) => Ok(version),
+        // Forge's maven lays versions out as `{minecraft_version}-{forge_version}`
+        // (e.g. `1.20.1-47.4.10`). Modpack manifests often pin just the bare
+        // Forge build number (e.g. `47.4.10`), which otherwise gets passed
+        // straight through to the installer URL and 404s. Prepend the
+        // Minecraft version whenever it isn't already present.
+        LoaderVersion::Exact(version) => {
+            let prefix = format!("{minecraft_version}-");
+            let candidate = if version.starts_with(&prefix) {
+                version
+            } else {
+                format!("{prefix}{version}")
+            };
+
+            // Some legacy Forge builds (mostly pre-1.9) publish their maven
+            // artifacts under a "branched" directory that repeats the
+            // Minecraft version again as a trailing suffix — e.g.
+            // `1.8.9-11.15.1.2318-1.8.9` rather than the plain
+            // `1.8.9-11.15.1.2318` a modpack manifest (or the bare-number
+            // case above) produces. Picking "latest" from a manual "Create
+            // Instance" never hits this because it's resolved from this
+            // same versions list below, branch suffix included — so check a
+            // pinned/modpack version against that list too instead of
+            // trusting the manifest's plain string verbatim. Metadata
+            // lookups can fail (offline, rate-limited); in that case fall
+            // back to the un-verified candidate rather than hard-failing —
+            // it's still correct for the (overwhelming majority of) builds
+            // that don't use a branch suffix.
+            if let Ok(versions) = crate::loader::forge::list_forge_versions() {
+                if let Some(exact) = versions.iter().find(|v| **v == candidate) {
+                    return Ok(exact.clone());
+                }
+                let branched_prefix = format!("{candidate}-");
+                if let Some(branched) = versions.iter().find(|v| v.starts_with(&branched_prefix)) {
+                    return Ok(branched.clone());
+                }
+            }
+            Ok(candidate)
+        }
         LoaderVersion::Latest | LoaderVersion::LatestStable => {
             let versions = crate::loader::forge::list_forge_versions()?;
             Ok(
@@ -275,20 +320,50 @@ fn resolve_neoforge_loader_version(
     }
 }
 
+/// Resolves the Java executable used to run the Forge/NeoForge installer
+/// jar.
+///
+/// Prefers an explicit path supplied on the [`InstallRequest`] — e.g. a JRE
+/// this launcher already downloaded into its own managed folder — since
+/// that's known-good and doesn't depend on the process's environment at
+/// all. Only falls back to best-effort detection (`JAVA_HOME`, Linux's
+/// `/etc/alternatives/java`, then a `PATH` lookup) when the caller didn't
+/// provide one.
+///
+/// This used to be hardcoded to the bare literal `"java"`, which only works
+/// when the spawning process inherits a `PATH` that happens to contain a
+/// `java` binary. That's often *not* true for Tauri apps launched from a
+/// desktop icon/AppImage (no inherited login-shell `PATH`), and it's not
+/// true at all for a launcher whose whole point is managing its own JREs so
+/// the user never has to install system Java. That mismatch is what
+/// produced `io error: No such file or directory (os error 2)` — the OS
+/// error for spawning a program that can't be found — even though
+/// downloading the installer jar itself succeeded.
+fn resolve_installer_java(explicit: Option<&Path>) -> PathBuf {
+    if let Some(path) = explicit {
+        return path.to_path_buf();
+    }
+    PathBuf::from(crate::utils::get_java_executable().unwrap_or_else(|| "java".to_string()))
+}
+
 fn download_installer(
     minecraft_dir: &Path,
     loader_name: &str,
     loader_version: &str,
-    url: &str,
+    urls: &[String],
 ) -> Result<PathBuf> {
     let destination = minecraft_dir
         .join("versions")
         .join(".installers")
         .join(format!("{loader_name}-{loader_version}-installer.jar"));
+    let (url, fallback_urls) = urls
+        .split_first()
+        .map(|(first, rest)| (first.clone(), rest.to_vec()))
+        .expect("caller always passes at least one installer URL");
     let plan = DownloadPlan {
         tasks: vec![DownloadTask {
-            url: url.to_string(),
-            fallback_urls: Vec::new(),
+            url,
+            fallback_urls,
             destination: destination.clone(),
             checksum: None,
             label: format!("{loader_name} installer {loader_version}"),

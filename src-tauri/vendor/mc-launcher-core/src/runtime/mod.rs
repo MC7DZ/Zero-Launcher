@@ -45,7 +45,13 @@ fn get_jvm_platform_string() -> String {
 }
 
 pub fn get_jvm_runtimes() -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        // Binds to an IPv4-only local address so a broken/absent IPv6
+        // route (common on some home/mobile networks) can't stall this
+        // call waiting on a dead address before falling back to IPv4.
+        .local_address(std::net::Ipv4Addr::UNSPECIFIED)
+        .build()
+        .unwrap_or_default();
     let response = client
         .get(JVM_MANIFEST_URL)
         .header(header::USER_AGENT, get_user_agent())
@@ -75,7 +81,13 @@ pub fn install_jvm_runtime(
     minecraft_directory: impl AsRef<Path>,
     callback: &CallbackDict,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        // Binds to an IPv4-only local address so a broken/absent IPv6
+        // route (common on some home/mobile networks) can't stall this
+        // call waiting on a dead address before falling back to IPv4.
+        .local_address(std::net::Ipv4Addr::UNSPECIFIED)
+        .build()
+        .unwrap_or_default();
     let manifest_data: RuntimeListJson = client
         .get(JVM_MANIFEST_URL)
         .header(header::USER_AGENT, get_user_agent())
@@ -269,7 +281,13 @@ pub fn get_executable_path(
 pub fn get_jvm_runtime_information(
     jvm_version: &str,
 ) -> Result<JvmRuntimeInformation, Box<dyn std::error::Error>> {
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        // Binds to an IPv4-only local address so a broken/absent IPv6
+        // route (common on some home/mobile networks) can't stall this
+        // call waiting on a dead address before falling back to IPv4.
+        .local_address(std::net::Ipv4Addr::UNSPECIFIED)
+        .build()
+        .unwrap_or_default();
     let manifest_data: RuntimeListJson = client
         .get(JVM_MANIFEST_URL)
         .header("user-agent", get_user_agent())

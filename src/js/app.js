@@ -51,6 +51,14 @@ const LOADER_ICONS = {
 // installed in the background.
 let javaInstallInProgress = false;
 
+// Set while a pre-launch libraries/assets verify pass (see
+// `launch-verify-status` events from the backend) is actively running for
+// whichever instance is currently launching. Mirrors `javaInstallInProgress`
+// above: the launch-button timeout watches this too, so a slow verify pass
+// (re-downloading a broken library, say) is never mistaken for a hung
+// launch — the timeout only starts counting once this goes back to false.
+let launchVerifyInProgress = false;
+
 function loaderIcon(loader) {
   const key = (loader || 'vanilla').toLowerCase();
   return LOADER_ICONS[key] || LOADER_ICONS.vanilla;
@@ -202,7 +210,7 @@ const api = {
         old_version_id: oldVersionId || null,
       }
     }),
-  launchGame: (versionId) => invoke('launch_minecraft', { versionId }),
+  launchGame: (versionId, offline) => invoke('launch_minecraft', { versionId, offline: offline ?? null }),
   getInstalledInstances: () => invoke('get_installed_instances'),
   removeInstance: (versionId) => invoke('remove_instance', { versionId }),
   updateInstance: (versionId, name, loaderVersion) =>
@@ -232,6 +240,18 @@ const api = {
     invoke('update_discord_presence', { tab, playingInstance, mcVersion }),
   onLog: (cb) => listen('log', cb),
   onDownloadProgress: (cb) => listen('download-progress', cb),
+  onLaunchVerifyStatus: (cb) => listen('launch-verify-status', cb),
+  previewModpack: (filePath) => invoke('preview_modpack', { filePath }),
+  importModpack: (filePath, instanceName, useCustomDirectory, customDirectory) =>
+    invoke('import_modpack', {
+      payload: {
+        file_path: filePath,
+        instance_name: instanceName,
+        use_custom_directory: !!useCustomDirectory,
+        custom_directory: customDirectory || null,
+      },
+    }),
+  onModpackImportProgress: (cb) => listen('modpack-import-progress', cb),
   pauseDownload: () => invoke('pause_download'),
   resumeDownload: () => invoke('resume_download'),
   cancelDownload: () => invoke('cancel_download'),
@@ -405,6 +425,13 @@ function spawnToast(message, type, title, actions) {
   const actionsHtml = (actions && actions.length)
     ? `<div class="toast-actions">${actions.map((a, i) => `<button class="toast-action-btn" data-action-index="${i}">${escapeHtml(a.label)}</button>`).join('')}</div>`
     : '';
+  // Copy button — only on error toasts, so the exact error text (URLs,
+  // status codes, etc.) can be pasted elsewhere without retyping it.
+  const copyHtml = type === 'error'
+    ? `<button class="toast-copy" title="Copy error details" aria-label="Copy error details">
+         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+       </button>`
+    : '';
   t.innerHTML = `
     <div class="toast-accent-stripe"></div>
     <div class="toast-main">
@@ -414,7 +441,10 @@ function spawnToast(message, type, title, actions) {
         ${message ? `<div class="toast-message">${message}</div>` : ''}
         ${actionsHtml}
       </div>
-      <button class="toast-close" aria-label="Dismiss notification">\u2715</button>
+      <div class="toast-controls">
+        <button class="toast-close" aria-label="Dismiss notification">\u2715</button>
+        ${copyHtml}
+      </div>
     </div>
     <div class="toast-progress"><div class="toast-progress-bar"></div></div>
   `;
@@ -432,6 +462,37 @@ function spawnToast(message, type, title, actions) {
 
   // Close button
   t.querySelector('.toast-close').addEventListener('click', () => dismissToast(entry));
+
+  // Copy button (error toasts only) — copies title + message as plain text.
+  const copyBtn = t.querySelector('.toast-copy');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      const text = message ? `${title}: ${message}` : title;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Fallback for contexts without the async Clipboard API.
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+        }
+        copyBtn.classList.add('toast-copy-done');
+        copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
+        setTimeout(() => {
+          copyBtn.classList.remove('toast-copy-done');
+          copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
+        }, 1400);
+      } catch {
+        showToast('Could not copy to clipboard.', 'warning');
+      }
+    });
+  }
 
   // Action buttons (e.g. the version-list error's "Refresh") — run the
   // caller's handler, then dismiss the toast like a normal interaction.
@@ -1081,6 +1142,106 @@ function genDlId(prefix) {
   return `${prefix}-${Date.now()}-${dlIdCounter}`;
 }
 
+// ══════════════════════════════════════════════════════════════════
+// HIDDEN WINDOWS TRAY
+// ══════════════════════════════════════════════════════════════════
+// Some overlay "windows" (currently: the Modpack Extractor and Apply
+// Preset windows) can run a task in the background — extracting a pack,
+// downloading mods, etc. Closing the ✕ on one of these while its task is
+// still running keeps the task going rather than cancelling it; this tray
+// is how you find your way back to that window.
+//
+// This is driven explicitly by the two windows themselves (via
+// window.hwMinimize / window.hwDone) rather than inferred from the overlay
+// being hidden — both windows also auto-hide *on their own* the moment
+// their task finishes successfully, which looks identical to "user closed
+// it while it was running" from the DOM's point of view. Only the code
+// that actually knows whether a task is in flight can tell those apart.
+function initHiddenWindowsWidget() {
+  const widget = document.getElementById('hidden-windows-widget');
+  const btn = document.getElementById('hw-widget-btn');
+  const panel = document.getElementById('hw-widget-panel');
+  const sub = document.getElementById('hw-widget-sub');
+  const countBadge = document.getElementById('hw-widget-count');
+  const list = document.getElementById('hw-list');
+  if (!widget || !btn || !panel || !list) return;
+
+  // id -> { id, title, el }
+  const minimized = new Map();
+
+  function render() {
+    const items = Array.from(minimized.values());
+    widget.classList.toggle('hidden', items.length === 0);
+    countBadge.classList.toggle('hidden', items.length === 0);
+    countBadge.textContent = String(items.length);
+    sub.textContent = items.length ? `${items.length} minimized` : '—';
+
+    list.innerHTML = '';
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'hw-empty';
+      empty.textContent = 'No hidden windows';
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'hw-item';
+      row.innerHTML = `
+        <span class="hw-item-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="13" rx="2"/><path d="M3.5 9h17"/></svg>
+        </span>
+        <span class="hw-item-text">
+          <span class="hw-item-title"></span>
+          <span class="hw-item-sub">Click to reopen</span>
+        </span>
+        <button type="button" class="hw-item-dismiss" title="Dismiss">✕</button>
+      `;
+      row.querySelector('.hw-item-title').textContent = item.title;
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.hw-item-dismiss')) return;
+        if (item.el) item.el.classList.remove('hidden');
+        minimized.delete(item.id);
+        panel.classList.add('hidden');
+        render();
+      });
+      row.querySelector('.hw-item-dismiss').addEventListener('click', (e) => {
+        e.stopPropagation();
+        minimized.delete(item.id);
+        render();
+      });
+      list.appendChild(row);
+    }
+  }
+
+  btn.addEventListener('click', () => {
+    panel.classList.toggle('hidden');
+  });
+  document.addEventListener('click', (e) => {
+    if (!widget.contains(e.target)) panel.classList.add('hidden');
+  });
+
+  // Called by a window when it's closed while its task is still running.
+  window.hwMinimize = function hwMinimize(id, title) {
+    const el = document.getElementById(id);
+    minimized.set(id, { id, title: title || id, el });
+    render();
+  };
+
+  // Called by a window's task once it truly finishes (success, failure, or
+  // cancellation) — clears the tray entry regardless of whether the window
+  // is currently open or hidden, since there's nothing left running to
+  // come back to.
+  window.hwDone = function hwDone(id) {
+    if (!minimized.has(id)) return;
+    minimized.delete(id);
+    render();
+  };
+
+  render();
+}
+
 // Exposed by initDownloadWidget() once the floating download widget is
 // wired up, so any download/update process elsewhere in the app (mod
 // downloads/updates, dependency installs, Java runtime downloads, etc.)
@@ -1209,18 +1370,21 @@ function initDownloadWidget() {
       // rows snap to a settled full/empty bar instead of animating.
       const known = typeof f.percent === 'number';
       refs.row.classList.toggle('dl-file-indeterminate', f.status === 'downloading' && !known);
+      // transform: scaleX(), not width — see .dl-file-bar in main.css for
+      // why (layout-property updates on dozens of concurrently-visible
+      // rows were the main source of the downloads-menu lag on WebKitGTK).
       if (f.status === 'completed') {
-        refs.bar.style.width = '100%';
+        refs.bar.style.transform = 'scaleX(1)';
         refs.pct.textContent = '100%';
       } else if (f.status === 'failed') {
-        refs.bar.style.width = '0%';
+        refs.bar.style.transform = 'scaleX(0)';
         refs.pct.textContent = 'Failed';
       } else if (f.status === 'pending') {
-        refs.bar.style.width = '0%';
+        refs.bar.style.transform = 'scaleX(0)';
         refs.pct.textContent = '—';
       } else if (known) {
         const p = Math.max(0, Math.min(100, f.percent));
-        refs.bar.style.width = `${p}%`;
+        refs.bar.style.transform = `scaleX(${p / 100})`;
         refs.pct.textContent = `${Math.round(p)}%`;
       } else {
         refs.pct.textContent = '—';
@@ -1343,6 +1507,29 @@ function initDownloadWidget() {
       card.files.push(fresh);
       map.set(name, fresh);
     });
+    refreshFilesWindowIfOpen(id);
+  }
+  // Reconciles a card's Files-window state against the real, current set
+  // of actively-downloading files reported by the backend (several files
+  // in flight at once, each with its own live byte-level percent when
+  // known) — shared by the instance-install listener and the modpack
+  // extractor listener below so both read the same "really downloading,
+  // several files at once" way instead of one being a fake/simulated
+  // simplification of the other.
+  function reconcileActiveFiles(id, activeFiles) {
+    const card = cards.get(id);
+    if (!card) return;
+    const list = activeFiles || [];
+    const activeNow = new Set(list.map(f => f.name));
+    const activeBefore = card.activeFileNames || new Set();
+    list.forEach(({ name, percent }) => {
+      if (!activeBefore.has(name)) fileStart(id, name);
+      fileProgress(id, name, percent);
+    });
+    activeBefore.forEach((name) => {
+      if (!activeNow.has(name)) fileDone(id, name, true);
+    });
+    card.activeFileNames = activeNow;
     refreshFilesWindowIfOpen(id);
   }
 
@@ -1529,7 +1716,7 @@ function initDownloadWidget() {
 
     const pct = Math.max(0, Math.min(100, p.percent || 0));
     card.percent = pct;
-    r.bar.style.width = pct + '%';
+    r.bar.style.transform = `scaleX(${pct / 100})`; // not width — see .dl-card-bar in main.css
     r.percent.textContent = Math.round(pct) + '%';
 
     // Real concurrent file list from the backend (several files download
@@ -1564,22 +1751,14 @@ function initDownloadWidget() {
     // files: anything newly in active_files starts downloading, anything
     // that dropped out (finished, whether via TaskFinished or TaskSkipped
     // upstream) is marked completed, and anything still in flight has its
-    // real byte-level percent updated. This replaces the old logic, which
-    // assumed only one file was ever downloading at a time and broke once
-    // the downloader started fetching several files in parallel.
+    // real byte-level percent updated. Shared with the modpack extractor
+    // listener below (see reconcileActiveFiles) so both read this exactly
+    // the same way.
     if (p.status === 'downloading') {
-      const activeNow = new Set(activeList);
-      const activeBefore = card.activeFileNames || new Set();
-      activeFiles.forEach(({ name, percent }) => {
-        if (!activeBefore.has(name)) fileStart(INSTANCE_INSTALL_CARD_ID, name);
-        fileProgress(INSTANCE_INSTALL_CARD_ID, name, percent);
-      });
-      activeBefore.forEach((name) => {
-        if (!activeNow.has(name)) fileDone(INSTANCE_INSTALL_CARD_ID, name, true);
-      });
-      card.activeFileNames = activeNow;
+      reconcileActiveFiles(INSTANCE_INSTALL_CARD_ID, activeFiles);
+    } else {
+      refreshFilesWindowIfOpen(INSTANCE_INSTALL_CARD_ID);
     }
-    refreshFilesWindowIfOpen(INSTANCE_INSTALL_CARD_ID);
 
     if (p.status === 'completed') {
       r.pill.textContent = 'Completed';
@@ -1613,28 +1792,38 @@ function initDownloadWidget() {
     if (!card) card = createCard(id);
     card.files = [];
     card.fileByName = new Map();
+    card.activeFileNames = new Set();
     card.status = 'downloading';
     card.cancelled = false;
     card.percent = opts.determinate ? 0 : null;
     card.el.classList.remove('dl-card-paused', 'dl-card-error', 'dl-card-cancelled');
     card.el.classList.add('dl-card-no-pause');
-    card.el.classList.add('dl-card-no-stats');
+    // Downloads that report real byte-level stats (speed/eta/downloaded,
+    // an active-file name) keep that row visible instead of hiding it —
+    // used by the modpack extractor, which now reports these for real,
+    // the same as an instance install.
+    card.el.classList.toggle('dl-card-no-stats', !opts.withStats);
+    card.el.classList.toggle('dl-card-no-cancel', !!opts.noCancel);
     card.el.classList.toggle('dl-card-indeterminate', !opts.determinate);
-    if (opts.determinate) card.refs.bar.style.width = '0%';
+    if (opts.determinate) card.refs.bar.style.transform = 'scaleX(0)';
     card.titleText = titleText;
     card.subText = subText || '';
     card.refs.title.textContent = titleText;
     card.refs.stage.textContent = subText || '';
+    card.refs.file.textContent = '—';
+    card.refs.speed.textContent = '—';
+    card.refs.eta.textContent = '—';
+    card.refs.downloaded.textContent = '—';
     card.refs.pill.textContent = 'Downloading';
     card.onPause = null;
-    card.onCancel = opts.onCancel || (async () => {
+    card.onCancel = opts.noCancel ? null : (opts.onCancel || (async () => {
       card.cancelled = true;
       await api.cancelGenericDownload(id);
-    });
+    }));
     refreshSummary();
   }
 
-  function updateGenericDownload(id, titleText, subText, percent) {
+  function updateGenericDownload(id, titleText, subText, percent, stats) {
     const card = cards.get(id);
     if (!card) return;
     if (titleText) { card.titleText = titleText; card.refs.title.textContent = titleText; }
@@ -1643,7 +1832,13 @@ function initDownloadWidget() {
       card.el.classList.remove('dl-card-indeterminate');
       const pct = Math.max(0, Math.min(100, percent));
       card.percent = pct;
-      card.refs.bar.style.width = pct + '%';
+      card.refs.bar.style.transform = `scaleX(${pct / 100})`;
+    }
+    if (stats) {
+      if (stats.file !== undefined) card.refs.file.textContent = stats.file || '—';
+      if (stats.speed !== undefined) card.refs.speed.textContent = stats.speed;
+      if (stats.eta !== undefined) card.refs.eta.textContent = stats.eta;
+      if (stats.downloaded !== undefined) card.refs.downloaded.textContent = stats.downloaded;
     }
     refreshSummary();
   }
@@ -1698,6 +1893,7 @@ function initDownloadWidget() {
     fileStart,
     fileDone,
     seedFiles,
+    reconcileActiveFiles,
   };
 }
 
@@ -3515,6 +3711,12 @@ function updateSelectedInstancePlaytimeDisplay() {
   playtimeEl.textContent = formatPlaytime(seconds) + (running ? ' (playing now)' : '');
 }
 
+function updatePlayGearEnabled() {
+  const gearBtn = document.getElementById('btn-play-options');
+  const playBtn = document.getElementById('btn-play');
+  if (gearBtn && playBtn) gearBtn.disabled = playBtn.disabled;
+}
+
 setInterval(updateSelectedInstancePlaytimeDisplay, 1000);
 
 function selectInstance(id) {
@@ -3536,7 +3738,9 @@ function selectInstance(id) {
     dirEl.textContent = '—';
     if (playtimeEl) playtimeEl.textContent = '—';
     playBtn.disabled = true;
+    updatePlayGearEnabled();
     if (iconEl) iconEl.innerHTML = '';
+    document.getElementById('play-status-text')?.classList.add('hidden');
     syncInstanceSelectionAcrossTabs().catch(() => {});
     return;
   }
@@ -3548,6 +3752,8 @@ function selectInstance(id) {
   dirEl.textContent = inst.directory || (settings ? settings.game_directory : '—');
   updateSelectedInstancePlaytimeDisplay();
   playBtn.disabled = !!inst.missing_jar;
+  updatePlayGearEnabled();
+  document.getElementById('play-status-text')?.classList.add('hidden');
   if (iconEl) iconEl.innerHTML = `<img src="${loaderIcon(inst.loader)}" alt="${loaderLabel(inst.loader)}" draggable="false" />`;
   // Refresh mod-update data for whatever instance is now selected — its
   // loader/game-version can differ completely from whatever was selected
@@ -3747,10 +3953,11 @@ function initInstanceActions() {
   });
 
   // Play
-  document.getElementById('btn-play').addEventListener('click', async () => {
+  async function launchSelectedInstance(offlineOverride) {
     if (!selectedInstanceId) return;
     const btn = document.getElementById('btn-play');
     btn.disabled = true;
+    updatePlayGearEnabled();
     btn.dataset.launching = '1';
     btn.innerHTML = `<svg class="btn-play-hourglass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M6 2h12"></path>
@@ -3779,7 +3986,18 @@ function initInstanceActions() {
       if (inst) {
         api.updateDiscordPresence('Instances', inst.name || inst.version_id, inst.minecraft_version).catch(() => { });
       }
-      const launchPromise = api.launchGame(selectedInstanceId);
+      // If the user wants eyes on the log from the very first click, pop
+      // the console open now — before we even know if the launch will
+      // succeed — so slow startups (Java download, asset verification,
+      // etc.) are visible the whole way through instead of just showing
+      // "LAUNCHING…" with no detail.
+      if (settings && settings.auto_open_console_on_launch) {
+        openInstanceConsole(selectedInstanceId, inst && (inst.name || inst.version_id));
+      }
+
+      // `undefined` here means "no explicit per-launch choice" — the
+      // backend falls back to the saved "Always Launch Offline" setting.
+      const launchPromise = api.launchGame(selectedInstanceId, offlineOverride);
       launchPromise.then(() => {
         if (timedOut) {
           showToast(`"${(inst && (inst.name || inst.version_id)) || selectedInstanceId}" launched (after a delay)`, 'success');
@@ -3791,9 +4009,11 @@ function initInstanceActions() {
       const timeoutPromise = new Promise((_, reject) => {
         const check = () => {
           setTimeout(() => {
-            if (javaInstallInProgress) {
-              // Still downloading/extracting Java — don't give up, just
-              // keep waiting and re-check shortly.
+            if (javaInstallInProgress || launchVerifyInProgress) {
+              // Still downloading/extracting Java, or still checking/
+              // repairing libraries & assets — don't give up, just keep
+              // waiting and re-check shortly. The 20s window itself only
+              // starts being "spent" once both of these clear.
               check();
               return;
             }
@@ -3816,8 +4036,53 @@ function initInstanceActions() {
       }
     }
     btn.disabled = false;
+    updatePlayGearEnabled();
     delete btn.dataset.launching;
     await refreshRunningInstances();
+  }
+
+  document.getElementById('btn-play').addEventListener('click', () => launchSelectedInstance(undefined));
+
+  // Gear menu: Launch Offline (one-off) + Always Launch Offline (persisted).
+  const gearBtn = document.getElementById('btn-play-options');
+  const popover = document.getElementById('play-options-popover');
+  const alwaysOfflineChk = document.getElementById('chk-always-offline');
+
+  function closePlayOptionsPopover() {
+    popover.classList.add('hidden');
+    gearBtn.classList.remove('is-open');
+    gearBtn.setAttribute('aria-expanded', 'false');
+  }
+  function openPlayOptionsPopover() {
+    if (alwaysOfflineChk) alwaysOfflineChk.checked = !!(settings && settings.always_launch_offline);
+    popover.classList.remove('hidden');
+    gearBtn.classList.add('is-open');
+    gearBtn.setAttribute('aria-expanded', 'true');
+  }
+
+  gearBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (gearBtn.disabled) return;
+    if (popover.classList.contains('hidden')) openPlayOptionsPopover();
+    else closePlayOptionsPopover();
+  });
+  document.addEventListener('click', (e) => {
+    if (!popover || popover.classList.contains('hidden')) return;
+    if (!popover.contains(e.target) && e.target !== gearBtn) closePlayOptionsPopover();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePlayOptionsPopover();
+  });
+
+  document.getElementById('btn-launch-offline')?.addEventListener('click', () => {
+    closePlayOptionsPopover();
+    launchSelectedInstance(true);
+  });
+
+  alwaysOfflineChk?.addEventListener('change', () => {
+    if (!settings) return;
+    settings.always_launch_offline = alwaysOfflineChk.checked;
+    saveSettingsNow();
   });
 
   // Delete
@@ -4988,6 +5253,7 @@ async function installDroppedModPaths(paths) {
 
 function initModsDragDrop() {
   const overlay = document.getElementById('mods-drag-overlay');
+  const modpackOverlay = document.getElementById('modpack-drag-overlay');
 
   // The webview's native browser drag/drop behavior (opening the dropped
   // file as if it were navigated to) fights with Tauri's own drag-drop
@@ -4999,19 +5265,37 @@ function initModsDragDrop() {
 
   // Tauri emits window-level drag events with the full OS file paths —
   // no browser File objects involved, so this works for arbitrarily large
-  // jars without reading them into memory on the frontend at all.
+  // jars/archives without reading them into memory on the frontend at all.
+  //
+  // Which overlay lights up while the mouse hovers depends on what's being
+  // dragged (Tauri v2 includes `paths` on drag-enter/drag-over, not just
+  // on drop): a .zip/.mrpack always shows the modpack extractor prompt,
+  // regardless of which tab is open; a .jar only shows the mods-tab
+  // overlay, and only while that tab is active.
   let dragActive = false;
-  const setDragActive = (on) => {
+  const dragIsModpack = (paths) => (paths || []).some(p => isModpackFile(p));
+  const setDragActive = (on, paths) => {
     dragActive = on;
-    if (overlay) overlay.classList.toggle('active', on && getActiveTabId() === 'mods');
+    const modpack = on && dragIsModpack(paths);
+    if (modpackOverlay) modpackOverlay.classList.toggle('active', modpack);
+    if (overlay) overlay.classList.toggle('active', on && !modpack && getActiveTabId() === 'mods');
   };
 
-  listen('tauri://drag-enter', () => setDragActive(true));
-  listen('tauri://drag-over', () => { if (!dragActive) setDragActive(true); });
+  listen('tauri://drag-enter', (e) => setDragActive(true, e && e.payload && e.payload.paths));
+  listen('tauri://drag-over', (e) => setDragActive(true, e && e.payload && e.payload.paths));
   listen('tauri://drag-leave', () => setDragActive(false));
   listen('tauri://drag-drop', (event) => {
     setDragActive(false);
     const paths = (event && event.payload && event.payload.paths) || [];
+
+    const modpackPaths = paths.filter(isModpackFile);
+    if (modpackPaths.length > 0) {
+      // A modpack archive takes priority even if other files were dropped
+      // alongside it — only the first one is imported at a time.
+      openModpackImportOverlay(modpackPaths[0]);
+      return;
+    }
+
     if (getActiveTabId() !== 'mods') {
       if (paths.some(p => p.toLowerCase().endsWith('.jar'))) {
         showToast('Switch to the Mods tab to drop mod files', 'info');
@@ -5019,6 +5303,220 @@ function initModsDragDrop() {
       return;
     }
     installDroppedModPaths(paths);
+  });
+}
+
+// ── Modpack Extractor (drag/drop a .mrpack or CurseForge/generic .zip) ────
+// Reads the pack's manifest (Modrinth `modrinth.index.json` or CurseForge
+// `manifest.json`), installs the right Minecraft version + loader exactly
+// like a normal "Create Instance" would, then lays the pack's own mods,
+// config, resourcepacks, and saves on top of that instance's directory.
+function isModpackFile(path) {
+  const lower = (path || '').toLowerCase();
+  return lower.endsWith('.mrpack') || lower.endsWith('.zip');
+}
+
+let modpackImportState = null; // { filePath, preview }
+// True only while api.importModpack() is actually in flight — lets
+// closeModpackImportOverlay() tell "closed while extracting" (minimize to
+// the hidden-windows tray) apart from "closed because it's done"
+// (nothing to reopen).
+let modpackImportTaskRunning = false;
+// This extractor's own card id in the downloads widget — gets exactly the
+// same treatment (real byte-level percent, speed/ETA, per-file Files/log
+// window) as the instance-install card, since the backend now downloads
+// pack files through the same parallel downloader "Create Instance" uses.
+const MODPACK_IMPORT_CARD_ID = '__modpack-import__';
+
+async function openModpackImportOverlay(filePath) {
+  const overlayEl = document.getElementById('modpack-import-overlay');
+  const summaryText = document.getElementById('modpack-import-summary-text');
+  const nameInput = document.getElementById('modpack-inst-name');
+  const progressWrap = document.getElementById('modpack-import-progress-wrap');
+  const confirmBtn = document.getElementById('btn-confirm-modpack-import');
+  if (!overlayEl) return;
+
+  modpackImportState = { filePath, preview: null };
+  nameInput.value = '';
+  progressWrap.classList.add('hidden');
+  confirmBtn.disabled = false;
+  summaryText.textContent = 'Reading modpack…';
+  document.getElementById('modpack-dir-separated').checked = true;
+  document.getElementById('modpack-dir-custom').checked = false;
+  document.getElementById('modpack-dir-path').value = '';
+  document.getElementById('modpack-dir-path-row').classList.add('hidden');
+  overlayEl.classList.remove('hidden');
+
+  try {
+    const preview = await api.previewModpack(filePath);
+    modpackImportState.preview = preview;
+    const fileName = filePath.split(/[\\/]/).pop();
+    const guessedName = preview.name || fileName.replace(/\.(mrpack|zip)$/i, '');
+    nameInput.value = guessedName;
+
+    if (preview.format === 'generic') {
+      summaryText.textContent = `${fileName} — no modpack manifest found (plain .zip). Only recognized folders (mods, config, resourcepacks, saves) will be extracted; you'll need to set the Minecraft version/loader yourself afterward.`;
+    } else {
+      const loaderPart = preview.loader && preview.loader !== 'vanilla'
+        ? `${loaderLabel(preview.loader)}${preview.loader_version ? ' ' + preview.loader_version : ''}`
+        : 'Vanilla';
+      const formatLabel = preview.format === 'mrpack' ? 'Modrinth' : 'CurseForge';
+      summaryText.textContent = `${formatLabel} modpack — ${preview.minecraft_version || '?'} · ${loaderPart} · ${preview.file_count} file(s)`;
+    }
+  } catch (e) {
+    summaryText.textContent = 'Could not read this file: ' + e;
+    confirmBtn.disabled = true;
+  }
+}
+
+function closeModpackImportOverlay() {
+  document.getElementById('modpack-import-overlay').classList.add('hidden');
+  if (modpackImportTaskRunning) {
+    // Extraction/install is still running in the background — keep the
+    // window reachable from the hidden-windows tray instead of losing it.
+    if (window.hwMinimize) window.hwMinimize('modpack-import-overlay', 'Modpack Extractor');
+  } else {
+    // Nothing running (never started, or already finished) — make sure
+    // there's no stale tray entry left over from an earlier minimize.
+    if (window.hwDone) window.hwDone('modpack-import-overlay');
+  }
+  modpackImportState = null;
+}
+
+async function confirmModpackImport() {
+  if (!modpackImportState) return;
+  const nameInput = document.getElementById('modpack-inst-name');
+  const name = nameInput.value.trim();
+  if (!name) { showToast('Instance name is required', 'error'); return; }
+
+  const useCustomDir = document.getElementById('modpack-dir-custom').checked;
+  const customDir = document.getElementById('modpack-dir-path').value.trim();
+  if (useCustomDir && !customDir) { showToast('Choose a custom directory', 'error'); return; }
+
+  const confirmBtn = document.getElementById('btn-confirm-modpack-import');
+  const progressWrap = document.getElementById('modpack-import-progress-wrap');
+  const statusEl = document.getElementById('modpack-import-status');
+  const barEl = document.getElementById('modpack-import-bar');
+  confirmBtn.disabled = true;
+  progressWrap.classList.remove('hidden');
+  statusEl.textContent = 'Starting…';
+  barEl.style.transform = 'scaleX(0)'; // not width — see #modpack-import-bar in main.css
+  modpackImportTaskRunning = true;
+
+  // Give this extractor run its own card in the downloads widget, exactly
+  // like kicking off an instance install does — same real percent/speed/
+  // ETA, and a "Files" button opening the same live per-file log/status
+  // view (this *is* the "log inspect" — every file the backend's real
+  // downloader touches shows up here as it's reached, not a static line).
+  if (dlWidgetGeneric) {
+    dlWidgetGeneric.begin(MODPACK_IMPORT_CARD_ID, `Modpack: ${name}`, 'Reading modpack…', {
+      determinate: true,
+      withStats: true,
+      noCancel: true, // extraction isn't cancellable mid-run yet; use the window's own Cancel to minimize it instead
+    });
+  }
+
+  const unlisten = await api.onModpackImportProgress((e) => {
+    const p = e.payload || {};
+    const pct = Math.max(0, Math.min(100, p.percent || 0));
+    statusEl.textContent = p.message || p.stage || '';
+    barEl.style.transform = `scaleX(${pct / 100})`;
+
+    if (!dlWidgetGeneric) return;
+    const activeFiles = p.active_files || [];
+    const fileLabel = activeFiles.length === 0
+      ? ''
+      : activeFiles.length === 1
+        ? activeFiles[0].name
+        : `${activeFiles[0].name} +${activeFiles.length - 1} more`;
+    dlWidgetGeneric.update(
+      MODPACK_IMPORT_CARD_ID,
+      `Modpack: ${name}`,
+      p.message || p.stage || '',
+      pct,
+      {
+        file: fileLabel,
+        speed: p.speed_bps ? fmtSpeed(p.speed_bps) : '—',
+        eta: p.eta_seconds != null ? fmtEta(p.eta_seconds) : '—',
+        downloaded: p.downloaded_bytes ? fmtBytes(p.downloaded_bytes) : '—',
+      }
+    );
+    // Real concurrent per-file breakdown — same reconciliation the
+    // instance-install card uses, so "Files" here shows exactly what the
+    // downloader is doing right now instead of a single static status.
+    if (p.stage === 'downloading') {
+      dlWidgetGeneric.reconcileActiveFiles(MODPACK_IMPORT_CARD_ID, activeFiles);
+    }
+  });
+
+  try {
+    const result = await api.importModpack(
+      modpackImportState.filePath,
+      name,
+      useCustomDir,
+      useCustomDir ? customDir : null
+    );
+    modpackImportTaskRunning = false;
+    closeModpackImportOverlay();
+    await refreshInstances();
+    renderInstanceList();
+    let msg = `Imported "${name}"`;
+    if (result.failed_files && result.failed_files.length > 0) {
+      msg += ` — ${result.failed_files.length} file(s) failed to download`;
+    }
+    if (result.unresolved_curseforge_mods) {
+      msg += ` — ${result.unresolved_curseforge_mods} CurseForge mod(s) need to be added manually (via Discover)`;
+    }
+    showToast(msg, result.failed_files && result.failed_files.length > 0 ? 'warning' : 'success');
+    if (dlWidgetGeneric) {
+      dlWidgetGeneric.end(MODPACK_IMPORT_CARD_ID, true, `Imported "${name}"`);
+    }
+  } catch (e) {
+    modpackImportTaskRunning = false;
+    // Extraction failed — leave the window's own error state as-is for
+    // whenever it's reopened, but there's nothing running anymore, so
+    // drop it from the hidden-windows tray if it was minimized there.
+    if (window.hwDone) window.hwDone('modpack-import-overlay');
+    statusEl.textContent = 'Failed: ' + e;
+    showToast('Failed to import modpack: ' + e, 'error');
+    confirmBtn.disabled = false;
+    if (dlWidgetGeneric) {
+      dlWidgetGeneric.end(MODPACK_IMPORT_CARD_ID, false, 'Import failed');
+    }
+  } finally {
+    if (typeof unlisten === 'function') unlisten();
+  }
+}
+
+function initModpackImportOverlay() {
+  const overlayEl = document.getElementById('modpack-import-overlay');
+  if (!overlayEl) return;
+
+  document.getElementById('btn-cancel-modpack-import').addEventListener('click', closeModpackImportOverlay);
+  document.getElementById('btn-cancel-modpack-import-form').addEventListener('click', closeModpackImportOverlay);
+  document.getElementById('btn-confirm-modpack-import').addEventListener('click', confirmModpackImport);
+
+  const dirCustomRadio = document.getElementById('modpack-dir-custom');
+  const dirSeparatedRadio = document.getElementById('modpack-dir-separated');
+  const dirPathRow = document.getElementById('modpack-dir-path-row');
+  const dirPathInput = document.getElementById('modpack-dir-path');
+  const dirBrowseBtn = document.getElementById('modpack-dir-browse');
+
+  const syncDirRowVisibility = () => dirPathRow.classList.toggle('hidden', !dirCustomRadio.checked);
+  dirCustomRadio.addEventListener('change', syncDirRowVisibility);
+  dirSeparatedRadio.addEventListener('change', syncDirRowVisibility);
+
+  dirBrowseBtn.addEventListener('click', async () => {
+    try {
+      const picked = await window.__TAURI__.dialog.open({ directory: true, multiple: false });
+      if (picked) {
+        dirPathInput.value = Array.isArray(picked) ? picked[0] : picked;
+        dirCustomRadio.checked = true;
+        syncDirRowVisibility();
+      }
+    } catch (e) {
+      showToast('Could not open folder picker: ' + e, 'error');
+    }
   });
 }
 
@@ -5957,6 +6455,9 @@ async function loadPresetIconInto(container, presetId) {
 
 // ── Apply Preset overlay ──
 let applyPresetState = null; // { preset, targetInstance, checkboxRows: [{name, modrinthId, checkbox, statusEl}] }
+// True only while mods/config are actually being applied — same purpose as
+// modpackImportTaskRunning above.
+let applyPresetTaskRunning = false;
 
 function setPresetModStatus(row, status, label) {
   row.statusEl.className = 'apply-preset-mod-status ' + status;
@@ -6037,6 +6538,11 @@ function openApplyPresetOverlay(preset, targetInstance) {
 
 function closeApplyPresetOverlay() {
   document.getElementById('apply-preset-overlay').classList.add('hidden');
+  if (applyPresetTaskRunning) {
+    if (window.hwMinimize) window.hwMinimize('apply-preset-overlay', 'Apply Preset');
+  } else {
+    if (window.hwDone) window.hwDone('apply-preset-overlay');
+  }
   applyPresetState = null;
 }
 
@@ -6065,6 +6571,7 @@ function initApplyPresetOverlayEvents() {
     const confirmBtn = document.getElementById('btn-apply-preset-confirm');
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Applying…';
+    applyPresetTaskRunning = true;
     const progress = document.getElementById('apply-preset-progress');
     const progressLabel = document.getElementById('apply-preset-progress-label');
     progress.classList.remove('hidden');
@@ -6165,6 +6672,11 @@ function initApplyPresetOverlayEvents() {
     loadModInstances().then(() => loadMods()).catch(() => {});
     confirmBtn.disabled = false;
     confirmBtn.textContent = 'Apply Preset';
+    applyPresetTaskRunning = false;
+    // Task is done — if this window was minimized to the tray, clear that
+    // entry now rather than waiting for the auto-close below (which is
+    // purely cosmetic timing and shouldn't gate the tray).
+    if (window.hwDone) window.hwDone('apply-preset-overlay');
     setTimeout(closeApplyPresetOverlay, wasCancelled ? 300 : 900);
   });
 }
@@ -7629,6 +8141,8 @@ function populateSettingsUI() {
   document.getElementById('setting-debug-mode').checked = !!settings.debug_mode;
   const crashAnalysisChk = document.getElementById('setting-crash-analysis');
   if (crashAnalysisChk) crashAnalysisChk.checked = !!settings.enable_crash_analysis;
+  const autoOpenConsoleChk = document.getElementById('setting-auto-open-console');
+  if (autoOpenConsoleChk) autoOpenConsoleChk.checked = !!settings.auto_open_console_on_launch;
 
   applyThemeFromSettings();
   applyUsernamePrivacy();
@@ -7920,6 +8434,8 @@ function collectSettingsFromUI() {
   // Experimental
   const crashAnalysisChk = document.getElementById('setting-crash-analysis');
   if (crashAnalysisChk) settings.enable_crash_analysis = crashAnalysisChk.checked;
+  const autoOpenConsoleChk = document.getElementById('setting-auto-open-console');
+  if (autoOpenConsoleChk) settings.auto_open_console_on_launch = autoOpenConsoleChk.checked;
 
   // Preserve Setup Wizard status
   if (prevFinishedSetup !== undefined) settings.Finished_setup = prevFinishedSetup;
@@ -8054,6 +8570,7 @@ function initSettings() {
     'setting-redact-tokens', 'setting-redact-paths', 'setting-hide-launch-command',
     'setting-debug-mode',
     'setting-crash-analysis',
+    'setting-auto-open-console',
   ];
   immediateIds.forEach(id => {
     const el = document.getElementById(id);
@@ -8371,6 +8888,7 @@ function initSettings() {
           redact_tokens: true,
           debug_mode: false,
           enable_crash_analysis: false,
+          auto_open_console_on_launch: false,
         };
         // Preserve non-UI fields from current settings
         Object.assign(settings, defaultSettings);
@@ -9936,6 +10454,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTabs();
   initAccountDropdown();
   initDownloadWidget();
+  initHiddenWindowsWidget();
   initInstanceActions();
   initSkinViewerUI();
   initDressingRoomUI();
@@ -9943,6 +10462,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initCrashTroubleshootWindow();
   initInstanceTroubleshootWindow();
   initMods();
+  initModpackImportOverlay();
   initDiscover();
   initSettings();
   initMusicSettings();
@@ -9990,6 +10510,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   checkSelectedInstanceForUpdates().catch(e => console.error('Startup update check failed', e));
 
   initCrashDialog();
+  initLaunchVerifyStatus();
   initAutoUpdate();
   initUpdateConsentPrompt();
 });
@@ -10354,6 +10875,26 @@ function initAutoUpdate() {
 // (e.g. Fabric's `.fabric` remap cache), opening a search for a missing
 // dependency or mod update, or bumping allocated memory.
 // ═══════════════════════════════════════════════════════════════════════
+
+function initLaunchVerifyStatus() {
+  if (!api.onLaunchVerifyStatus) return;
+  const textEl = document.getElementById('play-status-text');
+  if (!textEl) return;
+
+  api.onLaunchVerifyStatus((event) => {
+    const p = event.payload;
+    launchVerifyInProgress = !!p.active;
+    // Only show the line while it's for whichever instance is currently
+    // selected — a verify pass for a different (background) launch
+    // shouldn't repaint text next to a Play button for something else.
+    if (p.active && p.version_id === selectedInstanceId) {
+      textEl.textContent = p.message || 'Checking libraries & assets…';
+      textEl.classList.remove('hidden');
+    } else if (!p.active && p.version_id === selectedInstanceId) {
+      textEl.classList.add('hidden');
+    }
+  });
+}
 
 function initCrashDialog() {
   if (!api.onGameCrashed) return;

@@ -22,6 +22,10 @@ fn modrinth_client() -> &'static reqwest::Client {
             .user_agent(USER_AGENT)
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(20))
+            // See vendor/mc-launcher-core's http.rs client() for why:
+            // forces IPv4 so a broken/non-routable IPv6 setup can't stall
+            // requests waiting on a dead address before falling back.
+            .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new())
     })

@@ -216,6 +216,50 @@ struct AzulPackage {
     name: String,
 }
 
+/// Finds a `java` executable inside this launcher's own managed `java/`
+/// folder, if one has been downloaded before (via Smart Java Detection or
+/// a previous install). Used so installer-running code (Forge/NeoForge)
+/// can point straight at a known-good runtime instead of guessing from the
+/// environment (`PATH`/`JAVA_HOME`), which frequently isn't set up at all
+/// for a launcher that manages its own JREs — that gap was the cause of
+/// `io error: No such file or directory (os error 2)` when running the
+/// loader installer jar.
+///
+/// Picks the newest-looking managed install if more than one is present
+/// (managed folders are named by major version, e.g. `21`, `17`), since a
+/// newer JRE is more likely to satisfy a loader installer's own
+/// requirements. Returns `None` if nothing has been downloaded yet — in
+/// that case the caller should fall back to system detection.
+pub fn find_any_managed_java() -> Option<PathBuf> {
+    let root = managed_java_root();
+    let mut entries: Vec<PathBuf> = fs::read_dir(&root)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
+    // Sort so higher major-version folder names (e.g. "21" over "17") are
+    // tried first; falls back gracefully to lexical order for anything
+    // that isn't a bare number.
+    entries.sort_by_key(|p| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.parse::<i32>().ok())
+            .unwrap_or(0)
+    });
+    entries.reverse();
+    for dir in entries {
+        if let Some(home) = find_java_home(&dir, 4) {
+            let exe_name = if cfg!(target_os = "windows") { "java.exe" } else { "java" };
+            let exe = home.join("bin").join(exe_name);
+            if exe.is_file() {
+                return Some(exe);
+            }
+        }
+    }
+    None
+}
+
 /// Walks up to `max_depth` directories looking for a `bin/java(.exe)`, so
 /// we can find the actual Java home inside an extracted archive regardless
 /// of how many wrapper folders it's nested in.
@@ -275,7 +319,13 @@ async fn download_java_via_azul(app: &AppHandle, major: i32) -> Result<JavaInsta
         0.0,
     );
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        // See vendor/mc-launcher-core's http.rs client() for why: forces
+        // IPv4 so a broken/non-routable IPv6 setup can't stall the Java
+        // lookup/download waiting on a dead address before falling back.
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let query_url = format!(
         "https://api.azul.com/metadata/v1/zulu/packages/?java_version={major}&os={os}&arch={arch}&archive_type={archive}&java_package_type=jdk&javafx_bundled=false&release_status=ga&availability_types=CA&latest=true&page=1&page_size=1",
         major = major,
@@ -444,6 +494,7 @@ pub async fn ensure_java_for_version(
     app: &AppHandle,
     state: &State<'_, AppState>,
     version: &VersionJson,
+    offline: bool,
 ) -> Result<PathBuf, String> {
     let configured = state.settings.lock().unwrap().java_path.clone();
 
@@ -478,6 +529,14 @@ pub async fn ensure_java_for_version(
 
     // No exact match installed: prefer downloading the exact version Java
     // itself asks for, since that's what Mojang actually tested against.
+    if offline {
+        return Err(format!(
+            "Java {required_major} isn't installed, and this is an offline launch \
+             (so it can't be downloaded automatically). Launch online once to let \
+             Smart Java Detection fetch it, or install a matching Java yourself \
+             in Settings."
+        ));
+    }
     logger::info(
         app,
         state,

@@ -97,8 +97,20 @@ pub fn neoforge_installed_version_id(_minecraft_version: &str, neoforge_version:
 
 /// Returns the NeoForge installer jar URL for a NeoForge version.
 pub fn installer_url(neoforge_version: &str) -> String {
-    format!(
-        "https://maven.neoforged.net/releases/net/neoforged/neoforge/{0}/neoforge-{0}-installer.jar",
-        neoforge_version
-    )
+    installer_urls(neoforge_version)
+        .into_iter()
+        .next()
+        .expect("installer_urls always returns at least one URL")
+}
+
+/// Returns the NeoForge installer jar URL for a NeoForge version, followed
+/// by known mirrors of the same file. See
+/// [`crate::loader::forge::installer_urls`] for why this exists.
+pub fn installer_urls(neoforge_version: &str) -> Vec<String> {
+    let coordinate =
+        format!("net/neoforged/neoforge/{neoforge_version}/neoforge-{neoforge_version}-installer.jar");
+    vec![
+        format!("https://maven.neoforged.net/releases/{coordinate}"),
+        format!("https://bmclapi2.bangbang93.com/maven/{coordinate}"),
+    ]
 }

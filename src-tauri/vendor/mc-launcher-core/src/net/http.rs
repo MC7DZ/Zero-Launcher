@@ -33,6 +33,19 @@ pub fn client() -> Result<Client> {
         .timeout(Duration::from_secs(60))
         .pool_max_idle_per_host(32)
         .pool_idle_timeout(Duration::from_secs(30))
+        // Force outbound connections to bind from an IPv4 local address.
+        // On a machine where IPv6 is "up" but not actually routable (no
+        // working default route, blackholed by a router/VPN, etc.), a
+        // plain client tries the IPv6 address(es) a host resolves to
+        // first and, depending on OS/network stack behavior, that attempt
+        // can take a long time to fail instead of erroring out instantly
+        // — stalling every download/verify call on it before falling
+        // back to IPv4. Binding the local address to IPv4 makes any IPv6
+        // candidate address fail immediately (address-family mismatch,
+        // not a timeout), so the client moves straight to the working
+        // IPv4 address with no delay. Harmless on machines with working
+        // IPv6, since IPv4 connectivity is required either way.
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()?)
 }
 
@@ -40,7 +53,7 @@ pub fn client() -> Result<Client> {
 /// Mirrors the retry budget used by the file downloader
 /// ([`crate::net::download`]) so a single dropped connection to a metadata
 /// host (e.g. `piston-meta.mojang.com`) doesn't fail the whole install.
-const MAX_FETCH_ATTEMPTS: u32 = 3;
+const MAX_FETCH_ATTEMPTS: u32 = 5;
 
 /// Returns whether an error looks like a transient network failure worth
 /// retrying, rather than a real HTTP/decode error.

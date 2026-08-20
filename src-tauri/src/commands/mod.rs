@@ -4,6 +4,7 @@ pub mod discover;
 pub mod java;
 pub mod logs;
 pub mod minecraft;
+pub mod modpack;
 pub mod mods;
 pub mod msa;
 pub mod music;

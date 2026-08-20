@@ -509,7 +509,23 @@
                 </div>
               </div>
               <div class="detail-actions">
-                <button id="btn-play" class="btn-play" disabled title="Launch the selected instance">▶ PLAY</button>
+                <div class="btn-play-group">
+                  <div id="play-status-text" class="play-status-text hidden"></div>
+                  <button id="btn-play" class="btn-play" disabled title="Launch the selected instance">▶ PLAY</button>
+                  <button id="btn-play-options" class="btn-play-gear" disabled title="Launch options" aria-haspopup="true" aria-expanded="false">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="3"></circle>
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                  </button>
+                  <div id="play-options-popover" class="play-options-popover hidden" role="menu">
+                    <button id="btn-launch-offline" class="play-options-item" role="menuitem" title="Skip the libraries/assets check and launch immediately from what's already on disk">Launch Offline</button>
+                    <label class="play-options-checkbox">
+                      <input type="checkbox" id="chk-always-offline" />
+                      <span>Always launch offline</span>
+                    </label>
+                  </div>
+                </div>
                 <button id="btn-edit-instance" class="btn-secondary" title="Rename or change the loader version of the selected instance">Edit</button>
                 <button id="btn-delete-instance" class="btn-danger-outline" title="Permanently delete the selected instance">Delete</button>
               </div>
@@ -1510,6 +1526,17 @@
                     engine, so it can occasionally misread the real cause or suggest a fix that doesn't actually help.
                     Turn this off if it's giving you bad guesses; you can still read the raw log yourself either way.
                   </p>
+
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-auto-open-console" />
+                    <span class="toggle-slider"></span>
+                    <span>Auto-open console when launching</span>
+                  </label>
+                  <p class="settings-hint" style="margin:0; opacity:0.7; font-size:12px; line-height:1.5;">
+                    Pops open that instance's console window the moment you hit Play, so you can watch what's
+                    happening during a slow launch instead of staring at "LAUNCHING…". You can still open it
+                    manually later from Running Instances.
+                  </p>
                 </div>
               </div>
             </div>
@@ -1828,26 +1855,53 @@
   <!-- Toast container -->
   <div id="toast-container"></div>
 
-  <!-- Floating Download/Install Widget -->
-  <div id="dl-widget" class="dl-widget hidden">
-    <button type="button" id="dl-widget-btn" class="dl-widget-btn">
-      <span class="dl-widget-ring">
-        <svg class="dl-ring-svg" viewBox="0 0 34 34">
-          <circle class="dl-ring-track" cx="17" cy="17" r="15.5"></circle>
-          <circle id="dl-ring-fill" class="dl-ring-fill" cx="17" cy="17" r="15.5"></circle>
-        </svg>
-        <span class="dl-widget-icon">⬇</span>
-        <span id="dl-widget-count" class="dl-widget-count hidden">1</span>
-      </span>
-      <span class="dl-widget-text">
-        <span id="dl-widget-title">Downloading…</span>
-        <span id="dl-widget-sub">Preparing…</span>
-      </span>
-    </button>
+  <!-- Floating Download/Install Widget + Hidden Windows Widget, side by side -->
+  <div id="floating-widgets-bar" class="floating-widgets-bar">
+    <div id="dl-widget" class="dl-widget hidden">
+      <button type="button" id="dl-widget-btn" class="dl-widget-btn">
+        <span class="dl-widget-ring">
+          <svg class="dl-ring-svg" viewBox="0 0 34 34">
+            <circle class="dl-ring-track" cx="17" cy="17" r="15.5"></circle>
+            <circle id="dl-ring-fill" class="dl-ring-fill" cx="17" cy="17" r="15.5"></circle>
+          </svg>
+          <span class="dl-widget-icon">⬇</span>
+          <span id="dl-widget-count" class="dl-widget-count hidden">1</span>
+        </span>
+        <span class="dl-widget-text">
+          <span id="dl-widget-title">Downloading…</span>
+          <span id="dl-widget-sub">Preparing…</span>
+        </span>
+      </button>
 
-    <div id="dl-widget-panel" class="dl-widget-panel hidden">
-      <div class="dl-panel-heading">Downloads</div>
-      <div id="dl-cards" class="dl-cards"></div>
+      <div id="dl-widget-panel" class="dl-widget-panel hidden">
+        <div class="dl-panel-heading">Downloads</div>
+        <div id="dl-cards" class="dl-cards"></div>
+      </div>
+    </div>
+
+    <!-- Hidden/minimized windows tray. Any window (modpack import, apply
+         preset, new/edit instance, etc.) that gets closed with an in-progress
+         task keeps running in the background; this button lets you find and
+         reopen it instead of losing track of it. -->
+    <div id="hidden-windows-widget" class="dl-widget hw-widget hidden">
+      <button type="button" id="hw-widget-btn" class="dl-widget-btn" title="Hidden windows">
+        <span class="dl-widget-ring hw-widget-ring">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3.5" y="5" width="17" height="13" rx="2"/>
+            <path d="M3.5 9h17"/>
+          </svg>
+          <span id="hw-widget-count" class="dl-widget-count hidden">1</span>
+        </span>
+        <span class="dl-widget-text">
+          <span id="hw-widget-title">Hidden Windows</span>
+          <span id="hw-widget-sub">—</span>
+        </span>
+      </button>
+
+      <div id="hw-widget-panel" class="dl-widget-panel hidden">
+        <div class="dl-panel-heading">Hidden Windows</div>
+        <div id="hw-list" class="hw-list"></div>
+      </div>
     </div>
   </div>
 
@@ -1862,7 +1916,7 @@
         <div class="dl-card-status-pill">Preparing</div>
       </div>
       <div class="dl-card-track">
-        <div class="dl-card-bar" style="width: 0%;"></div>
+        <div class="dl-card-bar" style="transform: scaleX(0);"></div>
       </div>
       <div class="dl-card-file">—</div>
       <div class="dl-card-stats">
@@ -1903,6 +1957,67 @@
       <div id="dl-files-list" class="dl-files-list"><div id="dl-files-viewport" class="dl-files-viewport"></div></div>
       <div class="dl-files-footer">
         <span id="dl-files-speed" class="dl-files-speed">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Modpack drag-and-drop (global — any tab, .zip/.mrpack) ═══ -->
+  <div id="modpack-drag-overlay" class="mods-drag-overlay" aria-hidden="true">
+    <div class="mods-drag-overlay-inner">
+      <span class="mods-drag-overlay-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <div class="mods-drag-overlay-title">Release to import modpack</div>
+      <div class="mods-drag-overlay-sub">.mrpack (Modrinth) or CurseForge/generic .zip</div>
+    </div>
+  </div>
+
+  <!-- Modpack Extractor overlay — shown after a .zip/.mrpack is dropped -->
+  <div id="modpack-import-overlay" class="overlay hidden">
+    <div class="bento-modal">
+      <div class="bento-tile bento-tile-header">
+        <h3>Modpack Extractor</h3>
+        <button class="overlay-close" id="btn-cancel-modpack-import">✕</button>
+      </div>
+
+      <div class="bento-tile" id="modpack-import-summary">
+        <label class="bento-tile-label">Modpack</label>
+        <div id="modpack-import-summary-text" class="bento-tile-hint">Reading modpack…</div>
+      </div>
+
+      <div class="bento-tile bento-tile-name">
+        <label class="bento-tile-label">Instance Name</label>
+        <input type="text" id="modpack-inst-name" class="input-field" placeholder="Instance name" />
+      </div>
+
+      <div class="bento-tile bento-tile-location">
+        <label class="bento-tile-label">Install Location</label>
+        <div class="bento-radio-group">
+          <label class="bento-radio-row">
+            <input type="radio" name="modpack-dir-choice" id="modpack-dir-separated" checked />
+            <span>Separated folder <span class="bento-tile-hint">(keeps this instance's mods, saves, and config on their own)</span></span>
+          </label>
+          <label class="bento-radio-row">
+            <input type="radio" name="modpack-dir-choice" id="modpack-dir-custom" />
+            <span>Use a custom directory</span>
+          </label>
+        </div>
+        <div id="modpack-dir-path-row" class="hidden bento-dir-path-row">
+          <input type="text" id="modpack-dir-path" class="input-field" placeholder="/path/to/folder" style="flex:1;" />
+          <button id="modpack-dir-browse" class="btn-secondary" type="button">Browse…</button>
+        </div>
+      </div>
+
+      <div id="modpack-import-progress-wrap" class="bento-tile bento-tile-progress hidden">
+        <div class="progress-text" id="modpack-import-status">Starting…</div>
+        <div class="progress-track">
+          <div class="progress-bar" id="modpack-import-bar"></div>
+        </div>
+      </div>
+
+      <div class="bento-tile bento-tile-actions">
+        <button id="btn-confirm-modpack-import" class="btn-accent">Extract & Install</button>
+        <button id="btn-cancel-modpack-import-form" class="btn-ghost">Cancel</button>
       </div>
     </div>
   </div>
