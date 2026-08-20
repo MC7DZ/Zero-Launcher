@@ -49,7 +49,7 @@ pub fn get_jvm_runtimes() -> Result<Vec<String>, Box<dyn std::error::Error>> {
         // Binds to an IPv4-only local address so a broken/absent IPv6
         // route (common on some home/mobile networks) can't stall this
         // call waiting on a dead address before falling back to IPv4.
-        .local_address(std::net::Ipv4Addr::UNSPECIFIED)
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .unwrap_or_default();
     let response = client
@@ -85,7 +85,7 @@ pub fn install_jvm_runtime(
         // Binds to an IPv4-only local address so a broken/absent IPv6
         // route (common on some home/mobile networks) can't stall this
         // call waiting on a dead address before falling back to IPv4.
-        .local_address(std::net::Ipv4Addr::UNSPECIFIED)
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .unwrap_or_default();
     let manifest_data: RuntimeListJson = client
@@ -285,7 +285,7 @@ pub fn get_jvm_runtime_information(
         // Binds to an IPv4-only local address so a broken/absent IPv6
         // route (common on some home/mobile networks) can't stall this
         // call waiting on a dead address before falling back to IPv4.
-        .local_address(std::net::Ipv4Addr::UNSPECIFIED)
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .unwrap_or_default();
     let manifest_data: RuntimeListJson = client

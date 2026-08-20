@@ -220,7 +220,7 @@ pub fn get_minecraft_news(options: MinecraftNewsOptions) -> Result<Articles, req
         // Binds to an IPv4-only local address so a broken/absent IPv6
         // route (common on some home/mobile networks) can't stall this
         // call waiting on a dead address before falling back to IPv4.
-        .local_address(std::net::Ipv4Addr::UNSPECIFIED)
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .unwrap_or_default();
     let url = format!(
