@@ -65,6 +65,8 @@ struct GithubTreeResponse {
 #[derive(Debug, Deserialize)]
 struct GithubTreeEntry {
     path: String,
+    #[serde(default)]
+    sha: Option<String>,
     #[serde(rename = "type")]
     entry_type: String,
 }
@@ -73,21 +75,20 @@ const GITHUB_OWNER: &str = "MC7DZ";
 const GITHUB_REPO: &str = "ZeroLauncher-Updates";
 const PRESETS_PREFIX: &str = "presets/";
 
-/// Old approach made one GitHub Contents-API call *per subfolder* — mod
-/// configs nest deeply (config/spark/tmp-client, config/.puzzle_cache,
-/// etc., easily 15-20+ folders per preset), so a single sync could burn
-/// through unauthenticated GitHub's 60-requests/hour limit partway
-/// through and silently leave presets half-downloaded or missing with no
-/// error surfaced anywhere. The Git Trees API returns the *entire* repo
-/// file listing in one shot (`recursive=1`), so the whole sync now costs
-/// exactly 2 API calls (resolve default branch, fetch tree) no matter how
-/// deep the folders go — file contents themselves are then pulled from
-/// raw.githubusercontent.com, which isn't subject to that same limit.
-async fn fetch_github_preset_tree(client: &reqwest::Client) -> Result<(String, Vec<String>), String> {
+fn compute_git_blob_sha(bytes: &[u8]) -> String {
+    use sha1::{Digest, Sha1};
+    let mut hasher = Sha1::new();
+    hasher.update(format!("blob {}\0", bytes.len()).as_bytes());
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+/// Fetches the whole preset repo tree from Git Trees API with file paths and git blob SHAs.
+async fn fetch_github_preset_tree(client: &reqwest::Client) -> Result<(String, Vec<(String, String)>), String> {
     let repo_url = format!("https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}");
     let repo_resp = client
         .get(&repo_url)
-        .header("User-Agent", "ZeroLauncher/2.1.0 (https://github.com/MC7DZ/ZeroLauncher)")
+        .header("User-Agent", "ZeroLauncher/2.2.0 (https://github.com/MC7DZ/ZeroLauncher)")
         .send()
         .await
         .map_err(|e| format!("GitHub repo request failed: {e}"))?;
@@ -105,7 +106,7 @@ async fn fetch_github_preset_tree(client: &reqwest::Client) -> Result<(String, V
     );
     let tree_resp = client
         .get(&tree_url)
-        .header("User-Agent", "ZeroLauncher/2.1.0 (https://github.com/MC7DZ/ZeroLauncher)")
+        .header("User-Agent", "ZeroLauncher/2.2.0 (https://github.com/MC7DZ/ZeroLauncher)")
         .send()
         .await
         .map_err(|e| format!("GitHub tree request failed: {e}"))?;
@@ -118,9 +119,6 @@ async fn fetch_github_preset_tree(client: &reqwest::Client) -> Result<(String, V
         .map_err(|e| format!("Failed to parse GitHub tree: {e}"))?;
 
     if tree.truncated {
-        // Repo has grown too large for a single non-truncated tree response.
-        // Not expected at current preset repo size, but fail loudly rather
-        // than silently syncing a partial preset set if it ever happens.
         return Err("GitHub repo tree response was truncated — too many files for one request".to_string());
     }
 
@@ -129,7 +127,7 @@ async fn fetch_github_preset_tree(client: &reqwest::Client) -> Result<(String, V
         tree.tree
             .into_iter()
             .filter(|e| e.entry_type == "blob" && e.path.starts_with(PRESETS_PREFIX))
-            .map(|e| e.path)
+            .map(|e| (e.path, e.sha.unwrap_or_default()))
             .collect(),
     ))
 }
@@ -138,11 +136,16 @@ async fn download_github_file(
     client: &reqwest::Client,
     branch: &str,
     repo_path: &str,
+    remote_sha: &str,
     dest: &Path,
 ) -> Result<(), String> {
-    // Skip re-downloading if file already exists and is not empty.
-    if dest.is_file() && dest.metadata().map(|m| m.len() > 0).unwrap_or(false) {
-        return Ok(());
+    // If the local file already exists and matches the remote Git blob SHA, skip downloading.
+    if dest.is_file() {
+        if let Ok(existing) = std::fs::read(dest) {
+            if !remote_sha.is_empty() && compute_git_blob_sha(&existing) == remote_sha {
+                return Ok(());
+            }
+        }
     }
     if let Some(parent) = dest.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -152,7 +155,7 @@ async fn download_github_file(
     );
     let resp = client
         .get(&raw_url)
-        .header("User-Agent", "ZeroLauncher/2.1.0")
+        .header("User-Agent", "ZeroLauncher/2.2.0")
         .send()
         .await
         .map_err(|e| format!("Failed to fetch {repo_path}: {e}"))?;
@@ -172,27 +175,18 @@ pub async fn sync_presets_from_github_internal(data_dir: PathBuf, app: Option<Ap
     std::fs::create_dir_all(&presets_dir).map_err(|e| format!("Failed to create presets dir: {e}"))?;
 
     let client = reqwest::Client::builder()
-        // See vendor/mc-launcher-core's http.rs client() for why: forces
-        // IPv4 so a broken/non-routable IPv6 setup can't stall requests.
         .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .map_err(|e| e.to_string())?;
 
-    // 2 API calls total (resolve default branch + fetch the whole repo
-    // tree), regardless of how many presets or nested config folders
-    // exist — see fetch_github_preset_tree for why this replaced the old
-    // one-API-call-per-subfolder walk.
-    let (branch, paths) = fetch_github_preset_tree(&client).await?;
+    let (branch, entries) = fetch_github_preset_tree(&client).await?;
 
-    // Group every file path by its immediate preset folder name
-    // (presets/<Name>/...) so we can report progress per-preset like
-    // before, and know which folders exist upstream at all.
-    let mut by_preset: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
-    for path in &paths {
+    let mut by_preset: std::collections::BTreeMap<String, Vec<(String, String)>> = std::collections::BTreeMap::new();
+    for (path, sha) in entries {
         let rest = &path[PRESETS_PREFIX.len()..];
         if let Some(slash) = rest.find('/') {
             let preset_name = &rest[..slash];
-            by_preset.entry(preset_name.to_string()).or_default().push(path.clone());
+            by_preset.entry(preset_name.to_string()).or_default().push((path, sha));
         }
     }
 
@@ -209,16 +203,11 @@ pub async fn sync_presets_from_github_internal(data_dir: PathBuf, app: Option<Ap
         let target_folder = presets_dir.join(&preset_name);
         let _ = std::fs::create_dir_all(&target_folder);
 
-        // Download every file in this preset. One file failing (e.g. a
-        // transient network hiccup) no longer silently drops the whole
-        // preset the way an early Err from the old recursive walk did —
-        // each file is independent, so a single bad file just leaves that
-        // one file missing instead of the entire preset.
         let mut ok_count = 0usize;
-        for repo_path in &files {
+        for (repo_path, remote_sha) in &files {
             let rel = &repo_path[PRESETS_PREFIX.len() + preset_name.len() + 1..];
             let dest = target_folder.join(rel);
-            match download_github_file(&client, &branch, repo_path, &dest).await {
+            match download_github_file(&client, &branch, repo_path, remote_sha, &dest).await {
                 Ok(()) => ok_count += 1,
                 Err(e) => {
                     eprintln!("Preset sync: failed to download {repo_path}: {e}");

@@ -29,6 +29,23 @@ pub fn run() {
         if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
             std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "0");
         }
+
+        // Wayland compositors (and GNOME/KDE's alt-tab/taskbar in
+        // particular) don't use window.set_icon() at all — there's no
+        // pixmap-passing protocol like X11 has. Instead they identify a
+        // window by its xdg-shell "app_id" and look up an installed
+        // .desktop file with a matching id/StartupWMClass to find an icon.
+        // GTK derives that app_id from GLib's "prgname" the first time a
+        // window is realized, and if we never set it ourselves, GLib falls
+        // back to guessing it from argv[0] — which, for a binary launched
+        // out of an extracted AppImage, is some unpredictable temp mount
+        // path rather than "zerolauncher". That mismatch is why alt-tab
+        // was showing a generic Wayland icon instead of ours. Setting this
+        // explicitly, before any window exists, makes the reported app_id
+        // match the "zerolauncher.desktop" entry first_run_setup installs,
+        // so the compositor can resolve our actual icon.
+        glib::set_prgname(Some("zerolauncher"));
+        glib::set_application_name("Zero Launcher");
     }
 
     tauri::Builder::default()
@@ -51,6 +68,9 @@ pub fn run() {
             // installed in its permanent home with a proper shortcut
             // before anything else (tray, main window, state) is set up.
             first_run_setup::run_first_time_setup(&app.handle().clone());
+
+            #[cfg(target_os = "linux")]
+            let _ = first_run_setup::ensure_linux_xdg_icons();
 
             // Linux/macOS: ~/Zero Launcher
             // Windows: %APPDATA%/Zero Launcher
@@ -249,6 +269,8 @@ pub fn run() {
             commands::minecraft::get_running_instances,
             commands::minecraft::get_instance_console_logs,
             commands::minecraft::kill_instance,
+            commands::minecraft::check_linux_zlib_conflict,
+            commands::minecraft::install_linux_package,
             // Modpack import (.mrpack / CurseForge zip drag-and-drop)
             commands::modpack::preview_modpack,
             commands::modpack::import_modpack,

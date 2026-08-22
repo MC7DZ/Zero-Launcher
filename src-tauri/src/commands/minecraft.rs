@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::Instant;
+use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use crate::logger;
@@ -1618,24 +1619,24 @@ pub async fn launch_minecraft(
         // in the launcher that ever touches `xrandr`/`which` at all: LWJGL3
         // versions (i.e. every current/modern Minecraft version) skip this
         // whole block entirely via `uses_lwjgl2` above.
-        static HAS_XRANDR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let has_xrandr = *HAS_XRANDR.get_or_init(|| {
-            std::process::Command::new("which")
-                .arg("xrandr")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false)
-        });
+        let has_xrandr = std::process::Command::new("which")
+            .arg("xrandr")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
         if !has_xrandr {
             fail_cleanup();
             return Err(
                 "This version needs the `xrandr` command, which isn't installed. \
-                 It's a small system package (not part of this launcher) — install it and try again:\n\
-                 \u{2022} Arch/CachyOS: sudo pacman -S xorg-xrandr\n\
-                 \u{2022} Debian/Ubuntu: sudo apt install x11-xserver-utils\n\
-                 \u{2022} Fedora: sudo dnf install xrandr\n\
+                 It's a small system package (not part of this launcher) — install it for your distribution:\n\
+                 \u{2022} Arch / CachyOS / Manjaro: sudo pacman -S xorg-xrandr\n\
+                 \u{2022} Debian / Ubuntu / Linux Mint: sudo apt install x11-xserver-utils\n\
+                 \u{2022} Fedora / RHEL / CentOS: sudo dnf install xrandr\n\
+                 \u{2022} openSUSE: sudo zypper install xrandr\n\
+                 \u{2022} Alpine Linux: sudo apk add xrandr\n\
+                 \u{2022} Void Linux: sudo xbps-install -S xrandr\n\
                  This is needed even under Wayland, since this old Minecraft version (LWJGL2) always talks to X11/XWayland for display info."
                     .to_string(),
             );
@@ -1762,6 +1763,25 @@ pub async fn launch_minecraft(
         // `Command::process_group` is inherent (no extra trait import
         // needed, unlike std's `CommandExt`).
         launch_command.process_group(0);
+        // Set argv[0] to "Minecraft" so system monitors (GNOME System
+        // Monitor, KSysGuard, htop, etc.) that read /proc/<pid>/comm or
+        // argv[0] show "Minecraft" rather than "java" or the launcher's
+        // own process name. This is purely cosmetic — the actual binary
+        // executed is still the Java JVM resolved above.
+        launch_command.arg0("Minecraft");
+
+        // Strip AppImage and desktop launch tracking environment variables
+        // so that Linux desktop environments, docks, and system monitors do
+        // NOT associate the spawned Minecraft JVM process with ZeroLauncher's
+        // AppImage container or launcher icon.
+        launch_command.env_remove("APPIMAGE");
+        launch_command.env_remove("APPDIR");
+        launch_command.env_remove("ARGV0");
+        launch_command.env_remove("OWD");
+        launch_command.env_remove("DESKTOP_STARTUP_ID");
+        launch_command.env_remove("GIO_LAUNCHED_DESKTOP_FILE");
+        launch_command.env_remove("GIO_LAUNCHED_DESKTOP_FILE_PID");
+        launch_command.env_remove("BAMF_DESKTOP_FILE_HINT");
     }
     let mut child = launch_command
         .spawn()
@@ -2429,4 +2449,202 @@ pub async fn delete_installed_version(
     ));
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinuxZlibCheckResult {
+    pub has_conflict: bool,
+    pub distro: String,
+}
+
+/// Checks whether the Linux system is running `zlib-ng` / `zlib-ng-compat` instead of standard `zlib`.
+/// Used before Forge/NeoForge installations to warn users of hash verification issues.
+#[tauri::command]
+pub fn check_linux_zlib_conflict() -> LinuxZlibCheckResult {
+    #[cfg(target_os = "linux")]
+    {
+        // 1. Check if pacman reports zlib-ng or zlib-ng-compat installed
+        let has_pacman_zlib_ng = std::process::Command::new("pacman")
+            .args(["-Q", "zlib-ng-compat"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+            || std::process::Command::new("pacman")
+                .args(["-Q", "zlib-ng"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+        // 2. Check if libz-ng files exist
+        let has_libz_ng_file = [
+            "/usr/lib/libz-ng.so",
+            "/usr/lib64/libz-ng.so",
+            "/usr/lib/libz-ng.so.1",
+            "/usr/lib64/libz-ng.so.1",
+            "/usr/lib/x86_64-linux-gnu/libz-ng.so",
+            "/usr/lib/x86_64-linux-gnu/libz-ng.so.1",
+        ]
+        .iter()
+        .any(|p| std::path::Path::new(p).exists());
+
+        // 3. Inspect symlink or ELF bytes of libz.so.1
+        let has_zlib_ng_in_libz = [
+            "/usr/lib/libz.so.1",
+            "/usr/lib64/libz.so.1",
+            "/lib64/libz.so.1",
+            "/usr/lib/x86_64-linux-gnu/libz.so.1",
+        ]
+        .iter()
+        .any(|p| {
+            if let Ok(target) = std::fs::read_link(p) {
+                if target.to_string_lossy().contains("zlib-ng") {
+                    return true;
+                }
+            }
+            if let Ok(bytes) = std::fs::read(p) {
+                if bytes.windows(7).any(|w| w == b"zlib-ng") {
+                    return true;
+                }
+            }
+            false
+        });
+
+        let distro = std::fs::read_to_string("/etc/os-release")
+            .ok()
+            .and_then(|content| {
+                for line in content.lines() {
+                    if let Some(id) = line.strip_prefix("ID=") {
+                        return Some(id.trim_matches('"').to_string());
+                    }
+                }
+                None
+            })
+            .unwrap_or_else(|| "linux".to_string());
+
+        let has_conflict = has_pacman_zlib_ng || has_libz_ng_file || has_zlib_ng_in_libz;
+        LinuxZlibCheckResult {
+            has_conflict,
+            distro,
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        LinuxZlibCheckResult {
+            has_conflict: false,
+            distro: String::new(),
+        }
+    }
+}
+
+/// Automatically installs required Linux system packages (e.g. standard `zlib` or `xrandr`)
+/// using `pkexec` (PolicyKit) to prompt for system privileges safely.
+#[tauri::command]
+pub async fn install_linux_package(package_type: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let is_arch = std::process::Command::new("which").arg("pacman").output().map(|o| o.status.success()).unwrap_or(false);
+        let is_debian = std::process::Command::new("which").arg("apt-get").output().map(|o| o.status.success()).unwrap_or(false);
+        let is_fedora = std::process::Command::new("which").arg("dnf").output().map(|o| o.status.success()).unwrap_or(false);
+        let is_zypper = std::process::Command::new("which").arg("zypper").output().map(|o| o.status.success()).unwrap_or(false);
+        let is_apk = std::process::Command::new("which").arg("apk").output().map(|o| o.status.success()).unwrap_or(false);
+        let is_xbps = std::process::Command::new("which").arg("xbps-install").output().map(|o| o.status.success()).unwrap_or(false);
+
+        let has_pkexec = std::process::Command::new("which").arg("pkexec").output().map(|o| o.status.success()).unwrap_or(false);
+        if !has_pkexec {
+            return Err("pkexec (PolicyKit) was not found on your system. Please install the package manually using your terminal.".to_string());
+        }
+
+        let commands_to_try: Vec<(&str, Vec<&str>)> = match package_type.as_str() {
+            "zlib" => {
+                if is_arch {
+                    vec![
+                        ("sh", vec!["-c", "printf 'y\\ny\\ny\\ny\\n' | pacman -S zlib lib32-zlib || (pacman -Rdd --noconfirm zlib-ng-compat lib32-zlib-ng-compat 2>/dev/null; pacman -S --noconfirm zlib lib32-zlib || pacman -S --noconfirm zlib)"]),
+                    ]
+                } else if is_debian {
+                    vec![
+                        ("apt-get", vec!["install", "-y", "zlib1g", "zlib1g:i386"]),
+                        ("apt-get", vec!["install", "-y", "zlib1g"]),
+                    ]
+                } else if is_fedora {
+                    vec![
+                        ("dnf", vec!["install", "-y", "zlib", "zlib.i686"]),
+                        ("dnf", vec!["install", "-y", "zlib"]),
+                    ]
+                } else if is_zypper {
+                    vec![
+                        ("zypper", vec!["install", "-y", "libz1", "libz1-32bit"]),
+                        ("zypper", vec!["install", "-y", "libz1"]),
+                    ]
+                } else if is_apk {
+                    vec![("apk", vec!["add", "zlib"])]
+                } else if is_xbps {
+                    vec![("xbps-install", vec!["-y", "-S", "zlib"])]
+                } else {
+                    return Err("No supported package manager detected on this Linux system.".to_string());
+                }
+            }
+            "xrandr" => {
+                if is_arch {
+                    vec![
+                        ("pacman", vec!["-S", "--noconfirm", "xorg-xrandr"]),
+                        ("sh", vec!["-c", "printf 'y\\ny\\n' | pacman -S xorg-xrandr"]),
+                    ]
+                } else if is_debian {
+                    vec![("apt-get", vec!["install", "-y", "x11-xserver-utils"])]
+                } else if is_fedora {
+                    vec![("dnf", vec!["install", "-y", "xrandr"])]
+                } else if is_zypper {
+                    vec![("zypper", vec!["install", "-y", "xrandr"])]
+                } else if is_apk {
+                    vec![("apk", vec!["add", "xrandr"])]
+                } else if is_xbps {
+                    vec![("xbps-install", vec!["-y", "-S", "xrandr"])]
+                } else {
+                    return Err("No supported package manager detected on this Linux system.".to_string());
+                }
+            }
+            _ => return Err("Unknown package type requested.".to_string()),
+        };
+
+        let mut last_error = String::new();
+        for (bin, args) in commands_to_try {
+            let mut full_args = vec![bin];
+            full_args.extend(args);
+
+            let res = tokio::task::spawn_blocking(move || {
+                std::process::Command::new("pkexec")
+                    .args(&full_args)
+                    .output()
+            })
+            .await
+            .map_err(|e| format!("Task execution failed: {e}"))?;
+
+            match res {
+                Ok(output) if output.status.success() => return Ok(()),
+                Ok(output) => {
+                    let err = String::from_utf8_lossy(&output.stderr).to_string();
+                    let out = String::from_utf8_lossy(&output.stdout).to_string();
+                    let combined = format!("{out}\n{err}").trim().to_string();
+                    last_error = if combined.is_empty() {
+                        "Authentication was cancelled or installation failed.".to_string()
+                    } else {
+                        combined
+                    };
+                }
+                Err(e) => {
+                    last_error = format!("Failed to launch pkexec: {e}");
+                }
+            }
+        }
+
+        Err(format!("Installation failed: {last_error}"))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err("Package installation is only supported on Linux.".to_string())
+    }
 }

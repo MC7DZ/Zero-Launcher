@@ -64,11 +64,12 @@ pub fn plan_library_downloads_for_platform(
             // that were never published to Fabric's Maven either. Try a
             // handful of mirrors, same as other launchers (e.g. Prism) do
             // for these bare coordinates, until one actually has the file.
-            const KNOWN_REPOS: [&str; 5] = [
+            const KNOWN_REPOS: [&str; 6] = [
                 "https://maven.fabricmc.net",
                 "https://repo1.maven.org/maven2",
                 "https://libraries.minecraft.net",
                 "https://maven.minecraftforge.net",
+                "https://maven.neoforged.net/releases",
                 "https://repo.spongepowered.org/maven",
             ];
             let mut urls = match &library.url {

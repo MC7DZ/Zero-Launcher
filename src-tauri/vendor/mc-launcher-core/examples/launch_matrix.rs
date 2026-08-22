@@ -18,6 +18,7 @@ fn main() -> mc_launcher_core::Result<()> {
                     version: LoaderVersion::LatestStable,
                 }),
                 java: JavaInstallPolicy::Auto,
+                java_executable: None,
             },
         )?;
     }

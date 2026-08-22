@@ -221,10 +221,11 @@ struct CurseForgeFileRef {
     file_id: u64,
 }
 
-/// CurseForge's `modLoaders[].id` looks like `"forge-47.2.20"` or
-/// `"fabric-0.15.7"` — split into (loader, version).
+/// CurseForge's `modLoaders[].id` looks like `"forge-47.2.20"`,
+/// `"forge-1.12.2-14.23.5.2860"`, or `"fabric-0.15.7"` — split into (loader, version).
 fn split_curseforge_loader(id: &str) -> (String, String) {
-    if let Some((name, ver)) = id.split_once('-') {
+    let lower = id.trim().to_lowercase();
+    if let Some((name, ver)) = lower.split_once('-') {
         let loader = match name {
             "forge" => "forge",
             "fabric" => "fabric",
@@ -234,7 +235,7 @@ fn split_curseforge_loader(id: &str) -> (String, String) {
         };
         (loader.to_string(), ver.to_string())
     } else {
-        (id.to_string(), "latest".to_string())
+        (lower, "latest".to_string())
     }
 }
 
@@ -524,23 +525,29 @@ fn extract_zip_folder(
     dest_root: &Path,
 ) -> Result<u32, String> {
     let mut copied = 0u32;
-    let prefix = if src_prefix.ends_with('/') {
-        src_prefix.to_string()
+    let clean_prefix = src_prefix.replace('\\', "/").trim_matches('/').to_string();
+    let prefix = if clean_prefix.is_empty() {
+        String::new()
     } else {
-        format!("{src_prefix}/")
+        format!("{clean_prefix}/")
     };
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = entry.name().to_string();
-        if !name.starts_with(&prefix) || name == prefix {
+        let raw_name = entry.name().replace('\\', "/");
+        let name = raw_name.trim_start_matches("./");
+        if !prefix.is_empty() && (!name.starts_with(&prefix) || name == prefix) {
             continue;
         }
-        let rel = &name[prefix.len()..];
-        if rel.is_empty() {
+        let rel = if prefix.is_empty() {
+            name
+        } else {
+            &name[prefix.len()..]
+        };
+        if rel.is_empty() || rel.contains("..") {
             continue;
         }
         let out_path = dest_root.join(rel);
-        if entry.is_dir() {
+        if entry.is_dir() || name.ends_with('/') {
             std::fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
             continue;
         }
@@ -559,11 +566,15 @@ fn extract_zip_folder(
 /// (non-mrpack, non-CurseForge) export that just bundles `mods/`,
 /// `config/`, `resourcepacks/`, `saves/` at its root.
 fn zip_has_folder(archive: &mut ZipArchive<std::fs::File>, folder: &str) -> bool {
-    let prefix = format!("{folder}/");
+    let clean_folder = folder.replace('\\', "/").trim_matches('/').to_string();
+    let prefix = format!("{clean_folder}/");
     (0..archive.len()).any(|i| {
         archive
             .by_index(i)
-            .map(|e| e.name().starts_with(&prefix))
+            .map(|e| {
+                let name = e.name().replace('\\', "/");
+                name.trim_start_matches("./").starts_with(&prefix)
+            })
             .unwrap_or(false)
     })
 }

@@ -128,7 +128,8 @@ impl Launcher {
                         )?
                     } else {
                         reporter.report(ProgressEvent::StageStarted { stage: InstallStage::LoaderInstall });
-                        run_loader_installer_with_output(
+                        let expected_version_id = crate::loader::forge::forge_installed_version_id(&loader_version).ok();
+                        let install_res = run_loader_installer_with_output(
                             &InstallerInvocation {
                                 loader: LoaderKind::Forge,
                                 java_executable: resolve_installer_java(request.java_executable.as_deref()),
@@ -136,7 +137,13 @@ impl Launcher {
                                 minecraft_dir: self.minecraft_dir.clone(),
                             },
                             &mut |line| reporter.report(ProgressEvent::InstallerOutputLine { line }),
-                        )?;
+                        );
+                        if let Err(e) = install_res {
+                            if let Some(vid) = expected_version_id {
+                                let _ = std::fs::remove_dir_all(self.minecraft_dir.join("versions").join(&vid));
+                            }
+                            return Err(e);
+                        }
                         crate::loader::forge::forge_installed_version_id(&loader_version)?
                     };
                     let merged = self.load_version(&version_id)?;
@@ -154,7 +161,11 @@ impl Launcher {
                         &crate::loader::neoforge::installer_urls(&loader_version),
                     )?;
                     reporter.report(ProgressEvent::StageStarted { stage: InstallStage::LoaderInstall });
-                    run_loader_installer_with_output(
+                    let expected_version_id = crate::loader::neoforge::neoforge_installed_version_id(
+                        &request.minecraft_version,
+                        &loader_version,
+                    );
+                    let install_res = run_loader_installer_with_output(
                         &InstallerInvocation {
                             loader: LoaderKind::NeoForge,
                             java_executable: resolve_installer_java(request.java_executable.as_deref()),
@@ -162,11 +173,12 @@ impl Launcher {
                             minecraft_dir: self.minecraft_dir.clone(),
                         },
                         &mut |line| reporter.report(ProgressEvent::InstallerOutputLine { line }),
-                    )?;
-                    let version_id = crate::loader::neoforge::neoforge_installed_version_id(
-                        &request.minecraft_version,
-                        &loader_version,
                     );
+                    if let Err(e) = install_res {
+                        let _ = std::fs::remove_dir_all(self.minecraft_dir.join("versions").join(&expected_version_id));
+                        return Err(e);
+                    }
+                    let version_id = expected_version_id;
                     let merged = self.load_version(&version_id)?;
                     install_version_files(&merged, &self.minecraft_dir, reporter)?;
                     return Ok(InstallResult { version_id });

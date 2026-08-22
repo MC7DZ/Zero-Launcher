@@ -202,55 +202,169 @@ fn perform_install(app: &AppHandle) -> Result<(), String> {
 
 #[cfg(target_os = "linux")]
 fn create_linux_shortcut(exe_path: &Path) -> Result<(), String> {
-    let icon_path = install_dir().join("icon.png");
-    if fs::write(&icon_path, include_bytes!("../icons/128x128.png")).is_err() {
-        // Non-fatal - the shortcut will just fall back to a generic icon.
-    }
+    // The plain (no-background) logo is what shows up anywhere the app is
+    // *running* — taskbar, alt-tab, tray, the live window icon — since all
+    // of those resolve through ensure_linux_xdg_icons() below. The
+    // background/"shortcut" variant is reserved for the double-click icon
+    // file on the Desktop (see further down), which is a distinct static
+    // shortcut rather than something reflecting the running app.
+    //
+    // This is also refreshed unconditionally on every single launch (see
+    // ensure_linux_xdg_icons, called from lib.rs) — not just here, which
+    // only runs the *first* time the exe gets copied into its permanent
+    // home. Otherwise, updating icons/shortcut.png in a new build and
+    // shipping it to someone who already has the launcher installed would
+    // silently do nothing: needs_setup() is false because the exe is
+    // already in the right place, so this function would never re-run and
+    // the old icon bytes baked into ~/Zero Launcher/icon.png would linger
+    // forever.
+    let icon_path = ensure_linux_xdg_icons();
 
     let apps_dir = dirs::home_dir()
         .map(|h| h.join(".local/share/applications"))
         .ok_or("no home directory")?;
     fs::create_dir_all(&apps_dir).map_err(|e| e.to_string())?;
 
-    let icon_line = if icon_path.exists() {
-        format!("Icon={}\n", icon_path.display())
-    } else {
-        String::new()
+    let icon_str = match &icon_path {
+        Some(p) if p.exists() => p.to_string_lossy().to_string(),
+        _ => "zerolauncher".to_string(),
     };
 
     let desktop_entry = format!(
         "[Desktop Entry]\n\
          Type=Application\n\
          Name=Zero Launcher\n\
-         Comment=Zero Launcher - Minecraft launcher\n\
+         GenericName=Minecraft Launcher\n\
+         Comment=Zero Launcher - Fast & Lightweight Minecraft Launcher\n\
          Exec=\"{}\"\n\
-         {icon_line}\
+         Icon={}\n\
          Terminal=false\n\
          Categories=Game;\n\
-         StartupWMClass=ZeroLauncher\n",
-        exe_path.display()
+         StartupWMClass=zerolauncher\n\
+         StartupNotify=true\n",
+        exe_path.display(),
+        icon_str
     );
 
-    let desktop_file = apps_dir.join("zerolauncher.desktop");
-    fs::write(&desktop_file, desktop_entry).map_err(|e| e.to_string())?;
+    // Write both standard names so Wayland compositors matching either
+    // `com.zerolauncher.app` or `zerolauncher` find the desktop entry and icon.
+    let desktop_files = [
+        apps_dir.join("com.zerolauncher.app.desktop"),
+        apps_dir.join("zerolauncher.desktop"),
+        apps_dir.join("ZeroLauncher.desktop"),
+    ];
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = fs::metadata(&desktop_file) {
-            let mut perm = meta.permissions();
-            perm.set_mode(perm.mode() | 0o755);
-            let _ = fs::set_permissions(&desktop_file, perm);
-        }
+    for df in &desktop_files {
+        write_and_mark_executable(df, &desktop_entry);
     }
 
-    // Best-effort nudge so DEs that cache the app list pick it up right
-    // away instead of after the next login.
+    // Best-effort nudge so DEs that cache the app list pick it up right away
     let _ = std::process::Command::new("update-desktop-database")
         .arg(&apps_dir)
         .status();
 
+    // Also drop a launcher icon straight onto the user's Desktop, same as
+    // the Windows build does with a .lnk in %USERPROFILE%\Desktop. Not
+    // every distro has a Desktop folder (headless/minimal setups), so this
+    // is skipped quietly if one can't be found.
+    if let Some(desktop_dir) = dirs::desktop_dir() {
+        if fs::create_dir_all(&desktop_dir).is_ok() {
+            // This one gets its own icon file — the background variant —
+            // since it's a distinct double-click shortcut icon sitting on
+            // the desktop background, not something the taskbar/alt-tab
+            // ever reads. The two apps_dir entries above (which DO drive
+            // taskbar/alt-tab, via app_id → desktop-file → Icon=
+            // resolution) use the plain no-background logo instead.
+            let desktop_icon_bytes = include_bytes!("../icons/shortcut.png");
+            let desktop_icon_path = install_dir().join("desktop-icon.png");
+            let desktop_icon_str = if fs::write(&desktop_icon_path, desktop_icon_bytes).is_ok() {
+                desktop_icon_path.to_string_lossy().to_string()
+            } else {
+                icon_str.clone()
+            };
+            let desktop_folder_entry = desktop_entry.replacen(
+                &format!("Icon={}\n", icon_str),
+                &format!("Icon={}\n", desktop_icon_str),
+                1,
+            );
+
+            let desktop_shortcut = desktop_dir.join("Zero Launcher.desktop");
+            write_and_mark_executable(&desktop_shortcut, &desktop_folder_entry);
+
+            // GNOME/Nautilus refuses to treat a new .desktop file on the
+            // Desktop as a trusted launcher (shows "Untrusted Application
+            // Launcher" until right-clicked  -> Allow Launching) unless its
+            // "trusted" metadata is set. This is best-effort; other file
+            // managers (Dolphin, Thunar, etc.) don't need it.
+            let _ = std::process::Command::new("gio")
+                .args(["set", &desktop_shortcut.to_string_lossy(), "metadata::trusted", "true"])
+                .status();
+        }
+    }
+
     Ok(())
+}
+
+/// Write a `.desktop` file's contents and mark it executable (required for
+/// it to be treated as a launcher rather than opened as plain text).
+#[cfg(target_os = "linux")]
+fn write_and_mark_executable(path: &Path, contents: &str) {
+    if fs::write(path, contents).is_ok() {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(path) {
+            let mut perm = meta.permissions();
+            perm.set_mode(perm.mode() | 0o755);
+            let _ = fs::set_permissions(path, perm);
+        }
+    }
+}
+
+/// Writes the current icon bytes (icons/shortcut.png, baked into the
+/// binary at compile time) to every place a Linux desktop environment
+/// might read it from: the literal path the .desktop `Icon=` line points
+/// to, plus the XDG hicolor icon theme so lookups by app id/name resolve
+/// too. This is what the taskbar and alt-tab actually end up showing —
+/// Wayland has no per-window icon protocol, so compositors resolve a
+/// running window's icon by matching its app_id back to an installed
+/// .desktop file and reading that file's `Icon=`. Uses the plain logo (no
+/// background), matching the tray icon and the live window icon set in
+/// lib.rs, so the app looks the same everywhere it shows up while running.
+/// Called unconditionally on *every* launch (from lib.rs setup), so a
+/// rebuilt icon always reaches an already-installed copy of the launcher —
+/// not just on first install. Returns the literal icon.png path so callers
+/// building the desktop entry's `Icon=` line can reuse it.
+#[cfg(target_os = "linux")]
+pub fn ensure_linux_xdg_icons() -> Option<PathBuf> {
+    let icon_bytes = include_bytes!("../icons/icon.png");
+
+    let icon_path = install_dir().join("icon.png");
+    let wrote_icon_path = fs::write(&icon_path, icon_bytes).is_ok();
+
+    if let Some(data_dir) = dirs::data_dir() {
+        let hicolor_dir = data_dir.join("icons/hicolor/128x128/apps");
+        if fs::create_dir_all(&hicolor_dir).is_ok() {
+            let _ = fs::write(hicolor_dir.join("zerolauncher.png"), icon_bytes);
+            let _ = fs::write(hicolor_dir.join("com.zerolauncher.app.png"), icon_bytes);
+            let _ = fs::write(hicolor_dir.join("ZeroLauncher.png"), icon_bytes);
+        }
+        // Nudge GTK/GNOME's icon cache so it doesn't keep serving a
+        // previously-cached version of an icon file that just changed
+        // out from under it. Best-effort: this cache dir/tool isn't
+        // present on every distro (e.g. it's a no-op on pure-Wayland
+        // GNOME setups that don't use the old gdk-pixbuf icon cache), and
+        // failing quietly here is fine either way since it's just a
+        // freshness optimization, not something the app depends on.
+        let _ = std::process::Command::new("gtk-update-icon-cache")
+            .args(["-f", "-t"])
+            .arg(data_dir.join("icons/hicolor"))
+            .status();
+    }
+
+    if wrote_icon_path {
+        Some(icon_path)
+    } else {
+        None
+    }
 }
 
 #[cfg(target_os = "windows")]

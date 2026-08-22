@@ -1084,7 +1084,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 .instance-card .inst-hide-btn:hover svg {
   stroke: var(--accent);
-  filter: drop-shadow(0 0 6px var(--accent-glow));
 }
 .instance-card .inst-favorite-btn {
   flex-shrink: 0;
@@ -1105,16 +1104,14 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   width: 16px;
   height: 16px;
   stroke: var(--text-muted);
-  transition: stroke 0.1s ease, filter 0.1s ease;
+  transition: stroke 0.1s ease;
 }
 .instance-card .inst-favorite-btn:hover svg {
   stroke: var(--accent);
-  filter: drop-shadow(0 0 6px var(--accent-glow));
 }
 .instance-card .inst-favorite-btn.active svg {
   stroke: var(--accent);
   color: var(--accent);
-  filter: drop-shadow(0 0 6px var(--accent-glow));
 }
 .hidden-instances-list {
   flex: none;
@@ -1136,11 +1133,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   width: 16px;
   height: 16px;
   stroke: var(--text-muted);
-  transition: stroke 0.1s ease, filter 0.1s ease;
+  transition: stroke 0.1s ease;
 }
 .instance-card .inst-troubleshoot-btn:hover svg {
   stroke: var(--accent);
-  filter: drop-shadow(0 0 6px var(--accent-glow));
 }
 
 .troubleshoot-option-btn {
@@ -1473,6 +1469,339 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 .overlay.hidden { display: none; }
 
+/* Stacking tiers for global and nested overlays */
+#modpack-import-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+}
+
+#dl-files-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 700;
+}
+
+#account-modal-overlay,
+#skin-viewer-overlay,
+#dressing-room-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 550;
+}
+
+/* High-priority alert / confirmation / troubleshoot overlays that must stack above all other windows */
+#zlib-warning-overlay,
+#crash-troubleshoot-overlay,
+#vanilla-delete-warning-overlay,
+#instance-troubleshoot-overlay,
+#update-available-overlay,
+#update-consent-overlay,
+#custom-color-picker-overlay,
+#theme-palettes-overlay,
+#crash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+}
+#theme-palettes-overlay {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* ── Theme Gallery Transparent Panel ── */
+.palettes-gallery-panel {
+  width: 98%;
+  max-width: 920px;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(var(--overlay-rgb), 0.04);
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
+  border-radius: 16px;
+  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+.color-picker-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--panel-border);
+  background: var(--field-bg, rgba(0, 0, 0, 0.25));
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition-fast, 0.1s ease);
+}
+.color-picker-trigger-btn:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+  transform: translateY(-1px);
+}
+.color-swatch-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
+  display: inline-block;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.color-hex-label {
+  font-family: var(--font);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.color-swatch-item {
+  height: 32px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform var(--transition-fast, 0.1s ease), border-color var(--transition-fast, 0.1s ease);
+  position: relative;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.color-swatch-item:hover {
+  transform: scale(1.08);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+.color-swatch-item.active {
+  border-color: #ffffff;
+  outline: 2px solid var(--accent);
+}
+
+/* ── Theme Palettes ("Plates") ─────────────────────────────────────────── */
+.quick-palettes-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.quick-palette-plate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(var(--overlay-rgb), 0.08);
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+.quick-palette-plate:hover {
+  border-color: var(--accent);
+  background: rgba(var(--overlay-rgb), 0.14);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+.quick-palette-plate.active {
+  border-color: var(--accent);
+  background: rgba(var(--overlay-rgb), 0.12);
+  box-shadow: 0 0 0 1.5px var(--accent), 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* ── UI Skeleton Mockup inside Palette Cards & Plates ── */
+.palette-ui-skeleton {
+  width: 58px;
+  height: 40px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.skeleton-topbar {
+  height: 7px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 3px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+}
+.skeleton-traffic-lights {
+  display: flex;
+  gap: 2px;
+}
+.skeleton-traffic-dot {
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  opacity: 0.8;
+}
+.skeleton-topbar-line {
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  opacity: 0.6;
+}
+.skeleton-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.skeleton-sidebar {
+  width: 12px;
+  height: 100%;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding-top: 3px;
+  background: rgba(0, 0, 0, 0.15);
+}
+.skeleton-nav-dot {
+  width: 6px;
+  height: 3px;
+  border-radius: 1.5px;
+}
+.skeleton-content {
+  flex: 1;
+  padding: 3px 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2px;
+}
+.skeleton-card-wireframe {
+  width: 100%;
+  height: 11px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
+  gap: 3px;
+}
+.skeleton-hero-btn {
+  height: 5px;
+  width: 14px;
+  border-radius: 2px;
+  margin-left: auto;
+}
+.skeleton-sub-lines {
+  display: flex;
+  gap: 3px;
+}
+.skeleton-mini-bar {
+  height: 3px;
+  border-radius: 1.5px;
+  flex: 1;
+}
+
+.quick-palette-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+
+.palettes-gallery-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid rgba(var(--overlay-rgb), 0.1);
+}
+.palettes-gallery-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 24px 16px;
+  border-top: 1px solid rgba(var(--overlay-rgb), 0.1);
+}
+
+/* ── Full Gallery Cards Grid ── */
+.full-palettes-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  overflow-y: auto;
+  padding: 18px 24px;
+  flex: 1;
+  min-height: 0;
+}
+.full-palette-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(var(--overlay-rgb), 0.06);
+  border: 1px solid rgba(var(--overlay-rgb), 0.1);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  position: relative;
+}
+.full-palette-card .palette-ui-skeleton {
+  width: 72px;
+  height: 48px;
+  border-radius: 8px;
+}
+.full-palette-card .skeleton-topbar {
+  height: 9px;
+  padding: 0 4px;
+}
+.full-palette-card .skeleton-sidebar {
+  width: 15px;
+  gap: 4px;
+  padding-top: 4px;
+}
+.full-palette-card .skeleton-card-wireframe {
+  height: 14px;
+}
+.full-palette-card .skeleton-hero-btn {
+  height: 6px;
+  width: 16px;
+}
+.full-palette-card:hover {
+  border-color: var(--accent);
+  background: rgba(var(--overlay-rgb), 0.14);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.full-palette-card.active {
+  border-color: var(--accent);
+  background: rgba(var(--overlay-rgb), 0.12);
+  box-shadow: 0 0 0 1.5px var(--accent), 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+.full-palette-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.full-palette-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.full-palette-subtitle {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .overlay-card {
   background: rgba(22, 22, 32, 0.94);
   border: 1px solid rgba(var(--overlay-rgb), 0.12);
@@ -1649,7 +1978,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: var(--accent);
   border: 1px solid rgba(var(--accent-rgb, 183, 183, 183), 0.3);
   border-radius: 50%;
-  box-shadow: 0 0 20px var(--accent-glow);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 .update-icon-badge-spin svg { animation: updateSpin 1.4s linear infinite; }
 @keyframes updateSpin { to { transform: rotate(360deg); } }
@@ -3005,10 +3334,11 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .settings-grid {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 860px;
-  margin: 0 auto;
-  padding-bottom: 24px;
+  gap: 14px;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding-bottom: 28px;
 }
 
 .settings-card {
@@ -3170,7 +3500,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 /* Per-type accent color, resolved once and reused by every part of the
    toast (badge, icon, progress bar) so styles/types stay perfectly in sync. */
-.toast-success { --toast-color: var(--accent); --toast-color-rgb: 16, 185, 129; }
+.toast-success { --toast-color: #22c55e;       --toast-color-rgb: 34, 197, 94; }
 .toast-error   { --toast-color: #ef4444;       --toast-color-rgb: 239, 68, 68; }
 .toast-warning { --toast-color: #f59e0b;       --toast-color-rgb: 245, 158, 11; }
 .toast-info    { --toast-color: #9ca3af;       --toast-color-rgb: 156, 163, 175; }
@@ -3645,7 +3975,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-direction: column;
   align-items: flex-start;
   line-height: 1.25;
-  max-width: 170px;
+  max-width: 220px;
 }
 #dl-widget-title { font-size: 12.5px; font-weight: 700; }
 #dl-widget-sub {
@@ -3654,11 +3984,12 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 170px;
+  max-width: 220px;
 }
 
 .dl-widget-panel {
-  width: 320px;
+  width: 390px;
+  max-width: calc(100vw - 40px);
   max-height: 70vh;
   margin-bottom: 12px;
   padding: 14px;
@@ -5291,8 +5622,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .dressing-room-busy-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(10, 10, 15, 0.72);
-  backdrop-filter: blur(4px);
+  background: rgba(10, 10, 15, 0.88);
   z-index: 99;
   display: flex;
   flex-direction: column;
@@ -5610,19 +5940,29 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 /* ── WebKitGTK & Linux Performance Engine ─────────────────────────────────── */
 .is-webkit-gtk {
-  --transition: 0.12s ease;
-  --transition-fast: 0.08s ease;
+  --transition: 0.08s ease;
+  --transition-fast: 0.05s ease;
 }
 
-/* Force hardware accelerated compositing on cards and overlays */
+/* Force hardware accelerated compositing on all cards, tiles, overlays, and windows */
 .is-webkit-gtk .instance-card,
 .is-webkit-gtk .discover-card,
 .is-webkit-gtk .mod-item,
+.is-webkit-gtk .mod-card,
 .is-webkit-gtk .preset-card,
+.is-webkit-gtk .overlay,
 .is-webkit-gtk .overlay-card,
+.is-webkit-gtk .account-overlay-card,
+.is-webkit-gtk .skin-viewer-modal,
+.is-webkit-gtk .dressing-room-modal,
+.is-webkit-gtk .dl-files-card,
 .is-webkit-gtk .toast,
 .is-webkit-gtk .dressing-room-skin-card,
-.is-webkit-gtk .settings-card {
+.is-webkit-gtk .settings-card,
+.is-webkit-gtk .bento-tile,
+.is-webkit-gtk .bento-panel,
+.is-webkit-gtk #bg-container,
+.is-webkit-gtk #bg-canvas {
   -webkit-transform: translateZ(0);
   transform: translateZ(0);
   -webkit-backface-visibility: hidden;
@@ -5630,22 +5970,33 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   contain: layout style paint;
 }
 
-/* Content visibility optimizations for large scrollable lists.
-   .settings-card is deliberately excluded from the shared rule below —
-   see the dedicated open/closed split further down. Unlike mod/preset/
-   discover cards (roughly uniform height), a settings card's real height
-   swings from ~60px closed to 400px+ open, and content-visibility's
-   placeholder guess (contain-intrinsic-size) has no way to know which.
-   Applying one static guess to both states means every open card that
-   straddles the viewport edge during scroll forces a full relayout each
-   time it crosses — that's the "open a dropdown then scroll = death"
-   lag. So: closed cards get content-visibility (their height matches the
-   placeholder closely enough), open cards opt out and always render. */
+/* All full-screen overlay backdrops — isolate layer and contain strictly */
+.is-webkit-gtk .overlay {
+  contain: strict;
+  background: rgba(8, 8, 14, 0.85) !important;
+}
+
+/* Make all overlay modal cards fully opaque with clean, tight shadows to
+   avoid expensive CPU alpha blending & large gaussian blur passes */
+.is-webkit-gtk .overlay-card,
+.is-webkit-gtk .update-overlay-card,
+.is-webkit-gtk .account-overlay-card,
+.is-webkit-gtk .skin-viewer-modal,
+.is-webkit-gtk .dressing-room-modal,
+.is-webkit-gtk .dl-files-card {
+  background: #14141e !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* Content visibility optimizations for large scrollable lists */
 .is-webkit-gtk .discover-card,
 .is-webkit-gtk .mod-item,
 .is-webkit-gtk .preset-card {
   content-visibility: auto;
-  contain-intrinsic-size: 0 100px;
+  contain-intrinsic-size: 0 200px;
+}
+.is-webkit-gtk .discover-grid.view-list .discover-card {
+  contain-intrinsic-size: 0 64px;
 }
 
 .is-webkit-gtk .settings-card:not(.active) {
@@ -5657,43 +6008,33 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   content-visibility: visible;
 }
 
-/* NOTE: a rule used to live here forcing backdrop-filter: blur(4px)
-   !important onto .overlay/.toast for WebKitGTK. That directly undid the
-   solid-scrim fix on .overlay (see comment above that rule) on exactly the
-   platform where blur is most expensive — removed. */
-
+/* Smooth hardware scrolling for all scroll containers */
 .is-webkit-gtk .dl-files-viewport,
 .is-webkit-gtk .instances-grid,
 .is-webkit-gtk .discover-grid,
 .is-webkit-gtk .mods-list,
-.is-webkit-gtk .tab-page {
+.is-webkit-gtk .tab-page,
+.is-webkit-gtk .hidden-instances-list,
+.is-webkit-gtk .logs-container,
+.is-webkit-gtk .presets-grid,
+.is-webkit-gtk .dressing-room-skins-grid,
+.is-webkit-gtk #instance-list,
+.is-webkit-gtk #hidden-instances-list,
+.is-webkit-gtk #mods-grid,
+.is-webkit-gtk #discover-results {
   will-change: scroll-position;
   overflow-anchor: none;
+  -webkit-overflow-scrolling: touch;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
-/* will-change hints the compositor ahead of an accordion open, scoped to
-   .active only so cards at rest don't carry extra layer cost. This only
-   matters on platforms that actually animate grid-template-rows — see the
-   WebKitGTK rebuild below, which bypasses that animation entirely. */
+/* will-change hints the compositor ahead of an accordion open */
 .settings-card.active .settings-card-body {
   will-change: grid-template-rows;
 }
 
-/* ── WebKitGTK-specific accordion rebuild ─────────────────────────────────
-   The default accordion (see .settings-card-body / .settings-card-body-inner
-   above) animates grid-template-rows AND padding together. Both are layout
-   properties: the browser must re-measure the content's natural height on
-   every single frame of the transition to know what "1fr" or "20px" even
-   means right now. On a GPU compositor that's tolerable; on WebKitGTK's
-   software rasterizer it's a full relayout+repaint per frame, and it's the
-   dominant lag source when opening/closing a settings section.
-
-   Fix: for WebKitGTK, snap the grid-template-rows/padding change instantly
-   (one layout calculation, not one per frame) and do the actual animated
-   "reveal" purely with opacity + transform, which are compositor-only
-   properties — no layout involved, however fast the software rasterizer is
-   or isn't. This keeps the open/close feeling animated without the frame-
-   by-frame measurement cost. */
+/* ── WebKitGTK-specific accordion rebuild ───────────────────────────────── */
 .is-webkit-gtk .settings-card-body {
   transition: visibility 0s linear 0.16s;
 }
@@ -5708,5 +6049,65 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 20px;
 }
 
+/* Remove expensive hover transitions on cards under WebKitGTK */
+.is-webkit-gtk .discover-card,
+.is-webkit-gtk .mod-item,
+.is-webkit-gtk .mod-card,
+.is-webkit-gtk .preset-card,
+.is-webkit-gtk .instance-card {
+  transition: none !important;
+}
 
+.is-webkit-gtk .discover-card:hover,
+.is-webkit-gtk .mod-card:hover,
+.is-webkit-gtk .instance-card:hover {
+  transform: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
 
+/* Stop continuous infinite shadow animations that trigger whole-window repaints */
+.is-webkit-gtk .mod-card.mod-update-glow {
+  animation: none !important;
+  outline: 2px solid var(--accent);
+  box-shadow: none !important;
+}
+
+.is-webkit-gtk .account-avatar-needs-reauth {
+  animation: none !important;
+  box-shadow: 0 0 0 2px rgba(245, 197, 24, 0.6) !important;
+}
+
+.is-webkit-gtk .ri-kill-btn.active {
+  animation: none !important;
+  box-shadow: 0 0 0 1px rgba(248,113,113,0.3) inset, 0 2px 8px rgba(248,113,113,0.3) !important;
+}
+
+/* ── WebKitGTK Theme Palettes Overrides ── */
+.is-webkit-gtk .quick-palette-plate,
+.is-webkit-gtk .full-palette-card {
+  transition: none !important;
+  will-change: auto !important;
+}
+.is-webkit-gtk .quick-palette-plate:hover,
+.is-webkit-gtk .full-palette-card:hover {
+  transform: none !important;
+  box-shadow: none !important;
+  background: rgba(var(--overlay-rgb), 0.10) !important;
+}
+.is-webkit-gtk .quick-palette-plate.active,
+.is-webkit-gtk .full-palette-card.active {
+  box-shadow: 0 0 0 1.5px var(--accent) !important;
+}
+.is-webkit-gtk .palettes-gallery-panel {
+  background: rgba(12, 12, 18, 0.88);
+  box-shadow: none;
+}
+.is-webkit-gtk .palette-ui-skeleton {
+  box-shadow: none !important;
+}
+.is-webkit-gtk .quick-palettes-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+.is-webkit-gtk .full-palettes-grid {
+  grid-template-columns: repeat(3, 1fr);
+}

@@ -56,3 +56,14 @@ tar = "0.4"
 [target.'cfg(windows)'.dependencies]
 mslnk = "0.1"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Lets us set GLib's "prgname" before any window is created. Tao/GTK never
+# expose a way to set the Wayland xdg-shell app_id directly (see
+# https://github.com/tauri-apps/tao/issues/910) — on Wayland, GTK derives
+# it from g_prgname the first time a surface is realized, and g_prgname
+# otherwise defaults to whatever GLib guesses from argv[0] (which for an
+# AppImage-launched binary is an unpredictable temp mount path/name).
+# Pinned to the same 0.18 line tao/gtk-rs already pull in transitively, so
+# this doesn't add a second copy of glib to the build.
+glib = "0.18"
+

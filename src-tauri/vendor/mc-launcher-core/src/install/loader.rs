@@ -70,29 +70,29 @@ pub fn installer_command_args(invocation: &InstallerInvocation) -> Vec<String> {
     ]
 }
 
-/// Creates a minimal, valid `launcher_profiles.json` in `minecraft_dir` if
-/// one doesn't already exist *or* the existing one isn't something the
-/// Forge/NeoForge installer will accept (empty, corrupted, or missing the
-/// `profiles` key it checks for). A file that looks like real launcher
-/// data — valid JSON with a `profiles` object, whatever else it does or
-/// doesn't contain — is left completely alone, so this never clobbers an
-/// actual Mojang launcher install sharing the same directory.
+/// Creates minimal, valid `launcher_profiles.json` and `launcher_profiles_microsoft_store.json`
+/// files in `minecraft_dir` if they don't already exist or lack the `profiles` key.
+/// Matching Nitrolaunch's installer preparation.
 fn ensure_launcher_profiles_json(minecraft_dir: &Path) -> Result<()> {
-    let path = minecraft_dir.join("launcher_profiles.json");
-    if let Ok(existing) = fs::read(&path) {
-        if let Ok(value) = serde_json::from_slice::<Value>(&existing) {
-            if value.get("profiles").is_some() {
-                return Ok(());
-            }
+    fs::create_dir_all(minecraft_dir)?;
+    for filename in &["launcher_profiles.json", "launcher_profiles_microsoft_store.json"] {
+        let path = minecraft_dir.join(filename);
+        let needs_write = match fs::read(&path) {
+            Ok(existing) => match serde_json::from_slice::<Value>(&existing) {
+                Ok(value) => value.get("profiles").is_none(),
+                Err(_) => true,
+            },
+            Err(_) => true,
+        };
+        if needs_write {
+            let minimal = serde_json::json!({
+                "profiles": {},
+                "settings": {},
+                "version": 3,
+            });
+            fs::write(&path, serde_json::to_vec_pretty(&minimal)?)?;
         }
     }
-    fs::create_dir_all(minecraft_dir)?;
-    let minimal = serde_json::json!({
-        "profiles": {},
-        "settings": {},
-        "version": 3,
-    });
-    fs::write(&path, serde_json::to_vec_pretty(&minimal)?)?;
     Ok(())
 }
 
@@ -154,15 +154,10 @@ pub fn run_loader_installer_with_output(
     // Forge/NeoForge installers write their own log file (e.g.
     // `<jar-name>.log`) next to themselves, resolved against the process's
     // current working directory if the jar path isn't absolute in however
-    // Java ends up resolving it. Left unset, the installer inherits
-    // *this* process's cwd — which, running from an AppImage or other
-    // mounted/packaged launcher, can be a read-only mount, causing the
-    // installer to fail opening its log file before it even gets to the
-    // actual install (`FileNotFoundException: ... (Read-only file
-    // system)`). Explicitly running it from the installer jar's own
-    // directory — which we know is writable, since we just downloaded the
-    // jar there — avoids that regardless of what directory launched us.
-    if let Some(dir) = invocation.installer_path.parent() {
+    // Java ends up resolving it. Explicitly running it from the installer
+    // jar's own directory ensures write access to write the log file.
+    let work_dir = invocation.installer_path.parent();
+    if let Some(dir) = work_dir {
         cmd.current_dir(dir);
     }
 
@@ -213,11 +208,37 @@ pub fn run_loader_installer_with_output(
     } else {
         let trimmed = combined.trim();
 
+        // Check if an installer log file was produced (e.g. `<installer_name>.log` or `<jar>.log`)
+        let log_file_contents = work_dir.and_then(|dir| {
+            let file_name = invocation.installer_path.file_name()?.to_string_lossy();
+            let log_candidates = [
+                dir.join(format!("{file_name}.log")),
+                dir.join(format!("{}.log", file_name.trim_end_matches(".jar"))),
+                dir.join("installer.log"),
+            ];
+            for candidate in &log_candidates {
+                if let Ok(text) = fs::read_to_string(candidate) {
+                    if !text.trim().is_empty() {
+                        return Some(text);
+                    }
+                }
+            }
+            None
+        });
+
         // Keep only the tail — installer logs can run long and the actual
         // error is almost always in the last handful of lines — and format
         // it so it reads naturally appended after the summary message.
         const MAX_OUTPUT_CHARS: usize = 4000;
-        let tail: String = if trimmed.chars().count() > MAX_OUTPUT_CHARS {
+        let tail: String = if let Some(ref log_text) = log_file_contents {
+            let log_trimmed = log_text.trim();
+            if log_trimmed.chars().count() > MAX_OUTPUT_CHARS {
+                let skip = log_trimmed.chars().count() - MAX_OUTPUT_CHARS;
+                format!("…{}", log_trimmed.chars().skip(skip).collect::<String>())
+            } else {
+                log_trimmed.to_string()
+            }
+        } else if trimmed.chars().count() > MAX_OUTPUT_CHARS {
             let skip = trimmed.chars().count() - MAX_OUTPUT_CHARS;
             format!("…{}", trimmed.chars().skip(skip).collect::<String>())
         } else {
@@ -230,13 +251,23 @@ pub fn run_loader_installer_with_output(
             format!("\n--- installer output ---\n{tail}")
         };
 
-        // This specific installer jar predates Forge adding headless CLI
-        // support at all (roughly pre-1.12.2) — it's a GUI-only Swing
-        // installer, so `--installClient` isn't a bug on our end, it's
-        // genuinely not a flag that build understands. Surface that in
-        // plain language up front, since the raw stack trace alone
-        // (`UnrecognizedOptionException`) doesn't make that obvious.
-        let hint = if trimmed.contains("UnrecognizedOptionException") && trimmed.contains("installClient") {
+        // Check for specific known installer failure patterns:
+        // 1. zlib-ng hash mismatch on Linux (CachyOS, Arch, Fedora)
+        // 2. Old Swing GUI-only installer without CLI support
+        let has_processor_fail = trimmed.contains("Processor failed, invalid outputs")
+            || log_file_contents.as_ref().map(|s| s.contains("Processor failed, invalid outputs")).unwrap_or(false);
+
+        let hint = if has_processor_fail {
+            "\nForge installer processor failed due to a checksum mismatch on generated library files (this happens on Linux distributions using zlib-ng instead of standard zlib, such as CachyOS or Arch).\n\
+             To fix this, install standard zlib for your distribution:\n\
+             \u{2022} Arch / CachyOS / Manjaro: sudo pacman -S zlib lib32-zlib (accept replacing zlib-ng)\n\
+             \u{2022} Debian / Ubuntu / Linux Mint: sudo apt install zlib1g zlib1g:i386\n\
+             \u{2022} Fedora / RHEL / CentOS: sudo dnf install zlib zlib.i686\n\
+             \u{2022} openSUSE: sudo zypper install libz1 libz1-32bit\n\
+             \u{2022} Alpine Linux: sudo apk add zlib\n\
+             \u{2022} Void Linux: sudo xbps-install -S zlib\n\
+             Then re-run the install."
+        } else if trimmed.contains("UnrecognizedOptionException") && trimmed.contains("installClient") {
             "\nThis Forge build's installer is too old to support automatic/headless install \
              (it only offers a graphical installer). Automatic install currently isn't \
              supported for this specific version."

@@ -6,6 +6,21 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+// ── Linux / WebKitGTK Performance Optimization Engine ──
+if (
+  /Linux|X11/i.test(navigator.userAgent) ||
+  (/WebKit/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent))
+) {
+  document.documentElement.classList.add('is-webkit-gtk', 'is-linux');
+  if (document.body) {
+    document.body.classList.add('is-webkit-gtk', 'is-linux');
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.body.classList.add('is-webkit-gtk', 'is-linux');
+    });
+  }
+}
+
 // ── Loader icons (bundled by Vite) ──
 import iconVanilla from '../assets/loaders/vanilla.png';
 import iconFabric from '../assets/loaders/fabric.png';
@@ -262,6 +277,8 @@ const api = {
   getRunningInstances: () => invoke('get_running_instances'),
   killInstance: (versionId) => invoke('kill_instance', { versionId }),
   getInstanceConsoleLogs: (versionId) => invoke('get_instance_console_logs', { versionId }),
+  checkLinuxZlibConflict: () => invoke('check_linux_zlib_conflict'),
+  installLinuxPackage: (packageType) => invoke('install_linux_package', { packageType }),
   discoverSearch: (query, projectType, loader, gameVersion, categories, environment, license, openSourceOnly, page, limit) =>
     invoke('discover_search', {
       query, projectType,
@@ -2347,6 +2364,10 @@ async function openSkinViewerModal() {
   if (!overlay) return;
   overlay.classList.remove('hidden');
 
+  if (skinViewerInstance) {
+    skinViewerInstance.renderPaused = false;
+  }
+
   // The standee sits fully behind this modal — no point spending GPU time
   // rendering WebGL frames nobody can see while it's covered.
   if (skinMiniPreviewInstance) {
@@ -2448,6 +2469,9 @@ function closeSkinViewerModal() {
   const overlay = document.getElementById('skin-viewer-overlay');
   if (!overlay) return;
   overlay.classList.add('hidden');
+  if (skinViewerInstance) {
+    skinViewerInstance.renderPaused = true;
+  }
   if (skinMiniPreviewInstance) {
     skinMiniPreviewInstance.renderPaused = false;
   }
@@ -3882,6 +3906,8 @@ async function troubleshootReinstallInstance(id) {
     showToast('Could not find that instance to reinstall', 'error');
     return;
   }
+  const zlibOk = await confirmZlibIfConflict(inst.loader);
+  if (!zlibOk) return;
   showToast(`Reinstalling ${inst.name || inst.version_id}…`, 'info');
   if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, inst.minecraft_version);
   try {
@@ -4031,8 +4057,15 @@ function initInstanceActions() {
         showToast('Launch timed out — the instance may be slow to start or broken', 'error');
         showCrashTroubleshootWindow(inst, 'Launch timed out after 20 seconds. This usually means the instance is broken or missing files.');
       } else {
-        showToast('Launch failed: ' + e, 'error');
-        showCrashTroubleshootWindow(inst, e);
+        const errStr = String(e || '');
+        if (errStr.includes('xrandr') || errStr.includes('xorg-xrandr')) {
+          showXrandrWarningModal(() => {
+            document.getElementById('btn-play')?.click();
+          });
+        } else {
+          showToast('Launch failed: ' + e, 'error');
+          showCrashTroubleshootWindow(inst, e);
+        }
       }
     }
     btn.disabled = false;
@@ -4455,12 +4488,166 @@ async function loadMcVersions(selectEl, selectedValue) {
   }
 }
 
+function confirmZlibIfConflict(loader) {
+  return new Promise(async (resolve) => {
+    const l = (loader || '').toLowerCase();
+    if (l !== 'forge' && l !== 'neoforge') {
+      return resolve(true);
+    }
+    try {
+      const res = await api.checkLinuxZlibConflict();
+      if (!res || !res.has_conflict) {
+        return resolve(true);
+      }
+    } catch {
+      return resolve(true);
+    }
+
+    const overlay = document.getElementById('zlib-warning-overlay');
+    if (!overlay) return resolve(true);
+
+    const close = () => {
+      overlay.classList.add('hidden');
+      cleanup();
+    };
+
+    const handleProceed = () => {
+      close();
+      resolve(true);
+    };
+
+    const handleCancel = () => {
+      close();
+      resolve(false);
+    };
+
+    const autoBtn = document.getElementById('btn-zlib-warning-autoinstall');
+    const handleAutoInstall = async () => {
+      if (autoBtn) {
+        autoBtn.disabled = true;
+        autoBtn.textContent = 'Installing…';
+      }
+      showToast('Authenticating with system to install standard zlib…', 'info');
+      try {
+        await api.installLinuxPackage('zlib');
+        showToast('Standard zlib installed successfully!', 'success');
+        close();
+        resolve(true);
+      } catch (err) {
+        showToast(String(err), 'error');
+        if (autoBtn) {
+          autoBtn.disabled = false;
+          autoBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+            Install for Me
+          `;
+        }
+      }
+    };
+
+    const cleanup = () => {
+      document.getElementById('btn-close-zlib-warning')?.removeEventListener('click', handleCancel);
+      document.getElementById('btn-zlib-warning-cancel')?.removeEventListener('click', handleCancel);
+      document.getElementById('btn-zlib-warning-proceed')?.removeEventListener('click', handleProceed);
+      autoBtn?.removeEventListener('click', handleAutoInstall);
+    };
+
+    document.getElementById('btn-close-zlib-warning')?.addEventListener('click', handleCancel);
+    document.getElementById('btn-zlib-warning-cancel')?.addEventListener('click', handleCancel);
+    document.getElementById('btn-zlib-warning-proceed')?.addEventListener('click', handleProceed);
+    autoBtn?.addEventListener('click', handleAutoInstall);
+
+    overlay.querySelectorAll('.btn-copy-zlib-cmd').forEach(btn => {
+      btn.onclick = () => {
+        const cmd = btn.dataset.cmd;
+        if (cmd) {
+          navigator.clipboard.writeText(cmd).then(() => {
+            showToast('Copied command to clipboard!', 'info');
+          });
+        }
+      };
+    });
+
+    overlay.classList.remove('hidden');
+  });
+}
+
+function showXrandrWarningModal(onRetry) {
+  const overlay = document.getElementById('xrandr-warning-overlay');
+  if (!overlay) return;
+
+  const close = () => {
+    overlay.classList.add('hidden');
+    cleanup();
+  };
+
+  const autoBtn = document.getElementById('btn-xrandr-warning-autoinstall');
+  const handleAutoInstall = async () => {
+    if (autoBtn) {
+      autoBtn.disabled = true;
+      autoBtn.textContent = 'Installing…';
+    }
+    showToast('Authenticating with system to install xrandr…', 'info');
+    try {
+      await api.installLinuxPackage('xrandr');
+      showToast('xrandr installed successfully!', 'success');
+      close();
+      if (typeof onRetry === 'function') onRetry();
+    } catch (err) {
+      showToast(String(err), 'error');
+      if (autoBtn) {
+        autoBtn.disabled = false;
+        autoBtn.innerHTML = `
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+          </svg>
+          Install for Me
+        `;
+      }
+    }
+  };
+
+  const cleanup = () => {
+    document.getElementById('btn-close-xrandr-warning')?.removeEventListener('click', close);
+    document.getElementById('btn-xrandr-warning-cancel')?.removeEventListener('click', close);
+    autoBtn?.removeEventListener('click', handleAutoInstall);
+  };
+
+  document.getElementById('btn-close-xrandr-warning')?.addEventListener('click', close);
+  document.getElementById('btn-xrandr-warning-cancel')?.addEventListener('click', close);
+  autoBtn?.addEventListener('click', handleAutoInstall);
+
+  overlay.querySelectorAll('.btn-copy-xrandr-cmd').forEach(btn => {
+    btn.onclick = () => {
+      const cmd = btn.dataset.cmd;
+      if (cmd) {
+        navigator.clipboard.writeText(cmd).then(() => {
+          showToast('Copied command to clipboard!', 'info');
+        });
+      }
+    };
+  });
+
+  overlay.classList.remove('hidden');
+}
+
 async function installInstance() {
   const mcVersion = document.getElementById('inst-mc-version').value;
   let loader = document.getElementById('inst-loader').value || 'vanilla';
   let loaderVersion = document.getElementById('inst-loader-version').value.trim() || 'latest';
   if (!mcVersion) { showToast('Version required', 'error'); return; }
   if (loader.toLowerCase() === 'vanilla') loader = 'vanilla';
+
+  const btn = document.getElementById('btn-start-install');
+  btn.disabled = true;
+
+  const zlibOk = await confirmZlibIfConflict(loader);
+  if (!zlibOk) {
+    btn.disabled = false;
+    return;
+  }
 
   // No name typed — fall back to "{Loader} {Minecraft version}", e.g.
   // "Fabric 1.21.1" or "Vanilla 1.20.4", instead of blocking install.
@@ -4481,9 +4668,6 @@ async function installInstance() {
     const safeName = name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Instance';
     directory = baseDir ? `${baseDir}/!Instances/${safeName}` : null;
   }
-
-  const btn = document.getElementById('btn-start-install');
-  btn.disabled = true;
 
   // Close the form right away — the floating download widget (bottom-left)
   // tracks progress from here, so the user is free to keep using the app.
@@ -5400,8 +5584,24 @@ async function confirmModpackImport() {
   confirmBtn.disabled = true;
   progressWrap.classList.remove('hidden');
   statusEl.textContent = 'Starting…';
-  barEl.style.transform = 'scaleX(0)'; // not width — see #modpack-import-bar in main.css
+  barEl.style.transform = 'scaleX(0)';
+
+  // Minimize/hide the modpack extractor to the hidden windows tray immediately
   modpackImportTaskRunning = true;
+  document.getElementById('modpack-import-overlay').classList.add('hidden');
+  if (window.hwMinimize) window.hwMinimize('modpack-import-overlay', 'Modpack Extractor');
+
+  const loader = modpackImportState.preview && modpackImportState.preview.loader;
+  const zlibOk = await confirmZlibIfConflict(loader);
+  if (!zlibOk) {
+    modpackImportTaskRunning = false;
+    if (window.hwDone) window.hwDone('modpack-import-overlay');
+    confirmBtn.disabled = false;
+    showToast('Modpack installation cancelled', 'info');
+    return;
+  }
+
+  showToast(`Importing modpack "${name}"…`, 'info');
 
   // Give this extractor run its own card in the downloads widget, exactly
   // like kicking off an instance install does — same real percent/speed/
@@ -7988,6 +8188,356 @@ function currentAccentColor() {
   return settings.accent_color || ACCENT_DEFAULT;
 }
 
+const RECOMMENDED_ACCENT_COLORS = [
+  { name: 'Silver (Default)', hex: '#B7B7B7' },
+  { name: 'Pure White', hex: '#FFFFFF' },
+  { name: 'Blue Diamond', hex: '#00D2FF' },
+  { name: 'Azure Blue', hex: '#007FFF' },
+  { name: 'Crimson Red', hex: '#DC143C' },
+  { name: 'Gold Yellow', hex: '#FFD700' },
+  { name: 'Ice Cyan', hex: '#38BDF8' },
+  { name: 'Soft Mint', hex: '#34D399' },
+  { name: 'Lavender', hex: '#A78BFA' },
+  { name: 'Pastel Sakura', hex: '#F472B6' },
+  { name: 'Pastel Peach', hex: '#FB923C' },
+  { name: 'Butter Gold', hex: '#FDE047' },
+  { name: 'Sky Blue', hex: '#60A5FA' },
+  { name: 'Neon Emerald', hex: '#10B981' },
+  { name: 'Sapphire', hex: '#3B82F6' },
+  { name: 'Amethyst', hex: '#8B5CF6' },
+  { name: 'Amber Glow', hex: '#F59E0B' },
+  { name: 'Vibrant Teal', hex: '#14B8A6' },
+  { name: 'Ruby Red', hex: '#EF4444' },
+  { name: 'Coral Rose', hex: '#FB7185' },
+];
+
+const RECOMMENDED_BG_COLORS = [
+  { name: 'Default Dark', hex: '#0A0A0F' },
+  { name: 'Pitch Black (OLED)', hex: '#000000' },
+  { name: 'Deep Slate', hex: '#0D1117' },
+  { name: 'Tokyo Charcoal', hex: '#16161E' },
+  { name: 'Midnight Purple', hex: '#120D1C' },
+  { name: 'Deep Navy', hex: '#0B0F19' },
+  { name: 'Deep Emerald', hex: '#0A140F' },
+  { name: 'Warm Espresso', hex: '#140D0A' },
+  { name: 'Abyss Blue', hex: '#0F172A' },
+  { name: 'Catppuccin Mocha', hex: '#1E1E2E' },
+  { name: 'Nord Dark', hex: '#2E3440' },
+  { name: 'Muted Steel', hex: '#1F2937' },
+  { name: 'Cyber Slate', hex: '#24283B' },
+  { name: 'Warm Taupe', hex: '#262322' },
+  { name: 'Cloud Light Slate', hex: '#334155' },
+];
+
+const THEME_PALETTES = [
+  { id: 'blue-diamond', name: 'Blue Diamond', accent: '#00D2FF', bg: '#0B0F19', tag: 'Top Pick • Cyberpunk Electric' },
+  { id: 'sakura-midnight', name: 'Sakura Midnight', accent: '#F472B6', bg: '#120D1C', tag: 'Top Pick • Midnight Pastel' },
+  { id: 'royal-gold', name: 'Royal Gold', accent: '#FFD700', bg: '#0A0A0F', tag: 'Top Pick • Luxury Obsidian' },
+  { id: 'azure-slate', name: 'Azure Slate', accent: '#007FFF', bg: '#0D1117', tag: 'Popular • Modern Blue' },
+  { id: 'crimson-void', name: 'Crimson Void', accent: '#DC143C', bg: '#050508', tag: 'Popular • Intense Gaming' },
+  { id: 'cyber-emerald', name: 'Cyber Emerald', accent: '#10B981', bg: '#0A140F', tag: 'Featured • Matrix Forest' },
+  { id: 'ice-glacier', name: 'Ice Glacier', accent: '#38BDF8', bg: '#0F172A', tag: 'Featured • Crystal Frost' },
+  { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', accent: '#CBA6F7', bg: '#1E1E2E', tag: 'Aesthetic • Pastel Slate' },
+  { id: 'tokyo-neon', name: 'Tokyo Neon', accent: '#BB9AF7', bg: '#16161E', tag: 'Anime • Tokyo Charcoal' },
+  { id: 'nord-frost', name: 'Nord Frost', accent: '#88C0D0', bg: '#2E3440', tag: 'Nordic • Arctic Minimal' },
+  { id: 'warm-espresso', name: 'Warm Espresso', accent: '#FB923C', bg: '#140D0A', tag: 'Warm • Coffee Amber' },
+  { id: 'pitch-oled', name: 'Pitch OLED', accent: '#FFFFFF', bg: '#000000', tag: 'True Black • High Contrast' },
+  { id: 'zero-silver', name: 'Zero Silver', accent: '#B7B7B7', bg: '#0A0A0F', tag: 'Default • Metallic Sleek' },
+  { id: 'soft-mint', name: 'Soft Mint', accent: '#34D399', bg: '#0A140F', tag: 'Fresh • Pastel Green' },
+  { id: 'deep-amethyst', name: 'Deep Amethyst', accent: '#8B5CF6', bg: '#0F0A19', tag: 'Magic • Violet Glow' },
+];
+
+function isPaletteActive(palette) {
+  if (!palette || !settings) return false;
+  const curAccent = currentAccentColor().toUpperCase();
+  const curBg = ((settings && settings.bg_color) || '#0A0A0F').toUpperCase();
+  return curAccent === palette.accent.toUpperCase() && curBg === palette.bg.toUpperCase();
+}
+
+function applyThemePalette(palette, shouldPersist = true) {
+  if (!palette) return;
+  applyAccentColorLive(palette.accent);
+  applyBgColorLive(palette.bg);
+  applyThemeFromSettings();
+  renderFullThemePalettes();
+  if (shouldPersist) {
+    saveSettingsNow();
+  }
+}
+
+function renderPaletteSkeletonHtml(pal) {
+  const hex = pal.accent;
+  const bg = pal.bg;
+  return `
+    <div class="palette-ui-skeleton" style="background-color:${bg}; border-color:${hex}40;">
+      <div class="skeleton-topbar">
+        <div class="skeleton-traffic-lights">
+          <div class="skeleton-traffic-dot" style="background-color:${hex};"></div>
+          <div class="skeleton-traffic-dot" style="background-color:${hex}80;"></div>
+        </div>
+        <div class="skeleton-topbar-line" style="background-color:${hex}50;"></div>
+      </div>
+      <div class="skeleton-body">
+        <div class="skeleton-sidebar">
+          <div class="skeleton-nav-dot" style="background-color:${hex};"></div>
+          <div class="skeleton-nav-dot" style="background-color:${hex}60;"></div>
+          <div class="skeleton-nav-dot" style="background-color:${hex}30;"></div>
+        </div>
+        <div class="skeleton-content">
+          <div class="skeleton-card-wireframe" style="background-color:${hex}15; border-color:${hex}35;">
+            <div class="skeleton-mini-bar" style="background-color:${hex}70; width:10px;"></div>
+            <div class="skeleton-hero-btn" style="background-color:${hex};"></div>
+          </div>
+          <div class="skeleton-sub-lines">
+            <div class="skeleton-mini-bar" style="background-color:${hex}40;"></div>
+            <div class="skeleton-mini-bar" style="background-color:${hex}25;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderQuickThemePalettes() {
+  const containers = [
+    document.getElementById('quick-palettes-container'),
+    document.getElementById('setup-quick-palettes-container'),
+  ];
+  const quickList = THEME_PALETTES.slice(0, 4);
+
+  containers.forEach(container => {
+    if (!container) return;
+    container.innerHTML = '';
+    quickList.forEach(pal => {
+      const active = isPaletteActive(pal);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `quick-palette-plate ${active ? 'active' : ''}`;
+      btn.title = `${pal.name} (${pal.tag})`;
+      btn.innerHTML = `
+        ${renderPaletteSkeletonHtml(pal)}
+        <span class="quick-palette-name">${pal.name}</span>
+      `;
+      btn.onclick = () => applyThemePalette(pal, true);
+      container.appendChild(btn);
+    });
+  });
+}
+
+function renderFullThemePalettes() {
+  const grid = document.getElementById('full-palettes-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  THEME_PALETTES.forEach(pal => {
+    const active = isPaletteActive(pal);
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = `full-palette-card ${active ? 'active' : ''}`;
+    card.innerHTML = `
+      ${renderPaletteSkeletonHtml(pal)}
+      <div class="full-palette-info">
+        <div class="full-palette-title">${pal.name}</div>
+        <div class="full-palette-subtitle">${pal.tag}</div>
+      </div>
+      ${active ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+    `;
+    card.onclick = () => {
+      applyThemePalette(pal, true);
+      renderFullThemePalettes();
+    };
+    grid.appendChild(card);
+  });
+}
+
+function openThemePalettesModal() {
+  const overlay = document.getElementById('theme-palettes-overlay');
+  if (!overlay) return;
+  renderFullThemePalettes();
+  overlay.classList.remove('hidden');
+
+  const close = () => overlay.classList.add('hidden');
+  const closeBtn = document.getElementById('btn-close-palettes-modal');
+  const doneBtn = document.getElementById('btn-done-palettes-modal');
+  if (closeBtn) closeBtn.onclick = close;
+  if (doneBtn) doneBtn.onclick = close;
+}
+
+function getRecentColors(type) {
+  const key = type === 'bg' ? 'zero_recent_bg_colors' : 'zero_recent_accent_colors';
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return [];
+}
+
+function addRecentColor(type, hex) {
+  if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) return;
+  const key = type === 'bg' ? 'zero_recent_bg_colors' : 'zero_recent_accent_colors';
+  const norm = hex.toUpperCase();
+  let list = getRecentColors(type).filter(c => c.toUpperCase() !== norm);
+  list.unshift(norm);
+  if (list.length > 10) list = list.slice(0, 10);
+  try {
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch (_) {}
+}
+
+function hexToRgbValues(hex) {
+  let c = (hex || '').replace('#', '');
+  if (c.length === 3) c = c.split('').map(x => x + x).join('');
+  if (c.length !== 6) return [183, 183, 183];
+  const num = parseInt(c, 16);
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+
+function rgbToHex(r, g, b) {
+  const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  return '#' + [clamp(r), clamp(g), clamp(b)].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+function openCustomColorPicker({ title, initialColor, type = 'accent', onApply, onLiveChange }) {
+  const overlay = document.getElementById('custom-color-picker-overlay');
+  if (!overlay) return;
+
+  const titleEl = document.getElementById('custom-color-picker-title');
+  const chipEl = document.getElementById('custom-color-live-chip');
+  const nativeInp = document.getElementById('custom-color-native-input');
+  const hexInp = document.getElementById('custom-color-hex-input');
+  const rInp = document.getElementById('custom-color-r-input');
+  const gInp = document.getElementById('custom-color-g-input');
+  const bInp = document.getElementById('custom-color-b-input');
+  const recGrid = document.getElementById('custom-color-recommended-grid');
+  const recSec = document.getElementById('custom-color-recent-section');
+  const recList = document.getElementById('custom-color-recent-grid');
+  const applyBtn = document.getElementById('btn-color-picker-apply');
+  const cancelBtn = document.getElementById('btn-color-picker-cancel');
+  const closeBtn = document.getElementById('btn-close-color-picker');
+
+  let currentColor = (initialColor || (type === 'bg' ? '#0A0A0F' : '#B7B7B7')).toUpperCase();
+  if (!currentColor.startsWith('#')) currentColor = '#' + currentColor;
+
+  if (titleEl) {
+    titleEl.innerHTML = `
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent);">
+        <path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z"/>
+      </svg>
+      ${title || 'Color Picker'}
+    `;
+  }
+
+  const syncUI = (hex, skipInputs = false) => {
+    currentColor = hex.toUpperCase();
+    if (chipEl) chipEl.style.backgroundColor = currentColor;
+    if (nativeInp && nativeInp.value.toUpperCase() !== currentColor) {
+      try { nativeInp.value = currentColor; } catch (_) {}
+    }
+    if (!skipInputs) {
+      if (hexInp) hexInp.value = currentColor;
+      const [r, g, b] = hexToRgbValues(currentColor);
+      if (rInp) rInp.value = r;
+      if (gInp) gInp.value = g;
+      if (bInp) bInp.value = b;
+    }
+    overlay.querySelectorAll('.color-swatch-item').forEach(swatch => {
+      swatch.classList.toggle('active', (swatch.dataset.hex || '').toUpperCase() === currentColor);
+    });
+    if (typeof onLiveChange === 'function') {
+      onLiveChange(currentColor);
+    }
+  };
+
+  // Render recommended swatches
+  const recPalette = type === 'bg' ? RECOMMENDED_BG_COLORS : RECOMMENDED_ACCENT_COLORS;
+  if (recGrid) {
+    recGrid.innerHTML = '';
+    recPalette.forEach(item => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `color-swatch-item ${item.hex.toUpperCase() === currentColor ? 'active' : ''}`;
+      btn.style.backgroundColor = item.hex;
+      btn.title = `${item.name} (${item.hex})`;
+      btn.dataset.hex = item.hex;
+      btn.onclick = () => syncUI(item.hex);
+      recGrid.appendChild(btn);
+    });
+  }
+
+  // Render recent colors
+  const recent = getRecentColors(type);
+  if (recList && recSec) {
+    recList.innerHTML = '';
+    if (recent.length > 0) {
+      recSec.style.display = '';
+      recent.forEach(hex => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `color-swatch-item ${hex.toUpperCase() === currentColor ? 'active' : ''}`;
+        btn.style.backgroundColor = hex;
+        btn.title = hex;
+        btn.dataset.hex = hex;
+        btn.onclick = () => syncUI(hex);
+        recList.appendChild(btn);
+      });
+    } else {
+      recSec.style.display = 'none';
+    }
+  }
+
+  syncUI(currentColor);
+
+  nativeInp.oninput = (e) => syncUI(e.target.value);
+  hexInp.oninput = () => {
+    let val = hexInp.value.trim();
+    if (!val.startsWith('#')) val = '#' + val;
+    if (/^#[0-9a-f]{6}$/i.test(val)) {
+      syncUI(val, true);
+      const [r, g, b] = hexToRgbValues(val);
+      if (rInp) rInp.value = r;
+      if (gInp) gInp.value = g;
+      if (bInp) bInp.value = b;
+    }
+  };
+
+  const onRgbInput = () => {
+    const r = parseInt(rInp.value) || 0;
+    const g = parseInt(gInp.value) || 0;
+    const b = parseInt(bInp.value) || 0;
+    const hex = rgbToHex(r, g, b);
+    if (hexInp) hexInp.value = hex;
+    syncUI(hex, true);
+  };
+  if (rInp) rInp.oninput = onRgbInput;
+  if (gInp) gInp.oninput = onRgbInput;
+  if (bInp) bInp.oninput = onRgbInput;
+
+  const close = () => {
+    overlay.classList.add('hidden');
+  };
+
+  const handleCancel = () => {
+    if (typeof onLiveChange === 'function') {
+      onLiveChange(initialColor);
+    }
+    close();
+  };
+
+  const handleApply = () => {
+    addRecentColor(type, currentColor);
+    if (typeof onApply === 'function') {
+      onApply(currentColor);
+    }
+    close();
+  };
+
+  if (closeBtn) closeBtn.onclick = handleCancel;
+  if (cancelBtn) cancelBtn.onclick = handleCancel;
+  if (applyBtn) applyBtn.onclick = handleApply;
+
+  overlay.classList.remove('hidden');
+}
+
 function applyAccentColorLive(hex) {
   if (!hex) return;
   if (settings) settings.accent_color = hex;
@@ -7997,6 +8547,19 @@ function applyAccentColorLive(hex) {
   root.style.setProperty('--accent-glow', hexToRgba(hex, 0.35));
   if (typeof BG !== 'undefined' && BG._staticKey) {
     BG._staticKey = '';
+    BG.requestRedraw();
+  }
+}
+
+function applyBgColorLive(hex) {
+  if (!hex) return;
+  if (settings) settings.bg_color = hex;
+  const root = document.documentElement;
+  root.style.setProperty('--bg', hex);
+  root.style.setProperty('--bg-darker', darkenColor(hex, 0.4));
+  if (typeof BG !== 'undefined' && BG._staticKey) {
+    BG._staticKey = '';
+    BG.requestRedraw();
   }
 }
 
@@ -8014,10 +8577,6 @@ function populateSettingsUI() {
   if (!settings) return;
 
   ensureAccentFields();
-
-  // Accent Color
-  const accentInp = document.getElementById('setting-accent-color');
-  if (accentInp) accentInp.value = settings.accent_color || ACCENT_DEFAULT;
 
   document.getElementById('setting-notif-style').value = settings.notification_style || 'Glass';
 
@@ -8169,9 +8728,36 @@ function applyThemeFromSettings() {
   // preset never actually won, so always derive from the preset until
   // per-field pickers exist.
   ensureAccentFields();
-  root.style.setProperty('--accent', currentAccentColor());
-  root.style.setProperty('--bg', preset.bg_color);
-  root.style.setProperty('--bg-darker', darkenColor(preset.bg_color, 0.4));
+  const accent = currentAccentColor();
+  const baseBg = (settings && settings.bg_color) || preset.bg_color || '#0a0a0f';
+  root.style.setProperty('--accent', accent);
+  root.style.setProperty('--bg', baseBg);
+  root.style.setProperty('--bg-darker', darkenColor(baseBg, 0.4));
+
+  // Sync previews & editable HEX inputs in Settings
+  const accentPrev = document.getElementById('setting-accent-preview');
+  const accentHexInput = document.getElementById('setting-accent-hex-input');
+  if (accentPrev) accentPrev.style.backgroundColor = accent;
+  if (accentHexInput && document.activeElement !== accentHexInput) accentHexInput.value = accent.toUpperCase();
+
+  const bgPrev = document.getElementById('setting-bg-color-preview');
+  const bgHexInput = document.getElementById('setting-bg-hex-input');
+  if (bgPrev) bgPrev.style.backgroundColor = baseBg;
+  if (bgHexInput && document.activeElement !== bgHexInput) bgHexInput.value = baseBg.toUpperCase();
+
+  // Sync previews & editable HEX inputs in Setup Wizard
+  const setupAccentPrev = document.getElementById('setup-accent-preview');
+  const setupAccentHexInput = document.getElementById('setup-accent-hex-input');
+  if (setupAccentPrev) setupAccentPrev.style.backgroundColor = accent;
+  if (setupAccentHexInput && document.activeElement !== setupAccentHexInput) setupAccentHexInput.value = accent.toUpperCase();
+
+  const setupBgPrev = document.getElementById('setup-bg-color-preview');
+  const setupBgHexInput = document.getElementById('setup-bg-hex-input');
+  if (setupBgPrev) setupBgPrev.style.backgroundColor = baseBg;
+  if (setupBgHexInput && document.activeElement !== setupBgHexInput) setupBgHexInput.value = baseBg.toUpperCase();
+
+  // Sync active states on Theme Palettes quick plates
+  renderQuickThemePalettes();
 
   // Panel background with transparency option.
   const panelAlpha = settings.enable_transparency ? 0.45 : 0.95;
@@ -8192,7 +8778,6 @@ function applyThemeFromSettings() {
   root.style.setProperty('--panel-solid', hexToRgba(preset.panel_bg_color, 0.97));
 
   // Accent derived
-  const accent = currentAccentColor();
   root.style.setProperty('--accent-dim', hexToRgba(accent, 0.15));
   root.style.setProperty('--accent-glow', hexToRgba(accent, 0.35));
 
@@ -8316,8 +8901,8 @@ function collectSettingsFromUI() {
   const prevFinishedSetup = settings.Finished_setup;
   const prevSetupFinished = settings.setup_finished;
   // Appearance: Colors
-  const accentEl = document.getElementById('setting-accent-color');
-  if (accentEl) settings.accent_color = accentEl.value;
+  settings.accent_color = currentAccentColor();
+  settings.bg_color = (settings && settings.bg_color) || '#0a0a0f';
   settings.notification_style = document.getElementById('setting-notif-style').value;
 
   // Appearance: Background & Animation
@@ -8774,18 +9359,93 @@ function initSettings() {
     }
   });
 
-  // Live-preview accent color as you drag the picker (zero lag, instant CSS update)
-  const accentEl = document.getElementById('setting-accent-color');
-  if (accentEl) {
-    accentEl.addEventListener('input', () => {
-      applyAccentColorLive(accentEl.value);
-      saveSettingsDebounced();
+  // Color pickers in Settings: Accent Color & Background Base Color
+  document.getElementById('btn-open-accent-picker')?.addEventListener('click', () => {
+    openCustomColorPicker({
+      title: 'Accent Color',
+      type: 'accent',
+      initialColor: currentAccentColor(),
+      onLiveChange: (hex) => {
+        applyAccentColorLive(hex);
+      },
+      onApply: (hex) => {
+        applyAccentColorLive(hex);
+        applyThemeFromSettings();
+        saveSettingsNow();
+      }
     });
-    accentEl.addEventListener('change', () => {
-      collectSettingsFromUI();
+  });
+
+  // Editable Hex Input for Accent Color
+  const settingAccentHexInput = document.getElementById('setting-accent-hex-input');
+  if (settingAccentHexInput) {
+    const handleHex = () => {
+      let val = settingAccentHexInput.value.trim();
+      if (!val.startsWith('#')) val = '#' + val;
+      if (/^#[0-9a-f]{6}$/i.test(val)) {
+        applyAccentColorLive(val);
+      }
+    };
+    settingAccentHexInput.addEventListener('input', handleHex);
+    settingAccentHexInput.addEventListener('change', () => {
+      handleHex();
       saveSettingsNow();
     });
   }
+
+  // Theme Palettes "More Palettes" button
+  document.getElementById('btn-browse-all-palettes')?.addEventListener('click', () => {
+    openThemePalettesModal();
+  });
+
+  document.getElementById('btn-reset-accent-color')?.addEventListener('click', () => {
+    applyAccentColorLive(ACCENT_DEFAULT);
+    applyThemeFromSettings();
+    saveSettingsNow();
+    showToast('Accent color reset to default silver', 'info');
+  });
+
+  document.getElementById('btn-open-bg-color-picker')?.addEventListener('click', () => {
+    openCustomColorPicker({
+      title: 'Background Base Color',
+      type: 'bg',
+      initialColor: (settings && settings.bg_color) || '#0A0A0F',
+      onLiveChange: (hex) => {
+        applyBgColorLive(hex);
+      },
+      onApply: (hex) => {
+        applyBgColorLive(hex);
+        applyThemeFromSettings();
+        saveSettingsNow();
+      }
+    });
+  });
+
+  // Editable Hex Input for Background Base Color
+  const settingBgHexInput = document.getElementById('setting-bg-hex-input');
+  if (settingBgHexInput) {
+    const handleHex = () => {
+      let val = settingBgHexInput.value.trim();
+      if (!val.startsWith('#')) val = '#' + val;
+      if (/^#[0-9a-f]{6}$/i.test(val)) {
+        applyBgColorLive(val);
+        applyThemeFromSettings();
+        saveSettingsDebounced();
+      }
+    };
+    settingBgHexInput.addEventListener('input', handleHex);
+    settingBgHexInput.addEventListener('change', () => {
+      handleHex();
+      saveSettingsNow();
+    });
+  }
+
+  document.getElementById('btn-reset-bg-color')?.addEventListener('click', () => {
+    applyBgColorLive('#0A0A0F');
+    applyThemeFromSettings();
+    saveSettingsNow();
+    showToast('Background base color reset to default dark', 'info');
+  });
 
   // Hidden instances (Settings → Performance & Java)
   renderHiddenInstancesSettings();
@@ -9215,8 +9875,16 @@ const BG = {
         if (this.animId) cancelAnimationFrame(this.animId);
         this.animId = null;
         this._scheduled = false;
+        if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
+        if (skinViewerInstance) skinViewerInstance.renderPaused = true;
       } else {
         this.requestRedraw();
+        const skinModalOpen = !document.getElementById('skin-viewer-overlay')?.classList.contains('hidden');
+        const dressingOpen = !document.getElementById('dressing-room-overlay')?.classList.contains('hidden');
+        if (skinViewerInstance && skinModalOpen) skinViewerInstance.renderPaused = false;
+        if (skinMiniPreviewInstance && !skinModalOpen && !dressingOpen) {
+          skinMiniPreviewInstance.renderPaused = false;
+        }
       }
     });
     this.createParticles();
@@ -9419,7 +10087,8 @@ const BG = {
       // depends on changes. Same pixels on screen, far less canvas work
       // per frame while an animation (Waves/Orbs/Fireflies/Particles) is
       // running.
-      const staticKey = `${W}x${H}|${r},${g},${b}|${bgStyle}|${aBoost}|${isNothing}`;
+      const baseColor = (s && s.bg_color) || '#0a0a0f';
+      const staticKey = `${W}x${H}|${r},${g},${b}|${bgStyle}|${aBoost}|${isNothing}|${baseColor}`;
       if (this._staticKey !== staticKey) {
         this._staticKey = staticKey;
         if (!this._staticCanvas) this._staticCanvas = document.createElement('canvas');
@@ -9430,13 +10099,14 @@ const BG = {
 
         if (isNothing) {
           // Flat solid fill, no gradient at all.
-          sctx.fillStyle = '#141416';
+          sctx.fillStyle = baseColor;
           sctx.fillRect(0, 0, W, H);
         } else {
           // ── Base gradient ──
+          const darkerColor = darkenColor(baseColor, 0.4);
           const grad = sctx.createLinearGradient(0, 0, 0, H);
-          grad.addColorStop(0, '#0a0a0f');
-          grad.addColorStop(1, '#060608');
+          grad.addColorStop(0, baseColor);
+          grad.addColorStop(1, darkerColor);
           sctx.fillStyle = grad;
           sctx.fillRect(0, 0, W, H);
 
@@ -10247,19 +10917,87 @@ function initSetupWizard() {
     });
   }
 
-  // Live listeners for Step 1 fields
-  const setupAccentEl = document.getElementById('setup-accent');
-  if (setupAccentEl) {
-    setupAccentEl.addEventListener('input', () => {
-      applyAccentColorLive(setupAccentEl.value);
-      saveSettingsDebounced();
+  // Live listeners for Step 1 Color Pickers
+  document.getElementById('setup-btn-accent-picker')?.addEventListener('click', () => {
+    openCustomColorPicker({
+      title: 'Accent Color',
+      type: 'accent',
+      initialColor: currentAccentColor(),
+      onLiveChange: (hex) => {
+        applyAccentColorLive(hex);
+        applyThemeFromSettings();
+      },
+      onApply: (hex) => {
+        applyAccentColorLive(hex);
+        applyThemeFromSettings();
+        saveSettingsDebounced();
+      }
     });
-    setupAccentEl.addEventListener('change', () => {
-      if (!settings) settings = {};
-      settings.accent_color = setupAccentEl.value;
-      saveSettingsNow();
-    });
+  });
+
+  // Theme Palettes "More Palettes" button in Setup Wizard
+  document.getElementById('setup-btn-browse-palettes')?.addEventListener('click', () => {
+    openThemePalettesModal();
+  });
+
+  const setupAccentHexInput = document.getElementById('setup-accent-hex-input');
+  if (setupAccentHexInput) {
+    const handleHex = () => {
+      let val = setupAccentHexInput.value.trim();
+      if (!val.startsWith('#')) val = '#' + val;
+      if (/^#[0-9a-f]{6}$/i.test(val)) {
+        applyAccentColorLive(val);
+        applyThemeFromSettings();
+        saveSettingsDebounced();
+      }
+    };
+    setupAccentHexInput.addEventListener('input', handleHex);
+    setupAccentHexInput.addEventListener('change', handleHex);
   }
+
+  document.getElementById('setup-btn-reset-accent')?.addEventListener('click', () => {
+    applyAccentColorLive(ACCENT_DEFAULT);
+    applyThemeFromSettings();
+    saveSettingsDebounced();
+  });
+
+  document.getElementById('setup-btn-bg-color-picker')?.addEventListener('click', () => {
+    openCustomColorPicker({
+      title: 'Background Base Color',
+      type: 'bg',
+      initialColor: (settings && settings.bg_color) || '#0A0A0F',
+      onLiveChange: (hex) => {
+        applyBgColorLive(hex);
+        applyThemeFromSettings();
+      },
+      onApply: (hex) => {
+        applyBgColorLive(hex);
+        applyThemeFromSettings();
+        saveSettingsDebounced();
+      }
+    });
+  });
+
+  const setupBgHexInput = document.getElementById('setup-bg-hex-input');
+  if (setupBgHexInput) {
+    const handleHex = () => {
+      let val = setupBgHexInput.value.trim();
+      if (!val.startsWith('#')) val = '#' + val;
+      if (/^#[0-9a-f]{6}$/i.test(val)) {
+        applyBgColorLive(val);
+        applyThemeFromSettings();
+        saveSettingsDebounced();
+      }
+    };
+    setupBgHexInput.addEventListener('input', handleHex);
+    setupBgHexInput.addEventListener('change', handleHex);
+  }
+
+  document.getElementById('setup-btn-reset-bg-color')?.addEventListener('click', () => {
+    applyBgColorLive('#0A0A0F');
+    applyThemeFromSettings();
+    saveSettingsDebounced();
+  });
 
   const liveThemeInputs = [
     'setup-notif-style',
@@ -10384,7 +11122,8 @@ async function handleSetupStepSubmit(step) {
   if (step === 1) {
     if (!settings) settings = {};
     settings.notification_style = document.getElementById('setup-notif-style').value;
-    settings.accent_color = document.getElementById('setup-accent').value;
+    settings.accent_color = currentAccentColor();
+    settings.bg_color = (settings && settings.bg_color) || '#0a0a0f';
     settings.background_style = document.getElementById('setup-bg-style').value;
     settings.background_animation_style = document.getElementById('setup-bg-anim-style').value;
 

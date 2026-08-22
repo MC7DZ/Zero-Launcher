@@ -139,7 +139,31 @@ pub fn analyze(
             fixes: vec![CrashFix {
                 kind: "info".to_string(),
                 label: "Install the `xrandr` package".to_string(),
-                detail: "This version uses LWJGL2, which calls the `xrandr` command-line tool to list display modes — even under Wayland, via XWayland. If `xrandr` isn't installed, it crashes immediately with this error.\n\nInstall it and relaunch:\n\u{2022} Arch/CachyOS: sudo pacman -S xorg-xrandr\n\u{2022} Debian/Ubuntu: sudo apt install x11-xserver-utils\n\u{2022} Fedora: sudo dnf install xrandr\n\nThis isn't a launcher or install problem — no reinstall needed.".to_string(),
+                detail: "This version uses LWJGL2, which calls the `xrandr` command-line tool to list display modes — even under Wayland, via XWayland. If `xrandr` isn't installed, it crashes immediately with this error.\n\nInstall it for your distribution:\n\u{2022} Arch / CachyOS / Manjaro: sudo pacman -S xorg-xrandr\n\u{2022} Debian / Ubuntu / Linux Mint: sudo apt install x11-xserver-utils\n\u{2022} Fedora / RHEL / CentOS: sudo dnf install xrandr\n\u{2022} openSUSE: sudo zypper install xrandr\n\u{2022} Alpine Linux: sudo apk add xrandr\n\u{2022} Void Linux: sudo xbps-install -S xrandr\n\nThis isn't a launcher or install problem — no reinstall needed.".to_string(),
+                mod_path: None,
+                mod_name: None,
+                folder: None,
+                url: None,
+            }],
+        });
+    }
+
+    // 3c. Forge missing generated processor libraries / zlib-ng checksum failure.
+    //     ModLauncher fails when local processor jars (srg.jar, extra.jar, client.jar)
+    //     were never generated due to Forge installer failing on zlib-ng distros.
+    if text.contains("Invalid paths argument, contained no existing paths")
+        && (text.contains("-srg.jar") || text.contains("-extra.jar") || text.contains("-client.jar"))
+    {
+        return Some(CrashReport {
+            version_id: version_id.to_string(),
+            instance_name: instance_name.to_string(),
+            title: "Incomplete Forge Installation (Missing Generated Libraries)".to_string(),
+            category: "corrupted_forge_install".to_string(),
+            signature: extract_signature(&text, 6),
+            fixes: vec![CrashFix {
+                kind: "info".to_string(),
+                label: "Fix zlib conflict and re-install Forge".to_string(),
+                detail: "Forge is missing generated internal libraries because the installer failed during setup. On Linux distributions using `zlib-ng` (like Arch Linux, CachyOS, or Fedora), Forge's installer aborts on checksum checks.\n\nTo resolve this on your Linux distribution:\n\u{2022} Arch / CachyOS / Manjaro: sudo pacman -S zlib lib32-zlib (accept replacing zlib-ng)\n\u{2022} Debian / Ubuntu / Linux Mint: sudo apt install zlib1g zlib1g:i386\n\u{2022} Fedora / RHEL / CentOS: sudo dnf install zlib zlib.i686\n\u{2022} openSUSE: sudo zypper install libz1 libz1-32bit\n\u{2022} Alpine Linux: sudo apk add zlib\n\u{2022} Void Linux: sudo xbps-install -S zlib\n\nAfter installing standard zlib, delete and re-create this Forge instance.".to_string(),
                 mod_path: None,
                 mod_name: None,
                 folder: None,
