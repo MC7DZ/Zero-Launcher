@@ -1,6 +1,6 @@
 
 
-#  ONLY WEBSIE
+#  THE WEBSIE
 
 https://zerolauncher.github.io/Website/
 
