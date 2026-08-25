@@ -61,8 +61,6 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Very first thing on every launch: make sure the launcher is
             // installed in its permanent home with a proper shortcut
