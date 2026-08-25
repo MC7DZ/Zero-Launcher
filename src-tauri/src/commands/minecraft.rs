@@ -1588,6 +1588,18 @@ pub async fn launch_minecraft(
         ) })?;
     }
 
+    // Check if the user cancelled the launch during verification
+    {
+        let is_running = state.running_instances.lock().unwrap()
+            .get(&vid)
+            .map(|i| i.running)
+            .unwrap_or(false);
+        if !is_running {
+            fail_cleanup();
+            return Err("Launch cancelled by user".to_string());
+        }
+    }
+
     // This version's own libraries tell us definitively whether it uses
     // LWJGL2 (pre-1.13, groupId `org.lwjgl.lwjgl`, artifact `lwjgl`)
     // rather than LWJGL3 — cheaper and more reliable than guessing from
@@ -1654,6 +1666,19 @@ pub async fn launch_minecraft(
     let java_executable = crate::commands::java::ensure_java_for_version(&app, &state, &version, offline)
         .await
         .map_err(|e| { fail_cleanup(); format!("Java setup failed: {e}") })?;
+
+    // Check if the user cancelled the launch during Java setup
+    {
+        let is_running = state.running_instances.lock().unwrap()
+            .get(&vid)
+            .map(|i| i.running)
+            .unwrap_or(false);
+        if !is_running {
+            fail_cleanup();
+            return Err("Launch cancelled by user".to_string());
+        }
+    }
+
     logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
         "Using Java: {}", java_executable.display()
     ));
@@ -1689,6 +1714,7 @@ pub async fn launch_minecraft(
     let mut args: Vec<String> = Vec::new();
     args.push(format!("-Xmx{}m", max_ram));
     args.push(format!("-Xms{}m", min_ram));
+    args.push("-Ddiscordfix=net.minecraft.client.main.Main".to_string());
     if !jvm_args_str.is_empty() {
         args.extend(jvm_args_str.split_whitespace().map(String::from));
     }
@@ -2094,7 +2120,8 @@ pub async fn get_running_instances(
 }
 
 /// Forcibly terminate a running instance's game process, identified by the
-/// PID captured at launch time.
+/// PID captured at launch time. If still in pre-launch preparation, gracefully
+/// cancels the launch task.
 #[tauri::command]
 pub async fn kill_instance(
     app: tauri::AppHandle,
@@ -2113,7 +2140,36 @@ pub async fn kill_instance(
         return Err("Instance is not currently running".to_string());
     }
 
-    let pid = pid.ok_or_else(|| "No process id recorded for this instance".to_string())?;
+    // If there is no process ID yet, the instance is in the pre-launch phase
+    // (verifying libraries/assets, downloading Java, resolving metadata).
+    // Gracefully cancel the pre-launch startup and mark the instance as stopped.
+    let pid = match pid {
+        Some(p) => p,
+        None => {
+            state
+                .generic_cancel_flag(&format!("launch-verify-{version_id}"))
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            state
+                .generic_cancel_flag(&version_id)
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+
+            let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
+                version_id: version_id.clone(),
+                active: false,
+                message: String::new(),
+            });
+
+            if let Some(info) = state.running_instances.lock().unwrap().get_mut(&version_id) {
+                info.running = false;
+            }
+            state.save_running_instances();
+            let _ = app.emit("running-instances-changed", ());
+            logger::info(&app, &state, "LAUNCHER", &format!(
+                "Cancelled launch preparation for {}", version_id
+            ));
+            return Ok(());
+        }
+    };
 
     #[cfg(target_os = "windows")]
     let kill_result = {
@@ -2138,6 +2194,7 @@ pub async fn kill_instance(
             if let Some(info) = state.running_instances.lock().unwrap().get_mut(&version_id) {
                 info.running = false;
             }
+            state.save_running_instances();
             let _ = app.emit("running-instances-changed", ());
             Ok(())
         }

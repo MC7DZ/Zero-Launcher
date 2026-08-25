@@ -255,6 +255,8 @@ pub struct LauncherSettings {
     #[serde(default = "default_true")]
     pub confirm_destructive_actions: bool,
     #[serde(default = "default_true")]
+    pub sound_effects_enabled: bool,
+    #[serde(default = "default_true")]
     pub auto_apply_instance_filters_in_discover: bool,
     #[serde(default = "default_true")]
     pub notify_on_auto_mod_updates: bool,
@@ -551,6 +553,7 @@ impl Default for LauncherSettings {
             refresh_discover_on_launch: true,
             auto_refresh_mods_on_version_load_fail: true,
             confirm_destructive_actions: true,
+            sound_effects_enabled: true,
             auto_apply_instance_filters_in_discover: true,
             notify_on_auto_mod_updates: true,
 

@@ -368,8 +368,24 @@ pub fn ensure_linux_xdg_icons() -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "windows")]
+pub fn ensure_windows_shortcuts() {
+    let icon_bytes = include_bytes!("../icons/shortcut.ico");
+    let icon_path = install_dir().join("desktop-icon.ico");
+    let _ = fs::write(&icon_path, icon_bytes);
+
+    let target_exe = install_dir().join(target_exe_name());
+    if target_exe.exists() {
+        let _ = create_windows_shortcuts(&target_exe);
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn create_windows_shortcuts(exe_path: &Path) -> Result<(), String> {
     use mslnk::ShellLink;
+
+    let icon_bytes = include_bytes!("../icons/shortcut.ico");
+    let icon_path = install_dir().join("desktop-icon.ico");
+    let _ = fs::write(&icon_path, icon_bytes);
 
     let mut link_paths: Vec<PathBuf> = Vec::new();
     if let Some(desktop) = dirs::desktop_dir() {
@@ -391,9 +407,18 @@ fn create_windows_shortcuts(exe_path: &Path) -> Result<(), String> {
         .to_string_lossy()
         .to_string();
 
+    let icon_loc = if icon_path.exists() {
+        Some(icon_path.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
     for link_path in link_paths {
         let mut link = ShellLink::new(exe_path).map_err(|e| e.to_string())?;
         link.set_working_dir(Some(working_dir.clone()));
+        if let Some(ref icon) = icon_loc {
+            link.set_icon_location(Some(icon.clone()));
+        }
         link.create_lnk(&link_path)
             .map_err(|e| format!("creating {} failed: {e}", link_path.display()))?;
     }

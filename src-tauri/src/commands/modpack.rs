@@ -4,13 +4,6 @@
 //! loader are installed exactly like a manual "Create Instance" would, then
 //! the pack's own content (mods, config, resourcepacks, saves, ...) is laid
 //! on top of that instance's game directory.
-//!
-//! Loosely modeled on https://github.com/KTrain5169/unpacker — same overall
-//! flow (read the pack's manifest → install version/loader → download each
-//! referenced mod file → drop in the pack's `overrides/`), reimplemented
-//! here so it can reuse this launcher's own installer/instance machinery
-//! (shared `versions/`, per-instance directories, download-progress events,
-//! etc.) instead of standing up a separate one.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -26,6 +19,8 @@ use crate::commands::minecraft::install_minecraft;
 use crate::logger;
 use crate::models::{InstallRequestPayload, InstalledInstance};
 use crate::state::AppState;
+
+const CURSEFORGE_API_KEY: &str = "$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm";
 
 // ── Request / response shapes ──────────────────────────────────────────────
 
@@ -50,11 +45,7 @@ pub struct ModpackImportResult {
     /// Files the pack referenced but that failed to download (non-fatal —
     /// the instance is still created and playable).
     pub failed_files: Vec<String>,
-    /// Set when the pack was CurseForge-format: this launcher can install
-    /// the correct version/loader and copy the pack's `overrides/`, but
-    /// can't resolve CurseForge project/file IDs to download URLs without
-    /// a CurseForge API key, so mods referenced only by ID (not bundled
-    /// directly in the zip) were skipped.
+    /// Number of CurseForge mods that could not be downloaded automatically.
     pub unresolved_curseforge_mods: usize,
 }
 
@@ -74,10 +65,6 @@ struct ModpackImportProgress {
     percent: f64,
     complete: bool,
     error: Option<String>,
-    /// Every pack file actively downloading right now (real, from the same
-    /// parallel byte-level downloader "Create Instance" uses) — lets the
-    /// frontend show this exactly like an instance install: several files
-    /// in flight at once, each with its own live percent.
     #[serde(default)]
     active_files: Vec<ActiveFileProgress>,
     #[serde(default)]
@@ -164,8 +151,6 @@ struct ModrinthEnv {
     client: Option<String>,
 }
 
-/// Map a `modrinth.index.json` dependency key to this launcher's own
-/// `loader` string (`InstallRequestPayload.loader` / `InstalledInstance.loader`).
 fn mrpack_loader_key(dependencies: &std::collections::HashMap<String, String>) -> Option<(String, String)> {
     for (key, loader_name) in [
         ("fabric-loader", "fabric"),
@@ -211,18 +196,29 @@ struct CurseForgeModLoader {
     primary: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct CurseForgeFileRef {
     #[serde(rename = "projectID")]
     #[allow(dead_code)]
     project_id: u64,
     #[serde(rename = "fileID")]
-    #[allow(dead_code)]
     file_id: u64,
 }
 
-/// CurseForge's `modLoaders[].id` looks like `"forge-47.2.20"`,
-/// `"forge-1.12.2-14.23.5.2860"`, or `"fabric-0.15.7"` — split into (loader, version).
+#[derive(Debug, Deserialize)]
+struct CurseForgeBatchFilesResponse {
+    data: Vec<CurseForgeResolvedFile>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurseForgeResolvedFile {
+    id: u64,
+    #[serde(rename = "fileName")]
+    file_name: String,
+    #[serde(rename = "downloadUrl")]
+    download_url: Option<String>,
+}
+
 fn split_curseforge_loader(id: &str) -> (String, String) {
     let lower = id.trim().to_lowercase();
     if let Some((name, ver)) = lower.split_once('-') {
@@ -239,30 +235,20 @@ fn split_curseforge_loader(id: &str) -> (String, String) {
     }
 }
 
-// ── Real, parallel, byte-level pack-file downloader (same engine "Create
-// Instance" uses for libraries/assets) ─────────────────────────────────────
+fn urlencode_file_name(s: &str) -> String {
+    url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>().replace("+", "%20")
+}
 
-/// Reports [`ProgressEvent`]s from [`execute_plan`] as the same rich,
-/// byte-level `modpack-import-progress` events "Create Instance" emits as
-/// `download-progress` — several files in flight at once, each with a real
-/// percent, plus aggregate speed/ETA. Mirrors the reporter closure in
-/// `commands::minecraft::install_minecraft` so the modpack extractor's
-/// progress reads exactly like an instance install, not a fake/simulated
-/// one.
+// ── Real, parallel pack-file downloader ───────────────────────────────────
+
 struct PackDownloadReporter<'a> {
     app: &'a tauri::AppHandle,
     total: u32,
     tasks_done: u32,
-    /// Labels currently downloading, in the order they started.
     active_labels: Vec<String>,
     label_display: std::collections::HashMap<String, String>,
     per_label_received: std::collections::HashMap<String, u64>,
     per_label_total: std::collections::HashMap<String, u64>,
-    /// Every label that got a `TaskStarted` but never a matching
-    /// `TaskFinished` — `execute_plan` only ever surfaces the *first*
-    /// error it hits (workers keep pulling other files after one fails),
-    /// so this diff is how we recover the full non-fatal failed-file list
-    /// the way the old sequential loop used to track directly.
     started_not_finished: std::collections::HashSet<String>,
     cumulative_bytes: u64,
     speed_window_start: Instant,
@@ -349,9 +335,6 @@ impl<'a> PackDownloadReporter<'a> {
         );
     }
 
-    /// Labels that started downloading but never finished — the pack
-    /// files that failed (or were still in flight when a fatal, non-file
-    /// error aborted the plan early).
     fn failed_labels(&self) -> Vec<String> {
         self.started_not_finished.iter().cloned().collect()
     }
@@ -392,9 +375,6 @@ impl<'a> ProgressReporter for PackDownloadReporter<'a> {
                     self.per_label_total.insert(label, t);
                 }
             }
-            // Modpack installs don't run a loader installer jar directly
-            // (that happens via the normal Minecraft install path), so
-            // there's nothing extra to do with these lines here.
             ProgressEvent::InstallerOutputLine { .. } => {}
         }
 
@@ -407,7 +387,6 @@ impl<'a> ProgressReporter for PackDownloadReporter<'a> {
             self.speed_window_bytes = self.cumulative_bytes;
         }
 
-        // Throttle UI emits to ~10/sec, same as the instance installer.
         if now.duration_since(self.last_emit).as_millis() < 100 {
             return;
         }
@@ -416,13 +395,6 @@ impl<'a> ProgressReporter for PackDownloadReporter<'a> {
     }
 }
 
-/// Downloads every referenced pack file through the same parallel,
-/// byte-level, checksum-verifying downloader "Create Instance" uses for
-/// libraries/assets (`mc_launcher_core::net::download::execute_plan`),
-/// instead of the old one-file-at-a-time, whole-file-in-memory fetch. Runs
-/// on a blocking thread (the downloader is synchronous), same as the base
-/// install. Returns the paths (relative, pack-internal) of any file that
-/// failed after retries — non-fatal, the instance is still usable.
 async fn download_pack_files(
     app: &tauri::AppHandle,
     state: &AppState,
@@ -449,29 +421,19 @@ async fn download_pack_files(
         });
     }
 
-    // Files with no download URL at all can never succeed — surface them
-    // immediately without going through the downloader.
     let mut failed: Vec<String> = files
         .iter()
         .filter(|f| f.env.as_ref().and_then(|e| e.client.as_deref()) != Some("unsupported"))
         .filter(|f| f.downloads.is_empty())
         .map(|f| f.path.clone())
         .collect();
-    if !failed.is_empty() {
-        logger::warn(
-            app,
-            state,
-            "MODPACK",
-            &format!("{} pack file(s) have no download URL, skipping", failed.len()),
-        );
-    }
 
     let total = plan.tasks.len() as u32;
     logger::info(
         app,
         state,
         "MODPACK",
-        &format!("Downloading {total} pack file(s) (up to 24 in parallel)…"),
+        &format!("Downloading {total} Modrinth pack file(s) in parallel…"),
     );
     emit_progress(app, "downloading", format!("Downloading {total} pack files…"), 0, total, false, None);
 
@@ -483,9 +445,6 @@ async fn download_pack_files(
     let plan_result = tokio::task::spawn_blocking(move || {
         let mut reporter = PackDownloadReporter::new(&app_owned, total);
         let result = execute_plan(&plan, &mut reporter);
-        // Always emit one final snapshot so the UI's last frame reflects
-        // reality (matches/skips it would otherwise miss under the ~10/sec
-        // throttle) before whatever comes next (extracting overrides).
         reporter.emit(true);
         (result, reporter.failed_labels())
     })
@@ -496,20 +455,135 @@ async fn download_pack_files(
     failed.append(&mut failed_from_reporter);
 
     if let Err(e) = result {
-        // execute_plan only surfaces the *first* file's error message (see
-        // PackDownloadReporter's doc comment) — everything else it
-        // touched either finished or shows up in `failed`. Non-fatal: log
-        // it and keep going with whatever did succeed.
         logger::warn(app, state, "MODPACK", &format!("Some pack files failed to download: {e}"));
     }
 
-    if !failed.is_empty() {
-        logger::warn(
-            app,
-            state,
-            "MODPACK",
-            &format!("{} pack file(s) failed to download and were skipped", failed.len()),
+    Ok(failed)
+}
+
+async fn download_curseforge_pack_files(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    files: &[CurseForgeFileRef],
+    game_dir: &Path,
+) -> Result<Vec<String>, String> {
+    if files.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mods_dir = game_dir.join("mods");
+    let _ = std::fs::create_dir_all(&mods_dir);
+
+    let client = reqwest::Client::builder()
+        .user_agent("Zero-Launcher/1.0")
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let file_ids: Vec<u64> = files.iter().map(|f| f.file_id).collect();
+    let mut resolved_files: Vec<CurseForgeResolvedFile> = Vec::new();
+    let mut unresolved_ids: Vec<u64> = Vec::new();
+
+    emit_progress(app, "resolving", "Resolving CurseForge mods metadata…".into(), 0, file_ids.len() as u32, false, None);
+    logger::info(app, state, "MODPACK", &format!("Resolving {} CurseForge mod(s) via API…", file_ids.len()));
+
+    for chunk in file_ids.chunks(200) {
+        let payload = serde_json::json!({ "fileIds": chunk });
+        match client
+            .post("https://api.curseforge.com/v1/mods/files")
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .header("x-api-key", CURSEFORGE_API_KEY)
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(data) = resp.json::<CurseForgeBatchFilesResponse>().await {
+                    let mut found_ids = std::collections::HashSet::new();
+                    for item in data.data {
+                        found_ids.insert(item.id);
+                        resolved_files.push(item);
+                    }
+                    for id in chunk {
+                        if !found_ids.contains(id) {
+                            unresolved_ids.push(*id);
+                        }
+                    }
+                } else {
+                    unresolved_ids.extend(chunk.iter().copied());
+                }
+            }
+            Err(e) => {
+                logger::warn(app, state, "MODPACK", &format!("CurseForge API batch query error: {e}"));
+                unresolved_ids.extend(chunk.iter().copied());
+            }
+            Ok(resp) => {
+                let status = resp.status();
+                logger::warn(app, state, "MODPACK", &format!("CurseForge API returned HTTP {status}"));
+                unresolved_ids.extend(chunk.iter().copied());
+            }
+        }
+    }
+
+    let mut plan = DownloadPlan::default();
+    for f in &resolved_files {
+        let fallback_edge = format!(
+            "https://edge.forgecdn.net/files/{}/{}/{}",
+            f.id / 1000,
+            f.id % 1000,
+            urlencode_file_name(&f.file_name)
         );
+        let primary_url = f.download_url.clone().unwrap_or_else(|| fallback_edge.clone());
+        let mut fallbacks = Vec::new();
+        if primary_url != fallback_edge {
+            fallbacks.push(fallback_edge);
+        }
+        fallbacks.push(format!(
+            "https://mediafilez.forgecdn.net/files/{}/{}/{}",
+            f.id / 1000,
+            f.id % 1000,
+            urlencode_file_name(&f.file_name)
+        ));
+
+        plan.tasks.push(DownloadTask {
+            url: primary_url,
+            fallback_urls: fallbacks,
+            destination: mods_dir.join(&f.file_name),
+            checksum: None,
+            label: f.file_name.clone(),
+        });
+    }
+
+    let mut failed: Vec<String> = unresolved_ids.into_iter().map(|id| format!("fileID:{id}")).collect();
+
+    let total = plan.tasks.len() as u32;
+    logger::info(
+        app,
+        state,
+        "MODPACK",
+        &format!("Downloading {total} CurseForge mod(s) in parallel…"),
+    );
+    emit_progress(app, "downloading", format!("Downloading {total} mod files…"), 0, total, false, None);
+
+    if plan.tasks.is_empty() {
+        return Ok(failed);
+    }
+
+    let app_owned = app.clone();
+    let plan_result = tokio::task::spawn_blocking(move || {
+        let mut reporter = PackDownloadReporter::new(&app_owned, total);
+        let result = execute_plan(&plan, &mut reporter);
+        reporter.emit(true);
+        (result, reporter.failed_labels())
+    })
+    .await
+    .map_err(|e| format!("CurseForge download task failed: {e}"))?;
+
+    let (result, mut failed_from_reporter) = plan_result;
+    failed.append(&mut failed_from_reporter);
+
+    if let Err(e) = result {
+        logger::warn(app, state, "MODPACK", &format!("Some CurseForge mod files failed to download: {e}"));
     }
 
     Ok(failed)
@@ -517,8 +591,7 @@ async fn download_pack_files(
 
 // ── Zip helpers ──────────────────────────────────────────────────────────
 
-/// Recursively copy every entry under `src_prefix/` (a folder inside the
-/// zip, e.g. `"overrides/"`) into `dest_root` on disk, stripping the prefix.
+/// Recursively copy every entry under `src_prefix/` into `dest_root` on disk (case-insensitively).
 fn extract_zip_folder(
     archive: &mut ZipArchive<std::fs::File>,
     src_prefix: &str,
@@ -531,66 +604,99 @@ fn extract_zip_folder(
     } else {
         format!("{clean_prefix}/")
     };
+    let prefix_lower = prefix.to_lowercase();
+
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let mut entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         let raw_name = entry.name().replace('\\', "/");
         let name = raw_name.trim_start_matches("./");
-        if !prefix.is_empty() && (!name.starts_with(&prefix) || name == prefix) {
-            continue;
+        let name_lower = name.to_lowercase();
+
+        if !prefix_lower.is_empty() {
+            if !name_lower.starts_with(&prefix_lower) || name_lower == prefix_lower {
+                continue;
+            }
         }
+
         let rel = if prefix.is_empty() {
             name
         } else {
-            &name[prefix.len()..]
+            let cut_len = prefix.len();
+            if name.len() >= cut_len {
+                &name[cut_len..]
+            } else {
+                continue;
+            }
         };
-        if rel.is_empty() || rel.contains("..") {
+
+        let clean_rel = rel.trim_start_matches('/');
+        if clean_rel.is_empty() || clean_rel.contains("..") {
             continue;
         }
-        let out_path = dest_root.join(rel);
+
+        let out_path = dest_root.join(clean_rel);
         if entry.is_dir() || name.ends_with('/') {
-            std::fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
+            let _ = std::fs::create_dir_all(&out_path);
             continue;
         }
         if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            let _ = std::fs::create_dir_all(parent);
         }
         let mut buf = Vec::new();
-        entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-        std::fs::write(&out_path, &buf).map_err(|e| e.to_string())?;
-        copied += 1;
+        if entry.read_to_end(&mut buf).is_ok() {
+            if std::fs::write(&out_path, &buf).is_ok() {
+                copied += 1;
+            }
+        }
     }
     Ok(copied)
 }
 
-/// Does the zip contain any entry under `folder/`? Used to detect a plain
-/// (non-mrpack, non-CurseForge) export that just bundles `mods/`,
-/// `config/`, `resourcepacks/`, `saves/` at its root.
 fn zip_has_folder(archive: &mut ZipArchive<std::fs::File>, folder: &str) -> bool {
     let clean_folder = folder.replace('\\', "/").trim_matches('/').to_string();
-    let prefix = format!("{clean_folder}/");
+    let prefix_lower = format!("{}/", clean_folder.to_lowercase());
     (0..archive.len()).any(|i| {
         archive
             .by_index(i)
             .map(|e| {
                 let name = e.name().replace('\\', "/");
-                name.trim_start_matches("./").starts_with(&prefix)
+                let name_lower = name.trim_start_matches("./").to_lowercase();
+                name_lower.starts_with(&prefix_lower)
             })
             .unwrap_or(false)
     })
 }
 
 fn read_zip_entry_string(archive: &mut ZipArchive<std::fs::File>, name: &str) -> Option<String> {
-    let mut entry = archive.by_name(name).ok()?;
-    let mut s = String::new();
-    entry.read_to_string(&mut s).ok()?;
-    Some(s)
+    // Try exact name first
+    if let Ok(mut entry) = archive.by_name(name) {
+        let mut s = String::new();
+        if entry.read_to_string(&mut s).is_ok() {
+            return Some(s);
+        }
+    }
+    // Case-insensitive fallback
+    let name_lower = name.to_lowercase();
+    for i in 0..archive.len() {
+        if let Ok(mut entry) = archive.by_index(i) {
+            let raw_name = entry.name().replace('\\', "/");
+            let clean = raw_name.trim_start_matches("./").to_lowercase();
+            if clean == name_lower {
+                let mut s = String::new();
+                if entry.read_to_string(&mut s).is_ok() {
+                    return Some(s);
+                }
+            }
+        }
+    }
+    None
 }
 
 // ── Main command ─────────────────────────────────────────────────────────
 
-/// Sniff a dropped modpack's manifest without extracting/installing
-/// anything, so the UI can show "1.20.1 · Fabric · 87 mods" in the
-/// confirmation dialog before the user commits to a name/location.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModpackPreview {
     pub name: Option<String>,
@@ -646,7 +752,6 @@ pub async fn preview_modpack(file_path: String) -> Result<ModpackPreview, String
         }
     }
 
-    // Generic zip: no manifest, just a folder dump. Report what we can.
     let has_mods = zip_has_folder(&mut archive, "mods");
     Ok(ModpackPreview {
         name: path.file_stem().map(|s| s.to_string_lossy().to_string()),
@@ -712,10 +817,6 @@ pub async fn import_modpack(
             .unwrap_or(("vanilla".to_string(), "latest".to_string()));
         (manifest.minecraft.version.clone(), loader, loader_version, manifest.name.clone())
     } else {
-        // Generic zip: no manifest to read version/loader from. Install
-        // won't happen here — caller is expected to have already offered
-        // the user a version/loader picker for this case (the frontend
-        // falls back to that when preview_modpack reports "generic").
         return Err(
             "This zip doesn't look like a .mrpack or CurseForge modpack (no modrinth.index.json or manifest.json found). Use \"Create Instance\" and then drop mods individually instead."
                 .to_string(),
@@ -748,8 +849,7 @@ pub async fn import_modpack(
     std::fs::create_dir_all(&game_dir).map_err(|e| format!("Failed to create instance folder: {e}"))?;
     logger::info(&app, &state, "MODPACK", &format!("Instance directory: {}", game_dir.display()));
 
-    // ── Install the base game + loader (shared versions/libraries/assets,
-    // exactly like a manual "Create Instance") ─────────────────────────
+    // ── Install the base game + loader ─────────────────────────────────
     emit_progress(
         &app,
         "installing",
@@ -770,8 +870,10 @@ pub async fn import_modpack(
     let instance = install_minecraft(app.clone(), state.clone(), install_payload).await?;
     logger::info(&app, &state, "MODPACK", "Base game + loader installed, laying pack content on top…");
 
-    // ── Lay the pack's own content on top of the freshly-installed
-    // instance directory ────────────────────────────────────────────────
+    // ── Re-open archive fresh for file extraction ──────────────────────
+    let file = std::fs::File::open(&zip_path).map_err(|e| format!("Failed to reopen archive: {e}"))?;
+    let mut archive = ZipArchive::new(file).map_err(|e| format!("Failed to read archive: {e}"))?;
+
     let mut failed_files = Vec::new();
     let mut unresolved_curseforge_mods = 0usize;
 
@@ -779,38 +881,39 @@ pub async fn import_modpack(
         let downloaded_failures = download_pack_files(&app, &state, &idx.files, &game_dir).await?;
         failed_files.extend(downloaded_failures);
 
-        // overrides / client-overrides — extracted after the file list so
-        // any pack-provided config that overlaps a downloaded file's own
-        // folder still ends up in the right place.
-        let total = idx.files.len() as u32;
-        emit_progress(&app, "extracting", "Copying pack files…".into(), total, total, false, None);
+        emit_progress(&app, "extracting", "Copying pack configurations and overrides…".into(), 0, 0, false, None);
         logger::info(&app, &state, "MODPACK", "Copying pack overrides (configs, resourcepacks, etc.)…");
+        
         let overrides_copied = extract_zip_folder(&mut archive, "overrides", &game_dir).unwrap_or(0);
         let client_overrides_copied = extract_zip_folder(&mut archive, "client-overrides", &game_dir).unwrap_or(0);
+        let client_overrides_alt = extract_zip_folder(&mut archive, "client_overrides", &game_dir).unwrap_or(0);
+        
         logger::info(
             &app,
             &state,
             "MODPACK",
-            &format!("Copied {} override file(s)", overrides_copied + client_overrides_copied),
+            &format!("Copied {} override file(s)", overrides_copied + client_overrides_copied + client_overrides_alt),
         );
     } else if let Some(manifest) = cf_manifest {
-        emit_progress(&app, "extracting", "Copying pack files…".into(), 0, 0, false, None);
-        logger::info(&app, &state, "MODPACK", "Copying pack overrides (configs, resourcepacks, etc.)…");
-        let overrides_copied = extract_zip_folder(&mut archive, &manifest.overrides, &game_dir).unwrap_or(0);
-        logger::info(&app, &state, "MODPACK", &format!("Copied {overrides_copied} override file(s)"));
-        // CurseForge's `files[]` only carries numeric project/file IDs —
-        // resolving those to a downloadable jar needs the CurseForge API
-        // (and an API key this launcher doesn't have configured), so those
-        // are surfaced to the user instead of silently missing.
-        unresolved_curseforge_mods = manifest.files.len();
-        if unresolved_curseforge_mods > 0 {
-            logger::warn(
-                &app,
-                &state,
-                "MODPACK",
-                &format!("{unresolved_curseforge_mods} CurseForge mod(s) need to be added manually (no API key configured)"),
-            );
+        // Download all CurseForge mods!
+        if !manifest.files.is_empty() {
+            let cf_failures = download_curseforge_pack_files(&app, &state, &manifest.files, &game_dir).await?;
+            unresolved_curseforge_mods = cf_failures.len();
+            failed_files.extend(cf_failures);
         }
+
+        emit_progress(&app, "extracting", "Copying pack configurations and overrides…".into(), 0, 0, false, None);
+        logger::info(&app, &state, "MODPACK", "Copying pack overrides (configs, resourcepacks, etc.)…");
+        
+        let ov_folder = if manifest.overrides.trim().is_empty() { "overrides" } else { &manifest.overrides };
+        let mut overrides_copied = extract_zip_folder(&mut archive, ov_folder, &game_dir).unwrap_or(0);
+        if !ov_folder.eq_ignore_ascii_case("overrides") {
+            overrides_copied += extract_zip_folder(&mut archive, "overrides", &game_dir).unwrap_or(0);
+        }
+        overrides_copied += extract_zip_folder(&mut archive, "client-overrides", &game_dir).unwrap_or(0);
+        overrides_copied += extract_zip_folder(&mut archive, "client_overrides", &game_dir).unwrap_or(0);
+        
+        logger::info(&app, &state, "MODPACK", &format!("Copied {overrides_copied} override file(s)"));
     }
 
     logger::info(&app, &state, "MODPACK", &format!("Modpack import finished — {} file(s) failed", failed_files.len()));
@@ -823,3 +926,4 @@ pub async fn import_modpack(
         unresolved_curseforge_mods,
     })
 }
+

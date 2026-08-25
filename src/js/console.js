@@ -16,7 +16,7 @@ const displayName = params.get('name') || versionId;
 // ── Theme sync ──
 // This window loads main.css but is a separate document, so it needs its
 // own copy of the same theme setup the main window does.
-const THEME_PRESET = { bg_color: '#0a0a0f', panel_bg_color: '#13131a', text_color: '#e2e2ea', log_bg_color: '#060608', header_bg_color: '#111116' };
+const THEME_PRESET = { bg_color: '#121212', panel_bg_color: '#1b1b1b', text_color: '#e2e2ea', log_bg_color: '#0a0a0a', header_bg_color: '#1b1b1b' };
 
 function hexToRgba(hex, alpha) {
   hex = (hex || '').replace('#', '');

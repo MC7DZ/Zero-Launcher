@@ -71,6 +71,8 @@ pub fn run() {
 
             #[cfg(target_os = "linux")]
             let _ = first_run_setup::ensure_linux_xdg_icons();
+            #[cfg(target_os = "windows")]
+            let _ = first_run_setup::ensure_windows_shortcuts();
 
             // Linux/macOS: ~/Zero Launcher
             // Windows: %APPDATA%/Zero Launcher
@@ -336,6 +338,8 @@ pub fn run() {
             commands::music::list_music_files,
             commands::music::read_music_file,
             commands::mods::delete_instance_subpath,
+            // Sound & Effects
+            commands::play_click_sound,
             // Logs
             commands::logs::get_logs,
             commands::logs::clear_logs,
@@ -344,6 +348,7 @@ pub fn run() {
             commands::logs::open_logs_folder,
             commands::logs::get_latest_log_contents,
             commands::logs::resolve_background_path,
+            commands::open_devtools,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

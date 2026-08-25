@@ -45,7 +45,68 @@ pub fn open_launcher_folder(state: State<'_, AppState>) -> Result<(), String> {
 /// Current launcher version, read from the version in this crate's
 /// `Cargo.toml` (`package.version`) at build time. Shown in
 /// Settings → About & Initial Setup.
+/// Open WebKit / webview developer tools inspector.
+#[tauri::command]
+pub fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        window.open_devtools();
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_launcher_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[cfg(target_os = "linux")]
+fn play_native_click_sound() {
+    static WRITTEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let sound_path = std::env::temp_dir().join("zerolauncher-click.ogg");
+    if !WRITTEN.load(std::sync::atomic::Ordering::Relaxed) || !sound_path.exists() {
+        let _ = std::fs::write(&sound_path, include_bytes!("../../sounds/click.ogg"));
+        WRITTEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    if std::process::Command::new("paplay")
+        .arg(&sound_path)
+        .spawn()
+        .is_ok()
+    {
+        return;
+    }
+    if std::process::Command::new("pw-cat")
+        .args(["-p", &sound_path.to_string_lossy()])
+        .spawn()
+        .is_ok()
+    {
+        return;
+    }
+    let _ = std::process::Command::new("aplay")
+        .arg(&sound_path)
+        .spawn();
+}
+
+#[cfg(target_os = "windows")]
+fn play_native_click_sound() {
+    static WAV_BYTES: &[u8] = include_bytes!("../../src/assets/sounds/click.wav");
+    extern "system" {
+        fn PlaySoundA(pszSound: *const u8, hmod: *mut std::ffi::c_void, fdwSound: u32) -> i32;
+    }
+    // SND_ASYNC (0x1) | SND_MEMORY (0x4) | SND_NODEFAULT (0x2)
+    unsafe {
+        PlaySoundA(WAV_BYTES.as_ptr(), std::ptr::null_mut(), 0x0001 | 0x0004 | 0x0002);
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn play_native_click_sound() {
+    let _ = std::process::Command::new("afplay")
+        .arg("/tmp/zerolauncher-click.ogg")
+        .spawn();
+}
+
+#[tauri::command]
+pub fn play_click_sound() {
+    play_native_click_sound();
 }

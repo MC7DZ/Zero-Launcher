@@ -33,6 +33,87 @@ import defaultOfflineSkin from '../assets/default-offline-skin.png';
 // network access. Used anywhere the app shows a stand-in for "no real
 // skin" (Anonymous Skin mode, offline fallback).
 import unknownSkin from '../assets/unknown-skin.png';
+// ── Native Click Sound Engine ──
+let lastClickSoundTime = 0;
+
+function playClickSound() {
+  if (settings && settings.sound_effects_enabled === false) return;
+  const now = performance.now();
+  if (now - lastClickSoundTime < 25) return; // Prevent double-trigger distortion
+  lastClickSoundTime = now;
+
+  try {
+    invoke('play_click_sound').catch(() => {});
+  } catch (_) {}
+}
+
+function initClickSoundListener() {
+  const handleInteraction = (e) => {
+    const target = e.target;
+    if (!target) return;
+    const interactive = target.closest(
+      'button, .btn-play, .btn-play-gear, .pill-tab, .skin-anim-btn, .skin-speed-btn, ' +
+      '.dressing-room-tab, .troubleshoot-option-btn, .color-swatch, .color-live-chip, ' +
+      '.overlay-close, input[type="checkbox"], input[type="radio"], select, ' +
+      '.inst-hide-btn, .inst-fav-btn, .inst-favorite-btn, .inst-troubleshoot-btn, .instance-card, ' +
+      '.preset-card, .mod-card, .discover-card, .accordion-section, .account-button, ' +
+      '.btn-ghost, .btn-accent, .btn-secondary, .btn-danger, .btn-danger-outline, ' +
+      '.btn-outline, .btn-small, .btn-sm, .full-palette-card, .quick-palette-plate, ' +
+      'a[href], .tab-page nav button, [role="button"], [role="tab"], [role="checkbox"]'
+    );
+    if (interactive && !interactive.disabled && !interactive.classList.contains('disabled')) {
+      playClickSound();
+    }
+  };
+
+  document.addEventListener('pointerdown', handleInteraction, { capture: true, passive: true });
+}
+
+// ── Custom Confirmation Modal for Instance Actions (Delete / Hide) ──
+const INSTANCE_CONFIRM_SVGS = {
+  delete: `<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/>`,
+  hide: `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`,
+};
+
+function showInstanceConfirmModal({ type, title, message, confirmText, isDanger, onConfirm }) {
+  const overlay = document.getElementById('instance-confirm-overlay');
+  const heading = document.getElementById('instance-confirm-heading');
+  const icon = document.getElementById('instance-confirm-icon');
+  const desc = document.getElementById('instance-confirm-desc');
+  const actionBtn = document.getElementById('btn-instance-confirm-action');
+  const cancelBtn = document.getElementById('btn-instance-confirm-cancel');
+  const closeBtn = document.getElementById('btn-close-instance-confirm');
+
+  if (!overlay || !actionBtn) return;
+
+  heading.textContent = title || 'Confirm Action';
+  icon.innerHTML = INSTANCE_CONFIRM_SVGS[type] || INSTANCE_CONFIRM_SVGS.delete;
+  if (isDanger) {
+    icon.style.color = 'var(--danger, #ef4444)';
+    actionBtn.className = 'btn-danger';
+  } else {
+    icon.style.color = 'var(--accent, #3b82f6)';
+    actionBtn.className = 'btn-accent';
+  }
+  desc.textContent = message || '';
+  actionBtn.textContent = confirmText || 'Confirm';
+
+  const cleanup = () => {
+    overlay.classList.add('hidden');
+    actionBtn.onclick = null;
+    cancelBtn.onclick = null;
+    closeBtn.onclick = null;
+  };
+
+  cancelBtn.onclick = cleanup;
+  closeBtn.onclick = cleanup;
+  actionBtn.onclick = async () => {
+    cleanup();
+    if (onConfirm) await onConfirm();
+  };
+
+  overlay.classList.remove('hidden');
+}
 
 // ── 3D Skin Viewer (skin3d) ──
 import {
@@ -180,6 +261,7 @@ function refreshCardCullingIn(root) {
 }
 
 const api = {
+  playClickSound: () => invoke('play_click_sound'),
   getAccounts: () => invoke('list_accounts'),
   addOfflineAccount: (username) => invoke('add_offline_account', { username }),
   removeAccount: (id) => invoke('remove_account', { id }),
@@ -251,6 +333,7 @@ const api = {
   readModsListFile: (path) => invoke('read_mods_list_file', { path }),
   getLogs: (level, source) => invoke('get_logs', { level, source }),
   clearLogs: () => invoke('clear_logs'),
+  openDevtools: () => invoke('open_devtools'),
   updateDiscordPresence: (tab, playingInstance, mcVersion) =>
     invoke('update_discord_presence', { tab, playingInstance, mcVersion }),
   onLog: (cb) => listen('log', cb),
@@ -585,19 +668,13 @@ function initTabs() {
       if (tabId === 'mods') {
         loadModInstances().then(() => {
           loadMods();
-          refreshModsVirtualCards();
         }).catch(() => {});
-      } else {
-        unloadAllModsVirtualCards();
       }
       if (tabId === 'discover') {
         initDiscoverTabIfNeeded();
-        refreshDiscoverVirtualCards();
-      } else {
-        unloadAllDiscoverVirtualCards();
       }
+
       if (tabId === 'presets') initPresetsTabIfNeeded();
-      if (tabId === 'settings') { loadSettings(); renderHiddenInstancesSettings(); }
 
       // Update Discord RPC
       const tabName = tabId.charAt(0).toUpperCase() + tabId.slice(1);
@@ -605,7 +682,7 @@ function initTabs() {
     });
   });
 
-  // Global Keybinds: Alt + 1..5 for fast Tab Switching
+  // Global Keybinds: Alt + 1..4 for fast Tab Switching, Alt + 5 / Alt + S for Settings Modal
   window.addEventListener('keydown', (e) => {
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       const tabMap = {
@@ -613,13 +690,20 @@ function initTabs() {
         '2': 'mods',
         '3': 'discover',
         '4': 'presets',
-        '5': 'settings'
       };
       const targetTab = tabMap[e.key];
       if (targetTab) {
         e.preventDefault();
         const tabBtn = document.querySelector(`.pill-tab[data-tab="${targetTab}"]`);
         if (tabBtn) tabBtn.click();
+      } else if (e.key === '5' || e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        const overlay = document.getElementById('settings-modal-overlay');
+        if (overlay && !overlay.classList.contains('hidden')) {
+          closeSettingsModal();
+        } else {
+          openSettingsModal();
+        }
       }
     }
   });
@@ -715,7 +799,9 @@ async function refreshAccountUI() {
     const active = accounts.find(a => a.is_active);
     const accountNameEl = document.getElementById('account-name');
     if (accountNameEl) {
-      accountNameEl.textContent = active ? maskUsernameForDisplay(active.username) : 'No account';
+      accountNameEl.textContent = active
+        ? (shouldUseUnknownNametag(active) ? 'Unknown' : maskUsernameForDisplay(active.username))
+        : 'No account';
     }
 
     // If the active Microsoft account's session expired (or something else
@@ -743,7 +829,7 @@ async function refreshAccountUI() {
           headerFallback.style.display = '';
         };
       } else {
-        // No active account, or the account's Profile Picture is set to
+        // No active account, or the account's Profile Picture / Nametag is set to
         // "Use Unknown" — show the black "?" placeholder instead of
         // fetching/displaying the real head render.
         headerImg.classList.add('hidden');
@@ -778,14 +864,15 @@ async function refreshAccountUI() {
         overflow: hidden;
       `;
 
-      const initial = (acc.username || 'A').charAt(0).toUpperCase();
-      const shownName = escapeHtml(maskUsernameForDisplay(acc.username));
-      const isMsa = acc.account_type === 'microsoft';
+      const useUnknownTag = shouldUseUnknownNametag(acc);
       const useUnknownPic = shouldUseUnknownProfilePic(acc);
+      const initial = (useUnknownTag || useUnknownPic) ? '?' : (acc.username || 'A').charAt(0).toUpperCase();
+      const shownName = escapeHtml(useUnknownTag ? 'Unknown' : maskUsernameForDisplay(acc.username));
+      const isMsa = acc.account_type === 'microsoft';
       // Player-head avatar: keyed by the real Minecraft UUID when we have one
       // (Microsoft accounts), otherwise by username (offline accounts get
       // whatever skin — Steve/Alex — that name resolves to). Skipped
-      // entirely when this account's Profile Picture is set to "Use
+      // entirely when this account's Profile Picture / Nametag is set to "Use
       // Unknown" — shows the black "?" placeholder instead.
       const headKey = encodeURIComponent(acc.mc_uuid || acc.username || 'MHF_Steve');
       const headUrl = `https://mc-heads.net/avatar/${headKey}/64`;
@@ -1437,7 +1524,7 @@ function initDownloadWidget() {
       const card = cards.get(filesWindowCardId);
       if (card) renderFilesList(card);
     });
-  });
+  }, { passive: true });
 
   let filesWindowCardId = null;
   function openFilesWindow(card) {
@@ -2333,6 +2420,21 @@ function shouldUseUnknownProfilePic(acc) {
   if (saved && typeof saved.anonPic === 'boolean') return saved.anonPic;
   if (settings && typeof settings.skin_anonymous_pic === 'boolean') return settings.skin_anonymous_pic;
   return isOffline;
+}
+
+/// Whether a given account's nametag should show "Unknown" instead of its real
+/// username in the accounts button and accounts manager modal list.
+function shouldUseUnknownNametag(acc) {
+  if (!acc) return false;
+  const key = getAccountSkinSettingsKey(acc);
+  let saved = null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) saved = JSON.parse(raw);
+  } catch (_) {}
+  if (saved && typeof saved.anonTag === 'boolean') return saved.anonTag;
+  if (settings && typeof settings.skin_anonymous_nametag === 'boolean') return settings.skin_anonymous_nametag;
+  return false;
 }
 
 function saveSkinSettingsForAccount(acc, customSettings) {
@@ -3416,15 +3518,19 @@ async function initSkinMiniPreview() {
   updateSkinMiniPreview();
 }
 
+let skinMiniPreviewResizeRaf = null;
 function resizeSkinMiniPreview() {
   if (!skinMiniPreviewInstance) return;
-  const wrap = document.getElementById('skin-mini-preview-wrap');
-  if (!wrap) return;
-  const w = wrap.clientWidth;
-  const h = wrap.clientHeight;
-  if (w > 0 && h > 0) {
-    skinMiniPreviewInstance.setSize(w, h);
-  }
+  if (skinMiniPreviewResizeRaf) cancelAnimationFrame(skinMiniPreviewResizeRaf);
+  skinMiniPreviewResizeRaf = requestAnimationFrame(() => {
+    const wrap = document.getElementById('skin-mini-preview-wrap');
+    if (!wrap) return;
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    if (w > 0 && h > 0 && skinMiniPreviewInstance) {
+      skinMiniPreviewInstance.setSize(w, h);
+    }
+  });
 }
 
 async function loadEquippedCapeOnStandee(equipType) {
@@ -3559,29 +3665,164 @@ async function updateSkinMiniPreview() {
 }
 
 let draggedInstanceId = null;
+let instanceListDelegationBound = false;
+
+function initInstanceListDelegation() {
+  if (instanceListDelegationBound) return;
+  const list = document.getElementById('instance-list');
+  if (!list) return;
+  instanceListDelegationBound = true;
+
+  // Single delegated click handler for all cards and action buttons
+  list.addEventListener('click', (ev) => {
+    const card = ev.target.closest('.instance-card');
+    if (!card) return;
+    const versionId = card.dataset.versionId;
+    if (!versionId) return;
+
+    const inst = instancesCache.find(i => i.version_id === versionId) || { version_id: versionId, name: versionId };
+
+    // Troubleshoot button clicked
+    const troubleshootBtn = ev.target.closest('.inst-troubleshoot-btn');
+    if (troubleshootBtn) {
+      ev.stopPropagation();
+      showInstanceTroubleshootWindow(inst);
+      return;
+    }
+
+    // Favorite / Pin button clicked
+    const favoriteBtn = ev.target.closest('.inst-favorite-btn');
+    if (favoriteBtn) {
+      ev.stopPropagation();
+      const currentlyFav = getFavoriteInstance() === versionId;
+      setFavoriteInstance(currentlyFav ? null : versionId);
+      renderInstanceList();
+      showToast(currentlyFav
+        ? `"${inst.name || versionId}" unpinned`
+        : `"${inst.name || versionId}" pinned to top`, 'success');
+      return;
+    }
+
+    // Hide button clicked
+    const hideBtn = ev.target.closest('.inst-hide-btn');
+    if (hideBtn) {
+      ev.stopPropagation();
+      const instName = inst.name || versionId;
+      const doHide = async () => {
+        try {
+          await api.hideInstance(versionId);
+          if (getFavoriteInstance() === versionId) setFavoriteInstance(null);
+          await refreshInstances();
+          if (selectedInstanceId === versionId) {
+            selectedInstanceId = null;
+            selectInstance(null);
+          }
+          renderInstanceList();
+          renderHiddenInstancesSettings();
+          showToast(`"${instName}" hidden — unhide it anytime in Settings (⚙) → Performance & Java`, 'success');
+        } catch (e) {
+          showToast('Failed to hide instance: ' + e, 'error');
+        }
+      };
+
+      if (settings && settings.confirm_destructive_actions === false) {
+        doHide();
+      } else {
+        showInstanceConfirmModal({
+          type: 'hide',
+          title: 'Hide Instance',
+          message: `Hide "${instName}" from your instances list? You can unhide and manage it anytime in Settings (⚙) → Performance & Java → Hidden Instances.`,
+          confirmText: 'Hide Instance',
+          isDanger: false,
+          onConfirm: doHide
+        });
+      }
+      return;
+    }
+
+    // Card selected
+    selectInstance(versionId);
+  });
+
+  // Delegated drag-and-drop
+  list.addEventListener('dragstart', (ev) => {
+    const card = ev.target.closest('.instance-card');
+    if (!card || card.dataset.pinned === 'true') return;
+    draggedInstanceId = card.dataset.versionId;
+    card.classList.add('dragging');
+    ev.dataTransfer.effectAllowed = 'move';
+    try { ev.dataTransfer.setData('text/plain', draggedInstanceId); } catch (e) { /* ignore */ }
+  });
+
+  list.addEventListener('dragend', () => {
+    draggedInstanceId = null;
+    list.querySelectorAll('.instance-card.dragging, .instance-card.drag-over').forEach(el => {
+      el.classList.remove('dragging', 'drag-over', 'drag-over-below');
+    });
+  });
+
+  list.addEventListener('dragover', (ev) => {
+    if (!draggedInstanceId) return;
+    const card = ev.target.closest('.instance-card');
+    if (!card || card.dataset.versionId === draggedInstanceId) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'move';
+    const rect = card.getBoundingClientRect();
+    const before = (ev.clientY - rect.top) < rect.height / 2;
+    list.querySelectorAll('.instance-card.drag-over').forEach(el => el.classList.remove('drag-over', 'drag-over-below'));
+    card.classList.add('drag-over');
+    card.classList.toggle('drag-over-below', !before);
+  });
+
+  list.addEventListener('drop', (ev) => {
+    ev.preventDefault();
+    const card = ev.target.closest('.instance-card');
+    list.querySelectorAll('.instance-card.drag-over').forEach(el => el.classList.remove('drag-over', 'drag-over-below'));
+    if (!card || !draggedInstanceId || card.dataset.versionId === draggedInstanceId) return;
+
+    const rect = card.getBoundingClientRect();
+    const before = (ev.clientY - rect.top) < rect.height / 2;
+    const draggedCard = list.querySelector(`.instance-card[data-version-id="${CSS.escape(draggedInstanceId)}"]`);
+    if (!draggedCard) return;
+
+    if (before) {
+      list.insertBefore(draggedCard, card);
+    } else {
+      list.insertBefore(draggedCard, card.nextSibling);
+    }
+    saveInstanceOrderFromDOM();
+    renderInstanceList();
+  });
+}
 
 function renderInstanceList() {
   const list = document.getElementById('instance-list');
+  if (!list) return;
+  initInstanceListDelegation();
+
   const instances = getVisibleInstances();
-  list.innerHTML = '';
   if (instances.length === 0) {
     list.innerHTML = `<div class="empty-state"><span class="empty-icon">${ICON_EMPTY_BOX_SVG}</span><span>No instances yet</span></div>`;
     return;
   }
+
   const favId = getFavoriteInstance();
-  instances.forEach(inst => {
+  const fragment = document.createDocumentFragment();
+
+  for (let i = 0; i < instances.length; i++) {
+    const inst = instances[i];
     const card = document.createElement('div');
     const isFav = inst.version_id === favId;
     card.className = 'instance-card'
       + (inst.version_id === selectedInstanceId ? ' selected' : '')
       + (isFav ? ' favorited' : '');
     card.dataset.versionId = inst.version_id;
-    // The favorited instance is pinned and shouldn't be dragged out of the
-    // top spot; everything else can be freely reordered.
+    card.dataset.pinned = isFav ? 'true' : 'false';
     card.draggable = !isFav;
+
     const loaderStr = loaderLabel(inst.loader);
     card.innerHTML = `
-      <div class="inst-icon"><img src="${loaderIcon(inst.loader)}" alt="${loaderStr}" draggable="false" /></div>
+      <div class="inst-icon"><img src="${loaderIcon(inst.loader)}" alt="${loaderStr}" draggable="false" loading="lazy" /></div>
       <div class="inst-body">
         <div class="inst-header">
           <div class="inst-name">${inst.name || inst.version_id}${inst.missing_jar ? ' <span class="sv-warn">⚠</span>' : ''}</div>
@@ -3607,90 +3848,10 @@ function renderInstanceList() {
         <div class="inst-version">${inst.version_id}  •  ${loaderStr}</div>
       </div>
     `;
-    card.addEventListener('click', () => selectInstance(inst.version_id));
-    const troubleshootBtn = card.querySelector('.inst-troubleshoot-btn');
-    if (troubleshootBtn) {
-      troubleshootBtn.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        showInstanceTroubleshootWindow(inst);
-      });
-    }
-    const favoriteBtn = card.querySelector('.inst-favorite-btn');
-    if (favoriteBtn) {
-      favoriteBtn.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        const currentlyFav = getFavoriteInstance() === inst.version_id;
-        setFavoriteInstance(currentlyFav ? null : inst.version_id);
-        renderInstanceList();
-        showToast(currentlyFav
-          ? `"${inst.name || inst.version_id}" unpinned`
-          : `"${inst.name || inst.version_id}" pinned to top`, 'success');
-      });
-    }
-    const hideBtn = card.querySelector('.inst-hide-btn');
-    if (hideBtn) {
-      hideBtn.addEventListener('click', async (ev) => {
-        ev.stopPropagation();
-        try {
-          await api.hideInstance(inst.version_id);
-          if (getFavoriteInstance() === inst.version_id) setFavoriteInstance(null);
-          await refreshInstances();
-          if (selectedInstanceId === inst.version_id) {
-            selectedInstanceId = null;
-            selectInstance(null);
-          }
-          renderInstanceList();
-          renderHiddenInstancesSettings();
-          showToast(`"${inst.name || inst.version_id}" hidden — unhide it anytime from Settings`, 'success');
-        } catch (e) {
-          showToast('Failed to hide instance: ' + e, 'error');
-        }
-      });
-    }
+    fragment.appendChild(card);
+  }
 
-    // Drag-and-drop reordering. The favorited card (draggable=false) can't
-    // be picked up, but other cards can still be dropped above/below it —
-    // it'll simply snap back to the top on the next render either way.
-    card.addEventListener('dragstart', (ev) => {
-      draggedInstanceId = inst.version_id;
-      card.classList.add('dragging');
-      ev.dataTransfer.effectAllowed = 'move';
-      try { ev.dataTransfer.setData('text/plain', inst.version_id); } catch (e) { /* ignore */ }
-    });
-    card.addEventListener('dragend', () => {
-      draggedInstanceId = null;
-      card.classList.remove('dragging');
-      list.querySelectorAll('.instance-card.drag-over').forEach(el => el.classList.remove('drag-over', 'drag-over-below'));
-    });
-    card.addEventListener('dragover', (ev) => {
-      if (!draggedInstanceId || draggedInstanceId === inst.version_id) return;
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = 'move';
-      const rect = card.getBoundingClientRect();
-      const before = (ev.clientY - rect.top) < rect.height / 2;
-      list.querySelectorAll('.instance-card.drag-over').forEach(el => el.classList.remove('drag-over', 'drag-over-below'));
-      card.classList.add('drag-over');
-      card.classList.toggle('drag-over-below', !before);
-    });
-    card.addEventListener('drop', (ev) => {
-      ev.preventDefault();
-      card.classList.remove('drag-over', 'drag-over-below');
-      if (!draggedInstanceId || draggedInstanceId === inst.version_id) return;
-      const rect = card.getBoundingClientRect();
-      const before = (ev.clientY - rect.top) < rect.height / 2;
-      const draggedCard = list.querySelector(`.instance-card[data-version-id="${CSS.escape(draggedInstanceId)}"]`);
-      if (!draggedCard) return;
-      if (before) {
-        list.insertBefore(draggedCard, card);
-      } else {
-        list.insertBefore(draggedCard, card.nextSibling);
-      }
-      saveInstanceOrderFromDOM();
-      renderInstanceList();
-    });
-
-    list.appendChild(card);
-  });
+  list.replaceChildren(fragment);
   enableCardCulling(list, '.instance-card', { root: list });
 }
 
@@ -3745,10 +3906,20 @@ setInterval(updateSelectedInstancePlaytimeDisplay, 1000);
 
 function selectInstance(id) {
   selectedInstanceId = id;
-  renderInstanceList();
+
+  // Update selected highlight in place without re-rendering or reloading DOM/images (fixes flicker)
+  const list = document.getElementById('instance-list');
+  if (list) {
+    const cards = list.querySelectorAll('.instance-card');
+    for (let i = 0; i < cards.length; i++) {
+      cards[i].classList.toggle('selected', cards[i].dataset.versionId === id);
+    }
+  }
+
   const inst = getInstances().find(i => i.version_id === id);
   const nameEl = document.getElementById('detail-name');
   const verEl = document.getElementById('detail-version');
+  const gameVerEl = document.getElementById('info-game-version');
   const loaderEl = document.getElementById('info-loader');
   const dirEl = document.getElementById('info-dir');
   const playtimeEl = document.getElementById('info-playtime');
@@ -3758,6 +3929,7 @@ function selectInstance(id) {
   if (!inst) {
     nameEl.textContent = 'No instance selected';
     verEl.textContent = '';
+    if (gameVerEl) gameVerEl.textContent = '—';
     loaderEl.textContent = '—';
     dirEl.textContent = '—';
     if (playtimeEl) playtimeEl.textContent = '—';
@@ -3772,26 +3944,28 @@ function selectInstance(id) {
   const loaderStr = (inst.loader && inst.loader !== 'vanilla') ? loaderLabel(inst.loader) : null;
   nameEl.textContent = (inst.name || inst.version_id) + (inst.missing_jar ? ' (incomplete)' : '');
   verEl.textContent = inst.version_id + (loaderStr ? '  •  ' + loaderStr : '');
+  if (gameVerEl) gameVerEl.textContent = inst.minecraft_version || inst.version_id || '—';
   loaderEl.textContent = loaderStr || 'Vanilla';
   dirEl.textContent = inst.directory || (settings ? settings.game_directory : '—');
   updateSelectedInstancePlaytimeDisplay();
   playBtn.disabled = !!inst.missing_jar;
   updatePlayGearEnabled();
   document.getElementById('play-status-text')?.classList.add('hidden');
-  if (iconEl) iconEl.innerHTML = `<img src="${loaderIcon(inst.loader)}" alt="${loaderLabel(inst.loader)}" draggable="false" />`;
-  // Refresh mod-update data for whatever instance is now selected — its
-  // loader/game-version can differ completely from whatever was selected
-  // before, so a check that already ran for a previous instance must never
-  // be shown here. Clear the in-memory info immediately so the UI doesn't
-  // flash stale "update available" buttons from the previous instance
-  // while the (possibly shared-directory) check re-runs in the background.
+
+  if (iconEl) {
+    const newSrc = loaderIcon(inst.loader);
+    const existingImg = iconEl.querySelector('img');
+    if (existingImg && existingImg.getAttribute('src') === newSrc) {
+      // Icon already matches — do not replace DOM to prevent image flicker
+    } else {
+      iconEl.innerHTML = `<img src="${newSrc}" alt="${loaderLabel(inst.loader)}" draggable="false" />`;
+    }
+  }
+
+  // Refresh mod-update data for whatever instance is now selected
   modUpdateInfo = modUpdateInfoByDir.get(modsCacheKey(inst, inst.directory || (settings ? settings.game_directory : ''))) || new Map();
   refreshUpdateButtonsOnVisibleCards();
-  // `syncInstanceSelectionAcrossTabs` is what actually updates the Mods
-  // tab's own instance dropdown to match `id` — wait for that to finish
-  // before checking for updates, otherwise `getModsTargetInstance()` could
-  // still read the dropdown's stale previous value and check the wrong
-  // instance (the exact bug this is fixing).
+
   syncInstanceSelectionAcrossTabs()
     .catch(() => {})
     .then(() => checkSelectedInstanceForUpdates())
@@ -4074,6 +4248,7 @@ function initInstanceActions() {
     await refreshRunningInstances();
   }
 
+  window.launchSelectedInstance = launchSelectedInstance;
   document.getElementById('btn-play').addEventListener('click', () => launchSelectedInstance(undefined));
 
   // Gear menu: Launch Offline (one-off) + Always Launch Offline (persisted).
@@ -4137,8 +4312,23 @@ function initInstanceActions() {
       }
     }
 
-    if (!confirm(`Delete "${(inst && (inst.name || inst.version_id)) || selectedInstanceId}"? This permanently removes its folder from .minecraft/versions and cannot be undone.`)) return;
-    await performInstanceDelete(selectedInstanceId, inst);
+    const instName = (inst && (inst.name || inst.version_id)) || selectedInstanceId;
+    const doDelete = async () => {
+      await performInstanceDelete(selectedInstanceId, inst);
+    };
+
+    if (settings && settings.confirm_destructive_actions === false) {
+      await doDelete();
+    } else {
+      showInstanceConfirmModal({
+        type: 'delete',
+        title: 'Delete Instance',
+        message: `Delete "${instName}"? This permanently removes its folder from .minecraft/versions and cannot be undone.`,
+        confirmText: 'Delete Instance',
+        isDanger: true,
+        onConfirm: doDelete
+      });
+    }
   });
 
   // Vanilla-instance delete dependency warning: Cancel / Delete Anyway / Hide
@@ -7256,15 +7446,14 @@ function initDiscoverTabIfNeeded() {
     discoverState.loaded = true;
     discoverState.syncedInstanceId = selectedInstanceId;
     populateDiscoverInstanceSelect();
+    populateDiscoverGameVersions();
+    populateDiscoverCategories();
+    populateDiscoverResolutions();
+    populateDiscoverLicenses();
     applyInstanceFiltersToDiscover(currentDiscoverTargetInstance());
     performDiscoverSearch();
     return;
   }
-  // Already loaded from an earlier visit to this tab — but the selected
-  // instance may have changed while Discover wasn't the active tab (that
-  // sync only runs for the active tab; see `syncInstanceSelectionAcrossTabs`),
-  // so re-sync the target/filters now rather than showing whatever the
-  // previously-selected instance last searched for.
   if (discoverState.syncedInstanceId !== selectedInstanceId) {
     discoverState.syncedInstanceId = selectedInstanceId;
     populateDiscoverInstanceSelect();
@@ -7293,26 +7482,18 @@ function currentDiscoverTargetInstance() {
   return getInstances().find(i => i.version_id === sel.value) || null;
 }
 
-// When an instance is picked (either via the Discover tab's own "Targeted
-// Instance" dropdown, or by selecting an instance elsewhere in the app
-// while the Discover tab is open), auto-select that instance's loader and
-// Minecraft version in the Loader/Game Version filters — so the search
-// results only show things compatible with what's actually selected,
-// without the user having to set those filters by hand every time.
-// Gated behind a settings toggle since some people would rather the
-// filters stay untouched. Returns true if it actually changed anything.
 function applyInstanceFiltersToDiscover(inst) {
   if (!inst) return false;
   if (settings && settings.auto_apply_instance_filters_in_discover === false) return false;
 
   let changed = false;
 
-  // Loader isn't a resourcepack facet — only auto-set it while browsing mods.
   if (discoverState.type === 'mod') {
     const loaderValue = (inst.loader || 'vanilla').toLowerCase();
-    const nextLoader = DISCOVER_LOADERS.some(l => l.value === loaderValue) ? loaderValue : 'any';
+    const nextLoader = ['fabric', 'forge', 'neoforge', 'quilt'].includes(loaderValue) ? loaderValue : 'any';
     if (discoverState.loader !== nextLoader) {
       discoverState.loader = nextLoader;
+      updateDiscoverLoaderPillsUI();
       changed = true;
     }
   }
@@ -7320,12 +7501,13 @@ function applyInstanceFiltersToDiscover(inst) {
   const gameVersion = inst.minecraft_version || '';
   if (gameVersion && discoverState.gameVersion !== gameVersion) {
     discoverState.gameVersion = gameVersion;
+    const gvSelect = document.getElementById('discover-game-version-select');
+    if (gvSelect) gvSelect.value = gameVersion;
     changed = true;
   }
 
   if (changed) {
     discoverState.page = 1;
-    updateDiscoverFilterButtonStates();
   }
   return changed;
 }
@@ -7334,8 +7516,7 @@ function showDiscoverSkeletons() {
   const grid = document.getElementById('discover-results');
   if (!grid) return;
   grid.innerHTML = '';
-  grid.classList.toggle('view-list', discoverState.view === 'list');
-  const count = Math.min(discoverState.pageSize, 12);
+  const count = 8;
   for (let i = 0; i < count; i++) {
     const sk = document.createElement('div');
     sk.className = 'discover-skeleton';
@@ -7357,10 +7538,13 @@ function updateDiscoverPagination() {
   const prevBtn = document.getElementById('discover-prev-page');
   const nextBtn = document.getElementById('discover-next-page');
   const info = document.getElementById('discover-page-info');
+  const countLabel = document.getElementById('discover-results-count');
   const totalPages = Math.max(1, Math.ceil(discoverState.totalHits / discoverState.pageSize));
+  
   if (info) info.textContent = `Page ${discoverState.page} of ${totalPages}`;
   if (prevBtn) prevBtn.disabled = discoverState.page <= 1;
   if (nextBtn) nextBtn.disabled = discoverState.page >= totalPages;
+  if (countLabel) countLabel.textContent = `${formatDiscoverCount(discoverState.totalHits)} ${discoverState.type === 'mod' ? 'mods' : 'resourcepacks'}`;
 }
 
 async function performDiscoverSearch() {
@@ -7371,9 +7555,9 @@ async function performDiscoverSearch() {
   const isModSearch = discoverState.type === 'mod';
   const loaderFilter = (isModSearch && discoverState.loader !== 'any') ? discoverState.loader : null;
   const gameVersion = discoverState.gameVersion || null;
-  const categoriesFilter = discoverState.resolution
+  const categoriesFilter = (discoverState.type === 'resourcepack' && discoverState.resolution)
     ? [...discoverState.categories, discoverState.resolution]
-    : discoverState.categories;
+    : (discoverState.categories.length > 0 ? discoverState.categories : null);
 
   try {
     const result = await api.discoverSearch(
@@ -7398,8 +7582,8 @@ async function performDiscoverSearch() {
 
 function renderDiscoverResults(hits) {
   const grid = document.getElementById('discover-results');
+  if (!grid) return;
   grid.innerHTML = '';
-  grid.classList.toggle('view-list', discoverState.view === 'list');
   if (hits.length === 0) {
     grid.innerHTML = `<div class="empty-state"><span class="empty-icon">${ICON_SEARCH_EMPTY_SVG}</span><span>No results found</span></div>`;
     return;
@@ -7511,7 +7695,7 @@ async function populateVersionSelect(hit, versionSelect, downloadBtn) {
     if (firstCompatible) versionSelect.value = firstCompatible.value;
     if (downloadBtn) downloadBtn.disabled = false;
   } catch (e) {
-    versionSelect.innerHTML = '<option value="">Failed to load versions (Click to retry)</option>';
+    versionSelect.innerHTML = '<option value="">Failed to load versions</option>';
     versionSelect._loaded = false;
   }
 }
@@ -7520,7 +7704,7 @@ let discoverVirtualObserver = null;
 
 function getDiscoverVirtualObserver() {
   if (!discoverVirtualObserver) {
-    const root = document.getElementById('tab-discover');
+    const root = document.querySelector('.discover-scroll-area') || document.getElementById('tab-discover');
     discoverVirtualObserver = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         const card = entry.target;
@@ -7567,11 +7751,7 @@ function renderCardContent(card) {
     <div class="discover-card-top">
       <div class="discover-card-icon">${iconHtml}</div>
       <div class="discover-card-info">
-        <div class="discover-card-heading">
-          <span class="discover-card-title" title="${discoverEscape(hit.title)}">${discoverEscape(hit.title)}</span>
-          ${sideLabel ? `<span class="discover-card-badge discover-card-badge-side ${sideVariant}">${discoverEscape(sideLabel)}</span>` : ''}
-          ${hit.license ? `<span class="discover-card-badge">${discoverEscape(hit.license)}</span>` : ''}
-        </div>
+        <span class="discover-card-title" title="${discoverEscape(hit.title)}">${discoverEscape(hit.title)}</span>
         <div class="discover-card-author">by ${discoverEscape(hit.author)}</div>
       </div>
     </div>
@@ -7595,10 +7775,8 @@ function renderCardContent(card) {
   const versionSelect = card.querySelector('.discover-version-select');
   const downloadBtn = card.querySelector('.discover-download-btn');
 
-  // Load versions on-demand when clicked/focused
   versionSelect.addEventListener('focus', () => populateVersionSelect(hit, versionSelect, downloadBtn));
   versionSelect.addEventListener('mousedown', () => populateVersionSelect(hit, versionSelect, downloadBtn));
-
   downloadBtn.addEventListener('click', () => downloadDiscoverSelection(hit, versionSelect, downloadBtn));
 }
 
@@ -7620,34 +7798,10 @@ function createVirtualDiscoverCard(hit) {
   return card;
 }
 
-function refreshDiscoverVirtualCards() {
-  const grid = document.getElementById('discover-results');
-  if (grid && discoverVirtualObserver) {
-    grid.querySelectorAll('.discover-card').forEach(card => {
-      discoverVirtualObserver.unobserve(card);
-      discoverVirtualObserver.observe(card);
-    });
-  }
-}
-
-function unloadAllDiscoverVirtualCards() {
-  const grid = document.getElementById('discover-results');
-  if (grid) {
-    grid.querySelectorAll('.discover-card').forEach(card => {
-      unloadCardContent(card);
-    });
-  }
-}
-
 function buildDiscoverCard(hit) {
   return createVirtualDiscoverCard(hit);
 }
 
-// A version is only judged against a target instance if one is actually
-// selected — with no target there's nothing to be incompatible *with*, so
-// everything is shown as compatible. Mods are checked against both game
-// version and loader; resourcepacks only have a game version to match
-// against (Modrinth resourcepacks aren't loader-specific).
 function isDiscoverVersionCompatible(version, hit, target) {
   if (!target) return true;
   if (target.minecraft_version && version.game_versions && !version.game_versions.includes(target.minecraft_version)) {
@@ -7668,19 +7822,18 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
   const target = currentDiscoverTargetInstance();
   const directory = target ? (target.directory || settings.game_directory) : settings.game_directory;
 
-  // If versions haven't been loaded into the select yet, load them now!
   if (!versionSelect._loaded || versionSelect.value === '__latest__') {
-    downloadBtn.disabled = true;
-    const oldText = downloadBtn.textContent;
-    downloadBtn.textContent = 'Checking…';
+    if (downloadBtn) downloadBtn.disabled = true;
+    const oldText = downloadBtn ? downloadBtn.textContent : '';
+    if (downloadBtn) downloadBtn.textContent = 'Checking…';
     await populateVersionSelect(hit, versionSelect, downloadBtn);
-    downloadBtn.textContent = oldText;
+    if (downloadBtn) downloadBtn.textContent = oldText;
   }
 
   const opt = versionSelect.selectedOptions[0];
   if (!opt || !opt.dataset.fileUrl) {
     showToast('No version available for download', 'error');
-    downloadBtn.disabled = false;
+    if (downloadBtn) downloadBtn.disabled = false;
     return;
   }
 
@@ -7688,23 +7841,28 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
     const targetLabel = target ? (target.name || target.version_id) : 'the targeted instance';
     const proceed = confirm(`This version doesn't match ${targetLabel} and is marked (Incompatible). Download it anyway?`);
     if (!proceed) {
-      downloadBtn.disabled = false;
+      if (downloadBtn) downloadBtn.disabled = false;
       return;
     }
   }
 
-  downloadBtn.disabled = true;
-  const originalText = downloadBtn.textContent;
-  downloadBtn.textContent = 'Downloading…';
+  if (downloadBtn) downloadBtn.disabled = true;
+  const originalText = downloadBtn ? downloadBtn.textContent : 'Download';
+  if (downloadBtn) downloadBtn.textContent = 'Downloading…';
   const dlId = genDlId('discover-download');
   if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, 'Downloading…', hit.title);
 
   try {
     await trackedDiscoverDownload(directory, hit.project_type, opt.dataset.fileUrl, opt.dataset.fileName, dlId);
     showToast(`${hit.title} downloaded`, 'success');
-    downloadBtn.textContent = 'Downloaded ✓';
+    if (downloadBtn) downloadBtn.textContent = 'Downloaded ✓';
     if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, true, `${hit.title} downloaded`);
-    setTimeout(() => { downloadBtn.textContent = originalText; downloadBtn.disabled = false; }, 1500);
+    setTimeout(() => {
+      if (downloadBtn) {
+        downloadBtn.textContent = originalText;
+        downloadBtn.disabled = false;
+      }
+    }, 1500);
   } catch (e) {
     const cancelled = dlWidgetGeneric && dlWidgetGeneric.isCancelled(dlId);
     if (cancelled) {
@@ -7713,40 +7871,193 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
       showToast('Download failed: ' + e, 'error');
       if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, false, `Failed: ${e}`);
     }
-    downloadBtn.textContent = originalText;
-    downloadBtn.disabled = false;
+    if (downloadBtn) {
+      downloadBtn.textContent = originalText;
+      downloadBtn.disabled = false;
+    }
   }
+}
+
+async function populateDiscoverGameVersions() {
+  const gvSelect = document.getElementById('discover-game-version-select');
+  if (!gvSelect) return;
+  if (!discoverTagCache.gameVersions) {
+    try {
+      discoverTagCache.gameVersions = await api.discoverGetGameVersions();
+    } catch {
+      discoverTagCache.gameVersions = [];
+    }
+  }
+  gvSelect.innerHTML = '<option value="">All Versions</option>';
+  discoverTagCache.gameVersions.forEach(v => {
+    if (v.version_type === 'release' || !v.version_type) {
+      const opt = document.createElement('option');
+      opt.value = v.version;
+      opt.textContent = v.version;
+      if (discoverState.gameVersion === v.version) opt.selected = true;
+      gvSelect.appendChild(opt);
+    }
+  });
+}
+
+async function populateDiscoverCategories() {
+  const box = document.getElementById('discover-categories-list');
+  if (!box) return;
+  const type = discoverState.type;
+  if (!discoverTagCache.categoriesByType[type]) {
+    try {
+      discoverTagCache.categoriesByType[type] = await api.discoverGetCategories(type);
+    } catch {
+      discoverTagCache.categoriesByType[type] = [];
+    }
+  }
+  const cats = discoverTagCache.categoriesByType[type] || [];
+  box.innerHTML = '';
+  cats.forEach(c => {
+    const label = document.createElement('label');
+    label.className = 'discover-category-item';
+    const checked = discoverState.categories.includes(c.name);
+    label.innerHTML = `<input type="checkbox" value="${discoverEscape(c.name)}" ${checked ? 'checked' : ''}/> <span>${discoverEscape(c.name)}</span>`;
+    label.querySelector('input').addEventListener('change', () => {
+      discoverState.categories = Array.from(box.querySelectorAll('input[type="checkbox"]:checked')).map(i => i.value);
+      discoverState.page = 1;
+      performDiscoverSearch();
+    });
+    box.appendChild(label);
+  });
+}
+
+async function populateDiscoverResolutions() {
+  const resSelect = document.getElementById('discover-resolution-select');
+  if (!resSelect) return;
+  if (!discoverTagCache.resolutions) {
+    try {
+      discoverTagCache.resolutions = await api.discoverGetResolutions('resourcepack');
+    } catch {
+      discoverTagCache.resolutions = [];
+    }
+  }
+  resSelect.innerHTML = '<option value="">Any Resolution</option>';
+  (discoverTagCache.resolutions || []).forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r.name;
+    opt.textContent = r.name;
+    if (discoverState.resolution === r.name) opt.selected = true;
+    resSelect.appendChild(opt);
+  });
+}
+
+async function populateDiscoverLicenses() {
+  const licSelect = document.getElementById('discover-license-select');
+  if (!licSelect) return;
+  if (!discoverTagCache.licenses) {
+    try {
+      discoverTagCache.licenses = await api.discoverGetLicenses();
+    } catch {
+      discoverTagCache.licenses = [];
+    }
+  }
+  licSelect.innerHTML = '<option value="">Any License</option><option value="__opensource__">✦ Open Source Only</option>';
+  (discoverTagCache.licenses || []).forEach(l => {
+    const opt = document.createElement('option');
+    opt.value = l.short;
+    opt.textContent = l.name;
+    if (!discoverState.openSourceOnly && discoverState.license === l.short) opt.selected = true;
+    licSelect.appendChild(opt);
+  });
+  if (discoverState.openSourceOnly) {
+    licSelect.value = '__opensource__';
+  }
+}
+
+function updateDiscoverLoaderPillsUI() {
+  document.querySelectorAll('#discover-loader-pills .discover-loader-pill').forEach(pill => {
+    pill.classList.toggle('active', pill.dataset.loader === discoverState.loader);
+  });
 }
 
 function initDiscover() {
   const queryInput = document.getElementById('discover-query');
   const searchBtn = document.getElementById('discover-search-btn');
-  const refreshBtn = document.getElementById('discover-refresh-btn');
   const targetSelect = document.getElementById('discover-target-instance');
+  const gvSelect = document.getElementById('discover-game-version-select');
+  const resSelect = document.getElementById('discover-resolution-select');
+  const envSelect = document.getElementById('discover-environment-select');
+  const licSelect = document.getElementById('discover-license-select');
+  const resetBtn = document.getElementById('discover-filters-reset');
   const prevBtn = document.getElementById('discover-prev-page');
   const nextBtn = document.getElementById('discover-next-page');
 
   const runSearch = () => {
-    discoverState.query = queryInput.value.trim();
+    discoverState.query = (queryInput ? queryInput.value : '').trim();
     discoverState.page = 1;
     performDiscoverSearch();
   };
 
-  searchBtn.addEventListener('click', runSearch);
-  queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
-  refreshBtn.addEventListener('click', () => performDiscoverSearch());
+  if (searchBtn) searchBtn.addEventListener('click', runSearch);
+  if (queryInput) queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
 
-  targetSelect.addEventListener('change', (event) => {
-    const value = event.target.value;
-    discoverState.page = 1;
-    if (value && value !== selectedInstanceId) {
-      selectInstance(value);
-    } else {
-      const inst = value ? getInstances().find(i => i.version_id === value) : null;
-      applyInstanceFiltersToDiscover(inst);
+  if (targetSelect) {
+    targetSelect.addEventListener('change', (e) => {
+      const val = e.target.value;
+      discoverState.page = 1;
+      if (val && val !== selectedInstanceId) {
+        selectInstance(val);
+      } else {
+        const inst = val ? getInstances().find(i => i.version_id === val) : null;
+        applyInstanceFiltersToDiscover(inst);
+        performDiscoverSearch();
+      }
+    });
+  }
+
+  if (gvSelect) {
+    gvSelect.addEventListener('change', (e) => {
+      discoverState.gameVersion = e.target.value;
+      discoverState.page = 1;
       performDiscoverSearch();
-    }
+    });
+  }
+
+  if (resSelect) {
+    resSelect.addEventListener('change', (e) => {
+      discoverState.resolution = e.target.value;
+      discoverState.page = 1;
+      performDiscoverSearch();
+    });
+  }
+
+  document.querySelectorAll('#discover-loader-pills .discover-loader-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      discoverState.loader = pill.dataset.loader;
+      updateDiscoverLoaderPillsUI();
+      discoverState.page = 1;
+      performDiscoverSearch();
+    });
   });
+
+  if (envSelect) {
+    envSelect.addEventListener('change', (e) => {
+      discoverState.environment = e.target.value;
+      discoverState.page = 1;
+      performDiscoverSearch();
+    });
+  }
+
+  if (licSelect) {
+    licSelect.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (val === '__opensource__') {
+        discoverState.openSourceOnly = true;
+        discoverState.license = '';
+      } else {
+        discoverState.openSourceOnly = false;
+        discoverState.license = val;
+      }
+      discoverState.page = 1;
+      performDiscoverSearch();
+    });
+  }
 
   document.querySelectorAll('.discover-segment').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -7754,401 +8065,64 @@ function initDiscover() {
       btn.classList.add('active');
       discoverState.type = btn.dataset.type;
       discoverState.page = 1;
-      // Category options differ per project type (e.g. resourcepacks don't
-      // have Fabric/Forge-style categories), and Loader/Environment/
-      // Resolution simply don't apply to the type being switched away
-      // from, so clear all of it rather than carrying over filters that
-      // no longer mean anything for what's now selected.
       discoverState.categories = [];
       discoverState.loader = 'any';
       discoverState.environment = 'any';
       discoverState.resolution = '';
-      discoverCloseAllPanels();
-      updateDiscoverFilterVisibility();
-      updateDiscoverFilterButtonStates();
-      renderDiscoverCategoryPanel(); // reload options for the new project type
-      // Same auto-fill mods already get: re-apply the targeted instance's
-      // Minecraft version to the Game Version filter for this type too.
+
+      const loaderSection = document.getElementById('filter-section-loader');
+      const envSection = document.getElementById('filter-section-env');
+      const resSection = document.getElementById('filter-section-resolution');
+
+      if (loaderSection) loaderSection.style.display = discoverState.type === 'mod' ? 'flex' : 'none';
+      if (envSection) envSection.style.display = discoverState.type === 'mod' ? 'flex' : 'none';
+      if (resSection) resSection.style.display = discoverState.type === 'resourcepack' ? 'flex' : 'none';
+
+      updateDiscoverLoaderPillsUI();
+      populateDiscoverCategories();
+      if (discoverState.type === 'resourcepack') populateDiscoverResolutions();
       applyInstanceFiltersToDiscover(currentDiscoverTargetInstance());
       performDiscoverSearch();
     });
   });
 
-  initDiscoverFilters();
-
-  prevBtn.addEventListener('click', () => {
-    if (discoverState.page > 1) {
-      discoverState.page -= 1;
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      discoverState.query = '';
+      if (queryInput) queryInput.value = '';
+      discoverState.gameVersion = '';
+      if (gvSelect) gvSelect.value = '';
+      discoverState.loader = 'any';
+      updateDiscoverLoaderPillsUI();
+      discoverState.categories = [];
+      document.querySelectorAll('#discover-categories-list input[type="checkbox"]').forEach(i => { i.checked = false; });
+      discoverState.resolution = '';
+      if (resSelect) resSelect.value = '';
+      discoverState.environment = 'any';
+      if (envSelect) envSelect.value = 'any';
+      discoverState.license = '';
+      discoverState.openSourceOnly = false;
+      if (licSelect) licSelect.value = '';
+      discoverState.page = 1;
       performDiscoverSearch();
-    }
-  });
-  nextBtn.addEventListener('click', () => {
-    discoverState.page += 1;
-    performDiscoverSearch();
-  });
-
-  // Reflect the restored view (grid/list) in the toggle buttons + grid class.
-  document.querySelectorAll('.discover-view-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.view === discoverState.view);
-  });
-  const initialGrid = document.getElementById('discover-results');
-  if (initialGrid) initialGrid.classList.toggle('view-list', discoverState.view === 'list');
-
-  document.querySelectorAll('.discover-view-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.dataset.view === discoverState.view) return;
-      document.querySelectorAll('.discover-view-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      discoverState.view = btn.dataset.view;
-      const grid = document.getElementById('discover-results');
-      if (grid) grid.classList.toggle('view-list', discoverState.view === 'list');
-      saveDiscoverPrefs();
     });
-  });
+  }
 
-  initDiscoverPageSizeDropdown();
-}
-
-// ── Custom "cards per page" dropdown ─────────────────────────────────────
-function initDiscoverPageSizeDropdown() {
-  const dropdown = document.getElementById('discover-pagesize-dropdown');
-  const btn = document.getElementById('discover-pagesize-btn');
-  const panel = document.getElementById('discover-pagesize-panel');
-  const label = document.getElementById('discover-pagesize-label');
-  if (!dropdown || !btn || !panel || !label) return;
-
-  const syncSelected = () => {
-    label.textContent = `${discoverState.pageSize} / page`;
-    panel.querySelectorAll('.discover-pagesize-option').forEach(opt => {
-      opt.classList.toggle('selected', parseInt(opt.dataset.size, 10) === discoverState.pageSize);
-    });
-  };
-  syncSelected();
-
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const willOpen = !panel.classList.contains('open');
-    document.querySelectorAll('.discover-filter-panel').forEach(p => p.classList.remove('open'));
-    document.querySelectorAll('.discover-filter-btn').forEach(b => b.classList.remove('active'));
-    panel.classList.toggle('open', willOpen);
-    btn.classList.toggle('active', willOpen);
-  });
-
-  panel.querySelectorAll('.discover-pagesize-option').forEach(opt => {
-    opt.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const size = parseInt(opt.dataset.size, 10) || DISCOVER_DEFAULT_PAGE_SIZE;
-      if (size !== discoverState.pageSize) {
-        discoverState.pageSize = size;
-        discoverState.page = 1;
-        syncSelected();
-        saveDiscoverPrefs();
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      if (discoverState.page > 1) {
+        discoverState.page -= 1;
         performDiscoverSearch();
       }
-      panel.classList.remove('open');
-      btn.classList.remove('active');
     });
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('#discover-pagesize-dropdown')) {
-      panel.classList.remove('open');
-      btn.classList.remove('active');
-    }
-  });
-}
-
-// ── Discover filter dropdowns (Game Version / Loader / Category /
-// Environment / License / Advanced) ─────────────────────────────────────
-const DISCOVER_LOADERS = [
-  { value: 'any', label: 'Any loader' },
-  { value: 'fabric', label: 'Fabric' },
-  { value: 'forge', label: 'Forge' },
-  { value: 'neoforge', label: 'NeoForge' },
-  { value: 'quilt', label: 'Quilt' },
-];
-
-function discoverOpenPanel(name) {
-  document.querySelectorAll('.discover-filter-panel').forEach(p => {
-    p.classList.toggle('open', p.dataset.panel === name);
-  });
-  document.querySelectorAll('.discover-filter-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.filter === name);
-  });
-}
-
-function discoverCloseAllPanels() {
-  document.querySelectorAll('.discover-filter-panel').forEach(p => p.classList.remove('open'));
-  document.querySelectorAll('.discover-filter-btn').forEach(b => b.classList.remove('active'));
-}
-
-function updateDiscoverFilterButtonStates() {
-  const setCount = (filterName, hasValue, countText) => {
-    const btn = document.querySelector(`.discover-filter-btn[data-filter="${filterName}"]`);
-    if (!btn) return;
-    btn.classList.toggle('has-value', hasValue);
-    const badge = btn.querySelector('.discover-filter-count');
-    if (badge) {
-      if (countText) { badge.textContent = countText; badge.hidden = false; }
-      else { badge.hidden = true; }
-    }
-  };
-  setCount('version', !!discoverState.gameVersion, discoverState.gameVersion || '');
-  const loaderLabelText = DISCOVER_LOADERS.find(l => l.value === discoverState.loader);
-  setCount('loader', discoverState.loader !== 'any', discoverState.loader !== 'any' ? (loaderLabelText ? loaderLabelText.label : discoverState.loader) : '');
-  setCount('category', discoverState.categories.length > 0, discoverState.categories.length ? String(discoverState.categories.length) : '');
-  setCount('resolution', !!discoverState.resolution, discoverState.resolution || '');
-  setCount('environment', discoverState.environment !== 'any', '');
-  setCount('license', !!discoverState.license, '');
-  setCount('advanced', discoverState.openSourceOnly, '');
-
-  const anyActive = discoverState.gameVersion || discoverState.loader !== 'any' ||
-    discoverState.categories.length > 0 || discoverState.environment !== 'any' ||
-    discoverState.resolution || discoverState.license || discoverState.openSourceOnly;
-  const resetBtn = document.getElementById('discover-filters-reset');
-  if (resetBtn) resetBtn.hidden = !anyActive;
-}
-
-// Loader/Environment only make sense for mods (loaders load mods; a
-// resourcepack has no client/server-required split the way a mod does),
-// and Resolution only makes sense for resourcepacks (mods aren't shipped
-// in texture resolutions) — show only the filter chips that apply to
-// whichever project type is currently selected.
-function updateDiscoverFilterVisibility() {
-  document.querySelectorAll('.discover-filter[data-types]').forEach(el => {
-    const types = el.dataset.types.split(',');
-    el.hidden = !types.includes(discoverState.type);
-  });
-}
-
-async function renderDiscoverVersionPanel() {
-  const list = document.getElementById('discover-version-list');
-  if (!list) return;
-  if (!discoverTagCache.gameVersions) {
-    list.innerHTML = `<div class="discover-filter-option" style="opacity:.6;cursor:default;">Loading…</div>`;
-    try {
-      discoverTagCache.gameVersions = await api.discoverGetGameVersions();
-    } catch (e) {
-      list.innerHTML = `<div class="discover-filter-option" style="opacity:.6;cursor:default;">Failed to load versions</div>`;
-      return;
-    }
   }
-  const search = (document.getElementById('discover-version-search').value || '').trim().toLowerCase();
-  const versions = discoverTagCache.gameVersions.filter(v => !search || v.version.toLowerCase().includes(search));
-  const rows = [{ version: '', label: 'Any version' }, ...versions.map(v => ({ version: v.version, label: v.version }))];
-  list.innerHTML = '';
-  rows.forEach(r => {
-    const btn = document.createElement('button');
-    btn.className = 'discover-filter-option' + (discoverState.gameVersion === r.version ? ' selected' : '');
-    btn.textContent = r.label;
-    btn.addEventListener('click', () => {
-      discoverState.gameVersion = r.version;
-      discoverState.page = 1;
-      updateDiscoverFilterButtonStates();
-      discoverCloseAllPanels();
+
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      discoverState.page += 1;
       performDiscoverSearch();
     });
-    list.appendChild(btn);
-  });
-}
-
-function renderDiscoverLoaderPanel() {
-  const list = document.getElementById('discover-loader-list');
-  if (!list) return;
-  list.innerHTML = '';
-  DISCOVER_LOADERS.forEach(l => {
-    const btn = document.createElement('button');
-    btn.className = 'discover-filter-option' + (discoverState.loader === l.value ? ' selected' : '');
-    btn.textContent = l.label;
-    btn.addEventListener('click', () => {
-      discoverState.loader = l.value;
-      discoverState.page = 1;
-      updateDiscoverFilterButtonStates();
-      discoverCloseAllPanels();
-      performDiscoverSearch();
-    });
-    list.appendChild(btn);
-  });
-}
-
-async function renderDiscoverCategoryPanel() {
-  const list = document.getElementById('discover-category-list');
-  if (!list) return;
-  const type = discoverState.type;
-  if (!discoverTagCache.categoriesByType[type]) {
-    list.innerHTML = `<div class="discover-filter-option" style="opacity:.6;cursor:default;">Loading…</div>`;
-    try {
-      discoverTagCache.categoriesByType[type] = await api.discoverGetCategories(type);
-    } catch (e) {
-      list.innerHTML = `<div class="discover-filter-option" style="opacity:.6;cursor:default;">Failed to load categories</div>`;
-      return;
-    }
   }
-  const cats = discoverTagCache.categoriesByType[type] || [];
-  list.innerHTML = '';
-  cats.forEach(c => {
-    const label = document.createElement('label');
-    label.className = 'discover-filter-option';
-    const checked = discoverState.categories.includes(c.name);
-    label.innerHTML = `<input type="checkbox" value="${discoverEscape(c.name)}" ${checked ? 'checked' : ''}/> <span>${discoverEscape(c.name)}</span>`;
-    list.appendChild(label);
-  });
-}
-
-async function renderDiscoverResolutionPanel() {
-  const list = document.getElementById('discover-resolution-list');
-  if (!list) return;
-  if (!discoverTagCache.resolutions) {
-    list.innerHTML = `<div class="discover-filter-option" style="opacity:.6;cursor:default;">Loading…</div>`;
-    try {
-      discoverTagCache.resolutions = await api.discoverGetResolutions('resourcepack');
-    } catch (e) {
-      list.innerHTML = `<div class="discover-filter-option" style="opacity:.6;cursor:default;">Failed to load resolutions</div>`;
-      return;
-    }
-  }
-  const rows = [{ name: '', label: 'Any resolution' }, ...discoverTagCache.resolutions.map(r => ({ name: r.name, label: r.name }))];
-  list.innerHTML = '';
-  rows.forEach(r => {
-    const btn = document.createElement('button');
-    btn.className = 'discover-filter-option' + (discoverState.resolution === r.name ? ' selected' : '');
-    btn.textContent = r.label;
-    btn.addEventListener('click', () => {
-      discoverState.resolution = r.name;
-      discoverState.page = 1;
-      updateDiscoverFilterButtonStates();
-      discoverCloseAllPanels();
-      performDiscoverSearch();
-    });
-    list.appendChild(btn);
-  });
-}
-
-function renderDiscoverEnvironmentPanel() {
-  const list = document.getElementById('discover-environment-list');
-  if (!list) return;
-  const options = [
-    { value: 'any', label: 'Any' },
-    { value: 'client', label: 'Client-side' },
-    { value: 'server', label: 'Server-side' },
-  ];
-  list.innerHTML = '';
-  options.forEach(o => {
-    const btn = document.createElement('button');
-    btn.className = 'discover-filter-option' + (discoverState.environment === o.value ? ' selected' : '');
-    btn.textContent = o.label;
-    btn.addEventListener('click', () => {
-      discoverState.environment = o.value;
-      discoverState.page = 1;
-      updateDiscoverFilterButtonStates();
-      discoverCloseAllPanels();
-      performDiscoverSearch();
-    });
-    list.appendChild(btn);
-  });
-}
-
-async function renderDiscoverLicensePanel() {
-  const list = document.getElementById('discover-license-list');
-  if (!list) return;
-  if (!discoverTagCache.licenses) {
-    list.innerHTML = `<div class="discover-filter-option" style="opacity:.6;cursor:default;">Loading…</div>`;
-    try {
-      discoverTagCache.licenses = await api.discoverGetLicenses();
-    } catch (e) {
-      list.innerHTML = `<div class="discover-filter-option" style="opacity:.6;cursor:default;">Failed to load licenses</div>`;
-      return;
-    }
-  }
-  const rows = [{ short: '', name: 'Any license' }, ...discoverTagCache.licenses];
-  list.innerHTML = '';
-  rows.forEach(l => {
-    const btn = document.createElement('button');
-    btn.className = 'discover-filter-option' + (discoverState.license === l.short ? ' selected' : '');
-    btn.textContent = l.name;
-    btn.addEventListener('click', () => {
-      discoverState.license = l.short;
-      discoverState.page = 1;
-      updateDiscoverFilterButtonStates();
-      discoverCloseAllPanels();
-      performDiscoverSearch();
-    });
-    list.appendChild(btn);
-  });
-}
-
-function initDiscoverFilters() {
-  document.querySelectorAll('.discover-filter-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const name = btn.dataset.filter;
-      const alreadyOpen = btn.classList.contains('active');
-      discoverCloseAllPanels();
-      if (alreadyOpen) return;
-      discoverOpenPanel(name);
-      if (name === 'version') renderDiscoverVersionPanel();
-      if (name === 'loader') renderDiscoverLoaderPanel();
-      if (name === 'category') renderDiscoverCategoryPanel();
-      if (name === 'resolution') renderDiscoverResolutionPanel();
-      if (name === 'environment') renderDiscoverEnvironmentPanel();
-      if (name === 'license') renderDiscoverLicensePanel();
-      // 'advanced' panel is static markup, nothing to render.
-    });
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.discover-filter')) discoverCloseAllPanels();
-  });
-
-  const versionSearch = document.getElementById('discover-version-search');
-  if (versionSearch) versionSearch.addEventListener('input', () => renderDiscoverVersionPanel());
-
-  const catApply = document.getElementById('discover-category-apply');
-  if (catApply) catApply.addEventListener('click', () => {
-    const checked = Array.from(document.querySelectorAll('#discover-category-list input[type="checkbox"]:checked')).map(i => i.value);
-    discoverState.categories = checked;
-    discoverState.page = 1;
-    updateDiscoverFilterButtonStates();
-    discoverCloseAllPanels();
-    performDiscoverSearch();
-  });
-  const catClear = document.getElementById('discover-category-clear');
-  if (catClear) catClear.addEventListener('click', () => {
-    document.querySelectorAll('#discover-category-list input[type="checkbox"]').forEach(i => { i.checked = false; });
-  });
-
-  const advOpenSource = document.getElementById('discover-adv-opensource');
-  if (advOpenSource) advOpenSource.checked = discoverState.openSourceOnly;
-  const advApply = document.getElementById('discover-adv-apply');
-  if (advApply) advApply.addEventListener('click', () => {
-    discoverState.openSourceOnly = !!document.getElementById('discover-adv-opensource').checked;
-    discoverState.page = 1;
-    updateDiscoverFilterButtonStates();
-    discoverCloseAllPanels();
-    performDiscoverSearch();
-  });
-  const advClear = document.getElementById('discover-adv-clear');
-  if (advClear) advClear.addEventListener('click', () => {
-    document.getElementById('discover-adv-opensource').checked = false;
-  });
-
-  const resetAllBtn = document.getElementById('discover-filters-reset');
-  if (resetAllBtn) resetAllBtn.addEventListener('click', () => {
-    discoverState.gameVersion = '';
-    discoverState.loader = 'any';
-    discoverState.categories = [];
-    discoverState.resolution = '';
-    discoverState.environment = 'any';
-    discoverState.license = '';
-    discoverState.openSourceOnly = false;
-    discoverState.page = 1;
-    updateDiscoverFilterButtonStates();
-    discoverCloseAllPanels();
-    performDiscoverSearch();
-  });
-
-  updateDiscoverFilterVisibility();
-  updateDiscoverFilterButtonStates();
 }
 
 
@@ -8159,12 +8133,12 @@ function initDiscoverFilters() {
 // Color preset applied on load — dark is the only theme.
 const THEME_PRESETS = {
   dark: {
-    bg_color: '#0a0a0f',
-    panel_bg_color: '#13131a',
+    bg_color: '#121212',
+    panel_bg_color: '#1b1b1b',
     text_color: '#e2e2ea',
-    log_bg_color: '#060608',
-    notification_bg_color: '#13131a',
-    header_bg_color: '#111116',
+    log_bg_color: '#0a0a0a',
+    notification_bg_color: '#1b1b1b',
+    header_bg_color: '#1b1b1b',
   },
 };
 
@@ -8611,6 +8585,8 @@ function populateSettingsUI() {
   document.getElementById('setting-always-hide-to-tray').checked = !!settings.always_hide_to_tray;
   updateWindowBehaviorRowVisibility();
   document.getElementById('setting-mod-updates-startup').checked = settings.check_mod_updates_on_startup !== false;
+  const clickSoundsEl = document.getElementById('setting-click-sounds');
+  if (clickSoundsEl) clickSoundsEl.checked = settings.sound_effects_enabled !== false;
   document.getElementById('setting-confirm-destructive').checked = settings.confirm_destructive_actions !== false;
   const autoApplyFiltersEl = document.getElementById('setting-auto-apply-instance-filters');
   if (autoApplyFiltersEl) autoApplyFiltersEl.checked = settings.auto_apply_instance_filters_in_discover !== false;
@@ -8689,7 +8665,8 @@ function populateSettingsUI() {
   document.getElementById('setting-rpc-state-multiplayer').checked = settings.rpc_state_multiplayer !== false;
 
   // Privacy & Developer
-  document.getElementById('setting-hide-username').checked = !!settings.hide_username;
+  const hideUsernameEl = document.getElementById('setting-hide-username');
+  if (hideUsernameEl) hideUsernameEl.checked = !!settings.hide_username;
   const clearSessionChk = document.getElementById('setting-clear-session-on-exit');
   if (clearSessionChk) clearSessionChk.checked = !!settings.clear_session_on_exit;
   document.getElementById('setting-redact-tokens').checked = settings.redact_tokens !== false;
@@ -8706,8 +8683,8 @@ function populateSettingsUI() {
   applyThemeFromSettings();
   applyUsernamePrivacy();
 
-  const settingsTab = document.getElementById('tab-settings');
-  enableCardCulling(settingsTab, '.glass-card');
+  const settingsModal = document.getElementById('settings-modal-overlay');
+  if (settingsModal) enableCardCulling(settingsModal, '.glass-card');
 }
 
 // ── Apply all appearance settings to CSS custom properties & DOM overlays ──
@@ -8759,23 +8736,26 @@ function applyThemeFromSettings() {
   // Sync active states on Theme Palettes quick plates
   renderQuickThemePalettes();
 
-  // Panel background with transparency option.
-  const panelAlpha = settings.enable_transparency ? 0.45 : 0.95;
-  root.style.setProperty('--panel', hexToRgba(preset.panel_bg_color, panelAlpha));
-  root.style.setProperty('--text', preset.text_color);
-  root.style.setProperty('--text-muted', hexToRgba(preset.text_color, 0.55));
+  // High-performance crystal transparency (no slow backdrop blur on WebKitGTK)
+  const isTransparent = settings && settings.enable_transparency !== false;
+  root.classList.toggle('transparent-ui', isTransparent);
 
-  const headerAlpha = settings.enable_transparency ? 0.45 : 0.95;
-  root.style.setProperty('--header-bg', hexToRgba(preset.header_bg_color, headerAlpha));
+  if (isTransparent) {
+    root.style.setProperty('--panel', 'linear-gradient(180deg, rgba(34, 34, 34, 0.65) 0%, rgba(20, 20, 20, 0.45) 100%)');
+    root.style.setProperty('--panel-solid', 'rgba(27, 27, 27, 0.85)');
+    root.style.setProperty('--header-bg', 'linear-gradient(180deg, rgba(34, 34, 34, 0.8) 0%, rgba(22, 22, 22, 0.65) 100%)');
+  } else {
+    root.style.setProperty('--panel', 'linear-gradient(180deg, #222222 0%, #1a1a1a 100%)');
+    root.style.setProperty('--panel-solid', '#1b1b1b');
+    root.style.setProperty('--header-bg', 'linear-gradient(180deg, #222222 0%, #191919 100%)');
+  }
+
+  root.style.setProperty('--text', preset.text_color);
+  root.style.setProperty('--text-muted', hexToRgba(preset.text_color, 0.6));
   root.style.setProperty('--log-bg', preset.log_bg_color);
   const notifHex = preset.notification_bg_color;
   root.style.setProperty('--notif-bg', notifHex);
   root.style.setProperty('--notif-bg-rgb', hexToRgbTriplet(notifHex));
-
-  // Near-opaque panel background for flyouts that need to stay legible over
-  // content regardless of the transparency setting (dropdowns, modals,
-  // popovers) — follows the same panel color the rest of the theme uses.
-  root.style.setProperty('--panel-solid', hexToRgba(preset.panel_bg_color, 0.97));
 
   // Accent derived
   root.style.setProperty('--accent-dim', hexToRgba(accent, 0.15));
@@ -8903,11 +8883,24 @@ function collectSettingsFromUI() {
   // Appearance: Colors
   settings.accent_color = currentAccentColor();
   settings.bg_color = (settings && settings.bg_color) || '#0a0a0f';
-  settings.notification_style = document.getElementById('setting-notif-style').value;
 
-  // Appearance: Background & Animation
-  settings.background_style = document.getElementById('setting-bg-style').value;
-  settings.background_animation_style = document.getElementById('setting-bg-anim-style').value;
+  // When the setup wizard is visible, its dropdowns are the source of truth
+  // for these three fields. The main settings modal dropdowns are hidden/unpopulated
+  // at that point and would silently reset user choices back to defaults.
+  const setupTabActive = document.getElementById('tab-setup')?.classList.contains('active');
+  if (setupTabActive) {
+    const setupNotif = document.getElementById('setup-notif-style');
+    const setupBgStyle = document.getElementById('setup-bg-style');
+    const setupBgAnim = document.getElementById('setup-bg-anim-style');
+    if (setupNotif) settings.notification_style = setupNotif.value;
+    if (setupBgStyle) settings.background_style = setupBgStyle.value;
+    if (setupBgAnim) settings.background_animation_style = setupBgAnim.value;
+  } else {
+    settings.notification_style = document.getElementById('setting-notif-style').value;
+    // Appearance: Background & Animation
+    settings.background_style = document.getElementById('setting-bg-style').value;
+    settings.background_animation_style = document.getElementById('setting-bg-anim-style').value;
+  }
   settings.background_animation_speed = parseFloat(document.getElementById('setting-bg-anim-speed').value) || 1.0;
   settings.background_animation_intensity = parseFloat(document.getElementById('setting-bg-anim-intensity').value) || 1.0;
   settings.background_animation_fps = parseInt(document.getElementById('setting-bg-anim-fps').value) || 60;
@@ -8948,6 +8941,8 @@ function collectSettingsFromUI() {
   settings.on_launcher_close = document.getElementById('setting-on-launcher-close').value;
   settings.always_hide_to_tray = document.getElementById('setting-always-hide-to-tray').checked;
   settings.check_mod_updates_on_startup = document.getElementById('setting-mod-updates-startup').checked;
+  const clickSoundsElCollect = document.getElementById('setting-click-sounds');
+  if (clickSoundsElCollect) settings.sound_effects_enabled = clickSoundsElCollect.checked;
   settings.confirm_destructive_actions = document.getElementById('setting-confirm-destructive').checked;
   const autoApplyFiltersElCollect = document.getElementById('setting-auto-apply-instance-filters');
   if (autoApplyFiltersElCollect) settings.auto_apply_instance_filters_in_discover = autoApplyFiltersElCollect.checked;
@@ -9005,7 +9000,8 @@ function collectSettingsFromUI() {
   settings.rpc_state_multiplayer = document.getElementById('setting-rpc-state-multiplayer').checked;
 
   // Privacy & Developer
-  settings.hide_username = document.getElementById('setting-hide-username').checked;
+  const hideUsernameEl2 = document.getElementById('setting-hide-username');
+  if (hideUsernameEl2) settings.hide_username = hideUsernameEl2.checked;
   const clearSessionChk2 = document.getElementById('setting-clear-session-on-exit');
   if (clearSessionChk2) settings.clear_session_on_exit = clearSessionChk2.checked;
   settings.redact_tokens = document.getElementById('setting-redact-tokens').checked;
@@ -9151,7 +9147,7 @@ function initSettings() {
     'setting-rpc-tab-settings', 'setting-rpc-tab-logs',
     'setting-rpc-state-launching', 'setting-rpc-state-main-menu',
     'setting-rpc-state-singleplayer', 'setting-rpc-state-multiplayer',
-    'setting-hide-username', 'setting-clear-session-on-exit',
+    'setting-clear-session-on-exit',
     'setting-redact-tokens', 'setting-redact-paths', 'setting-hide-launch-command',
     'setting-debug-mode',
     'setting-crash-analysis',
@@ -9520,6 +9516,7 @@ function initSettings() {
           on_launcher_close: 'tray',
           always_hide_to_tray: false,
           check_mod_updates_on_startup: true,
+          sound_effects_enabled: true,
           confirm_destructive_actions: true,
           min_ram_mb: 512,
           max_ram_mb: 4096,
@@ -9563,37 +9560,91 @@ function initSettings() {
     });
   }
 
-  // Settings Accordion (only 1 section open at a time)
-  const accordionSections = document.querySelectorAll('#tab-settings .settings-card.accordion-section');
-  const savedActiveSection = localStorage.getItem('zero_settings_last_section') || 'appearance';
-
-  if (accordionSections.length > 0) {
-    accordionSections.forEach(section => {
-      const isTarget = section.dataset.section === savedActiveSection;
-      section.classList.toggle('active', isTarget);
-    });
-
-    if (![...accordionSections].some(s => s.classList.contains('active'))) {
-      accordionSections[0].classList.add('active');
-    }
-
-    accordionSections.forEach(section => {
-      const header = section.querySelector('.settings-card-header');
-      if (header) {
-        header.addEventListener('click', () => {
-          const isCurrentlyActive = section.classList.contains('active');
-          // Close all sections
-          accordionSections.forEach(s => s.classList.remove('active'));
-          // Open clicked section
-          if (!isCurrentlyActive) {
-            section.classList.add('active');
-            if (section.dataset.section) {
-              localStorage.setItem('zero_settings_last_section', section.dataset.section);
-            }
-          }
-        });
+  // Settings Modal Open/Close Buttons
+  const openSettingsBtn = document.getElementById('btn-open-settings-modal');
+  if (openSettingsBtn) {
+    openSettingsBtn.addEventListener('click', () => {
+      const overlay = document.getElementById('settings-modal-overlay');
+      if (overlay && !overlay.classList.contains('hidden')) {
+        closeSettingsModal();
+      } else {
+        openSettingsModal();
       }
     });
+  }
+
+  const closeSettingsBtn = document.getElementById('btn-close-settings-modal');
+  if (closeSettingsBtn) {
+    closeSettingsBtn.addEventListener('click', () => {
+      closeSettingsModal();
+    });
+  }
+
+  // Close modal when clicking outside on overlay backdrop
+  const settingsOverlay = document.getElementById('settings-modal-overlay');
+  if (settingsOverlay) {
+    settingsOverlay.addEventListener('click', (e) => {
+      if (e.target === settingsOverlay) {
+        closeSettingsModal();
+      }
+    });
+  }
+
+  // Sidebar Tab Switching (Left navigation pane)
+  const navBtns = document.querySelectorAll('.settings-modal-sidebar .settings-nav-btn');
+  const savedActiveSection = localStorage.getItem('zero_settings_last_section') || 'appearance';
+  switchSettingsSection(savedActiveSection);
+
+  navBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetSection = btn.dataset.section;
+      if (targetSection) {
+        switchSettingsSection(targetSection);
+      }
+    });
+  });
+}
+
+function openSettingsModal(targetSection) {
+  const overlay = document.getElementById('settings-modal-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  loadSettings();
+  renderHiddenInstancesSettings();
+  if (targetSection) {
+    switchSettingsSection(targetSection);
+  }
+}
+
+function closeSettingsModal() {
+  const overlay = document.getElementById('settings-modal-overlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+function switchSettingsSection(sectionName) {
+  const navBtns = document.querySelectorAll('.settings-modal-sidebar .settings-nav-btn');
+  const panels = document.querySelectorAll('.settings-modal-content .settings-tab-panel');
+  if (!navBtns.length || !panels.length) return;
+
+  let found = false;
+  navBtns.forEach(btn => {
+    const isTarget = btn.dataset.section === sectionName;
+    btn.classList.toggle('active', isTarget);
+    if (isTarget) found = true;
+  });
+
+  // Fallback to first if sectionName not matched
+  if (!found && navBtns.length > 0) {
+    navBtns[0].classList.add('active');
+    sectionName = navBtns[0].dataset.section;
+  }
+
+  panels.forEach(panel => {
+    panel.classList.toggle('active', panel.id === `settings-panel-${sectionName}`);
+  });
+
+  if (sectionName) {
+    localStorage.setItem('zero_settings_last_section', sectionName);
   }
 }
 
@@ -9940,16 +9991,13 @@ const BG = {
   },
 
   createOrbs() {
-    this.orbs = [];
-    for (let i = 0; i < 4; i++) {
-      this.orbs.push({
-        xFrac: Math.random(),
-        yFrac: Math.random(),
-        radius: 120 + Math.random() * 140,
-        phase: Math.random() * Math.PI * 2,
-        speed: 0.2 + Math.random() * 0.25,
-      });
-    }
+    // Reused for both 'Orbs' (legacy) and 'Aurora' band data.
+    // Three bands evenly spread vertically with staggered phases.
+    this.orbs = [
+      { xFrac: 0.5, yFrac: 0.25, radius: 160, phase: 0,                    speed: 0.18 },
+      { xFrac: 0.5, yFrac: 0.55, radius: 180, phase: Math.PI * 0.66,       speed: 0.13 },
+      { xFrac: 0.5, yFrac: 0.78, radius: 140, phase: Math.PI * 1.33,       speed: 0.22 },
+    ];
   },
 
   hexToRgb(hex) {
@@ -10155,21 +10203,6 @@ const BG = {
         }
         ctx.restore();
 
-      } else if (animStyle === 'Orbs') {
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        this.orbs.forEach(orb => {
-          const ox = W * orb.xFrac + Math.sin(this.phase * orb.speed + orb.phase) * 60;
-          const oy = H * orb.yFrac + Math.cos(this.phase * orb.speed * 0.7 + orb.phase) * 40;
-          const rad = orb.radius;
-          const og = ctx.createRadialGradient(ox, oy, 0, ox, oy, rad);
-          og.addColorStop(0, `rgba(${r},${g},${b},${Math.min(1, 0.18 * aBoost)})`);
-          og.addColorStop(0.5, `rgba(${r},${g},${b},${Math.min(1, 0.06 * aBoost)})`);
-          og.addColorStop(1, `rgba(${r},${g},${b},0)`);
-          ctx.fillStyle = og;
-          ctx.fillRect(ox - rad, oy - rad, rad * 2, rad * 2);
-        });
-        ctx.restore();
 
       } else if (animStyle === 'Fireflies') {
         // Draw soft glow halos for a dreamy firefly effect
@@ -11034,6 +11067,8 @@ async function openSetupWizard(force = false) {
   const isFinished = settings && (settings.Finished_setup === true || settings.setup_finished === true || settings.finished_setup_upper === true);
   if (!force && isFinished) return;
 
+  closeSettingsModal();
+
   // Hide main navigation bar during setup process
   const tabBar = document.getElementById('tab-bar');
   if (tabBar) tabBar.classList.add('hidden');
@@ -11190,6 +11225,7 @@ async function finishSetupWizard() {
 // BOOT
 // ══════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  initClickSoundListener();
   initTabs();
   initAccountDropdown();
   initDownloadWidget();
@@ -11211,6 +11247,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initExportModsOverlayEvents();
   initImportModsOverlayEvents();
   initSetupWizard();
+  initCustomContextMenu();
 
   // Load initial data
   try {
@@ -12081,4 +12118,200 @@ function getInstanceGameDir(versionId) {
   if (!versionId) return null;
   const inst = getInstances().find((i) => i.version_id === versionId);
   return inst ? inst.directory : null;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CUSTOM CONTEXT MENU (Lightweight & WebKitGTK Optimized)
+// ══════════════════════════════════════════════════════════════════
+function initCustomContextMenu() {
+  const menuEl = document.getElementById('custom-context-menu');
+  const itemsContainer = document.getElementById('ctx-menu-items');
+  if (!menuEl || !itemsContainer) return;
+
+  function closeContextMenu() {
+    if (!menuEl.classList.contains('hidden')) {
+      menuEl.classList.add('hidden');
+      itemsContainer.innerHTML = '';
+    }
+  }
+
+  // Prevent default browser context menu everywhere and render custom items
+  document.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+
+    const mouseX = e.clientX;
+    const mouseY = e.clientY;
+
+    const instanceCard = e.target.closest('.instance-card');
+    const modCard = e.target.closest('.mod-card');
+    const discoverCard = e.target.closest('.discover-card');
+
+    const items = [];
+
+    const addItem = (label, onClick, { isPrimary = false, isDanger = false } = {}) => {
+      items.push({ type: 'item', label, onClick, isPrimary, isDanger });
+    };
+    const addDivider = () => {
+      if (items.length > 0 && items[items.length - 1].type !== 'divider') {
+        items.push({ type: 'divider' });
+      }
+    };
+
+    if (instanceCard) {
+      const versionId = instanceCard.dataset.versionId;
+      if (versionId) {
+        addItem('Play', async () => {
+          selectInstance(versionId);
+          if (typeof window.launchSelectedInstance === 'function') {
+            await window.launchSelectedInstance(false);
+          } else {
+            document.getElementById('btn-play')?.click();
+          }
+        }, { isPrimary: true });
+
+        addItem('Play Offline', async () => {
+          selectInstance(versionId);
+          if (typeof window.launchSelectedInstance === 'function') {
+            await window.launchSelectedInstance(true);
+          }
+        });
+
+        addItem('Open Content', () => {
+          selectInstance(versionId);
+          const modsTab = document.querySelector('.pill-tab[data-tab="mods"]');
+          if (modsTab) modsTab.click();
+        });
+      }
+    } else if (modCard) {
+      const modPath = modCard.dataset.path;
+      const mod = modCard._mod;
+      const hasUpdate = modPath && modUpdateInfo && modUpdateInfo.has(modPath);
+
+      if (hasUpdate) {
+        addItem('Update Mod', () => {
+          const updateBtn = modCard.querySelector('.btn-update-mod');
+          if (updateBtn) updateBtn.click();
+        }, { isPrimary: true });
+      }
+
+      const isEnabled = mod ? mod.enabled : !modCard.classList.contains('disabled');
+      addItem(isEnabled ? 'Disable' : 'Enable', () => {
+        const toggleInput = modCard.querySelector('.mod-toggle-input');
+        if (toggleInput) {
+          toggleInput.checked = !toggleInput.checked;
+          toggleInput.dispatchEvent(new Event('change'));
+        }
+      });
+
+      addItem('Delete', async () => {
+        if (!confirm('Delete this mod?')) return;
+        const targetInstance = getModsTargetInstance();
+        const dir = (targetInstance ? (targetInstance.directory || settings.game_directory) : (settings ? settings.game_directory : ''));
+        
+        // Remove from DOM immediately
+        modCard.remove();
+        updateModsCount();
+        updateDeleteSelectedState();
+        showToast('Mod deleted', 'success');
+
+        try {
+          await api.deleteMod(dir, modPath);
+        } catch (e) {
+          showToast('Failed to delete mod: ' + e, 'error');
+          loadMods();
+        }
+      }, { isDanger: true });
+    } else if (discoverCard) {
+      const hit = discoverCard._hit;
+      addItem('Install', () => {
+        const downloadBtn = discoverCard.querySelector('.discover-download-btn');
+        if (downloadBtn) {
+          downloadBtn.click();
+        } else if (hit) {
+          const versionSelect = discoverCard.querySelector('.discover-version-select');
+          downloadDiscoverSelection(hit, versionSelect, null);
+        }
+      }, { isPrimary: true });
+    }
+
+    // Always include global Reload and Inspect at the bottom
+    addDivider();
+
+    addItem('Reload', () => {
+      window.location.reload();
+    });
+
+    addItem('Inspect', () => {
+      if (api.openDevtools) {
+        api.openDevtools().catch(() => {});
+      }
+    });
+
+    // Render text-only items
+    itemsContainer.innerHTML = '';
+    items.forEach((item) => {
+      if (item.type === 'divider') {
+        const div = document.createElement('div');
+        div.className = 'ctx-divider';
+        itemsContainer.appendChild(div);
+      } else {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ctx-item' + (item.isPrimary ? ' ctx-primary' : '') + (item.isDanger ? ' ctx-danger' : '');
+        btn.textContent = item.label;
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          closeContextMenu();
+          item.onClick();
+        });
+        itemsContainer.appendChild(btn);
+      }
+    });
+
+    // Positioning with viewport edge clamping
+    menuEl.classList.remove('hidden');
+    const menuWidth = 175;
+    const menuHeight = items.length * 32 + 16;
+
+    let posX = mouseX;
+    let posY = mouseY;
+
+    if (posX + menuWidth > window.innerWidth) {
+      posX = Math.max(8, window.innerWidth - menuWidth - 8);
+    }
+    if (posY + menuHeight > window.innerHeight) {
+      posY = Math.max(8, window.innerHeight - menuHeight - 8);
+    }
+
+    menuEl.style.left = `${posX}px`;
+    menuEl.style.top = `${posY}px`;
+  });
+
+  // Global dismiss handlers on any outside interaction
+  window.addEventListener('pointerdown', (e) => {
+    if (!menuEl.classList.contains('hidden') && !menuEl.contains(e.target)) {
+      closeContextMenu();
+    }
+  }, true);
+
+  window.addEventListener('mousedown', (e) => {
+    if (!menuEl.classList.contains('hidden') && !menuEl.contains(e.target)) {
+      closeContextMenu();
+    }
+  }, true);
+
+  window.addEventListener('wheel', (e) => {
+    if (!menuEl.classList.contains('hidden') && !menuEl.contains(e.target)) {
+      closeContextMenu();
+    }
+  }, { capture: true, passive: true });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menuEl.classList.contains('hidden')) {
+      closeContextMenu();
+    }
+  });
+
+  window.addEventListener('resize', closeContextMenu);
+  window.addEventListener('blur', closeContextMenu);
 }
