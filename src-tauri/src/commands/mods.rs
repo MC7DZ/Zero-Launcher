@@ -13,7 +13,7 @@ pub async fn list_mods(
 ) -> Result<Vec<ModInfo>, String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(&state.settings.lock().unwrap().game_directory));
+        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
     Ok(list_mods_in_dir(&game_dir))
 }
 
@@ -98,7 +98,7 @@ pub async fn open_mods_folder(
 ) -> Result<(), String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(&state.settings.lock().unwrap().game_directory));
+        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
 
     let mods_dir = game_dir.join("mods");
     std::fs::create_dir_all(&mods_dir)
@@ -135,7 +135,7 @@ pub async fn install_mod_files(
 ) -> Result<Vec<ModInstallResult>, String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(&state.settings.lock().unwrap().game_directory));
+        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
 
     let mods_dir = game_dir.join("mods");
     std::fs::create_dir_all(&mods_dir)

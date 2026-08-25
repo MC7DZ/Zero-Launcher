@@ -114,8 +114,42 @@ const SETUP_HTML: &str = r#"<!DOCTYPE html>
   <p>Installing files and creating a shortcut.<br>This only happens once.</p>
 </div></body></html>"#;
 
+/// Command-line flag the relocated copy is launched with, followed by the
+/// path of the original download it should delete once it's up and running
+/// from its permanent home. Only ever set by `perform_install` itself.
+const CLEANUP_SOURCE_FLAG: &str = "--zl-cleanup-source";
+
+/// If this process was just relaunched by `perform_install` after being
+/// copied into place, finish the job: delete the original exe it was
+/// copied from. Safe to call unconditionally - it's a no-op unless the
+/// special flag is present, and it never removes anything other than the
+/// exact path that was passed to it.
+fn cleanup_previous_source_if_requested() {
+    let mut args = std::env::args_os();
+    while let Some(arg) = args.next() {
+        if arg == CLEANUP_SOURCE_FLAG {
+            if let Some(old_path) = args.next() {
+                let old_path = PathBuf::from(old_path);
+                // Best-effort: the old file may already be gone, or briefly
+                // still locked right after the previous process exited -
+                // a few short retries covers that without noticeably
+                // delaying startup.
+                for _ in 0..10 {
+                    if !old_path.exists() || fs::remove_file(&old_path).is_ok() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                }
+            }
+            break;
+        }
+    }
+}
+
 /// Entry point - call before anything else in `run()`.
 pub fn run_first_time_setup(app: &AppHandle) {
+    cleanup_previous_source_if_requested();
+
     if !needs_setup() {
         return;
     }
@@ -185,10 +219,12 @@ fn perform_install(app: &AppHandle) -> Result<(), String> {
         {
             let _ = fs::remove_file(&src);
         }
-        // Windows keeps the exe file locked while it's running, so the
-        // original can't be removed here - it's safe for the user to
-        // delete it by hand afterwards. Only the copy in
-        // %APPDATA%\Zero Launcher is what the new shortcuts point to.
+        // Windows keeps the exe file locked while it's running, so it
+        // can't be deleted from here. Instead, once the shortcuts are set
+        // up below, we launch the copy we just made (passing it the
+        // original's path so *it* can delete that file once we've exited
+        // and released the lock), then exit this process. The user ends
+        // up with only the installed copy running, same as on Linux.
     }
 
     #[cfg(target_os = "linux")]
@@ -197,7 +233,31 @@ fn perform_install(app: &AppHandle) -> Result<(), String> {
     create_windows_shortcuts(&dest)?;
     let _ = app; // silence unused-var warning on platforms that don't need it
 
+    #[cfg(target_os = "windows")]
+    if src != dest {
+        relaunch_from_installed_copy(&dest, &src)?;
+    }
+
     Ok(())
+}
+
+/// Windows only: start the newly-installed copy (telling it, via
+/// `CLEANUP_SOURCE_FLAG`, to delete the original download once it's up),
+/// then exit this process immediately so the original exe's file lock is
+/// released and the copy can remove it.
+#[cfg(target_os = "windows")]
+fn relaunch_from_installed_copy(dest: &Path, src: &Path) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    std::process::Command::new(dest)
+        .arg(CLEANUP_SOURCE_FLAG)
+        .arg(src)
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|e| format!("failed to launch installed copy at {}: {e}", dest.display()))?;
+
+    std::process::exit(0);
 }
 
 #[cfg(target_os = "linux")]

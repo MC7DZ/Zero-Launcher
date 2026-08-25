@@ -93,7 +93,7 @@ impl AppState {
         // rather than in the app's own config folder — this way they travel
         // with the .minecraft folder itself and survive reinstalls of the
         // launcher.
-        let versions_dir = PathBuf::from(&settings.game_directory).join("versions");
+        let versions_dir = settings.resolved_game_directory().join("versions");
         std::fs::create_dir_all(&versions_dir).ok();
         let instances = Self::load_json::<Vec<InstalledInstance>>(&versions_dir, "instances.json")
             .unwrap_or_default();
@@ -202,7 +202,7 @@ impl AppState {
         let instances = self.instances.lock().unwrap();
         let versions_dir = {
             let settings = self.settings.lock().unwrap();
-            PathBuf::from(&settings.game_directory).join("versions")
+            settings.resolved_game_directory().join("versions")
         };
         std::fs::create_dir_all(&versions_dir).ok();
         Self::save_json(&versions_dir, "instances.json", &*instances);
@@ -214,7 +214,7 @@ impl AppState {
         let hidden = self.hidden_instances.lock().unwrap();
         let versions_dir = {
             let settings = self.settings.lock().unwrap();
-            PathBuf::from(&settings.game_directory).join("versions")
+            settings.resolved_game_directory().join("versions")
         };
         std::fs::create_dir_all(&versions_dir).ok();
         Self::save_json(&versions_dir, "hidden_instances.json", &*hidden);
@@ -262,7 +262,7 @@ impl AppState {
     pub fn reload_instances_for_current_dir(&self) {
         let versions_dir = {
             let settings = self.settings.lock().unwrap();
-            PathBuf::from(&settings.game_directory).join("versions")
+            settings.resolved_game_directory().join("versions")
         };
         std::fs::create_dir_all(&versions_dir).ok();
         let loaded = Self::load_json::<Vec<InstalledInstance>>(&versions_dir, "instances.json")

@@ -15,8 +15,24 @@ pub async fn get_settings(
 #[tauri::command]
 pub async fn save_settings(
     state: State<'_, AppState>,
-    settings: LauncherSettings,
+    mut settings: LauncherSettings,
 ) -> Result<(), String> {
+    // Guard against a corrupted/stale `settings` object making it back here
+    // with a non-absolute `game_directory` (e.g. the frontend's in-memory
+    // settings never loaded successfully and got left at `""`, then got
+    // sent back on some unrelated save). Blank is fine on disk — it just
+    // means "use the platform default" — but anything non-empty MUST be
+    // absolute, otherwise every `<game_directory>/versions/...` path built
+    // from it downstream resolves relative to the process's current
+    // working directory (the exe's own folder when launched by double
+    // click) instead of the real Minecraft folder.
+    if !settings.game_directory.trim().is_empty()
+        && !std::path::Path::new(settings.game_directory.trim()).is_absolute()
+    {
+        let current = state.settings.lock().unwrap();
+        settings.game_directory = current.game_directory.clone();
+    }
+
     let dir_changed = {
         let current = state.settings.lock().unwrap();
         current.game_directory != settings.game_directory

@@ -258,7 +258,7 @@ pub async fn scan_minecraft_versions(
 ) -> Result<Vec<LocalVersionInfo>, String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(&state.settings.lock().unwrap().game_directory));
+        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
 
     let versions_dir = game_dir.join("versions");
     if !versions_dir.is_dir() {
@@ -395,7 +395,7 @@ pub async fn install_minecraft(
     // default location — and every instance that uses the same
     // version/loader combo shares those files instead of re-downloading
     // them into each custom folder.
-    let minecraft_dir = PathBuf::from(&state.settings.lock().unwrap().game_directory);
+    let minecraft_dir = state.settings.lock().unwrap().resolved_game_directory();
 
     // The instance's own "game directory" — where saves, mods,
     // resourcepacks, config, and logs for *this* instance live. This is
@@ -1235,7 +1235,7 @@ pub async fn launch_minecraft(
             .map(|i| (PathBuf::from(&i.directory), PathBuf::from(i.minecraft_dir())))
     }
     .unwrap_or_else(|| {
-        let default_dir = PathBuf::from(&state.settings.lock().unwrap().game_directory);
+        let default_dir = state.settings.lock().unwrap().resolved_game_directory();
         (default_dir.clone(), default_dir)
     });
 
@@ -2478,7 +2478,7 @@ pub async fn delete_installed_version(
     let game_dir = tracked_dir
         .or(directory)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(&state.settings.lock().unwrap().game_directory));
+        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
 
     let version_folder = game_dir.join("versions").join(&version_id);
 

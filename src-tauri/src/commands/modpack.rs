@@ -831,7 +831,7 @@ pub async fn import_modpack(
     );
 
     // ── Where this instance's mods/config/saves/resourcepacks will live ─
-    let default_dir = PathBuf::from(&state.settings.lock().unwrap().game_directory);
+    let default_dir = state.settings.lock().unwrap().resolved_game_directory();
     let game_dir = if payload.use_custom_directory {
         let dir = payload
             .custom_directory
