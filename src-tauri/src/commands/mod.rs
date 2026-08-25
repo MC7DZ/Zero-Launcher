@@ -89,7 +89,7 @@ fn play_native_click_sound() {
 
 #[cfg(target_os = "windows")]
 fn play_native_click_sound() {
-    static WAV_BYTES: &[u8] = include_bytes!("../../src/assets/sounds/click.wav");
+    static WAV_BYTES: &[u8] = include_bytes!("../../../src/assets/sounds/click.wav");
     extern "system" {
         fn PlaySoundA(pszSound: *const u8, hmod: *mut std::ffi::c_void, fdwSound: u32) -> i32;
     }
