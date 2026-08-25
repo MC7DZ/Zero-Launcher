@@ -28,10 +28,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: --bundles nsis
+          args: --no-bundle
 
       - name: Upload portable exe
         uses: actions/upload-artifact@v4
         with:
           name: ZeroLauncher-portable-exe
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          path: src-tauri/target/release/*.exe
