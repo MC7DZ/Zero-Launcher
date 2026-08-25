@@ -146,6 +146,45 @@ fn cleanup_previous_source_if_requested() {
     }
 }
 
+/// Drops a small "hey, this moved" note in the folder the exe/AppImage was
+/// originally launched from (Downloads, Desktop, wherever). Without this,
+/// someone who downloaded the file, ran it once, and then finds the
+/// original file "gone"/inert has no way to know it was relocated on
+/// purpose rather than something breaking - this points them at the real
+/// copy and gives them a quick, accurate answer to "how do I uninstall
+/// this" while we're at it.
+fn write_relocation_readme(src: &Path, dest: &Path) {
+    let Some(src_dir) = src.parent() else { return };
+    let readme_path = src_dir.join("Readme AKA ZeroLauncher.txt");
+
+    let file_word = if cfg!(target_os = "windows") { "EXE" } else { "AppImage" };
+    let contents = format!(
+        "ZERO LAUNCHER - WHERE DID THE {file_word} GO?\n\
+         =========================================\n\n\
+         Nothing is broken - this is expected. The {file_word} you downloaded only \n\
+         needs to run once from here; after that, Zero Launcher installs a \n\
+         permanent copy of itself and switches over to it automatically. \n\
+         The file in this folder has done its job and can be safely ignored or \n\
+         deleted.\n\n\
+         The real, permanent copy now lives at:\n\
+         {dest}\n\n\
+         That's the file your shortcuts (Desktop / Start Menu / applications \n\
+         menu) point to, so you can just launch Zero Launcher normally from \n\
+         now on - no need to come back to this folder again.\n\n\
+         UNINSTALLING\n\
+         ------------\n\
+         1. Delete the {file_word} at the path above.\n\
+         2. Delete the \"Zero Launcher\" folder (same parent folder as that \n\
+            {file_word}) to remove all launcher data - settings, accounts, \n\
+            downloaded Java runtimes, this readme's info, everything.\n\n\
+         That's it - two deletions and every trace of Zero Launcher is gone.\n",
+        file_word = file_word,
+        dest = dest.display(),
+    );
+
+    let _ = fs::write(&readme_path, contents);
+}
+
 /// Entry point - call before anything else in `run()`.
 pub fn run_first_time_setup(app: &AppHandle) {
     cleanup_previous_source_if_requested();
@@ -211,6 +250,8 @@ fn perform_install(app: &AppHandle) -> Result<(), String> {
                 let _ = fs::set_permissions(&dest, perm);
             }
         }
+
+        write_relocation_readme(&src, &dest);
 
         // Linux can unlink the file it's currently executing from (the
         // running process keeps its in-memory mapping), so we can clean
