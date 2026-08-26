@@ -271,6 +271,7 @@ pub fn run() {
             commands::minecraft::kill_instance,
             commands::minecraft::check_linux_zlib_conflict,
             commands::minecraft::install_linux_package,
+            commands::minecraft::get_instance_disk_size,
             // Modpack import (.mrpack / CurseForge zip drag-and-drop)
             commands::modpack::preview_modpack,
             commands::modpack::import_modpack,

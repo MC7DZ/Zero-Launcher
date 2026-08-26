@@ -604,6 +604,7 @@ pub async fn install_minecraft(
                     minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
                     installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                     total_playtime_seconds: 0,
+                    last_played_at: None,
                 };
 
                 {
@@ -1112,6 +1113,7 @@ pub async fn install_minecraft(
         minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
         installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         total_playtime_seconds: 0,
+                    last_played_at: None,
     };
 
     // Save instance to state
@@ -1288,6 +1290,7 @@ pub async fn launch_minecraft(
             minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
             installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             total_playtime_seconds: 0,
+                    last_played_at: None,
         };
 
         {
@@ -1350,6 +1353,16 @@ pub async fn launch_minecraft(
             },
         );
     }
+    // Record "last played" right as Play is pressed (not only once the
+    // process actually spawns), so it reflects the moment the user chose
+    // to launch even if setup/verification takes a while.
+    {
+        let mut instances = state.instances.lock().unwrap();
+        if let Some(inst) = instances.iter_mut().find(|i| i.version_id == version_id) {
+            inst.last_played_at = Some(chrono::Local::now().to_rfc3339());
+        }
+    }
+    state.save_instances();
     let _ = app.emit("running-instances-changed", ());
 
     logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
@@ -2704,4 +2717,55 @@ pub async fn install_linux_package(package_type: String) -> Result<(), String> {
     {
         Err("Package installation is only supported on Linux.".to_string())
     }
+}
+
+/// Recursively sum the size in bytes of every file under `path`. Best-effort:
+/// unreadable entries (permissions, races with the game writing files) are
+/// skipped rather than failing the whole walk.
+fn dir_size_bytes(path: &std::path::Path) -> u64 {
+    let mut total = 0u64;
+    let entries = match std::fs::read_dir(path) {
+        Ok(e) => e,
+        Err(_) => return 0,
+    };
+    for entry in entries.flatten() {
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if metadata.is_dir() {
+            total = total.saturating_add(dir_size_bytes(&entry.path()));
+        } else {
+            total = total.saturating_add(metadata.len());
+        }
+    }
+    total
+}
+
+/// Total size on disk for one instance, in bytes: its game directory
+/// (saves/mods/config/resourcepacks) plus its shared `versions/` +
+/// `libraries/` + `assets/` directory, without double-counting when both
+/// point at the same folder (the common case for non-"separated" installs).
+#[tauri::command]
+pub async fn get_instance_disk_size(version_id: String, state: State<'_, AppState>) -> Result<u64, String> {
+    let (dir, mc_dir) = {
+        let instances = state.instances.lock().unwrap();
+        let inst = instances
+            .iter()
+            .find(|i| i.version_id == version_id)
+            .ok_or_else(|| "Instance not found".to_string())?;
+        (inst.directory.clone(), inst.minecraft_dir())
+    };
+    tokio::task::spawn_blocking(move || {
+        let dir_path = std::path::PathBuf::from(&dir);
+        let size = dir_size_bytes(&dir_path);
+        if mc_dir != dir {
+            let mc_path = std::path::PathBuf::from(&mc_dir);
+            size.saturating_add(dir_size_bytes(&mc_path))
+        } else {
+            size
+        }
+    })
+    .await
+    .map_err(|e| format!("Failed to compute instance size: {e}"))
 }

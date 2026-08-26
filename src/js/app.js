@@ -506,6 +506,9 @@ function spawnToast(message, type, title, actions) {
   const iconMap = { success: '\u2714', error: '\u2715', warning: '\u26A0', info: '\u2139' };
   const icon = iconMap[type] || iconMap.info;
 
+  // Notification Style setting — same 5 looks as before, remapped onto the
+  // lightweight base markup (no icon badge, no progress bar element, no
+  // animation): the class only ever changes flat background/border/radius.
   const styleMap = {
     'glass':      'toast-style-glass',
     'neon':       'toast-style-neon',
@@ -528,36 +531,29 @@ function spawnToast(message, type, title, actions) {
   // Copy button — only on error toasts, so the exact error text (URLs,
   // status codes, etc.) can be pasted elsewhere without retyping it.
   const copyHtml = type === 'error'
-    ? `<button class="toast-copy" title="Copy error details" aria-label="Copy error details">
-         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
-       </button>`
+    ? `<button class="toast-copy" title="Copy error details" aria-label="Copy error details">⧉</button>`
     : '';
   t.innerHTML = `
-    <div class="toast-accent-stripe"></div>
-    <div class="toast-main">
-      <div class="toast-icon-badge"><span class="toast-icon">${icon}</span></div>
-      <div class="toast-content">
-        <div class="toast-title">${title}</div>
-        ${message ? `<div class="toast-message">${message}</div>` : ''}
-        ${actionsHtml}
-      </div>
-      <div class="toast-controls">
-        <button class="toast-close" aria-label="Dismiss notification">\u2715</button>
-        ${copyHtml}
-      </div>
+    <span class="toast-icon">${icon}</span>
+    <div class="toast-content">
+      <div class="toast-title">${title}</div>
+      ${message ? `<div class="toast-message">${message}</div>` : ''}
+      ${actionsHtml}
     </div>
-    <div class="toast-progress"><div class="toast-progress-bar"></div></div>
+    <div class="toast-controls">
+      <button class="toast-close" aria-label="Dismiss notification">\u2715</button>
+      ${copyHtml}
+    </div>
   `;
   c.appendChild(t);
 
-  // Only promote to a composited layer while actually animating (entrance
-  // now, exit in dismissToast) — see .toast-animating in main.css.
-  t.classList.add('toast-animating');
-  t.addEventListener('animationend', (e) => {
-    if (e.animationName === 'toastSlideIn') t.classList.remove('toast-animating');
-  });
+  // Enter: flip the opacity class next frame so the browser actually
+  // transitions it instead of starting already-visible. One-shot
+  // transition, not a running animation — nothing left compositing once
+  // it settles.
+  requestAnimationFrame(() => t.classList.add('toast-visible'));
 
-  const entry = { el: t, removed: false };
+  const entry = { el: t, removed: false, timer: null };
   activeToasts.push(entry);
 
   // Close button
@@ -583,10 +579,10 @@ function spawnToast(message, type, title, actions) {
           ta.remove();
         }
         copyBtn.classList.add('toast-copy-done');
-        copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
+        copyBtn.textContent = '✓';
         setTimeout(() => {
           copyBtn.classList.remove('toast-copy-done');
-          copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
+          copyBtn.textContent = '⧉';
         }, 1400);
       } catch {
         showToast('Could not copy to clipboard.', 'warning');
@@ -606,44 +602,60 @@ function spawnToast(message, type, title, actions) {
     });
   }
 
-  // Progress bar: a single CSS animation (scaleX 1 -> 0 over `duration`),
-  // driven entirely by the compositor. The previous version stepped a
-  // JS-set `transform` every ~100ms with no transition between steps, so
-  // every step was a hard jump rather than smooth motion — on any main-
-  // thread hiccup that reads as stuttery, near-1fps movement. A plain
-  // CSS animation keeps running smoothly off the main thread regardless
-  // of JS load elsewhere, and needs zero per-frame script.
-  const bar = t.querySelector('.toast-progress-bar');
-  bar.style.animationDuration = `${duration}ms`;
-  bar.addEventListener('animationend', () => dismissToast(entry));
-
-  // Hover pauses the countdown — animation-play-state pauses/resumes
-  // exactly where it left off, no manual time bookkeeping needed.
-  t.addEventListener('mouseenter', () => { bar.classList.add('toast-progress-paused'); });
-  t.addEventListener('mouseleave', () => { bar.classList.remove('toast-progress-paused'); });
+  // Auto-dismiss: a single plain JS timer instead of a multi-second CSS
+  // animation. No countdown bar to paint/composite for the toast's whole
+  // lifetime — this is the main lag fix, since several toasts previously
+  // meant several concurrently-animating layers for 5-8s each. Hovering
+  // pauses it (clearTimeout) and restarts on leave, same end behavior as
+  // before without any per-frame work.
+  const startTimer = () => {
+    entry.timer = setTimeout(() => dismissToast(entry), duration);
+  };
+  startTimer();
+  t.addEventListener('mouseenter', () => { if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; } });
+  t.addEventListener('mouseleave', () => { if (!entry.removed && !entry.timer) startTimer(); });
 }
 
 function dismissToast(entry) {
   if (entry.removed) return;
   entry.removed = true;
-  entry.el.classList.add('toast-animating', 'toast-fade-out');
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.el.classList.remove('toast-visible');
   setTimeout(() => {
     entry.el.remove();
     activeToasts = activeToasts.filter(e => e !== entry);
     drainToastQueue();
-  }, 220);
+  }, 130);
 }
 window.showToast = showToast;
 
 // ══════════════════════════════════════════════════════════════════
 // TABS
 // ══════════════════════════════════════════════════════════════════
+// Bumped on every tab switch. Each click captures the token at the time
+// it fired; anything that finishes later (a mod list load, a Discover
+// search, etc.) checks its captured token against this before touching
+// the DOM. That's what stops rapid switching from looking like it "keeps
+// going" after you stop — a fast 1→2→3→4 no longer lets tab 1's slow
+// network response land on top of tab 4 a second later, it just quietly
+// no-ops instead.
+let latestTabToken = 0;
+
 function initTabs() {
   document.querySelectorAll('.pill-tab').forEach(btn => {
     btn.addEventListener('click', () => {
+      const tabId = btn.dataset.tab;
+
+      // Re-clicking the tab you're already on used to re-run its entire
+      // load chain (mod list refetch, Discord RPC ping, etc.) for no
+      // reason — harmless individually, but it's exactly the kind of
+      // extra in-flight work that piles up during rapid clicking. Skip it.
+      if (btn.classList.contains('active')) return;
+
+      const myToken = ++latestTabToken;
+
       document.querySelectorAll('.pill-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      const tabId = btn.dataset.tab;
       document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
       const page = document.getElementById('tab-' + tabId);
       if (page) {
@@ -666,9 +678,17 @@ function initTabs() {
         }
       }
       if (tabId === 'mods') {
+        showModsTabLoading();
         loadModInstances().then(() => {
-          loadMods();
-        }).catch(() => {});
+          // Bail if the user has already switched to another tab since
+          // this chain started — don't render mod data into a tab that
+          // isn't (or is no longer) the one being looked at.
+          if (myToken !== latestTabToken) return;
+          return loadMods();
+        }).catch(() => {}).finally(() => {
+          if (myToken !== latestTabToken) return;
+          hideModsTabLoading();
+        });
       }
       if (tabId === 'discover') {
         initDiscoverTabIfNeeded();
@@ -676,9 +696,11 @@ function initTabs() {
 
       if (tabId === 'presets') initPresetsTabIfNeeded();
 
-      // Update Discord RPC
-      const tabName = tabId.charAt(0).toUpperCase() + tabId.slice(1);
-      api.updateDiscordPresence(tabName, null, null).catch(() => { });
+      // Update Discord RPC — skip if superseded by a later switch already.
+      if (myToken === latestTabToken) {
+        const tabName = tabId.charAt(0).toUpperCase() + tabId.slice(1);
+        api.updateDiscordPresence(tabName, null, null).catch(() => { });
+      }
     });
   });
 
@@ -1201,8 +1223,6 @@ function initAccountDropdown() {
 // ══════════════════════════════════════════════════════════════════
 // FLOATING DOWNLOAD WIDGET (bottom-left)
 // ══════════════════════════════════════════════════════════════════
-const RING_CIRCUMFERENCE = 2 * Math.PI * 15.5;
-
 // Shared "download" glyph (an arrow into a tray) used anywhere an update /
 // download action needs an icon instead of the old ⬇️ emoji — the per-mod
 // update button, the toolbar "Update All" button, etc.
@@ -1361,7 +1381,13 @@ function initDownloadWidget() {
   const widget = document.getElementById('dl-widget');
   const btn = document.getElementById('dl-widget-btn');
   const panel = document.getElementById('dl-widget-panel');
-  const ringFill = document.getElementById('dl-ring-fill');
+  const backdrop = document.getElementById('dl-widget-backdrop');
+  const edgeZone = document.getElementById('dl-edge-zone');
+  const edgeHint = document.getElementById('dl-edge-hint');
+  const dragGrip = document.querySelector('.dl-panel-drag-grip');
+  const closeBtn = document.getElementById('dl-panel-close');
+  const emptyState = document.getElementById('dl-cards-empty');
+  const fillEl = document.getElementById('dl-widget-fill');
   const title = document.getElementById('dl-widget-title');
   const sub = document.getElementById('dl-widget-sub');
   const countBadge = document.getElementById('dl-widget-count');
@@ -1369,9 +1395,261 @@ function initDownloadWidget() {
   const cardTemplate = document.getElementById('dl-card-template');
   if (!widget || !cardTemplate) return;
 
-  btn.addEventListener('click', () => {
-    panel.classList.toggle('hidden');
+  // ── Open/close the drawer ────────────────────────────────────────────
+  // Always transform-only (translateX) so this stays on the compositor
+  // thread — no width/left animation, no backdrop-filter.
+  function isPanelOpen() { return panel.classList.contains('dl-panel-open'); }
+
+  function openPanel() {
+    if (isPanelOpen()) return;
+    panel.classList.remove('hidden');
+    backdrop.classList.remove('hidden');
+    panel.style.willChange = 'transform';
+    // Force layout before adding the "open" class so the browser sees
+    // the closed transform first and actually animates the transition,
+    // instead of collapsing the display:none→flex and the transform
+    // change into a single, un-animated paint.
+    void panel.offsetWidth;
+    panel.classList.add('dl-panel-open');
+    backdrop.classList.add('dl-backdrop-open');
+  }
+  function closePanel() {
+    if (!isPanelOpen() && panel.classList.contains('hidden')) return;
+    panel.classList.remove('dl-panel-open');
+    backdrop.classList.remove('dl-backdrop-open');
+    const done = () => {
+      panel.classList.add('hidden');
+      backdrop.classList.add('hidden');
+      panel.style.willChange = 'auto';
+    };
+    let settled = false;
+    const onEnd = (e) => {
+      if (e && e.target !== panel) return;
+      if (settled) return;
+      settled = true;
+      panel.removeEventListener('transitionend', onEnd);
+      done();
+    };
+    panel.addEventListener('transitionend', onEnd);
+    // Fallback in case the transitionend never fires (e.g. the drawer was
+    // already mid-drag with transitions disabled).
+    setTimeout(() => { if (!settled) { settled = true; done(); } }, 260);
+  }
+  function togglePanel() { if (isPanelOpen()) closePanel(); else openPanel(); }
+
+  btn.addEventListener('click', togglePanel);
+  if (closeBtn) closeBtn.addEventListener('click', closePanel);
+  if (backdrop) backdrop.addEventListener('click', closePanel);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isPanelOpen()) closePanel();
   });
+
+  // ── Swipe/drag gesture ───────────────────────────────────────────────
+  // Pointer Events unify mouse + touch + pen into one code path, which
+  // keeps this cheap on WebKitGTK (no separate touchstart/mousedown
+  // listeners fighting each other). touch-action:none on the edge zone
+  // and the grip (set in CSS) means we never need preventDefault() calls
+  // during the drag to stop page scroll.
+  //
+  // Important: a drag only "engages" (and starts touching the panel's
+  // classes/transform) once the pointer has actually moved past a small
+  // threshold in the expected direction. Without that, a plain click/tap
+  // (near-zero movement) would fall through the same end-of-drag logic,
+  // get judged as "not far enough to open" and get force-closed a moment
+  // later — racing with, and undoing, the click handler's own open. A
+  // tap that never engages a drag is left alone entirely, so the normal
+  // 'click' listener on the button is the only thing that handles it.
+  const DRAG_ENGAGE_THRESHOLD = 8; // px of movement before a pointerdown becomes a real drag
+  const DRAG_OPEN_THRESHOLD = 60; // px of rightward drag from the edge to open
+  const DRAG_CLOSE_THRESHOLD = 70; // px of leftward drag on the open drawer to close
+  const DRAG_FLICK_VELOCITY = 0.5; // px/ms — a fast flick commits even if the distance threshold wasn't reached
+  let drag = null; // { pointerId, startX, lastX, opening, width, engaged, target, lastT, velocity }
+
+  // ── Hold-to-discover hint ────────────────────────────────────────────
+  // Holding a pointer down near the left edge — without dragging — surfaces
+  // a small "Swipe right to open" bubble at the held Y position. This is
+  // the main way people find the gesture now that the tab itself only
+  // shows up during an active download (see showWidget/hideWidgetIfEmpty).
+  const EDGE_HOLD_DELAY = 380; // ms held still before the hint appears
+  let edgeHoldTimer = null;
+  function showEdgeHint(clientY) {
+    if (!edgeHint) return;
+    const y = Math.max(36, Math.min(window.innerHeight - 36, clientY));
+    edgeHint.style.top = `${y}px`;
+    edgeHint.style.willChange = 'opacity, transform';
+    edgeHint.classList.add('dl-edge-hint-visible');
+  }
+  function hideEdgeHint() {
+    clearTimeout(edgeHoldTimer);
+    if (!edgeHint) return;
+    edgeHint.classList.remove('dl-edge-hint-visible');
+    edgeHint.style.willChange = 'auto';
+  }
+  function armEdgeHint(clientY) {
+    clearTimeout(edgeHoldTimer);
+    edgeHoldTimer = setTimeout(() => showEdgeHint(clientY), EDGE_HOLD_DELAY);
+  }
+
+  function panelWidth() {
+    return panel.getBoundingClientRect().width || 380;
+  }
+
+  function engageDrag() {
+    panel.classList.remove('hidden');
+    backdrop.classList.remove('hidden');
+    panel.classList.add('dl-panel-dragging');
+    // The backdrop's opacity transition (used for click-to-close etc.) was
+    // never being disabled here, so every pointermove during a drag was
+    // fighting a 0.2s CSS transition trying to catch up to the finger —
+    // that's what made the whole gesture feel laggy. Same fix as the panel
+    // already got below: kill the transition for the duration of the drag.
+    backdrop.classList.add('dl-backdrop-dragging');
+    panel.style.willChange = 'transform';
+    backdrop.style.willChange = 'opacity';
+    drag.engaged = true;
+    drag.width = panelWidth();
+    try { drag.target.setPointerCapture(drag.pointerId); } catch (_) {}
+  }
+
+  function onDragStart(opening) {
+    return (e) => {
+      if (drag) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      drag = { pointerId: e.pointerId, startX: e.clientX, lastX: e.clientX, opening, engaged: false, width: 380, target: e.currentTarget, lastT: e.timeStamp, velocity: 0 };
+    };
+  }
+  function onDragMove(e) {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const prevX = drag.lastX;
+    const prevT = drag.lastT;
+    drag.lastX = e.clientX;
+    drag.lastT = e.timeStamp;
+    // Smoothed px/ms velocity — blended rather than replaced each frame so
+    // one jittery event near the end of the gesture can't dominate the
+    // flick decision in onDragEnd.
+    const dt = drag.lastT - prevT;
+    if (dt > 0) {
+      const instVelocity = (drag.lastX - prevX) / dt;
+      drag.velocity = drag.velocity * 0.7 + instVelocity * 0.3;
+    }
+    const dx = drag.lastX - drag.startX;
+    if (!drag.engaged) {
+      const movingRightWay = drag.opening ? dx > DRAG_ENGAGE_THRESHOLD : dx < -DRAG_ENGAGE_THRESHOLD;
+      if (!movingRightWay) return;
+      engageDrag();
+    }
+    const base = drag.opening ? -drag.width : 0;
+    const raw = base + dx;
+    // Rubber-band past the fully-open/fully-closed ends instead of hard
+    // clamping, so an over-eager swipe still feels alive at the limit
+    // rather than snagging on an invisible wall.
+    let translate;
+    if (raw > 0) {
+      translate = raw < drag.width ? raw * 0.35 : drag.width * 0.35;
+    } else if (raw < -drag.width) {
+      const over = raw + drag.width;
+      translate = -drag.width + Math.max(over * 0.35, -drag.width * 0.12);
+    } else {
+      translate = raw;
+    }
+    panel.style.transform = `translate3d(${translate}px,0,0)`;
+    const openness = 1 + translate / drag.width;
+    backdrop.style.opacity = String(Math.max(0, Math.min(1, openness)));
+  }
+  function onDragEnd(e) {
+    if (!drag || (e && e.pointerId !== drag.pointerId)) return;
+    const dx = drag.lastX - drag.startX;
+    const velocity = drag.velocity;
+    const opening = drag.opening;
+    const engaged = drag.engaged;
+    drag = null;
+    if (!engaged) return; // plain click/tap — the 'click' listener handles it
+    panel.classList.remove('dl-panel-dragging');
+    backdrop.classList.remove('dl-backdrop-dragging');
+    panel.style.transform = '';
+    panel.style.willChange = 'auto';
+    backdrop.style.opacity = '';
+    backdrop.style.willChange = 'auto';
+    if (opening) {
+      const flickOpen = velocity > DRAG_FLICK_VELOCITY;
+      const flickClose = velocity < -DRAG_FLICK_VELOCITY;
+      if (flickClose) closePanel();
+      else if (dx > DRAG_OPEN_THRESHOLD || flickOpen) openPanel();
+      else closePanel();
+    } else {
+      const flickClose = velocity < -DRAG_FLICK_VELOCITY;
+      const flickOpen = velocity > DRAG_FLICK_VELOCITY;
+      if (flickOpen) openPanel();
+      else if (dx < -DRAG_CLOSE_THRESHOLD || flickClose) closePanel();
+      else openPanel();
+    }
+  }
+
+  if (edgeZone) {
+    edgeZone.addEventListener('pointerdown', (e) => {
+      if (isPanelOpen()) return;
+      onDragStart(true)(e);
+      armEdgeHint(e.clientY);
+    });
+    edgeZone.addEventListener('pointermove', (e) => {
+      onDragMove(e);
+      // Once it's a real drag, the hint has done its job (or wasn't
+      // needed) — don't let it pop up mid-swipe.
+      if (drag && drag.engaged) hideEdgeHint();
+    });
+    edgeZone.addEventListener('pointerup', (e) => {
+      const wasEngaged = !!(drag && drag.engaged);
+      hideEdgeHint();
+      onDragEnd(e);
+      // A plain tap in here (never became a rightward drag) — this zone
+      // is now wide enough to overlap real content like sidebar buttons,
+      // so forward the tap to whatever's actually underneath instead of
+      // silently swallowing it.
+      if (!wasEngaged) {
+        edgeZone.style.pointerEvents = 'none';
+        const under = document.elementFromPoint(e.clientX, e.clientY);
+        edgeZone.style.pointerEvents = '';
+        if (under && under !== edgeZone) under.click();
+      }
+    });
+    edgeZone.addEventListener('pointercancel', (e) => {
+      hideEdgeHint();
+      onDragEnd(e);
+    });
+  }
+  // The collapsed tab itself can also be dragged straight open, so a
+  // click-and-drag from the button works the same as the edge zone.
+  btn.addEventListener('pointerdown', (e) => {
+    if (isPanelOpen()) return;
+    onDragStart(true)(e);
+    armEdgeHint(e.clientY);
+  });
+  btn.addEventListener('pointermove', (e) => {
+    onDragMove(e);
+    if (drag && drag.engaged) hideEdgeHint();
+  });
+  btn.addEventListener('pointerup', (e) => { hideEdgeHint(); onDragEnd(e); });
+  btn.addEventListener('pointercancel', (e) => { hideEdgeHint(); onDragEnd(e); });
+
+  if (dragGrip) {
+    dragGrip.addEventListener('pointerdown', onDragStart(false));
+    dragGrip.addEventListener('pointermove', onDragMove);
+    dragGrip.addEventListener('pointerup', onDragEnd);
+    dragGrip.addEventListener('pointercancel', onDragEnd);
+  }
+  // Swiping left on the drawer's header (but not the scrollable card
+  // list, so it doesn't fight vertical scrolling) also closes it.
+  const headingRow = panel.querySelector('.dl-panel-heading-row');
+  if (headingRow) {
+    headingRow.addEventListener('pointerdown', onDragStart(false));
+    headingRow.addEventListener('pointermove', onDragMove);
+    headingRow.addEventListener('pointerup', onDragEnd);
+    headingRow.addEventListener('pointercancel', onDragEnd);
+  }
+
+  function updateEmptyState(hasCards) {
+    if (emptyState) emptyState.classList.toggle('hidden', hasCards);
+  }
 
   // ── Files window — one small overlay shared by every card, showing the
   // list of individual files that download/install process has touched
@@ -1642,43 +1920,49 @@ function initDownloadWidget() {
   // for instance), each rendered as its own entry in dl-cards.
   const cards = new Map();
 
+  // The edge tab now only exists on screen while something is actually
+  // downloading/installing — the drawer itself is still always reachable
+  // via the edge-zone swipe (and its hold-hint), so nothing is lost by
+  // hiding the idle tab; it's just one less permanently-visible thing.
   function showWidget() {
     clearTimeout(dlHideTimer);
-    widget.classList.remove('hidden', 'dl-leaving');
+    widget.classList.remove('dl-leaving');
+    widget.classList.remove('hidden');
+    widget.classList.add('dl-active');
   }
 
   function hideWidgetIfEmpty() {
     if (cards.size > 0) return;
     clearTimeout(dlHideTimer);
     dlHideTimer = setTimeout(() => {
-      widget.classList.add('dl-leaving');
-      panel.classList.add('dl-panel-leaving');
-      setTimeout(() => {
-        widget.classList.add('hidden');
-        widget.classList.remove('dl-leaving');
-        panel.classList.add('hidden');
-        panel.classList.remove('dl-panel-leaving');
-      }, 260);
+      widget.classList.remove('dl-active', 'dl-paused', 'dl-generic');
+      widget.classList.add('hidden');
+      countBadge.classList.add('hidden');
+      title.textContent = 'Downloads';
+      sub.textContent = 'No active downloads';
+      fillEl.style.setProperty('--dl-fill', '0');
+      updateEmptyState(false);
     }, 250);
   }
 
-  // Recomputes the collapsed floating button (icon/ring/title/sub/count)
-  // from whichever cards are currently active.
+  // Recomputes the collapsed edge tab (fill bar/count) and the drawer's
+  // status line from whichever cards are currently active.
   function refreshSummary() {
     const list = Array.from(cards.values());
+    updateEmptyState(list.length > 0);
     if (list.length === 0) return;
     countBadge.textContent = String(list.length);
     countBadge.classList.toggle('hidden', list.length <= 1);
 
     const primary = list.find(c => c.status === 'error') || list.find(c => c.status === 'paused') || list[0];
     title.textContent = primary.titleText;
-    sub.textContent = primary.subText;
+    sub.textContent = list.length > 1 ? `${primary.subText} (+${list.length - 1} more)` : primary.subText;
     widget.classList.toggle('dl-paused', primary.status === 'paused');
 
     const determinate = list.filter(c => c.percent !== null && c.status === 'downloading');
     if (determinate.length > 0) {
       const avg = determinate.reduce((s, c) => s + c.percent, 0) / determinate.length;
-      ringFill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - avg / 100));
+      fillEl.style.setProperty('--dl-fill', String(avg / 100));
       widget.classList.remove('dl-generic');
     } else {
       widget.classList.add('dl-generic');
@@ -1735,7 +2019,7 @@ function initDownloadWidget() {
       });
     });
     card.refs.filesBtn.addEventListener('click', () => {
-      panel.classList.add('hidden');
+      closePanel();
       openFilesWindow(card);
     });
     cards.set(id, card);
@@ -3875,6 +4159,23 @@ function formatPlaytime(totalSecondsInput) {
   return parts.join(' ');
 }
 
+// Human-friendly "Last Played" label: relative for anything recent, a plain
+// date once it's more than a week ago. `iso` is the RFC 3339 timestamp
+// stored in `last_played_at` (set the moment Play is pressed).
+function formatLastPlayed(iso) {
+  if (!iso) return 'Never';
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return 'Never';
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 60) return 'Just now';
+  if (diffSec < 3600) { const m = Math.floor(diffSec / 60); return `${m} minute${m === 1 ? '' : 's'} ago`; }
+  if (diffSec < 86400) { const h = Math.floor(diffSec / 3600); return `${h} hour${h === 1 ? '' : 's'} ago`; }
+  const days = Math.floor(diffSec / 86400);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 // Recomputes and displays the selected instance's Play Time, including —
 // if it's currently running — live elapsed time for the in-progress
 // session on top of its already-accumulated total (which only updates on
@@ -3923,6 +4224,7 @@ function selectInstance(id) {
   const loaderEl = document.getElementById('info-loader');
   const dirEl = document.getElementById('info-dir');
   const playtimeEl = document.getElementById('info-playtime');
+  const lastPlayedEl = document.getElementById('info-last-played');
   const playBtn = document.getElementById('btn-play');
   const iconEl = document.getElementById('detail-icon');
 
@@ -3933,6 +4235,7 @@ function selectInstance(id) {
     loaderEl.textContent = '—';
     dirEl.textContent = '—';
     if (playtimeEl) playtimeEl.textContent = '—';
+    if (lastPlayedEl) lastPlayedEl.textContent = '—';
     playBtn.disabled = true;
     updatePlayGearEnabled();
     if (iconEl) iconEl.innerHTML = '';
@@ -3947,6 +4250,7 @@ function selectInstance(id) {
   if (gameVerEl) gameVerEl.textContent = inst.minecraft_version || inst.version_id || '—';
   loaderEl.textContent = loaderStr || 'Vanilla';
   dirEl.textContent = inst.directory || (settings ? settings.game_directory : '—');
+  if (lastPlayedEl) lastPlayedEl.textContent = formatLastPlayed(inst.last_played_at);
   updateSelectedInstancePlaytimeDisplay();
   playBtn.disabled = !!inst.missing_jar;
   updatePlayGearEnabled();
@@ -5456,6 +5760,25 @@ function filterMods() {
     card.style.display = matches ? '' : 'none';
   });
   updateModsCount();
+}
+
+let modsTabLoadingHideTimer = null;
+function showModsTabLoading() {
+  const overlay = document.getElementById('mods-tab-loading');
+  if (!overlay) return;
+  if (modsTabLoadingHideTimer) { clearTimeout(modsTabLoadingHideTimer); modsTabLoadingHideTimer = null; }
+  overlay.setAttribute('aria-hidden', 'false');
+  overlay.classList.add('visible');
+}
+function hideModsTabLoading() {
+  const overlay = document.getElementById('mods-tab-loading');
+  if (!overlay) return;
+  // Small minimum-visible delay so a near-instant load doesn't flash the
+  // spinner in and out — feels calmer than an abrupt appear/disappear.
+  modsTabLoadingHideTimer = setTimeout(() => {
+    overlay.classList.remove('visible');
+    overlay.setAttribute('aria-hidden', 'true');
+  }, 120);
 }
 
 async function loadMods() {
@@ -7572,6 +7895,11 @@ async function performDiscoverSearch() {
       discoverState.page,
       discoverState.pageSize
     );
+    // If the user has since switched away from Discover, don't spend time
+    // rendering results into a grid nobody's looking at right now — the
+    // data's already cached in discoverState for whenever they come back.
+    const discoverTab = document.getElementById('tab-discover');
+    if (!discoverTab || !discoverTab.classList.contains('active')) return;
     discoverState.totalHits = result.total_hits || 0;
     renderDiscoverResults(result.hits || []);
     updateDiscoverPagination();
@@ -9750,18 +10078,17 @@ let openRiDropdownId = null;
 
 function closeRiDropdown() {
   openRiDropdownId = null;
-  document.querySelectorAll('.ri-btn.is-open').forEach(b => b.classList.remove('is-open'));
+  document.querySelectorAll('.ri-btn.is-open, .ri-overflow-row.is-open').forEach(b => b.classList.remove('is-open'));
   document.querySelectorAll('.ri-dropdown').forEach(d => {
     d.classList.add('ri-dropdown-closing');
     d.addEventListener('animationend', () => d.remove(), { once: true });
   });
 }
 
-function openRiDropdown(anchorBtn, inst) {
-  closeRiDropdown();
-  openRiDropdownId = inst.version_id;
-  anchorBtn.classList.add('is-open');
-
+// Dropdown markup shared by both the per-instance "Running" pill and the
+// "+N" overflow rows — same two actions, same launcher-style look, just a
+// different anchor element.
+function buildRiDropdownActions(inst, onClosed) {
   const dropdown = document.createElement('div');
   dropdown.className = 'ri-dropdown';
   dropdown.innerHTML = `
@@ -9782,11 +10109,11 @@ function openRiDropdown(anchorBtn, inst) {
   dropdown.querySelector('.ri-dropdown-logs').addEventListener('click', (e) => {
     e.stopPropagation();
     openInstanceConsole(inst.version_id, inst.name || inst.version_id);
-    closeRiDropdown();
+    onClosed();
   });
   dropdown.querySelector('.ri-dropdown-kill').addEventListener('click', async (e) => {
     e.stopPropagation();
-    closeRiDropdown();
+    onClosed();
     try {
       await api.killInstance(inst.version_id);
       showToast(`Killed ${inst.name || inst.version_id}`, 'success');
@@ -9796,7 +10123,66 @@ function openRiDropdown(anchorBtn, inst) {
     refreshRunningInstances();
   });
 
-  anchorBtn.appendChild(dropdown);
+  return dropdown;
+}
+
+function openRiDropdown(anchorBtn, inst) {
+  closeRiDropdown();
+  openRiDropdownId = inst.version_id;
+  anchorBtn.classList.add('is-open');
+  anchorBtn.appendChild(buildRiDropdownActions(inst, closeRiDropdown));
+}
+
+// ── Overflow menu ("+N") ──
+// Anchors a stacked list of the running instances that didn't fit on the
+// single line — one row per instance, each opening the same launcher-style
+// logs/kill dropdown as the inline pills.
+let openRiOverflow = false;
+
+function closeRiOverflowMenu() {
+  openRiOverflow = false;
+  closeRiDropdown();
+  const moreBtn = document.querySelector('.ri-btn-more.is-open');
+  if (moreBtn) moreBtn.classList.remove('is-open');
+  document.querySelectorAll('.ri-overflow-menu').forEach(m => {
+    m.classList.add('ri-dropdown-closing');
+    m.addEventListener('animationend', () => m.remove(), { once: true });
+  });
+}
+
+function openRiOverflowMenu(moreBtn, hiddenInstances) {
+  closeRiDropdown();
+  openRiOverflow = true;
+  moreBtn.classList.add('is-open');
+
+  const menu = document.createElement('div');
+  menu.className = 'ri-overflow-menu';
+  hiddenInstances.forEach(inst => {
+    const row = document.createElement('div');
+    row.className = 'ri-overflow-row';
+    row.dataset.versionId = inst.version_id;
+    row.innerHTML = `
+      <span class="ri-btn-icon"><img src="${loaderIcon(inst.loader)}" alt="" draggable="false" /></span>
+      <span class="ri-btn-label"><span class="ri-btn-status">Running</span> <span class="ri-btn-name">${inst.name || inst.version_id}</span></span>
+      <span class="ri-btn-caret">⌄</span>
+    `;
+    row.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (openRiDropdownId === inst.version_id) {
+        closeRiDropdown();
+        return;
+      }
+      closeRiDropdown();
+      openRiDropdownId = inst.version_id;
+      row.classList.add('is-open');
+      const dd = buildRiDropdownActions(inst, closeRiDropdown);
+      dd.classList.add('ri-dropdown-in-overflow');
+      row.appendChild(dd);
+    });
+    menu.appendChild(row);
+  });
+
+  moreBtn.appendChild(menu);
 }
 
 function renderRunningInstancesPanel() {
@@ -9804,12 +10190,21 @@ function renderRunningInstancesPanel() {
   if (!container) return;
 
   const running = runningInstancesCache.filter(i => i.running);
-  container.innerHTML = '';
+
+  if (running.length === 0) {
+    closeRiDropdown();
+    closeRiOverflowMenu();
+    container.innerHTML = `<span id="ri-empty-label" class="hero-empty-label">No instances launched</span>`;
+    return;
+  }
+
+  const emptyLabel = document.getElementById('ri-empty-label');
+  if (emptyLabel) emptyLabel.remove();
 
   const runningIds = new Set(running.map(i => i.version_id));
 
   // Remove buttons for instances that stopped, animating them out first.
-  Array.from(container.children).forEach(child => {
+  Array.from(container.querySelectorAll('.ri-btn:not(.ri-btn-more)')).forEach(child => {
     const id = child.dataset.versionId;
     if (id && !runningIds.has(id)) {
       child.classList.add('ri-btn-leaving');
@@ -9826,6 +10221,7 @@ function renderRunningInstancesPanel() {
       btn.className = 'ri-btn ri-btn-entering';
       btn.addEventListener('animationend', () => btn.classList.remove('ri-btn-entering'), { once: true });
     }
+    btn.dataset.name = inst.name || inst.version_id;
     btn.classList.toggle('is-open', openRiDropdownId === inst.version_id);
     btn.innerHTML = `
       <span class="ri-btn-icon"><img src="${loaderIcon(inst.loader)}" alt="" draggable="false" /></span>
@@ -9846,6 +10242,114 @@ function renderRunningInstancesPanel() {
   if (openRiDropdownId && !running.some(i => i.version_id === openRiDropdownId)) {
     closeRiDropdown();
   }
+
+  scheduleRiOverflowLayout();
+}
+
+// ── Single-line overflow layout ──
+// The panel is one line only: every running-instance pill stays on one row
+// and whatever doesn't fit collapses into a single "+N" button instead of
+// wrapping or overflowing.
+//
+// WebKitGTK note: this used to measure each pill with getBoundingClientRect()
+// in a loop, which forces a synchronous layout on every call. That's cheap on
+// most engines but visibly janky on WebKitGTK's slower layout path, and it
+// was firing on a ResizeObserver watching the buttons row — which can retrigger
+// from incidental size changes elsewhere on the page (selecting an instance,
+// the Play button changing state, etc.), not just real window resizes. Widths
+// are now estimated with a <canvas> text measurement instead (no layout/reflow
+// at all, since the pill font is monospace this is exact enough), and the
+// layout pass only re-runs on an actual window resize (debounced) or when the
+// running-instance list itself changes.
+let _riMeasureCtx = null;
+function measureRiPillWidth(name) {
+  if (!_riMeasureCtx) _riMeasureCtx = document.createElement('canvas').getContext('2d');
+  _riMeasureCtx.font = "700 12.5px 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace";
+  const nameWidth = _riMeasureCtx.measureText(name).width;
+  // Fixed chrome: icon (22) + icon gap (9) + "Running" label (~52) + label gap
+  // (5) + caret gap/width (~13) + horizontal padding (14+8) + a couple px slop.
+  const CHROME_WIDTH = 22 + 9 + 52 + 5 + 13 + 14 + 8 + 4;
+  return Math.min(140, nameWidth) + CHROME_WIDTH; // name itself clamps at 140px via CSS
+}
+
+let riOverflowRafId = null;
+function scheduleRiOverflowLayout() {
+  if (riOverflowRafId != null) return;
+  riOverflowRafId = requestAnimationFrame(() => {
+    riOverflowRafId = null;
+    layoutRunningInstancesOverflow();
+  });
+}
+
+function layoutRunningInstancesOverflow() {
+  const container = document.getElementById('ri-buttons');
+  if (!container) return;
+
+  const existingMore = container.querySelector('.ri-btn-more');
+  if (existingMore) existingMore.remove();
+  if (openRiOverflow) closeRiOverflowMenu();
+
+  const buttons = Array.from(container.querySelectorAll('.ri-btn:not(.ri-btn-more):not(.ri-btn-leaving)'));
+  buttons.forEach(b => { b.style.display = ''; });
+  if (buttons.length === 0) return;
+
+  // Single unavoidable read: how much room the panel actually has. Everything
+  // else below is pure arithmetic on canvas-measured (reflow-free) widths.
+  const containerWidth = container.clientWidth;
+  if (!containerWidth) return; // not visible/laid out yet
+
+  const gap = 8;
+  const widths = buttons.map(b => measureRiPillWidth(b.dataset.name || ''));
+  const totalWidth = widths.reduce((a, w) => a + w, 0) + gap * (widths.length - 1);
+  if (totalWidth <= containerWidth) return; // everything fits, nothing to collapse
+
+  const moreBtnWidth = 52; // pill width estimate for "+N", fixed so it never needs its own measure pass
+  const budget = containerWidth - moreBtnWidth - gap;
+
+  let used = 0;
+  let fitCount = 0;
+  for (let i = 0; i < widths.length; i++) {
+    const next = used + widths[i] + (i > 0 ? gap : 0);
+    if (next > budget) break;
+    used = next;
+    fitCount++;
+  }
+  fitCount = Math.max(1, fitCount);
+
+  const hidden = buttons.slice(fitCount);
+  if (hidden.length === 0) return;
+  hidden.forEach(b => { b.style.display = 'none'; });
+
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'ri-btn ri-btn-more';
+  more.textContent = `+${hidden.length}`;
+  more.title = `${hidden.length} more running instance${hidden.length === 1 ? '' : 's'}`;
+  more.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (openRiOverflow) {
+      closeRiOverflowMenu();
+      return;
+    }
+    const hiddenIds = new Set(hidden.map(b => b.dataset.versionId));
+    const hiddenInstances = runningInstancesCache.filter(i => i.running && hiddenIds.has(i.version_id));
+    openRiOverflowMenu(more, hiddenInstances);
+  });
+  container.appendChild(more);
+}
+
+// Only a real window resize re-runs the overflow layout — not a
+// ResizeObserver on the buttons row, which used to retrigger from unrelated
+// layout shifts elsewhere on the page (selecting an instance, the Play
+// button relabeling itself, etc.) and caused visible lag on WebKitGTK.
+let riResizeDebounceId = null;
+function initRiOverflowResizeObserver() {
+  if (initRiOverflowResizeObserver._bound) return;
+  initRiOverflowResizeObserver._bound = true;
+  window.addEventListener('resize', () => {
+    clearTimeout(riResizeDebounceId);
+    riResizeDebounceId = setTimeout(scheduleRiOverflowLayout, 120);
+  });
 }
 
 async function refreshRunningInstances() {
@@ -9857,14 +10361,18 @@ async function refreshRunningInstances() {
   renderRunningInstancesPanel();
   updatePlayButtonRunningState();
   // A session ending is exactly when its accumulated total_playtime_seconds
-  // changes on disk — refresh the tracked instance list so the Play Time
-  // row picks that up instead of only reflecting whatever was cached at
-  // launch time.
-  try {
-    await refreshInstances();
-  } catch (e) {
-    console.error('Failed to refresh instances after running-instances change', e);
-  }
+  // changes on disk, so the Play Time row ought to pick that up — but
+  // refreshInstances() does a live filesystem scan (scanMinecraftVersions)
+  // plus several IPC round-trips and then rebuilds the whole instance list,
+  // which is noticeably slow on WebKitGTK. That used to be awaited right
+  // here, so every single Play click blocked on a full disk rescan before
+  // the UI could respond — the "huge lag" on launch. It's not needed for
+  // the running-instances UI itself (that's already updated above from the
+  // cheap getRunningInstances() call), so let it run in the background
+  // instead of holding up this function's caller.
+  refreshInstances()
+    .then(() => updateSelectedInstancePlaytimeDisplay())
+    .catch((e) => console.error('Failed to refresh instances after running-instances change', e));
   updateSelectedInstancePlaytimeDisplay();
 }
 
@@ -9881,7 +10389,11 @@ function initRunningInstancesWidget() {
   if (!container) return;
 
   document.addEventListener('click', (e) => {
-    if (openRiDropdownId && !e.target.closest('.ri-btn')) {
+    if (openRiOverflow && !e.target.closest('.ri-btn-more')) {
+      closeRiOverflowMenu();
+      return;
+    }
+    if (openRiDropdownId && !e.target.closest('.ri-btn') && !e.target.closest('.ri-overflow-row')) {
       closeRiDropdown();
     }
   });
@@ -9890,6 +10402,7 @@ function initRunningInstancesWidget() {
   // stops, so the buttons/Play button stay in sync without polling.
   api.onRunningInstancesChanged(() => refreshRunningInstances());
 
+  initRiOverflowResizeObserver();
   refreshRunningInstances();
 }
 

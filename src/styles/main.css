@@ -271,24 +271,40 @@ input, textarea, select, [contenteditable="true"] {
   border-radius: var(--radius);
 }
 
+/* Player card — a light frame around the account row so it reads as one
+   unit with the standee above it instead of two loose buttons floating
+   in space. Flat background + 1px border only, no shadow/blur. */
+.player-card {
+  flex: 0 0 auto;
+  padding: 8px;
+  border-radius: var(--radius);
+  background: rgba(var(--overlay-rgb), 0.03);
+  border: 1px solid rgba(var(--overlay-rgb), 0.06);
+  position: relative;
+  z-index: 1;
+}
 .account-row-under-preview {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  margin-top: 20px;
 }
 .account-button-under-preview {
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   background: var(--panel);
   border: 1px solid rgba(var(--overlay-rgb), 0.08);
   flex: 1 1 auto;
   min-width: 0;
   height: 42px;
   box-sizing: border-box;
+  transition: background var(--transition), border-color var(--transition), transform 0.1s ease;
 }
 .account-button-under-preview:hover {
   background: var(--panel-hover);
+  border-color: rgba(var(--overlay-rgb), 0.14);
+}
+.account-button-under-preview:active {
+  transform: scale(0.98);
 }
 .account-button-under-preview #account-name {
   flex: 1;
@@ -418,6 +434,10 @@ input, textarea, select, [contenteditable="true"] {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-pill);
   flex-shrink: 0;
+  /* Positioning context for the downloads dropdown (.dl-widget), which is
+     anchored absolutely so it drops down from underneath these pills
+     without affecting their layout. */
+  position: relative;
 }
 
 .pill-tab {
@@ -527,6 +547,7 @@ input, textarea, select, [contenteditable="true"] {
 
 .transparent-ui .glass-card,
 .transparent-ui .instance-card,
+.transparent-ui .instance-sidebar,
 .transparent-ui .mod-card,
 .transparent-ui .discover-card,
 .transparent-ui .preset-card,
@@ -539,8 +560,14 @@ input, textarea, select, [contenteditable="true"] {
 .transparent-ui .mods-bottom-panel,
 .transparent-ui .discover-toolbar,
 .transparent-ui .setup-bottom-bar,
-.transparent-ui .skin-mini-preview-wrap::before {
+.transparent-ui .hero-island,
+.transparent-ui .skin-panel {
   background: rgba(27, 27, 27, 0.65) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
+}
+.transparent-ui .skin-mini-preview-wrap::before {
+  background: rgba(255, 255, 255, 0.05) !important;
   border-color: rgba(255, 255, 255, 0.08) !important;
   box-shadow: none !important;
 }
@@ -1009,6 +1036,13 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   position: relative;
 }
 
+/* Sidebar panel — same flat background/border treatment as .skin-panel
+   (the panel behind the account-manager buttons and 3D player model), so
+   the instance list and "+ New Instance" button read as one matching
+   island instead of floating loose next to the details panel. Also part
+   of the .transparent-ui background group below, so it goes translucent
+   together with the middle (.hero-island) panels in transparent mode
+   instead of staying solid while everything around it goes see-through. */
 .instance-sidebar {
   width: clamp(230px, 19vw, 290px);
   min-width: 210px;
@@ -1018,6 +1052,11 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-direction: column;
   gap: 10px;
   height: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: var(--panel, #1b1b1b);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
   transition: width 0.15s ease, flex-basis 0.15s ease;
 }
 
@@ -1042,8 +1081,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 10px 14px;
   border-radius: var(--radius-sm, 8px);
   cursor: pointer;
-  background: var(--panel, #1b1b1b);
-  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  background: rgba(var(--overlay-rgb), 0.035);
+  border: 1px solid rgba(var(--overlay-rgb), 0.05);
   user-select: none;
   contain: layout style paint;
   content-visibility: auto;
@@ -1052,8 +1091,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   transition: background var(--transition), border-color var(--transition);
 }
 .instance-card:hover {
-  background: var(--panel-hover, #242424);
-  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(var(--overlay-rgb), 0.06);
+  border-color: rgba(var(--overlay-rgb), 0.09);
 }
 .instance-card.selected {
   background: var(--accent-dim);
@@ -1258,19 +1297,110 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 
-.detail-header {
+/* ═══ Tall island row ═══
+   Hyprland-style: the whole right side is a row of independently floating
+   "islands" (gapped, rounded, own background/border each) instead of one
+   solid panel. This row stretches from the top of the tab all the way
+   down to just above the Play bar. */
+.instance-main-row {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ═══ Instance Hero column ═══
+   The stats panel and its empty companion panel below it, stacked so the
+   pair together stretches to the same height as the player island beside
+   them (see .instance-main-row). */
+.instance-hero-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Icon/name header, the four stat tiles, and the running-instances strip
+   all live inside a single island — same flat-panel treatment as the rest
+   of the app: no blur, no per-frame shadow, just a 1px border and a
+   hairline top accent. */
+.instance-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.hero-island {
+  border-radius: var(--radius);
+  background: var(--panel, #1b1b1b);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  position: relative;
+}
+.instance-hero-top {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 18px 20px;
+  flex: 0 0 auto;
+}
+.instance-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-dim), transparent);
+  pointer-events: none;
+}
+
+/* Second panel in the column — the running-instances strip. Plain flat
+   panel, identical treatment to every other island (no extra tint). Fixed
+   to a single-line height (not flex-grown) since the reserved empty panel
+   below it takes up whatever room is left. Overflow is intentionally
+   visible (not hidden): the per-pill dropdown/overflow popovers are
+   positioned absolutely relative to a pill inside this panel, so clipping
+   here would cut them off. Which pills fit on the line is instead decided
+   in JS (layoutRunningInstancesOverflow), not by CSS clipping. */
+.instance-hero-running {
+  flex: 0 0 auto;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+}
+
+/* Third panel in the column — reserved for later use. Grows to fill
+   whatever height is left so the column's bottom edge lines up with the
+   player island next to it. */
+.instance-hero-empty {
+  flex: 1 1 auto;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hero-empty-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 .detail-icon {
   width: 52px;
   height: 52px;
   border-radius: 12px;
   background: rgba(var(--overlay-rgb),0.06);
+  border: 1px solid rgba(var(--overlay-rgb),0.06);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1285,30 +1415,93 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 7px;
   image-rendering: pixelated;
 }
-.detail-name { font-weight: 700; font-size: 22px; }
+.detail-header-text {
+  min-width: 0;
+  flex: 1;
+}
+.detail-name {
+  font-weight: 700;
+  font-size: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .detail-badge {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.detail-info { padding: 16px 20px; }
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(var(--overlay-rgb),0.04);
+/* 2x2 stat grid — "more content" than the old plain label:value rows, but
+   still just flex/grid box layout (no gradients per-cell, no shadows). */
+.hero-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  flex: 0 0 auto;
 }
-.info-row:last-child { border-bottom: none; }
-.info-label { color: var(--text-muted); font-size: 13px; }
-.info-value { font-weight: 600; font-size: 13px; }
+.hero-stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--overlay-rgb), 0.035);
+  border: 1px solid rgba(var(--overlay-rgb), 0.05);
+  min-width: 0;
+  transition: background var(--transition), border-color var(--transition);
+}
+.hero-stat:hover {
+  background: rgba(var(--overlay-rgb), 0.06);
+  border-color: rgba(var(--overlay-rgb), 0.09);
+}
+.hero-stat-wide { grid-column: 1 / -1; }
+.hero-stat-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.hero-stat-icon svg { width: 15px; height: 15px; }
+.hero-stat-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hero-stat-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hero-stat-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hero-stat-value-path {
+  font-family: var(--font);
+  font-size: 12px;
+}
 
 .detail-actions-wrap {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: auto;
-  padding-top: 12px;
+  flex: 0 0 auto;
 }
 .detail-actions {
   display: flex;
@@ -1316,20 +1509,20 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   gap: 10px;
 }
 
-/* ═══ Running Instances (inline buttons, sits under Mod Loader / Game Directory) ═══
-   One centered button per running instance. Clicking a button opens a small
-   dropdown anchored to it with two actions: Logs and Kill Instance. */
-.ri-widget {
-  display: flex;
-  justify-content: center;
-  align-self: stretch;
-}
-
+/* ═══ Running Instances (single-line strip in its own hero panel) ═══
+   One pill per running instance, always on one row — whatever doesn't fit
+   collapses into a "+N" pill instead of wrapping. Clicking a pill opens a
+   small dropdown anchored to it with two actions: Logs and Kill Instance.
+   Visual language matches the rest of the launcher (.btn-accent / .hero-stat):
+   flat panel tones, the app's own accent color, no per-item glow colors and
+   no infinite-loop animations, so it never looks like a different app. */
 .ri-buttons {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   justify-content: center;
   gap: 8px;
+  width: 100%;
 }
 
 .ri-btn {
@@ -1339,23 +1532,19 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   gap: 9px;
   padding: 7px 14px 7px 8px;
   border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, rgba(var(--overlay-rgb),0.09), rgba(var(--overlay-rgb),0.03));
-  border: 1px solid rgba(var(--overlay-rgb),0.09);
-  box-shadow: 0 1px 0 rgba(var(--overlay-rgb),0.05) inset, 0 6px 16px rgba(0,0,0,0.18);
+  background: rgba(var(--overlay-rgb), 0.035);
+  border: 1px solid rgba(var(--overlay-rgb), 0.05);
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
-  transform: translateY(0);
+  flex-shrink: 0;
+  transition: background var(--transition), border-color var(--transition);
 }
 .ri-btn:hover {
-  background: linear-gradient(180deg, rgba(var(--overlay-rgb),0.13), rgba(var(--overlay-rgb),0.05));
-  border-color: rgba(var(--overlay-rgb),0.16);
-  transform: translateY(-1px);
-  box-shadow: 0 1px 0 rgba(var(--overlay-rgb),0.06) inset, 0 10px 22px rgba(0,0,0,0.25);
+  background: rgba(var(--overlay-rgb), 0.06);
+  border-color: rgba(var(--overlay-rgb), 0.09);
 }
 .ri-btn.is-open {
-  background: linear-gradient(180deg, var(--accent-dim), rgba(var(--overlay-rgb),0.04));
+  background: var(--accent-dim);
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-glow) inset, 0 10px 24px rgba(0,0,0,0.28);
 }
 .ri-btn-icon {
   width: 22px;
@@ -1400,12 +1589,25 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   font-size: 11px;
   color: var(--text-muted);
   margin-left: 2px;
-  transition: transform 0.18s ease;
+  transition: transform var(--transition);
   flex-shrink: 0;
 }
 .ri-btn.is-open .ri-btn-caret { transform: rotate(180deg); color: var(--text); }
 
-/* Show / hide animations for running-instance buttons */
+/* "+N" overflow pill — same shape as a regular running pill, but flush text
+   in the accent color instead of an icon+name, so it reads as a counter. */
+.ri-btn-more {
+  padding: 7px 14px;
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid rgba(var(--overlay-rgb), 0.05);
+}
+.ri-btn-more:hover { filter: brightness(1.15); }
+.ri-btn-more.is-open { border-color: var(--accent); }
+
+/* Show / hide animations for running-instance pills */
 @keyframes ri-btn-in {
   from { opacity: 0; transform: scale(0.85) translateY(4px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
@@ -1414,9 +1616,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   from { opacity: 1; transform: scale(1) translateY(0); }
   to   { opacity: 0; transform: scale(0.85) translateY(4px); }
 }
-.ri-btn-entering { animation: ri-btn-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.ri-btn-entering { animation: ri-btn-in 0.2s ease; }
 .ri-btn-leaving {
-  animation: ri-btn-out 0.2s ease forwards;
+  animation: ri-btn-out 0.15s ease forwards;
   pointer-events: none;
 }
 
@@ -1438,24 +1640,31 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 7px;
   border-radius: 13px;
   background: var(--panel-solid);
-  border: 1px solid rgba(var(--overlay-rgb),0.1);
-  box-shadow: 0 20px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(var(--overlay-rgb),0.03) inset;
-  animation: ri-dropdown-in 0.16s cubic-bezier(0.2, 0.9, 0.3, 1);
+  border: 1px solid rgba(var(--overlay-rgb), 0.1);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+  animation: ri-dropdown-in 0.12s ease;
+}
+/* Inside the overflow menu the dropdown anchors to a row, not a centered
+   pill — align it to that row's left edge instead of centering. */
+.ri-overflow-row .ri-dropdown {
+  left: 0;
+  margin-left: 0;
+  width: calc(100% - 0px);
+  min-width: 190px;
 }
 @keyframes ri-dropdown-in {
-  from { opacity: 0; transform: translateY(-6px) scale(0.96); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .ri-dropdown-closing {
-  animation: ri-dropdown-out 0.12s ease forwards;
+  animation: ri-dropdown-out 0.1s ease forwards;
   pointer-events: none;
 }
 @keyframes ri-dropdown-out {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to   { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-4px); }
 }
 .ri-dropdown-item {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1464,82 +1673,72 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 10px 12px;
   border: 1px solid transparent;
   border-radius: 8px;
-  background: rgba(var(--overlay-rgb),0.04);
+  background: rgba(var(--overlay-rgb), 0.04);
   color: var(--text);
   font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.01em;
   text-align: center;
   cursor: pointer;
-  overflow: hidden;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
 }
-/* Soft radial glow that blooms outward from the center on hover, in each
-   button's own color — no directional sweep, so nothing travels sideways. */
-.ri-dropdown-item::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(circle at 50% 50%, var(--ri-item-glow, rgba(255,255,255,0.2)) 0%, transparent 70%);
-  opacity: 0;
-  transform: scale(0.5);
-  transition: opacity 0.22s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-  pointer-events: none;
-}
-.ri-dropdown-item:hover::before { opacity: 1; transform: scale(1.5); }
 .ri-dropdown-item-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--ri-item-color, var(--accent));
-  transition: color 0.18s ease, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.ri-dropdown-item:hover .ri-dropdown-item-icon { transform: scale(1.18) rotate(-4deg); }
-.ri-dropdown-item:hover { transform: translateY(-1px) scale(1.015); }
-.ri-dropdown-item:active { transform: translateY(0) scale(0.98); }
-
-.ri-dropdown-logs {
-  --ri-item-color: #60a5fa;
-  --ri-item-glow: rgba(96,165,250,0.3);
+  color: var(--accent);
 }
 .ri-dropdown-logs:hover {
-  background: rgba(96,165,250,0.12);
-  border-color: rgba(96,165,250,0.4);
-  color: #bcd9ff;
-  box-shadow: 0 0 0 1px rgba(96,165,250,0.2) inset, 0 4px 16px rgba(96,165,250,0.2);
-  animation: ri-logs-glow 1.3s ease-in-out infinite;
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text);
 }
-@keyframes ri-logs-glow {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(96,165,250,0.18) inset, 0 4px 14px rgba(96,165,250,0.2); }
-  50% { box-shadow: 0 0 0 1px rgba(96,165,250,0.38) inset, 0 6px 20px rgba(96,165,250,0.4); }
+.ri-dropdown-kill {
+  color: #ff9a9a;
+}
+.ri-dropdown-kill .ri-dropdown-item-icon { color: #ff9a9a; }
+.ri-dropdown-kill:hover {
+  background: rgba(220, 60, 60, 0.14);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #ffb3b3;
 }
 
-.ri-dropdown-kill {
-  position: relative;
-  --ri-item-color: #f87171;
-  --ri-item-glow: rgba(248,113,113,0.3);
-}
-.ri-dropdown-kill::after {
-  content: '';
+/* ── Overflow menu ("+N") — stacked list of the running instances that
+   didn't fit on the single line. Same panel treatment as .ri-dropdown. */
+.ri-overflow-menu {
   position: absolute;
-  top: -3px;
-  left: 10%;
-  right: 10%;
-  height: 1px;
-  background: rgba(var(--overlay-rgb), 0.08);
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 210px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 7px;
+  border-radius: 13px;
+  background: var(--panel-solid);
+  border: 1px solid rgba(var(--overlay-rgb), 0.1);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+  animation: ri-dropdown-in 0.12s ease;
 }
-.ri-dropdown-kill:hover {
-  background: rgba(220,60,60,0.14);
-  border-color: rgba(248,113,113,0.4);
-  color: #ff9a9a;
-  box-shadow: 0 0 0 1px rgba(248,113,113,0.2) inset, 0 4px 16px rgba(248,113,113,0.22);
-  animation: ri-kill-pulse 1.1s ease-in-out infinite;
+.ri-overflow-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(var(--overlay-rgb), 0.035);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
 }
-@keyframes ri-kill-pulse {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(248,113,113,0.2) inset, 0 4px 16px rgba(248,113,113,0.18); }
-  50% { box-shadow: 0 0 0 1px rgba(248,113,113,0.35) inset, 0 4px 22px rgba(248,113,113,0.38); }
-}
+.ri-overflow-row:hover { background: rgba(var(--overlay-rgb), 0.06); }
+.ri-overflow-row.is-open { background: var(--accent-dim); border-color: var(--accent); }
+.ri-overflow-row.is-open .ri-btn-caret { transform: rotate(180deg); color: var(--text); }
+.ri-dropdown-in-overflow { position: static; margin-top: 6px; width: 100%; animation: none; box-shadow: none; }
 
 /* ═══ Overlay / Modal ═══ */
 .overlay {
@@ -2476,6 +2675,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 /* ── Bottom Panel (Content Island) ── */
 .mods-bottom-panel {
+  position: relative;
   flex: 1 1 0;
   min-height: 0;
   border-radius: var(--radius);
@@ -2489,6 +2689,55 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   will-change: scroll-position;
   transform: translateZ(0);
   -webkit-overflow-scrolling: touch;
+}
+
+/* ── Mods tab loading overlay ──────────────────────────────────────────
+   Covers the mods grid the instant the Mods tab is entered and stays up
+   until the list has actually been rebuilt, so the old empty→populated
+   pop-in (the "flicker") is replaced by one calm spinner instead. Uses
+   only opacity for its own fade (compositor-only, cheap on WebKitGTK) and
+   a stroke-dashoffset animation for the spinner, which — unlike an
+   animated conic-gradient or filter — WebKitGTK handles smoothly. */
+.mods-tab-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(18, 18, 18, 0.92);
+  border-radius: var(--radius);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.mods-tab-loading.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.mods-tab-loading-spinner {
+  animation: modsLoadingSpin 0.9s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+.mods-tab-loading-track {
+  stroke: rgba(var(--overlay-rgb), 0.08);
+}
+.mods-tab-loading-arc {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 90 40;
+}
+@keyframes modsLoadingSpin {
+  to { transform: rotate(360deg); }
+}
+.mods-tab-loading-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
 }
 
 /* Legacy toolbar classes kept for backward compat */
@@ -3133,6 +3382,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 /* ── Right Island: Filter & Search Sidebar ── */
 .discover-filter-island {
+  /* Moved to the left of the results island — same flex row, just
+     reordered (no DOM/markup change needed, so nothing JS references
+     by ID moves). */
+  order: -1;
   width: 290px;
   flex-shrink: 0;
   display: flex;
@@ -3202,26 +3455,61 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: var(--text-muted);
 }
 
-.discover-search-input-wrap {
+/* ── Big search bar — docked under the content island's header row,
+   above the results grid, instead of a small field buried in the side
+   panel. ── */
+.discover-search-bar {
+  flex-shrink: 0;
+  padding: 14px 16px 4px;
+}
+
+.discover-search-box {
   display: flex;
-  gap: 6px;
   align-items: center;
-}
-
-.discover-search-input-wrap .input-field {
-  flex: 1;
-  font-size: 12.5px;
-  padding: 6px 10px;
-  height: 32px;
+  gap: 10px;
+  height: 52px;
+  padding: 0 8px 0 16px;
   background: #141414;
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.discover-search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
-.discover-search-input-wrap .btn-accent {
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 6px;
-  font-size: 12px;
+/* Handheld magnifying-glass icon (lens + handle) sitting inside the box. */
+.discover-search-box-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.discover-search-box-icon svg { width: 100%; height: 100%; display: block; }
+.discover-search-box:focus-within .discover-search-box-icon { color: var(--accent); }
+
+.discover-search-box-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+}
+.discover-search-box-input:focus { outline: none; }
+.discover-search-box-input::placeholder { color: var(--text-muted); }
+
+.discover-search-box-go {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-size: 13px;
   flex-shrink: 0;
 }
 
@@ -3541,7 +3829,19 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .log-level-ERROR { color: #ef4444; }
 .log-level-DEBUG { color: #9ca3af; }
 
-/* ═══ Toast / Notification (lightweight — no blur, no infinite animations) ═══ */
+/* ═══ Toast / Notification — rebuilt minimal-cost version ═══
+   No backdrop-filter, no box-shadow blur, and no long-running CSS
+   animation on the progress bar (the old version ran a multi-second
+   scaleX animation per toast, which on WebKitGTK's software-leaning
+   compositor meant several toasts = several concurrent animated layers
+   being repainted for their whole 5-8s lifetime — the actual source of
+   the lag). Enter/exit here are a single opacity transition each
+   (one-shot, not a running animation), and there's no countdown bar to
+   paint at all — the toast just gets removed by a JS timeout when its
+   time is up. The 5 "Notification Style" looks (Glass/Neon/Solid Card/
+   Pill/Minimal) are still selectable — see the variants further down —
+   they're just flat color/border swaps now instead of each carrying its
+   own shadow/blur/badge chrome. */
 #toast-container {
   position: fixed;
   top: 70px;
@@ -3549,336 +3849,157 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 420px;
-  width: clamp(280px, min(95vw, 420px), 420px);
-  /* The container itself spans a tall column of empty space above/below
-     toasts — it must never eat clicks meant for the app underneath it. */
+  gap: 10px;
+  width: clamp(260px, min(95vw, 360px), 360px);
   pointer-events: none;
 }
 
-/* Per-type accent color, resolved once and reused by every part of the
-   toast (badge, icon, progress bar) so styles/types stay perfectly in sync. */
-.toast-success { --toast-color: #22c55e;       --toast-color-rgb: 34, 197, 94; }
-.toast-error   { --toast-color: #ef4444;       --toast-color-rgb: 239, 68, 68; }
-.toast-warning { --toast-color: #f59e0b;       --toast-color-rgb: 245, 158, 11; }
-.toast-info    { --toast-color: #9ca3af;       --toast-color-rgb: 156, 163, 175; }
+.toast-success { --toast-color: #22c55e; --toast-color-rgb: 34, 197, 94; }
+.toast-error   { --toast-color: #ef4444; --toast-color-rgb: 239, 68, 68; }
+.toast-warning { --toast-color: #f59e0b; --toast-color-rgb: 245, 158, 11; }
+.toast-info    { --toast-color: #9ca3af; --toast-color-rgb: 156, 163, 175; }
 
 .toast {
-  position: relative;
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
   gap: 10px;
-  /* Solid-ish background instead of backdrop-filter blur — blur is by far
-     the most expensive part of the old style and the main lag source. */
   background: var(--notif-bg, #14141e);
-  border: 1px solid rgba(var(--overlay-rgb), 0.18);
-  border-radius: 14px;
-  padding: 14px 16px 12px 16px;
-  width: 100%;
-  /* Smaller blur radius than a typical card shadow — large soft shadows
-     are one of the more expensive things to rasterize under WebKitGTK's
-     software-leaning compositor, and it's barely visible on a small toast
-     anyway. */
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
-  animation: toastSlideIn 0.16s ease-out both;
-  overflow: hidden;
+  border: 1px solid rgba(var(--overlay-rgb), 0.14);
+  border-left: 3px solid var(--toast-color);
+  border-radius: 8px;
+  padding: 10px 12px;
   pointer-events: auto;
   cursor: default;
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
 }
-
-/* Layer promotion only while a toast is actively animating (entrance or
-   exit) — applied/removed by JS in spawnToast/dismissToast. Idle toasts
-   sitting on screen for their 5-8s duration stay un-promoted so they don't
-   cost extra compositor memory the whole time they're visible. */
-.toast-animating {
-  will-change: transform, opacity;
-}
-
-/* Entrance: simple fade + short slide, no scale/rotate/spring math */
-@keyframes toastSlideIn {
-  from { opacity: 0; transform: translateX(24px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
-/* ─── No stripe element ─── The .toast-accent-stripe is kept in HTML for
-   compat but hidden by default in all new styles */
-.toast-accent-stripe { display: none; }
-
-.toast-main {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: start;
-  gap: 12px;
-}
-
-.toast-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.toast-icon-badge {
-  width: 40px;
-  height: 40px;
-  border-radius: 13px;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  background: rgba(var(--toast-color-rgb), 0.14);
-  border: 1px solid rgba(var(--toast-color-rgb), 0.2);
-}
+.toast.toast-visible { opacity: 1; }
 
 .toast-icon {
-  font-size: 17px;
+  flex-shrink: 0;
+  font-size: 14px;
   font-weight: 700;
+  line-height: 1.4;
   color: var(--toast-color);
 }
 
 .toast-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex: 1;
   min-width: 0;
-  padding-top: 2px;
 }
 
 .toast-title {
   font-weight: 700;
-  font-size: 14.5px;
+  font-size: 13px;
   color: var(--text);
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 .toast-message {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-muted);
-  line-height: 1.5;
+  line-height: 1.4;
   word-break: break-word;
+  margin-top: 2px;
 }
 
 .toast-actions {
   display: flex;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 6px;
 }
-
 .toast-action-btn {
-  padding: 5px 12px;
+  padding: 4px 10px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--accent);
   background: var(--accent-dim);
   color: var(--text);
   font-family: var(--font);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
 }
 .toast-action-btn:hover { background: var(--accent-glow); }
 
-.toast-close {
-  background: rgba(var(--overlay-rgb), 0.08);
-  border: 1px solid rgba(var(--overlay-rgb), 0.12);
-  color: var(--text);
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
+.toast-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.toast-close,
+.toast-copy {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  width: 20px;
+  height: 20px;
   display: grid;
   place-items: center;
   font-size: 11px;
   cursor: pointer;
   flex-shrink: 0;
 }
+.toast-close:hover,
+.toast-copy:hover { color: var(--text); }
+.toast-copy svg { width: 13px; height: 13px; }
+.toast-copy.toast-copy-done { color: var(--accent); }
 
-.toast-close:hover {
-  background: rgba(var(--overlay-rgb), 0.14);
-  border-color: rgba(var(--overlay-rgb), 0.2);
-}
+/* ═══════════════════════════════════════════════════════════════════
+   NOTIFICATION STYLE VARIATIONS — lightweight remakes
+   Same 5 looks as before (Glass, Neon, Solid Card, Pill, Minimal), but
+   every one of them is still just flat colors: solid/near-solid
+   backgrounds, plain 1px-3px borders, no backdrop-filter, no box-shadow,
+   no gradients, no per-toast animation. Only background/border/radius
+   differ between them — nothing here costs more to paint than the base
+   style above. ═══════════════════════════════════════════════════════ */
 
-/* Copy button — only rendered on error toasts, next to the close button,
-   so the exact error text (often a URL/status code worth pasting into a
-   bug report or search) can be grabbed without retyping it. */
-.toast-copy {
-  background: rgba(var(--overlay-rgb), 0.08);
-  border: 1px solid rgba(var(--overlay-rgb), 0.12);
-  color: var(--text);
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background var(--transition), border-color var(--transition), color var(--transition);
-}
-.toast-copy svg { width: 14px; height: 14px; }
-.toast-copy:hover {
-  background: rgba(var(--overlay-rgb), 0.14);
-  border-color: rgba(var(--overlay-rgb), 0.2);
-}
-.toast-copy.toast-copy-done {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.toast-progress {
-  position: relative;
-  height: 3px;
-  border-radius: 999px;
-  background: rgba(var(--overlay-rgb), 0.08);
-  overflow: hidden;
-}
-.toast-progress-bar {
-  position: relative;
-  height: 100%;
-  width: 100%;
-  border-radius: 999px;
-  background: rgba(var(--toast-color-rgb), 0.8);
-  transform-origin: left center;
-  animation-name: toastProgressCountdown;
-  animation-timing-function: linear;
-  animation-fill-mode: forwards;
-}
-.toast-progress-bar.toast-progress-paused {
-  animation-play-state: paused;
-}
-@keyframes toastProgressCountdown {
-  from { transform: scaleX(1); }
-  to   { transform: scaleX(0); }
-}
-/* Traveling shine removed — it was an infinite animation running for the
-   full lifetime of every visible toast. */
-
-.toast-fade-out {
-  animation: toastFadeOut 0.14s ease-in forwards !important;
-}
-
-@keyframes toastFadeOut {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   NOTIFICATION STYLE VARIATIONS
-   5 styles — Glass, Neon, Solid Card, Pill, Minimal — kept visually distinct
-   but with backdrop-filter, glow shadows, and infinite animations removed.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── 1. GLASS (default) ─── Softly tinted card, subtle color border. */
+/* ── 1. GLASS (default) ─── what .toast already looks like above; this
+   class exists so JS can apply it explicitly and it's a no-op visually. */
 .toast-style-glass {
-  background: var(--notif-bg, #14141e) !important;
-  border: 1px solid rgba(var(--toast-color-rgb), 0.22) !important;
-  border-radius: 16px !important;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2) !important;
-}
-.toast-style-glass .toast-icon-badge {
-  background: rgba(var(--toast-color-rgb), 0.18);
-  border: 1px solid rgba(var(--toast-color-rgb), 0.28);
-  border-radius: 12px;
-}
-.toast-style-glass .toast-progress {
-  background: rgba(var(--toast-color-rgb), 0.08);
+  background: var(--notif-bg, #14141e);
+  border: 1px solid rgba(var(--overlay-rgb), 0.14);
+  border-left: 3px solid var(--toast-color);
+  border-radius: 8px;
 }
 
-/* ── 2. NEON ─── Dark card with a plain, brighter color border. */
+/* ── 2. NEON ─── near-black card, full colored border, square corners. */
 .toast-style-neon {
-  background: rgba(8, 8, 14, 0.96) !important;
-  border: 1px solid rgba(var(--toast-color-rgb), 0.6) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3) !important;
+  background: #0a0a10;
+  border: 1px solid var(--toast-color);
+  border-radius: 6px;
 }
-.toast-style-neon .toast-icon-badge {
-  background: rgba(var(--toast-color-rgb), 0.12);
-  border: 1px solid rgba(var(--toast-color-rgb), 0.5);
-  border-radius: 10px;
-}
-.toast-style-neon .toast-icon {
-  color: rgba(var(--toast-color-rgb), 1);
-}
-.toast-style-neon .toast-title {
-  color: rgba(var(--toast-color-rgb), 1);
-}
-.toast-style-neon .toast-progress {
-  background: rgba(var(--toast-color-rgb), 0.1);
-}
-.toast-style-neon .toast-progress-bar {
-  background: rgba(var(--toast-color-rgb), 1);
-}
+.toast-style-neon .toast-title { color: var(--toast-color); }
 
-/* ── 3. SOLID CARD ─── Fully opaque card with a bold colored top border. */
+/* ── 3. SOLID CARD ─── opaque card, bold colored top border. */
 .toast-style-solid-card {
-  background: var(--notif-bg, #14141e) !important;
-  border: 1px solid rgba(var(--overlay-rgb), 0.12) !important;
-  border-top: 3px solid rgba(var(--toast-color-rgb), 1) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.26) !important;
+  background: var(--notif-bg, #14141e);
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
+  border-left: 1px solid rgba(var(--overlay-rgb), 0.12);
+  border-top: 3px solid var(--toast-color);
+  border-radius: 6px;
 }
-.toast-style-solid-card .toast-icon-badge {
-  background: var(--toast-color);
-  border: none;
-  border-radius: 10px;
-}
-.toast-style-solid-card .toast-icon { color: #fff; }
-.toast-style-solid-card .toast-progress { background: rgba(var(--overlay-rgb), 0.1); }
-.toast-style-solid-card .toast-progress-bar { background: var(--toast-color); }
 
-/* ── 4. PILL ─── Fully-rounded capsule shape, but sized like the other
-   styles so title + full description are readable, not just an icon and
-   a truncated one-liner. */
+/* ── 4. PILL ─── fully-rounded capsule, centered row, tinted flat fill
+   instead of a left accent bar. */
 .toast-style-pill {
-  background: rgba(var(--toast-color-rgb), 0.1) !important;
-  border: 1px solid rgba(var(--toast-color-rgb), 0.25) !important;
-  border-radius: 999px !important;
-  padding: 12px 20px 12px 12px !important;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18) !important;
-}
-.toast-style-pill .toast-main { align-items: center; }
-.toast-style-pill .toast-icon-badge {
-  width: 38px; height: 38px;
+  background: rgba(var(--overlay-rgb), 0.06);
+  border: 1px solid var(--toast-color);
   border-radius: 999px;
-  background: rgba(var(--toast-color-rgb), 0.2);
-  border: 1px solid rgba(var(--toast-color-rgb), 0.3);
-  flex-shrink: 0;
+  padding: 10px 16px 10px 14px;
+  align-items: center;
 }
-.toast-style-pill .toast-content {
-  padding-top: 0;
-}
-.toast-style-pill .toast-message {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-}
-.toast-style-pill .toast-close { border-radius: 999px; }
-/* Progress bar stays full-width like the other styles, just with pill-
-   matching rounded ends. */
-.toast-style-pill .toast-progress { border-radius: 999px; }
 
-/* ── 5. MINIMAL ─── Barely-there card with thin accent-colored border only. */
+/* ── 5. MINIMAL ─── barely-there card, thin uniform border, no accent bar. */
 .toast-style-minimal {
-  background: rgba(var(--notif-bg-rgb, 27, 27, 27), 0.95) !important;
-  border: 1px solid rgba(var(--toast-color-rgb), 0.38) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14) !important;
+  background: rgba(var(--notif-bg-rgb, 27, 27, 27), 0.9);
+  border: 1px solid rgba(var(--toast-color-rgb), 0.35);
+  border-radius: 6px;
 }
-.toast-style-minimal .toast-icon-badge {
-  background: transparent;
-  border: 1.5px solid rgba(var(--toast-color-rgb), 0.5);
-  border-radius: 10px;
-  box-shadow: none;
-}
-.toast-style-minimal .toast-progress { background: rgba(var(--toast-color-rgb), 0.1); }
 
 /* Respect reduced-motion preferences */
 @media (prefers-reduced-motion: reduce) {
-  .toast, .toast::after, .toast::before, .toast-icon-badge,
-  .toast-title, .toast-message, .toast-close, .toast-progress, .toast-progress-bar::after,
-  .toast-error .toast-icon-badge, .toast-warning .toast-icon-badge,
-  .toast-style-neon {
-    animation: none !important;
-    opacity: 1 !important;
-    transform: none !important;
-  }
+  .toast { transition: none !important; opacity: 1 !important; }
 }
 
 
@@ -3900,7 +4021,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 .hidden { display: none !important; }
 
-/* ═══ Floating Download Progress Widget + Hidden Windows Widget ═══ */
+/* ═══ Floating Hidden Windows Widget (downloads now live in the
+   left-edge swipe drawer further below) ═══ */
 .floating-widgets-bar {
   position: fixed;
   left: 20px;
@@ -3961,6 +4083,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   to   { opacity: 0; transform: translateY(10px); }
 }
 
+/* .dl-widget-ring is still used by the Hidden Windows tray (a separate,
+   unrelated bottom-left pill widget — see #hidden-windows-widget) for its
+   plain-svg icon box; kept as-is for that. The downloads edge tab below
+   no longer uses it at all. */
 .dl-widget-ring {
   position: relative;
   width: 34px;
@@ -3970,35 +4096,70 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   align-items: center;
   justify-content: center;
 }
-.dl-ring-svg { position: absolute; inset: 0; width: 34px; height: 34px; transform: rotate(-90deg); }
-.dl-ring-track {
-  fill: none;
-  stroke: rgba(var(--overlay-rgb),0.1);
-  stroke-width: 3;
-}
-.dl-ring-fill {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-dasharray: 97.4;
-  stroke-dashoffset: 97.4;
-  transition: stroke-dashoffset 0.35s ease, stroke 0.25s ease;
-}
-.dl-widget-icon {
-  font-size: 13px;
-  color: var(--accent);
-  animation: dl-icon-bounce 1.6s ease-in-out infinite;
-}
-@keyframes dl-icon-bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(2px); }
-}
-.dl-widget.dl-paused .dl-widget-icon { animation: none; color: #f5a623; }
-.dl-widget.dl-paused .dl-ring-fill { stroke: #f5a623; }
 
-/* Badge on the ring showing how many downloads are active at once, e.g.
-   an instance install plus a couple of mod updates running together. */
+/* Plain CSS fill bar standing in for the old SVG ring on the downloads
+   edge tab — a thin vertical track along the button's inner (right) edge
+   that grows from the bottom via `transform: scaleY()`, set from JS as a
+   0–1 fraction. Transform-only, so updating it every progress tick never
+   touches layout or paint outside its own compositor layer — cheaper
+   than recalculating stroke-dashoffset on an SVG circle every tick. */
+/* Progress track — a full-width rounded bar docked to the button's inner
+   bottom edge, instead of the old 3px vertical sliver. Still a single
+   transform (scaleX) driven purely by the --dl-fill custom property set
+   from JS, so updating it every tick is compositor-only (no layout, no
+   paint outside its own layer) — same WebKitGTK-cheap contract as before,
+   just a much more legible bar. */
+.dl-widget-fill {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(var(--overlay-rgb), 0.14);
+  overflow: hidden;
+}
+.dl-widget-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent) 60%, #fff);
+  box-shadow: 0 0 6px 0 var(--accent);
+  transform: scaleX(var(--dl-fill, 0));
+  transform-origin: left center;
+  transition: transform 0.3s cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+.dl-widget.dl-paused .dl-widget-fill::after {
+  background: #f5a623;
+  box-shadow: 0 0 6px 0 #f5a623;
+}
+/* "Generic" mode: downloads that don't report byte-level progress (mod
+   updates, dependency installs, etc.) get a static half-fill instead of a
+   fake/misleading percentage — no animation to keep it cheap. */
+.dl-widget.dl-generic .dl-widget-fill::after {
+  transform: scaleX(0.5);
+  transition: none;
+}
+
+.dl-widget-icon {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+}
+.dl-widget-icon svg { width: 100%; height: 100%; display: block; }
+.dl-widget.dl-active .dl-widget-icon { color: var(--accent); }
+.dl-widget.dl-paused .dl-widget-icon { color: #f5a623; }
+
+/* Badge showing how many downloads/windows are active at once. Default
+   position matches the old ring-relative corner (used by the Hidden
+   Windows tray, which still wraps it in .dl-widget-ring); the downloads
+   edge tab overrides this further down since it has no ring to anchor to. */
 .dl-widget-count {
   position: absolute;
   top: -4px;
@@ -4016,18 +4177,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   box-shadow: 0 0 0 2px var(--panel);
 }
 .dl-widget-count.hidden { display: none; }
-
-/* "Generic" mode: the ring is reused for downloads that don't report
-   byte-level progress (mod updates, dependency installs, etc.), so there's
-   no meaningful aggregate percent — just an indeterminate spinner. */
-.dl-widget.dl-generic .dl-ring-fill {
-  stroke-dasharray: 24 73.4;
-  animation: dl-ring-indeterminate 1.1s linear infinite;
-  transition: none;
-  transform-origin: 50% 50%;
-  transform-box: fill-box;
-}
-@keyframes dl-ring-indeterminate { to { transform: rotate(360deg); } }
 
 .dl-widget-text {
   display: flex;
@@ -4107,6 +4256,239 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: rgba(var(--overlay-rgb), 0.04);
   animation: dl-card-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Downloads — left-edge swipe drawer
+   A slim tab is docked to the left edge of the window at all times
+   (vertically centered) instead of a floating bottom-left pill. Click it,
+   or swipe/drag right from the edge, to pull the full drawer out; drag its
+   grip (or swipe left anywhere on it) to push it back. Motion is
+   transform-only (translateX/opacity) so it stays on the compositor
+   thread — no layout, no backdrop-filter — which matters on WebKitGTK's
+   software-ish compositor path.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Invisible hit-zone along the very left edge that starts the open-drag.
+   touch-action:none so WebKitGTK hands the gesture straight to our pointer
+   handlers instead of trying to scroll/rubber-band the page underneath.
+   Widened to about half the instance sidebar's width (was a slim 28px,
+   which was easy to miss and made the swipe feel unreliable) — anything
+   pressed here that DOESN'T turn into a rightward drag is forwarded to
+   whatever's actually underneath as a normal click (see the pointerup
+   handler in JS), so this wide band doesn't swallow taps on the sidebar
+   content that lives in the same horizontal strip. */
+.dl-edge-zone {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: clamp(115px, 9.5vw, 145px);
+  height: 100vh;
+  z-index: 900;
+  touch-action: none;
+  background: transparent;
+}
+
+/* Hold-to-discover hint bubble — see #dl-edge-hint in index.html. Kept
+   permanently in the DOM (never display:none) so opacity/transform can
+   transition; pointer-events:none so it never itself becomes a click
+   target or interferes with the gesture underneath it. */
+.dl-edge-hint {
+  position: fixed;
+  top: 50%;
+  left: 12px;
+  z-index: 920;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px 9px 11px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--panel-border);
+  background: var(--notif-bg, #14141e);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.45);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-6px, -50%) scale(0.94);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.dl-edge-hint svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent); }
+.dl-edge-hint.dl-edge-hint-visible {
+  opacity: 1;
+  transform: translate(0, -50%) scale(1);
+}
+
+#dl-widget {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  z-index: 910;
+  transform: translateY(-50%);
+  display: block;
+}
+/* The tab now only exists on screen while a download/install is actually
+   active (JS adds/removes this class in showWidget/hideWidgetIfEmpty) —
+   the .hidden utility's normal display:none applies here, no override. */
+
+/* Fresh, minimal edge tab — flat single-color background, one static
+   shadow, and a transform-only hover state. No gradients, no seam, no
+   grip, no chevron: just the icon, the fill bar, and the count badge. */
+#dl-widget .dl-widget-btn {
+  position: relative;
+  box-sizing: border-box;
+  width: 48px;
+  height: 72px;
+  padding: 0 0 8px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0 16px 16px 0;
+  border-left: none;
+  background: var(--notif-bg, #14141e);
+  box-shadow: 3px 0 12px rgba(0, 0, 0, 0.35);
+  animation: dl-tab-in 0.18s ease-out;
+  touch-action: none;
+  overflow: hidden;
+  /* Hover used to grow `width`, which forces a layout pass on WebKitGTK's
+     software-ish compositor; a small translateX nudge reads the same way
+     visually but stays transform-only (compositor thread, no layout). */
+  transition: border-color var(--transition), transform var(--transition);
+}
+@keyframes dl-tab-in {
+  from { opacity: 0; transform: translateX(-100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+#dl-widget .dl-widget-btn:hover {
+  transform: translateX(2px);
+  border-color: var(--accent);
+}
+#dl-widget.dl-active .dl-widget-btn {
+  border-color: var(--accent);
+}
+/* No ring wrapper on this tab (see .dl-widget-ring comment above), so the
+   count badge anchors to the button's own top-right corner instead. */
+#dl-widget .dl-widget-count {
+  top: 5px;
+  right: 5px;
+  box-shadow: 0 0 0 2px var(--notif-bg, #14141e);
+}
+
+/* Backdrop behind the open drawer — flat color, opacity-only transition
+   (no blur) so it's a single cheap compositor layer. Matches the same
+   dim strength as the app's other modal overlays (.overlay). */
+.dl-widget-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 915;
+  background: rgba(0, 0, 0, 0.78);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.dl-widget-backdrop.hidden { display: none; }
+.dl-widget-backdrop.dl-backdrop-open { opacity: 1; }
+/* Same reasoning as #dl-widget-panel.dl-panel-dragging below: while a
+   pointer is actively driving the backdrop's opacity per-frame via inline
+   style, the CSS transition must be off or every frame is fighting a
+   0.2s catch-up animation — that mismatch was the main source of the
+   dragging feeling laggy. */
+.dl-widget-backdrop.dl-backdrop-dragging { transition: none; }
+
+/* The drawer itself — same window chrome as the rest of the app's
+   overlays/settings window (#1b1b1b panel, thin light border, same
+   header treatment), just docked flush to the left edge and full height
+   instead of a centered floating card. Always full window height, closed
+   by default via translateX(-100%); opening/closing is a single
+   transform change so the browser never has to touch layout mid-gesture. */
+#dl-widget-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 920;
+  width: 380px;
+  max-width: 88vw;
+  height: 100vh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: none;
+  box-shadow: 16px 0 48px rgba(0, 0, 0, 0.6);
+  background: #1b1b1b;
+  transform: translate3d(-100%, 0, 0);
+  transform-origin: center left;
+  animation: none;
+  transition: transform 0.24s cubic-bezier(0.22, 0.9, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#dl-widget-panel.hidden { display: none; }
+#dl-widget-panel.dl-panel-open { transform: translate3d(0, 0, 0); }
+/* While a pointer is actively dragging the drawer, motion is driven by
+   inline transform per-frame — disabling the transition avoids the
+   transform "fighting" a queued animation and keeps 1:1 finger tracking. */
+#dl-widget-panel.dl-panel-dragging { transition: none; }
+
+/* Grip strip on the drawer's trailing edge — a dedicated, generously
+   sized target for the close-drag gesture that won't fight the vertical
+   scroll of .dl-cards underneath it. */
+.dl-panel-drag-grip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16px;
+  height: 100%;
+  z-index: 2;
+  touch-action: none;
+  cursor: ew-resize;
+}
+
+/* Header row — same layout/spacing/background as .settings-modal-header,
+   so the drawer reads as the same kind of "window" as the rest of the
+   app instead of a bespoke flyout. */
+.dl-panel-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  touch-action: none;
+}
+.dl-panel-heading-row .dl-panel-heading {
+  font-size: 17px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  padding: 0;
+}
+
+/* #dl-cards is a shared class with the old flyout above; inside the
+   drawer it should just fill the remaining height instead of being
+   capped to a viewport fraction. */
+#dl-cards {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+  padding: 16px 20px;
+}
+
+.dl-cards-empty {
+  margin-top: 48px;
+  padding: 0 8px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.dl-cards-empty.hidden { display: none; }
 
 /* ═══ Hidden Windows tray (sits to the right of the downloads widget) ═══ */
 .hw-widget-ring {
@@ -5488,15 +5870,33 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   font-display: block;
 }
 
-/* ═══ Non-Interactive 3D Skin Standee Preview (Instance Details) ═══ */
+/* ═══ Player Island (Instance Details) ═══
+   One big background island — same height as the stat-island column next
+   to it — holding the accounts-manager button + 3D-skin-settings button
+   at the top, and the non-interactive 3D skin standee filling the rest.
+   Flat panel + 1px border only, same as the other islands: no
+   backdrop-filter, no per-frame shadow, cheap on WebKitGTK. */
 .skin-panel {
-  align-self: flex-end;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
-  width: clamp(180px, 22vw, 320px);
+  gap: 10px;
+  width: clamp(200px, 20vw, 300px);
   max-width: 100%;
-  margin-top: clamp(-230px, -18vh, -80px);
-  margin-bottom: 2px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: var(--panel, #1b1b1b);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  position: relative;
+  overflow: hidden;
+}
+.skin-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-dim), transparent);
+  pointer-events: none;
 }
 
 .skin-mini-preview-wrap {
@@ -5504,6 +5904,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   aspect-ratio: 2 / 3;
   height: auto;
   max-height: 55vh;
+  flex: 0 0 auto;
   position: relative;
   background: transparent !important;
   border: none !important;
@@ -5516,15 +5917,58 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   cursor: default;
   user-select: none;
   overflow: visible;
+  /* transform-only transition — cheap to composite on WebKitGTK, unlike
+     animating box-shadow or filter every frame of the hover ease. */
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Reserved panel below the standee, for later use. Same flat panel
+   treatment as every other island — no extra tint versus the nested 3D
+   preview card above it — and grows to fill whatever height is left in
+   the tall player island so its bottom edge lines up with the hero
+   column beside it. */
+.skin-panel-empty {
+  flex: 1 1 auto;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Small caption revealed on hover, hinting the standee opens the wardrobe.
+   Pure opacity/transform transition — no layout thrash, no blur. */
+.skin-preview-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 10px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  background: rgba(var(--panel-rgb), 0.85);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  margin: 0 auto;
+  width: fit-content;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+.skin-mini-preview-wrap:hover .skin-preview-hint {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .skin-mini-preview-wrap::before {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: var(--radius);
-  background: var(--panel, #1b1b1b);
+  border-radius: var(--radius-sm);
+  background: rgba(var(--overlay-rgb), 0.035);
   border: 1px solid rgba(255, 255, 255, 0.08);
   z-index: -1;
 }
@@ -6177,7 +6621,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .skin-viewer-modal,
 .is-webkit-gtk .dressing-room-modal,
 .is-webkit-gtk .dl-files-card,
-.is-webkit-gtk .toast,
 .is-webkit-gtk .dressing-room-skin-card,
 .is-webkit-gtk .settings-card,
 .is-webkit-gtk .bento-tile,
@@ -6347,20 +6790,34 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   transform: translateZ(0);
 }
 
-.is-webkit-gtk:not(.transparent-ui) .instance-card,
 .is-webkit-gtk:not(.transparent-ui) .mod-card,
 .is-webkit-gtk:not(.transparent-ui) .discover-card,
 .is-webkit-gtk:not(.transparent-ui) .preset-card,
 .is-webkit-gtk:not(.transparent-ui) .glass-card,
 .is-webkit-gtk:not(.transparent-ui) .setup-card,
-.is-webkit-gtk:not(.transparent-ui) .bento-tile {
+.is-webkit-gtk:not(.transparent-ui) .bento-tile,
+.is-webkit-gtk:not(.transparent-ui) .hero-island,
+.is-webkit-gtk:not(.transparent-ui) .skin-panel,
+.is-webkit-gtk:not(.transparent-ui) .instance-sidebar {
   background: #1b1b1b;
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: none;
 }
 
+/* .instance-card now sits nested inside .instance-sidebar (same flat panel
+   color), so it needs the lighter "nested card" shade — same idea as the
+   skin-mini-preview-wrap rule right below — instead of matching flat #1b1b1b,
+   which would make every card blend invisibly into the sidebar behind it. */
+.is-webkit-gtk:not(.transparent-ui) .instance-card {
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+
+/* Nested preview card gets a slightly lighter flat shade than the island
+   it sits inside, so the two stay visually separated without a shadow. */
 .is-webkit-gtk:not(.transparent-ui) .skin-mini-preview-wrap::before {
-  background: #1b1b1b;
+  background: #242424;
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: none;
   contain: layout style paint;
@@ -6455,7 +6912,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .update-check-status.is-checking svg,
 .is-webkit-gtk #btn-check-for-updates-icon.is-spinning,
 .is-webkit-gtk .dl-widget-icon,
-.is-webkit-gtk .dl-ring,
 .is-webkit-gtk .dl-bar-fill[data-indeterminate],
 .is-webkit-gtk .preset-sync-bar,
 .is-webkit-gtk .mod-card.mod-update-glow,
@@ -6478,11 +6934,22 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .update-icon-badge-spin svg,
 .is-webkit-gtk .update-check-status.is-checking svg,
 .is-webkit-gtk #btn-check-for-updates-icon.is-spinning,
-.is-webkit-gtk .dl-ring,
 .is-webkit-gtk .mini-spinner {
   animation: webkit-gtk-spin-once 0.7s linear !important;
 }
 @keyframes webkit-gtk-spin-once { to { transform: rotate(360deg); } }
+
+/* ── 10b. Downloads edge-drawer — keep its open/close motion but make sure
+         nothing about it leaves a permanent extra compositor layer or a
+         non-transform transition lying around when idle. ── */
+.is-webkit-gtk #dl-widget-panel,
+.is-webkit-gtk .dl-widget-backdrop {
+  will-change: auto;
+}
+.is-webkit-gtk .dl-edge-zone {
+  /* Pure hit-target, never painted — keep it out of the paint tree. */
+  contain: strict;
+}
 
 /* ── 2. Remove transition:all — forces the browser to watch every
          property for changes, killing CSS invalidation perf ── */
@@ -6572,4 +7039,125 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .dl-widget {
   will-change: auto;
   contain: layout style paint;
+}
+
+/* ── 10c. Downloads edge-drawer drag path — WebKitGTK's compositor is the
+         slow, more software-bound one of the platforms this app ships on,
+         so the swipe gesture gets extra help staying on a single GPU
+         layer instead of falling back to paint-per-frame:
+         - backface-visibility + a forced 3D transform coax WebKit into
+           promoting the panel/backdrop to their own layer as soon as a
+           drag starts (matches the translate3d() used for the same
+           reason in the base rules above and in the JS drag handler).
+         - contain:paint stops the drag from ever invalidating anything
+           outside the drawer's own box.
+         - perspective on the fixed ancestors is a cheap no-op that some
+           WebKit builds use as another compositing hint. ── */
+.is-webkit-gtk #dl-widget-panel,
+.is-webkit-gtk .dl-widget-backdrop {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  contain: paint;
+}
+.is-webkit-gtk #dl-widget-panel.dl-panel-dragging,
+.is-webkit-gtk .dl-widget-backdrop.dl-backdrop-dragging {
+  perspective: 1000px;
+}
+.is-webkit-gtk .dl-edge-zone,
+.is-webkit-gtk #dl-widget .dl-widget-btn,
+.is-webkit-gtk .dl-edge-hint {
+  /* Same 3D-transform compositing hint, applied preemptively to the
+     elements that actually start/show the gesture, so the very first
+     drag/hint frame is already on the fast path instead of promoting
+     mid-gesture. */
+  -webkit-transform: translate3d(0, 0, 0);
+}
+/* The hold-hint bubble and the tab's appear animation are both
+   finite/one-shot (not the continuous per-frame kind rule 1 above kills),
+   so they're left alone here — just given the same static-layer bump as
+   everything else in this block. */
+.is-webkit-gtk .dl-edge-hint {
+  contain: layout style paint;
+}
+
+/* ═══ WebKitGTK Overrides — Instance Hero / Player Card / Buttons ═══
+   Same pattern as the rest of the .is-webkit-gtk block: strip animated
+   box-shadow/filter/backdrop-filter (all expensive on WebKitGTK's
+   software-ish compositor path) and replace hover motion with transform
+   only, which stays on the compositor thread. */
+.is-webkit-gtk .instance-hero,
+.is-webkit-gtk .hero-island,
+.is-webkit-gtk .hero-stat,
+.is-webkit-gtk .skin-panel,
+.is-webkit-gtk .player-card,
+.is-webkit-gtk .account-button-under-preview,
+.is-webkit-gtk .ri-dropdown,
+.is-webkit-gtk .ri-overflow-menu {
+  box-shadow: none;
+}
+.is-webkit-gtk .instance-main-row,
+.is-webkit-gtk .instance-hero-column,
+.is-webkit-gtk .instance-hero,
+.is-webkit-gtk .hero-stat-grid {
+  contain: layout style;
+}
+/* NOTE: .instance-hero-running is deliberately excluded from `contain`.
+   `contain: layout` makes an element both a new stacking context AND a new
+   containing block, which trapped the running-instance dropdown's z-index
+   inside this panel's own stacking context — so the later `.instance-hero-empty`
+   sibling (plain z-index:auto, but later in DOM/paint order) rendered on
+   top of it instead of the dropdown showing above everything. */
+/* The running-instance strip and its popovers use the same cheap
+   transform-only motion as the rest of the launcher on WebKitGTK — no
+   animated box-shadow, no radial-gradient hover blooms, nothing that forces
+   a repaint every frame. */
+.is-webkit-gtk .ri-btn,
+.is-webkit-gtk .ri-btn-more,
+.is-webkit-gtk .ri-overflow-row {
+  transition: background var(--transition), border-color var(--transition);
+}
+.is-webkit-gtk .ri-btn-entering,
+.is-webkit-gtk .ri-btn-leaving {
+  animation-duration: 0.12s;
+}
+.is-webkit-gtk .ri-dropdown,
+.is-webkit-gtk .ri-overflow-menu {
+  animation-duration: 0.08s;
+}
+.is-webkit-gtk .instance-hero::before,
+.is-webkit-gtk .skin-panel::before {
+  /* The 1px gradient hairline is cheap (paints once, doesn't move), keep it. */
+  will-change: auto;
+}
+.is-webkit-gtk .skin-preview-hint {
+  transition: opacity 0.15s ease;
+  transform: none !important;
+}
+.is-webkit-gtk .btn-secondary,
+.is-webkit-gtk .btn-danger-outline,
+.is-webkit-gtk .btn-ghost,
+.is-webkit-gtk .btn-danger-pill {
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+.is-webkit-gtk .btn-danger:hover,
+.is-webkit-gtk .btn-play:hover:not(:disabled) {
+  /* Drop the lift + glow-shadow hover animation; keep the flat brightness
+     swap only, which is a paint-cheap property change. */
+  transform: none;
+  box-shadow: none;
+  filter: none;
+  background: #dc2626;
+}
+.is-webkit-gtk .btn-play:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+.is-webkit-gtk .account-button-under-preview:active {
+  transform: none;
+}
+.is-webkit-gtk .mods-tab-loading {
+  background: #121212;
+}
+.is-webkit-gtk .mods-drag-overlay-inner {
+  box-shadow: none;
 }

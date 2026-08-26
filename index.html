@@ -675,49 +675,125 @@
           </div>
           <!-- Right: details -->
           <div class="instance-details">
-            <div id="detail-header" class="glass-card detail-header">
-              <div id="detail-icon" class="detail-icon"></div>
-              <div class="detail-header-text">
-                <div id="detail-name" class="detail-name">No instance selected</div>
-                <div id="detail-version" class="detail-badge"></div>
-              </div>
-            </div>
-            <div id="detail-info" class="glass-card detail-info">
-              <div class="info-row"><span class="info-label">Game Version</span><span id="info-game-version"
-                  class="info-value">—</span></div>
-              <div class="info-row"><span class="info-label">Mod Loader</span><span id="info-loader"
-                  class="info-value">—</span></div>
-              <div class="info-row"><span class="info-label">Game Directory</span><span id="info-dir"
-                  class="info-value">—</span></div>
-              <div class="info-row"><span class="info-label">Play Time</span><span id="info-playtime"
-                  class="info-value">—</span></div>
-            </div>
+            <!-- Tall island row: stat islands (left) + player island (right), both
+                 stretch from the top down to just above the Play bar. -->
+            <div class="instance-main-row">
+              <!-- Left column: the stats panel on top, a second empty panel
+                   below it (reserved for later use) — stacked so together
+                   they stretch the same height as the player island. -->
+              <div class="instance-hero-column">
+                <!-- Merged panel: icon/name header + all four stats +
+                     running-instances, all in a single island. -->
+                <div id="instance-hero" class="instance-hero hero-island">
+                  <div class="instance-hero-top">
+                    <div id="detail-icon" class="detail-icon"></div>
+                    <div class="detail-header-text">
+                      <div id="detail-name" class="detail-name">No instance selected</div>
+                      <div id="detail-version" class="detail-badge"></div>
+                    </div>
+                  </div>
+                  <div class="hero-stat-grid">
+                    <div class="hero-stat" title="Minecraft game version">
+                      <span class="hero-stat-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                      </span>
+                      <div class="hero-stat-text">
+                        <span class="hero-stat-label">Game Version</span>
+                        <span id="info-game-version" class="hero-stat-value">—</span>
+                      </div>
+                    </div>
+                    <div class="hero-stat" title="Installed mod loader">
+                      <span class="hero-stat-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L2 19v3h3l7.3-7.3a4 4 0 0 0 5.4-5.4l-2.8 2.8-2-2 2.8-2.8z"></path></svg>
+                      </span>
+                      <div class="hero-stat-text">
+                        <span class="hero-stat-label">Mod Loader</span>
+                        <span id="info-loader" class="hero-stat-value">—</span>
+                      </div>
+                    </div>
+                    <div class="hero-stat hero-stat-wide" title="Game directory">
+                      <span class="hero-stat-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                      </span>
+                      <div class="hero-stat-text">
+                        <span class="hero-stat-label">Game Directory</span>
+                        <span id="info-dir" class="hero-stat-value hero-stat-value-path">—</span>
+                      </div>
+                    </div>
+                    <div class="hero-stat" title="Total time played">
+                      <span class="hero-stat-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                      </span>
+                      <div class="hero-stat-text">
+                        <span class="hero-stat-label">Play Time</span>
+                        <span id="info-playtime" class="hero-stat-value">—</span>
+                      </div>
+                    </div>
+                    <div class="hero-stat" title="When this instance was last launched">
+                      <span class="hero-stat-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                      </span>
+                      <div class="hero-stat-text">
+                        <span class="hero-stat-label">Last Played</span>
+                        <span id="info-last-played" class="hero-stat-value">—</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-            <!-- Running Instances buttons -->
-            <div id="ri-widget" class="ri-widget">
-              <div id="ri-buttons" class="ri-buttons"></div>
+                <!-- Second panel — running-instances strip. Single line only:
+                     one pill per running instance, plus a "+N" overflow
+                     button when there isn't room for all of them. Sits
+                     above the reserved empty panel, as its own island. -->
+                <div id="instance-hero-running" class="hero-island instance-hero-running">
+                  <div id="ri-buttons" class="ri-buttons">
+                    <span id="ri-empty-label" class="hero-empty-label">No instances launched</span>
+                  </div>
+                </div>
+
+                <!-- Third panel — reserved for later use. -->
+                <div id="instance-hero-empty" class="hero-island instance-hero-empty">
+                  <span class="hero-empty-label">Empty Panel</span>
+                </div>
+              </div>
+
+              <!-- Player island: one tall background panel holding the
+                   accounts-manager button, the 3D-skin-settings button and
+                   the 3D player model card underneath. -->
+              <div class="skin-panel">
+                <div class="player-card">
+                  <div class="account-row-under-preview">
+                    <button id="account-btn" class="account-button account-button-under-preview">
+                      <span class="account-avatar account-avatar-header" id="account-header-avatar">
+                        <span class="account-avatar-fallback account-avatar-fallback-mc" id="account-header-fallback">?</span>
+                        <img id="account-header-avatar-img" alt="" class="hidden" />
+                      </span>
+                      <span id="account-name">No account</span>
+                      <span class="account-arrow" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                      </span>
+                    </button>
+                    <button id="btn-open-skin-settings" class="account-button account-button-under-preview skin-settings-btn" title="3D Skin &amp; Animation Settings">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 3D Non-interactive Skin Standee Preview (back to its
+                     original fixed 2:3 size, no longer stretched). -->
+                <div class="skin-mini-preview-wrap" id="skin-mini-preview-wrap">
+                  <canvas id="skin-mini-preview-canvas"></canvas>
+                  <span class="skin-preview-hint">Click to customize</span>
+                </div>
+
+                <!-- Empty panel — reserved for later use. -->
+                <div id="skin-panel-empty" class="hero-island skin-panel-empty">
+                  <span class="hero-empty-label">Empty Panel</span>
+                </div>
+              </div>
             </div>
 
             <div class="detail-actions-wrap">
-              <div class="skin-panel">
-                <!-- 3D Non-interactive Skin Standee Preview -->
-                <div class="skin-mini-preview-wrap" id="skin-mini-preview-wrap">
-                  <canvas id="skin-mini-preview-canvas"></canvas>
-                </div>
-                <div class="account-row-under-preview">
-                  <button id="account-btn" class="account-button account-button-under-preview">
-                    <span class="account-avatar account-avatar-header" id="account-header-avatar">
-                      <span class="account-avatar-fallback account-avatar-fallback-mc" id="account-header-fallback">?</span>
-                      <img id="account-header-avatar-img" alt="" class="hidden" />
-                    </span>
-                    <span id="account-name">No account</span>
-                    <span class="account-arrow">▾</span>
-                  </button>
-                  <button id="btn-open-skin-settings" class="account-button account-button-under-preview skin-settings-btn" title="3D Skin &amp; Animation Settings">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg>
-                  </button>
-                </div>
-              </div>
               <div class="detail-actions">
                 <div class="btn-play-group">
                   <div id="play-status-text" class="play-status-text hidden"></div>
@@ -903,6 +979,16 @@
         <!-- BOTTOM PANEL: Mods Content -->
         <div class="mods-bottom-panel">
           <div id="mods-grid" class="mods-list"></div>
+          <!-- Shown immediately on switching to the Mods tab, hidden once the
+               list has actually rendered, so the empty→populated pop-in never
+               reads as a flicker. -->
+          <div id="mods-tab-loading" class="mods-tab-loading" aria-hidden="true">
+            <svg class="mods-tab-loading-spinner" viewBox="0 0 50 50" width="42" height="42">
+              <circle class="mods-tab-loading-track" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>
+              <circle class="mods-tab-loading-arc" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>
+            </svg>
+            <span class="mods-tab-loading-text">Loading mods…</span>
+          </div>
         </div>
 
         <!-- Full-tab overlay shown only while a file is actively being dragged over the window. -->
@@ -1072,27 +1158,34 @@
               </div>
             </div>
 
+            <!-- Big, unmissable search box — sits right under the
+                 Mods/Resourcepacks toggle row so it's the first thing
+                 seen, instead of a tiny field tucked in the side panel. -->
+            <div class="discover-search-bar">
+              <div class="discover-search-box">
+                <span class="discover-search-box-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="2"/>
+                    <path d="M15.3 15.3 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </span>
+                <input type="text" id="discover-query" class="discover-search-box-input" placeholder="Search Modrinth…" autocomplete="off" />
+                <button id="discover-search-btn" class="btn-accent discover-search-box-go" title="Search">Go</button>
+              </div>
+            </div>
+
             <div class="discover-scroll-area">
               <div id="discover-results" class="discover-grid"></div>
             </div>
           </div>
 
-          <!-- RIGHT ISLAND: Search & Filters Island -->
+          <!-- LEFT ISLAND (visually; reordered via CSS): Filters Island -->
           <aside class="discover-filter-island glass-island">
             <div class="discover-filter-header">
               <span class="discover-filter-title">Filters & Search</span>
             </div>
 
             <div class="discover-filter-body">
-              <!-- Search Box -->
-              <div class="discover-filter-field">
-                <label class="discover-filter-label" for="discover-query">Search</label>
-                <div class="discover-search-input-wrap">
-                  <input type="text" id="discover-query" class="input-field" placeholder="Search Modrinth…" autocomplete="off" />
-                  <button id="discover-search-btn" class="btn-accent btn-sm" title="Search">Go</button>
-                </div>
-              </div>
-
               <!-- Game Version -->
               <div class="discover-filter-field">
                 <label class="discover-filter-label" for="discover-game-version-select">Minecraft Version</label>
@@ -2173,30 +2266,8 @@
   <!-- Toast container -->
   <div id="toast-container"></div>
 
-  <!-- Floating Download/Install Widget + Hidden Windows Widget, side by side -->
+  <!-- Hidden Windows tray (unchanged — bottom-left floating pill) -->
   <div id="floating-widgets-bar" class="floating-widgets-bar">
-    <div id="dl-widget" class="dl-widget hidden">
-      <button type="button" id="dl-widget-btn" class="dl-widget-btn">
-        <span class="dl-widget-ring">
-          <svg class="dl-ring-svg" viewBox="0 0 34 34">
-            <circle class="dl-ring-track" cx="17" cy="17" r="15.5"></circle>
-            <circle id="dl-ring-fill" class="dl-ring-fill" cx="17" cy="17" r="15.5"></circle>
-          </svg>
-          <span class="dl-widget-icon">⬇</span>
-          <span id="dl-widget-count" class="dl-widget-count hidden">1</span>
-        </span>
-        <span class="dl-widget-text">
-          <span id="dl-widget-title">Downloading…</span>
-          <span id="dl-widget-sub">Preparing…</span>
-        </span>
-      </button>
-
-      <div id="dl-widget-panel" class="dl-widget-panel hidden">
-        <div class="dl-panel-heading">Downloads</div>
-        <div id="dl-cards" class="dl-cards"></div>
-      </div>
-    </div>
-
     <!-- Hidden/minimized windows tray. Any window (modpack import, apply
          preset, new/edit instance, etc.) that gets closed with an in-progress
          task keeps running in the background; this button lets you find and
@@ -2220,6 +2291,70 @@
         <div class="dl-panel-heading">Hidden Windows</div>
         <div id="hw-list" class="hw-list"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- ═══ Downloads — left-edge swipe drawer ═══
+       Replaces the old floating pill+dropdown. A slim tab sits docked to
+       the left edge of the window at all times; it can be clicked, or the
+       whole drawer can be pulled open by swiping/dragging right from the
+       edge (and pushed closed again by dragging left on the drawer, its
+       grip, or tapping the backdrop). Built with transform-only motion
+       (translateX) and Pointer Events so it stays cheap on WebKitGTK. -->
+  <div id="dl-edge-zone" class="dl-edge-zone" aria-hidden="true"></div>
+
+  <!-- Hold-to-discover hint — appears when a pointer is held down (no drag
+       needed) near the left edge, telling people the edge is swipeable
+       even when the tab below is hidden (no active download). Lives
+       outside #dl-widget for the same fixed-position-ancestor reason as
+       the backdrop/panel below. Positioned via JS (top = pointer Y). -->
+  <div id="dl-edge-hint" class="dl-edge-hint" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+    <span>Swipe right to open</span>
+  </div>
+
+  <!-- Tab redesigned from scratch: no SVG ring, no grip, no chevron —
+       just an icon, a plain CSS fill bar for progress, and the count
+       badge. Fewer nodes, no per-frame stroke-dashoffset math, nothing
+       but transform/opacity changes at runtime. Only shown while a
+       download/install is actually active (see showWidget/
+       hideWidgetIfEmpty in JS); the edge-hint above covers discovery
+       while it's hidden. -->
+  <div id="dl-widget" class="dl-widget hidden">
+    <button type="button" id="dl-widget-btn" class="dl-widget-btn" title="Downloads — click or swipe from the edge">
+      <span id="dl-widget-fill" class="dl-widget-fill" aria-hidden="true"></span>
+      <span class="dl-widget-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12.5m0 0 4.5-4.5M12 15.5 7.5 11" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 18.5h14" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg>
+      </span>
+      <span id="dl-widget-count" class="dl-widget-count hidden">1</span>
+    </button>
+  </div>
+
+  <!-- Backdrop + drawer live OUTSIDE #dl-widget on purpose: #dl-widget has
+       a CSS transform (to vertically center the edge tab), and a transform
+       on an ancestor turns position:fixed descendants into elements
+       positioned relative to THAT ancestor's box instead of the viewport
+       (per the CSS spec). #dl-widget's own box is only as big as the
+       collapsed tab (~34x60px), so the fixed-position backdrop/panel were
+       being confined to that tiny box instead of covering the window —
+       the "little window the size of the button" bug. Keeping them as
+       siblings of #dl-widget (direct children of body) means nothing in
+       their ancestor chain has a transform, so position:fixed resolves
+       against the real viewport again. -->
+  <div id="dl-widget-backdrop" class="dl-widget-backdrop hidden"></div>
+
+  <div id="dl-widget-panel" class="dl-widget-panel hidden" role="dialog" aria-label="Downloads">
+    <div class="dl-panel-drag-grip" title="Drag to close"></div>
+    <div class="dl-panel-heading-row">
+      <div class="dl-panel-heading-text">
+        <div class="dl-panel-heading">Downloads</div>
+      </div>
+      <button type="button" id="dl-panel-close" class="overlay-close" title="Close">✕</button>
+    </div>
+    <span id="dl-widget-title" class="hidden"></span>
+    <span id="dl-widget-sub" class="hidden"></span>
+    <div id="dl-cards" class="dl-cards">
+      <div id="dl-cards-empty" class="dl-cards-empty">Nothing downloading right now.<br>New downloads and installs will show up here.</div>
     </div>
   </div>
 

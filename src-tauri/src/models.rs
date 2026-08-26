@@ -726,6 +726,11 @@ pub struct InstalledInstance {
     /// running.
     #[serde(default)]
     pub total_playtime_seconds: u64,
+    /// When this instance was last launched (RFC 3339 timestamp), set right
+    /// as Play is pressed — see `commands::minecraft::launch_minecraft`.
+    /// `None` for an instance that's never been launched.
+    #[serde(default)]
+    pub last_played_at: Option<String>,
 }
 
 impl InstalledInstance {
