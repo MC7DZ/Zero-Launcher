@@ -2546,6 +2546,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .bento-modal .bento-tile:nth-child(8) { animation-delay: 0.44s; }
 .bento-modal .bento-tile:nth-child(9) { animation-delay: 0.50s; }
 
+/* Compact variant — single-column, narrower (used by Discover's "Install
+   in custom directory" mini modal, which only needs 2-3 tiles). */
+.bento-modal-compact { width: 420px; grid-template-columns: 1fr; }
+
 .bento-radio-group { display: flex; flex-direction: column; gap: 8px; }
 .bento-radio-row {
   display: flex;
@@ -2673,7 +2677,11 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   gap: 5px;
 }
 
-/* ── Bottom Panel (Content Island) ── */
+/* ── Bottom Panel (Content Island) ──
+   No longer the scrolling element itself — see .mods-scroll-container
+   below. This box only establishes the positioning context so
+   #mods-tab-loading (position:absolute; inset:0) covers the whole panel
+   and stays put regardless of how far the grid inside is scrolled. */
 .mods-bottom-panel {
   position: relative;
   flex: 1 1 0;
@@ -2681,6 +2689,19 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: var(--radius);
   background: rgba(33,33,33,0.35);
   border: 1px solid rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+
+/* The actual scrolling element. Previously this scrolling behavior lived
+   on .mods-bottom-panel directly, with #mods-tab-loading absolutely
+   positioned *inside* it — which meant the "fixed" overlay was actually
+   part of the scrolled content and slid out of view on scroll, exposing
+   the already-loaded mods underneath. Splitting the scroll container out
+   from the positioning/overlay container fixes that. */
+.mods-scroll-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 14px;
@@ -3341,6 +3362,33 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: 6px;
 }
 
+/* 3-dot "more options" button — sits to the left of the Download/Install
+   button on modpack cards only. Reuses .custom-context-menu/.ctx-item for
+   its dropdown (see initCustomContextMenu), so no extra dropdown styling
+   is needed here — just the trigger button itself. */
+.discover-card-menu-btn {
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.discover-card-menu-btn:hover {
+  background: #232323;
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
 /* ── Skeletons ── */
 .discover-skeleton {
   display: flex;
@@ -3647,6 +3695,68 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 .toggle-row input:checked + .toggle-slider { background: var(--accent); }
 .toggle-row input:checked + .toggle-slider::after { transform: translateX(20px); }
+
+/* "Also delete instance data" toggle on the delete-instance confirm modal.
+   Plain borders + flat color only — no backdrop-filter, no box-shadow blur,
+   nothing that repaints per-frame, so it stays cheap on WebKitGTK same as
+   the rest of the overlays (see the .is-webkit-gtk rules further down). */
+.instance-danger-toggle-wrap {
+  margin-top: 16px;
+  border: 1px solid rgba(var(--danger-rgb, 239, 68, 68), 0.28);
+  background: rgba(var(--danger-rgb, 239, 68, 68), 0.06);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.instance-danger-toggle-row {
+  align-items: flex-start;
+  gap: 12px;
+}
+/* Slider + icon stacked in a column: icon sits under the toggle button
+   instead of inline with the text. */
+.instance-danger-toggle-control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.instance-danger-toggle-row .toggle-slider {
+  margin-top: 1px;
+}
+/* Red switch when this specific toggle is on — overrides the normal
+   accent-colored .toggle-row checked state. */
+.instance-danger-toggle-row input:checked + .toggle-slider {
+  background: var(--danger, #ef4444);
+}
+.instance-danger-toggle-icon {
+  color: var(--danger, #ef4444);
+  flex-shrink: 0;
+}
+.instance-danger-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.instance-danger-toggle-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.instance-danger-toggle-sub {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.instance-danger-toggle-row.disabled {
+  cursor: not-allowed;
+}
+.instance-danger-toggle-row.disabled .toggle-slider {
+  opacity: 0.4;
+}
+.instance-danger-toggle-row.disabled .instance-danger-toggle-icon,
+.instance-danger-toggle-row.disabled .instance-danger-toggle-title {
+  opacity: 0.55;
+}
 
 /* Mod toggle (small) */
 .mod-toggle-wrap {
@@ -6004,21 +6114,39 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   transition: border-color var(--transition);
 }
 
+/* Docked to the right edge, full window height — same window chrome
+   (dark #1b1b1b panel, thin light border, header treatment, edge-flush
+   corners) as the Downloads drawer (#dl-widget-panel), just mirrored to
+   the right side and opened/closed via the existing overlay/button flow
+   instead of a swipe gesture. */
+#dressing-room-overlay {
+  align-items: stretch;
+  justify-content: flex-end;
+}
+
 .dressing-room-modal {
-  width: 1600px;
-  max-width: 97vw;
-  height: 90vh;
-  max-height: 1100px;
+  width: 560px;
+  max-width: 92vw;
+  height: 100vh;
+  max-height: none;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  padding: 26px;
+  padding: 0;
   background: #1b1b1b;
-  border: 1px solid rgba(var(--overlay-rgb), 0.12);
-  border-radius: var(--radius);
-  box-shadow: 0 32px 72px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-right: none;
+  border-radius: var(--radius) 0 0 var(--radius);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.6);
   transform: translateZ(0);
   position: relative;
   overflow: hidden;
+  animation: dressing-room-in 0.24s cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+@keyframes dressing-room-in {
+  from { transform: translate3d(100%, 0, 0); }
+  to   { transform: translate3d(0, 0, 0); }
 }
 
 .dressing-room-content {
@@ -6027,6 +6155,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex: 1;
   min-height: 0;
   gap: 16px;
+  padding: 20px 24px 24px;
   transition: opacity 0.25s ease;
 }
 
@@ -6075,7 +6204,11 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .dressing-room-header {
   position: relative;
   z-index: 3;
-  margin-bottom: 14px;
+  flex-shrink: 0;
+  margin-bottom: 0;
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .dressing-room-tabs {
@@ -6111,10 +6244,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: var(--accent-dim);
   border: 1px solid var(--accent);
   color: var(--accent);
-}
-
-.dressing-room-modal {
-  position: relative;
 }
 
 .dressing-room-busy-overlay {

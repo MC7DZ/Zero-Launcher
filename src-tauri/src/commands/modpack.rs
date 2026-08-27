@@ -78,6 +78,76 @@ struct ModpackImportProgress {
 const PROGRESS_EVENT: &str = "modpack-import-progress";
 const PROGRESS_ID: &str = "modpack-import";
 
+/// Cleans up after a failed import so a bad download doesn't leave a
+/// half-installed, broken instance sitting around.
+///
+/// Armed the moment `import_modpack` creates the instance's game folder,
+/// and disarmed only once the whole function returns `Ok`. If anything in
+/// between bails out early (network error, a spawn_blocking join failure,
+/// corrupt archive, etc.) this runs on drop and:
+///   - deletes the game folder, but ONLY if this import is what created it
+///     (an existing folder the user pointed a custom directory at is left
+///     alone even on failure — we only ever delete what we downloaded)
+///   - deregisters the instance from `state.instances` if `install_minecraft`
+///     had already gotten far enough to add it, so a failed pack-file
+///     download doesn't leave a phantom entry pointing at a folder we just
+///     removed.
+struct ImportCleanupGuard<'a> {
+    app: tauri::AppHandle,
+    state: &'a AppState,
+    game_dir: Option<PathBuf>,
+    dir_pre_existed: bool,
+    registered_version_id: Option<String>,
+}
+
+impl<'a> ImportCleanupGuard<'a> {
+    fn new(app: tauri::AppHandle, state: &'a AppState) -> Self {
+        Self {
+            app,
+            state,
+            game_dir: None,
+            dir_pre_existed: false,
+            registered_version_id: None,
+        }
+    }
+
+    /// Import finished successfully — nothing to clean up.
+    fn disarm(&mut self) {
+        self.game_dir = None;
+        self.registered_version_id = None;
+    }
+}
+
+impl<'a> Drop for ImportCleanupGuard<'a> {
+    fn drop(&mut self) {
+        if let Some(version_id) = self.registered_version_id.take() {
+            let mut instances = self.state.instances.lock().unwrap();
+            instances.retain(|i| i.version_id != version_id);
+            drop(instances);
+            self.state.save_instances();
+        }
+
+        if let Some(dir) = self.game_dir.take() {
+            if !self.dir_pre_existed && dir.is_dir() {
+                match std::fs::remove_dir_all(&dir) {
+                    Ok(()) => logger::info(
+                        &self.app,
+                        self.state,
+                        "MODPACK",
+                        &format!("Import failed — removed partially downloaded folder {}", dir.display()),
+                    ),
+                    Err(e) => logger::warn(
+                        &self.app,
+                        self.state,
+                        "MODPACK",
+                        &format!("Import failed and cleanup of {} also failed: {e}", dir.display()),
+                    ),
+                }
+            }
+        }
+    }
+}
+
 fn emit_progress(
     app: &tauri::AppHandle,
     stage: &str,
@@ -846,8 +916,17 @@ pub async fn import_modpack(
             .collect();
         default_dir.join("!Instances").join(safe_name.trim())
     };
+    let dir_pre_existed = game_dir.is_dir();
     std::fs::create_dir_all(&game_dir).map_err(|e| format!("Failed to create instance folder: {e}"))?;
     logger::info(&app, &state, "MODPACK", &format!("Instance directory: {}", game_dir.display()));
+
+    // Arm cleanup now that the folder exists. `dir_pre_existed` decides
+    // whether a later failure is allowed to delete it — if the user
+    // pointed a custom directory at something that already had content,
+    // we never touch it, even if the import goes on to fail.
+    let mut cleanup = ImportCleanupGuard::new(app.clone(), state.inner());
+    cleanup.dir_pre_existed = dir_pre_existed;
+    cleanup.game_dir = Some(game_dir.clone());
 
     // ── Install the base game + loader ─────────────────────────────────
     emit_progress(
@@ -869,6 +948,10 @@ pub async fn import_modpack(
     };
     let instance = install_minecraft(app.clone(), state.clone(), install_payload).await?;
     logger::info(&app, &state, "MODPACK", "Base game + loader installed, laying pack content on top…");
+    // From here on, if we bail out, also deregister the instance
+    // install_minecraft just added — don't leave a broken entry pointing
+    // at a folder we're about to delete.
+    cleanup.registered_version_id = Some(instance.version_id.clone());
 
     // ── Re-open archive fresh for file extraction ──────────────────────
     let file = std::fs::File::open(&zip_path).map_err(|e| format!("Failed to reopen archive: {e}"))?;
@@ -918,6 +1001,10 @@ pub async fn import_modpack(
 
     logger::info(&app, &state, "MODPACK", &format!("Modpack import finished — {} file(s) failed", failed_files.len()));
     emit_progress(&app, "done", "Modpack imported".into(), 0, 0, true, None);
+
+    // Made it to the end successfully — the instance and its folder are
+    // real now, not cleanup material.
+    cleanup.disarm();
 
     Ok(ModpackImportResult {
         instance,

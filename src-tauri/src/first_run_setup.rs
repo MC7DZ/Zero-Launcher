@@ -96,22 +96,40 @@ fn source_exe_path() -> Option<PathBuf> {
     std::env::current_exe().ok()
 }
 
+// Pure CSS animation only (transform + opacity) — no box-shadow blur, no
+// backdrop-filter, no per-frame JS. Those are the same two properties the
+// compositor can animate without repainting, which is what keeps this
+// cheap on WebKitGTK (see the .is-webkit-gtk notes on the other overlays
+// in main.css for the same rule applied elsewhere in the app).
 const SETUP_HTML: &str = r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
   html,body{margin:0;height:100%;background:#111318;color:#eee;
     font-family:-apple-system,Segoe UI,sans-serif;
-    display:flex;align-items:center;justify-content:center;text-align:center}
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    overflow:hidden}
   .box{padding:2rem}
+  .mark{width:48px;height:48px;margin:0 auto 1.1rem;position:relative}
+  .ring{position:absolute;inset:0;border-radius:50%;
+    border:3px solid #2a2d35;border-top-color:#6cc0ff;
+    animation:spin 1s linear infinite}
+  .core{position:absolute;inset:14px;border-radius:50%;background:#6cc0ff;
+    animation:pulse 1.6s ease-in-out infinite}
   h1{font-size:1.05rem;margin:0 0 .5rem;font-weight:600}
-  p{color:#9aa0aa;font-size:.8rem;margin:0}
-  .spin{width:26px;height:26px;border:3px solid #2a2d35;border-top-color:#6cc0ff;
-    border-radius:50%;margin:0 auto 1rem;animation:s .8s linear infinite}
-  @keyframes s{to{transform:rotate(360deg)}}
+  p{color:#9aa0aa;font-size:.8rem;margin:0 0 .9rem}
+  .dots{display:flex;justify-content:center;gap:5px}
+  .dots span{width:5px;height:5px;border-radius:50%;background:#4c5666;
+    animation:bounce 1.1s ease-in-out infinite}
+  .dots span:nth-child(2){animation-delay:.15s}
+  .dots span:nth-child(3){animation-delay:.3s}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes pulse{0%,100%{transform:scale(.7);opacity:.55}50%{transform:scale(1);opacity:1}}
+  @keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-4px);opacity:1}}
 </style></head>
 <body><div class="box">
-  <div class="spin"></div>
+  <div class="mark"><div class="ring"></div><div class="core"></div></div>
   <h1>Setting up Zero Launcher&hellip;</h1>
   <p>Installing files and creating a shortcut.<br>This only happens once.</p>
+  <div class="dots"><span></span><span></span><span></span></div>
 </div></body></html>"#;
 
 /// Command-line flag the relocated copy is launched with, followed by the

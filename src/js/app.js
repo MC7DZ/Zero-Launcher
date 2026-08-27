@@ -75,7 +75,16 @@ const INSTANCE_CONFIRM_SVGS = {
   hide: `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`,
 };
 
-function showInstanceConfirmModal({ type, title, message, confirmText, isDanger, onConfirm }) {
+// Optional "also delete this instance's own data folder" toggle, shown on
+// the Delete Instance confirm modal only. `onConfirm` receives whether the
+// toggle was on so the caller can act on it — it's never read directly off
+// the DOM outside this module.
+//
+// `dataToggle.disabled` (and a reason) is used for instances whose data
+// folder *is* the shared default `.minecraft` folder: turning it on there
+// would wipe every instance's data, not just this one, so the checkbox is
+// force-disabled and forced off rather than merely defaulting to off.
+function showInstanceConfirmModal({ type, title, message, confirmText, isDanger, dataToggle, onConfirm }) {
   const overlay = document.getElementById('instance-confirm-overlay');
   const heading = document.getElementById('instance-confirm-heading');
   const icon = document.getElementById('instance-confirm-icon');
@@ -83,6 +92,10 @@ function showInstanceConfirmModal({ type, title, message, confirmText, isDanger,
   const actionBtn = document.getElementById('btn-instance-confirm-action');
   const cancelBtn = document.getElementById('btn-instance-confirm-cancel');
   const closeBtn = document.getElementById('btn-close-instance-confirm');
+  const toggleWrap = document.getElementById('instance-confirm-data-toggle-wrap');
+  const toggleRow = document.getElementById('instance-confirm-data-toggle-row');
+  const toggleChk = document.getElementById('instance-confirm-data-checkbox');
+  const toggleSub = document.getElementById('instance-confirm-data-toggle-sub');
 
   if (!overlay || !actionBtn) return;
 
@@ -98,6 +111,23 @@ function showInstanceConfirmModal({ type, title, message, confirmText, isDanger,
   desc.textContent = message || '';
   actionBtn.textContent = confirmText || 'Confirm';
 
+  // Always defaults to off — this only ever turns it back off explicitly,
+  // never leaves a previous modal's "on" state lingering into this one.
+  if (dataToggle && dataToggle.show) {
+    toggleWrap.classList.remove('hidden');
+    toggleChk.checked = false;
+    toggleChk.disabled = !!dataToggle.disabled;
+    toggleRow.classList.toggle('disabled', !!dataToggle.disabled);
+    toggleSub.textContent = dataToggle.disabled
+      ? (dataToggle.disabledReason || "Not available for this instance.")
+      : (dataToggle.reason || "Mods, worlds, saves, configs and screenshots in this instance's own folder — permanently.");
+  } else {
+    toggleWrap.classList.add('hidden');
+    toggleChk.checked = false;
+    toggleChk.disabled = false;
+    toggleRow.classList.remove('disabled');
+  }
+
   const cleanup = () => {
     overlay.classList.add('hidden');
     actionBtn.onclick = null;
@@ -108,8 +138,10 @@ function showInstanceConfirmModal({ type, title, message, confirmText, isDanger,
   cancelBtn.onclick = cleanup;
   closeBtn.onclick = cleanup;
   actionBtn.onclick = async () => {
+    // Disabled implies "always off" regardless of what's checked.
+    const deleteData = !!(dataToggle && dataToggle.show && !dataToggle.disabled && toggleChk.checked);
     cleanup();
-    if (onConfirm) await onConfirm();
+    if (onConfirm) await onConfirm(deleteData);
   };
 
   overlay.classList.remove('hidden');
@@ -313,6 +345,7 @@ const api = {
   updateInstance: (versionId, name, loaderVersion) =>
     invoke('update_instance', { versionId, name, loaderVersion }),
   deleteInstalledVersion: (versionId, directory) => invoke('delete_installed_version', { versionId, directory: directory || null }),
+  deleteInstanceData: (directory, minecraftDirectory) => invoke('delete_instance_data', { directory, minecraftDirectory: minecraftDirectory || null }),
   scanMinecraftVersions: (directory) => invoke('scan_minecraft_versions', { directory: directory || null }),
   getHiddenInstances: () => invoke('get_hidden_instances'),
   hideInstance: (versionId) => invoke('hide_instance', { versionId }),
@@ -378,6 +411,11 @@ const api = {
   discoverGetProject: (projectId) => invoke('discover_get_project', { projectId }),
   discoverDownload: (directory, projectType, fileUrl, fileName, downloadId) =>
     invoke('discover_download', { directory, projectType, fileUrl, fileName, downloadId: downloadId || null }),
+  // Modpacks aren't dropped into a folder like a mod/resourcepack — the
+  // file is fetched to a scratch path first, then handed to
+  // previewModpack/importModpack exactly like a dragged-in .mrpack/.zip.
+  discoverDownloadToTemp: (fileUrl, fileName) =>
+    invoke('discover_download_to_temp', { fileUrl, fileName }),
   discoverGetGameVersions: () => invoke('discover_get_game_versions'),
   discoverGetCategories: (projectType) => invoke('discover_get_categories', { projectType }),
   discoverGetResolutions: (projectType) => invoke('discover_get_resolutions', { projectType }),
@@ -4321,11 +4359,36 @@ async function syncInstanceSelectionAcrossTabs() {
   }
 }
 
+// Instance data (mods/worlds/saves/etc) lives at inst.directory, separate
+// from the shared versions/libraries/assets in inst.minecraft_directory —
+// see InstalledInstance in models.rs. Deleting it is only ever safe when
+// that directory isn't also the shared default .minecraft folder, which
+// is true for every default-location instance and any instance saved
+// before the directory split existed (empty minecraft_directory).
+function instanceDataDeletionIsUnsafe(inst) {
+  if (!inst) return true;
+  const ownDir = (inst.directory || '').trim();
+  if (!ownDir) return true;
+  const sharedDir = (inst.minecraft_directory || (settings && settings.game_directory) || '').trim();
+  if (!sharedDir) return true;
+  return ownDir === sharedDir;
+}
+
 // Actually deletes an instance's files + tracked entry (shared by the plain
 // confirm() path and the "Delete Anyway" button on the vanilla-dependency
-// warning).
-async function performInstanceDelete(versionId, inst) {
+// warning). `deleteData` additionally wipes the instance's own data folder
+// (mods/worlds/saves/config/screenshots) — always false unless the user
+// explicitly opted in via the confirm modal's toggle.
+async function performInstanceDelete(versionId, inst, deleteData) {
   try {
+    if (deleteData && inst && !instanceDataDeletionIsUnsafe(inst)) {
+      try {
+        await api.deleteInstanceData(inst.directory, inst.minecraft_directory);
+      } catch (e) {
+        console.error('Failed to delete instance data folder:', e);
+        showToast('Instance deleted, but its data folder could not be removed: ' + e, 'error');
+      }
+    }
     await api.deleteInstalledVersion(versionId, inst && inst.directory);
     await refreshInstances();
     if (selectedInstanceId === versionId) {
@@ -4617,19 +4680,27 @@ function initInstanceActions() {
     }
 
     const instName = (inst && (inst.name || inst.version_id)) || selectedInstanceId;
-    const doDelete = async () => {
-      await performInstanceDelete(selectedInstanceId, inst);
+    const doDelete = async (deleteData) => {
+      await performInstanceDelete(selectedInstanceId, inst, deleteData);
     };
 
     if (settings && settings.confirm_destructive_actions === false) {
-      await doDelete();
+      // Skip-confirmation users never see the toggle, so this path never
+      // touches instance data — only ever the version folder.
+      await doDelete(false);
     } else {
+      const dataUnsafe = instanceDataDeletionIsUnsafe(inst);
       showInstanceConfirmModal({
         type: 'delete',
         title: 'Delete Instance',
         message: `Delete "${instName}"? This permanently removes its folder from .minecraft/versions and cannot be undone.`,
         confirmText: 'Delete Instance',
         isDanger: true,
+        dataToggle: {
+          show: true,
+          disabled: dataUnsafe,
+          disabledReason: "Not available — this instance stores its data in your main .minecraft folder, shared with other instances.",
+        },
         onConfirm: doDelete
       });
     }
@@ -6233,6 +6304,88 @@ function initModpackImportOverlay() {
   });
 }
 
+// ── Discover → "Install in custom directory" mini modal ───────────────────
+// Opened from a modpack card's 3-dot menu. Just a directory field — the
+// pack's own name is used as the instance name, same as a plain Download
+// click, so there's no separate name/summary step to confirm here.
+let discoverModpackDirState = null; // { hit, opt, downloadBtn }
+
+function openDiscoverModpackDirOverlay(hit, versionSelect, downloadBtn) {
+  const overlayEl = document.getElementById('discover-modpack-dir-overlay');
+  if (!overlayEl) return;
+
+  discoverModpackDirState = { hit, versionSelect, downloadBtn };
+  document.getElementById('discover-modpack-dir-name').textContent = hit.title || '';
+  document.getElementById('discover-modpack-dir-path').value = '';
+  document.getElementById('discover-modpack-dir-progress-wrap').classList.add('hidden');
+  document.getElementById('btn-confirm-discover-modpack-dir').disabled = false;
+  overlayEl.classList.remove('hidden');
+}
+
+function closeDiscoverModpackDirOverlay() {
+  document.getElementById('discover-modpack-dir-overlay').classList.add('hidden');
+  discoverModpackDirState = null;
+}
+
+async function confirmDiscoverModpackDirInstall() {
+  if (!discoverModpackDirState) return;
+  const dirInput = document.getElementById('discover-modpack-dir-path');
+  const customDir = dirInput.value.trim();
+  if (!customDir) { showToast('Choose a custom directory', 'error'); return; }
+
+  const { hit, versionSelect, downloadBtn } = discoverModpackDirState;
+  const confirmBtn = document.getElementById('btn-confirm-discover-modpack-dir');
+  const progressWrap = document.getElementById('discover-modpack-dir-progress-wrap');
+  const statusEl = document.getElementById('discover-modpack-dir-status');
+  const barEl = document.getElementById('discover-modpack-dir-bar');
+
+  const target = currentDiscoverTargetInstance();
+  const opt = await resolveDiscoverDownloadOption(hit, versionSelect, null, target);
+  if (!opt) return;
+
+  confirmBtn.disabled = true;
+  progressWrap.classList.remove('hidden');
+  statusEl.textContent = 'Starting…';
+  barEl.style.transform = 'scaleX(0)';
+
+  // Mirror the modpack extractor's own progress bar while this mini modal
+  // is open, in addition to the shared downloads-widget card — closing the
+  // modal (below) doesn't cancel the install, it just stops watching it.
+  const unlisten = await api.onModpackImportProgress((e) => {
+    const p = e.payload || {};
+    const pct = Math.max(0, Math.min(100, p.percent || 0));
+    statusEl.textContent = p.message || p.stage || '';
+    barEl.style.transform = `scaleX(${pct / 100})`;
+  });
+
+  try {
+    await installDiscoverModpack(hit, opt, downloadBtn, customDir);
+  } finally {
+    if (typeof unlisten === 'function') unlisten();
+    closeDiscoverModpackDirOverlay();
+  }
+}
+
+function initDiscoverModpackDirOverlay() {
+  const overlayEl = document.getElementById('discover-modpack-dir-overlay');
+  if (!overlayEl) return;
+
+  document.getElementById('btn-cancel-discover-modpack-dir').addEventListener('click', closeDiscoverModpackDirOverlay);
+  document.getElementById('btn-cancel-discover-modpack-dir-form').addEventListener('click', closeDiscoverModpackDirOverlay);
+  document.getElementById('btn-confirm-discover-modpack-dir').addEventListener('click', confirmDiscoverModpackDirInstall);
+
+  document.getElementById('discover-modpack-dir-browse').addEventListener('click', async () => {
+    try {
+      const picked = await window.__TAURI__.dialog.open({ directory: true, multiple: false });
+      if (picked) {
+        document.getElementById('discover-modpack-dir-path').value = Array.isArray(picked) ? picked[0] : picked;
+      }
+    } catch (e) {
+      showToast('Could not open folder picker: ' + e, 'error');
+    }
+  });
+}
+
 // Reads the user's configured download concurrency (Settings → Performance
 // & Java → Concurrent Downloads). Automatic mode uses 3, matching the
 // backend's own default; manual mode is clamped to 1-16 the same way
@@ -6807,7 +6960,7 @@ const discoverPrefs = loadDiscoverPrefs();
 
 let discoverState = {
   query: '',
-  type: 'mod',       // 'mod' | 'resourcepack'
+  type: 'mod',       // 'modpack' | 'mod' | 'resourcepack'
   loader: 'any',
   gameVersion: '',        // '' = any
   categories: [],         // selected category slugs
@@ -7822,7 +7975,11 @@ function applyInstanceFiltersToDiscover(inst) {
   }
 
   const gameVersion = inst.minecraft_version || '';
-  if (gameVersion && discoverState.gameVersion !== gameVersion) {
+  // Modpacks install a whole new instance (their own Minecraft version +
+  // loader), so auto-copying the *targeted* instance's version here would
+  // just get overwritten by the pack anyway — leave Game Version alone and
+  // let the user pick it themselves when browsing modpacks.
+  if (discoverState.type !== 'modpack' && gameVersion && discoverState.gameVersion !== gameVersion) {
     discoverState.gameVersion = gameVersion;
     const gvSelect = document.getElementById('discover-game-version-select');
     if (gvSelect) gvSelect.value = gameVersion;
@@ -7867,7 +8024,8 @@ function updateDiscoverPagination() {
   if (info) info.textContent = `Page ${discoverState.page} of ${totalPages}`;
   if (prevBtn) prevBtn.disabled = discoverState.page <= 1;
   if (nextBtn) nextBtn.disabled = discoverState.page >= totalPages;
-  if (countLabel) countLabel.textContent = `${formatDiscoverCount(discoverState.totalHits)} ${discoverState.type === 'mod' ? 'mods' : 'resourcepacks'}`;
+  const typeLabel = discoverState.type === 'modpack' ? 'modpacks' : discoverState.type === 'mod' ? 'mods' : 'resourcepacks';
+  if (countLabel) countLabel.textContent = `${formatDiscoverCount(discoverState.totalHits)} ${typeLabel}`;
 }
 
 async function performDiscoverSearch() {
@@ -7875,8 +8033,12 @@ async function performDiscoverSearch() {
   if (!grid) return;
   showDiscoverSkeletons();
 
-  const isModSearch = discoverState.type === 'mod';
-  const loaderFilter = (isModSearch && discoverState.loader !== 'any') ? discoverState.loader : null;
+  // Modpacks carry a loader and client/server side on Modrinth just like
+  // mods do, so both filters need to actually reach the search call here —
+  // not just be visible in the sidebar (that's the segment-click handler's
+  // job; this is what makes the selected values do anything).
+  const wantsLoaderEnv = discoverState.type === 'mod' || discoverState.type === 'modpack';
+  const loaderFilter = (wantsLoaderEnv && discoverState.loader !== 'any') ? discoverState.loader : null;
   const gameVersion = discoverState.gameVersion || null;
   const categoriesFilter = (discoverState.type === 'resourcepack' && discoverState.resolution)
     ? [...discoverState.categories, discoverState.resolution]
@@ -7889,7 +8051,7 @@ async function performDiscoverSearch() {
       loaderFilter,
       gameVersion,
       categoriesFilter,
-      (isModSearch && discoverState.environment !== 'any') ? discoverState.environment : null,
+      (wantsLoaderEnv && discoverState.environment !== 'any') ? discoverState.environment : null,
       discoverState.license || null,
       discoverState.openSourceOnly,
       discoverState.page,
@@ -8075,6 +8237,7 @@ function renderCardContent(card) {
   const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
   const tagsHtml = allTags.map(c => `<span class="discover-card-tag ${discoverTagVariant(c)}">${discoverEscape(capitalize(c))}</span>`).join('');
 
+  const isModpack = hit.project_type === 'modpack';
   card.innerHTML = `
     <div class="discover-card-top">
       <div class="discover-card-icon">${iconHtml}</div>
@@ -8096,16 +8259,32 @@ function renderCardContent(card) {
       <select class="input-field discover-version-select" data-project-id="${discoverEscape(hit.project_id)}">
         <option value="__latest__">✦ Latest Compatible Version</option>
       </select>
-      <button class="btn-accent btn-sm discover-download-btn" data-project-id="${discoverEscape(hit.project_id)}">Download</button>
+      ${isModpack ? `<button class="discover-card-menu-btn" type="button" title="More options" aria-label="More options">⋯</button>` : ''}
+      <button class="btn-accent btn-sm discover-download-btn" data-project-id="${discoverEscape(hit.project_id)}">${isModpack ? 'Install' : 'Download'}</button>
     </div>
   `;
 
   const versionSelect = card.querySelector('.discover-version-select');
   const downloadBtn = card.querySelector('.discover-download-btn');
+  const menuBtn = card.querySelector('.discover-card-menu-btn');
 
   versionSelect.addEventListener('focus', () => populateVersionSelect(hit, versionSelect, downloadBtn));
   versionSelect.addEventListener('mousedown', () => populateVersionSelect(hit, versionSelect, downloadBtn));
   downloadBtn.addEventListener('click', () => downloadDiscoverSelection(hit, versionSelect, downloadBtn));
+
+  if (menuBtn) {
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const rect = menuBtn.getBoundingClientRect();
+      showCustomMenu(rect.left, rect.bottom + 4, [
+        {
+          type: 'item',
+          label: 'Install in custom directory',
+          onClick: () => openDiscoverModpackDirOverlay(hit, versionSelect, downloadBtn),
+        },
+      ]);
+    });
+  }
 }
 
 function unloadCardContent(card) {
@@ -8135,7 +8314,7 @@ function isDiscoverVersionCompatible(version, hit, target) {
   if (target.minecraft_version && version.game_versions && !version.game_versions.includes(target.minecraft_version)) {
     return false;
   }
-  if (hit.project_type === 'mod') {
+  if (hit.project_type === 'mod' || hit.project_type === 'modpack') {
     const loader = (target.loader || 'vanilla').toLowerCase();
     if (loader !== 'vanilla') {
       const loaders = (version.loaders || []).map(l => l.toLowerCase());
@@ -8145,11 +8324,12 @@ function isDiscoverVersionCompatible(version, hit, target) {
   return true;
 }
 
-async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
-  if (!settings) settings = await api.getSettings();
-  const target = currentDiscoverTargetInstance();
-  const directory = target ? (target.directory || settings.game_directory) : settings.game_directory;
-
+// Shared by both the plain mod/resourcepack download path and the modpack
+// install path below: makes sure a compatible version is selected, confirms
+// with the user if they picked an incompatible one anyway, and hands back
+// the chosen file's <option> (or null, after already toasting/resetting the
+// button, if there's nothing usable to download).
+async function resolveDiscoverDownloadOption(hit, versionSelect, downloadBtn, target) {
   if (!versionSelect._loaded || versionSelect.value === '__latest__') {
     if (downloadBtn) downloadBtn.disabled = true;
     const oldText = downloadBtn ? downloadBtn.textContent : '';
@@ -8162,7 +8342,7 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
   if (!opt || !opt.dataset.fileUrl) {
     showToast('No version available for download', 'error');
     if (downloadBtn) downloadBtn.disabled = false;
-    return;
+    return null;
   }
 
   if (opt.dataset.incompatible) {
@@ -8170,8 +8350,29 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
     const proceed = confirm(`This version doesn't match ${targetLabel} and is marked (Incompatible). Download it anyway?`);
     if (!proceed) {
       if (downloadBtn) downloadBtn.disabled = false;
-      return;
+      return null;
     }
+  }
+
+  return opt;
+}
+
+async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
+  if (!settings) settings = await api.getSettings();
+  const target = currentDiscoverTargetInstance();
+  const directory = target ? (target.directory || settings.game_directory) : settings.game_directory;
+
+  const opt = await resolveDiscoverDownloadOption(hit, versionSelect, downloadBtn, target);
+  if (!opt) return;
+
+  // Modpacks aren't dropped into a mods/resourcepacks folder — they go
+  // through the same install-a-whole-instance pipeline the Modpack
+  // Extractor uses (download → preview → install), always into their own
+  // separate folder for a plain click. "Install in custom directory" from
+  // the 3-dot menu is the only way to change that destination.
+  if (hit.project_type === 'modpack') {
+    await installDiscoverModpack(hit, opt, downloadBtn, null);
+    return;
   }
 
   if (downloadBtn) downloadBtn.disabled = true;
@@ -8203,6 +8404,110 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
       downloadBtn.textContent = originalText;
       downloadBtn.disabled = false;
     }
+  }
+}
+
+// True only while a Discover-triggered modpack install is actually running
+// (download → preview → import) — the backend's modpack-import-progress
+// event is a single global channel (same one the Modpack Extractor uses),
+// so only one modpack install can be in flight at a time regardless of
+// where it was started from.
+let discoverModpackInstallRunning = false;
+
+// Installs a modpack straight from a Discover card: downloads the chosen
+// file to a scratch path, then runs it through the exact same
+// preview/import pipeline as a dragged-in .mrpack/.zip. `customDirectory`
+// is null for a plain Download click (always a separate folder, named
+// after the pack) or a path when triggered via the 3-dot menu's "Install
+// in custom directory".
+async function installDiscoverModpack(hit, opt, downloadBtn, customDirectory) {
+  if (discoverModpackInstallRunning) {
+    showToast('Another modpack install is already in progress', 'info');
+    return;
+  }
+
+  if (downloadBtn) downloadBtn.disabled = true;
+  const originalText = downloadBtn ? downloadBtn.textContent : 'Install';
+  if (downloadBtn) downloadBtn.textContent = 'Downloading…';
+
+  discoverModpackInstallRunning = true;
+  const dlId = genDlId('discover-modpack-install');
+  if (dlWidgetGeneric) {
+    dlWidgetGeneric.begin(dlId, `Modpack: ${hit.title}`, 'Downloading…', {
+      determinate: true,
+      withStats: true,
+      noCancel: true,
+    });
+  }
+
+  let unlisten = null;
+  try {
+    const tempPath = await api.discoverDownloadToTemp(opt.dataset.fileUrl, opt.dataset.fileName);
+
+    if (downloadBtn) downloadBtn.textContent = 'Installing…';
+    if (dlWidgetGeneric) dlWidgetGeneric.update(dlId, `Modpack: ${hit.title}`, 'Reading modpack…', 0, {});
+
+    const preview = await api.previewModpack(tempPath);
+    const zlibOk = await confirmZlibIfConflict(preview && preview.loader);
+    if (!zlibOk) {
+      showToast('Modpack installation cancelled', 'info');
+      if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, false, 'Cancelled');
+      return;
+    }
+
+    unlisten = await api.onModpackImportProgress((e) => {
+      const p = e.payload || {};
+      const pct = Math.max(0, Math.min(100, p.percent || 0));
+      if (!dlWidgetGeneric) return;
+      const activeFiles = p.active_files || [];
+      const fileLabel = activeFiles.length === 0
+        ? ''
+        : activeFiles.length === 1
+          ? activeFiles[0].name
+          : `${activeFiles[0].name} +${activeFiles.length - 1} more`;
+      dlWidgetGeneric.update(dlId, `Modpack: ${hit.title}`, p.message || p.stage || '', pct, {
+        file: fileLabel,
+        speed: p.speed_bps ? fmtSpeed(p.speed_bps) : '—',
+        eta: p.eta_seconds != null ? fmtEta(p.eta_seconds) : '—',
+        downloaded: p.downloaded_bytes ? fmtBytes(p.downloaded_bytes) : '—',
+      });
+      if (p.stage === 'downloading') {
+        dlWidgetGeneric.reconcileActiveFiles(dlId, activeFiles);
+      }
+    });
+
+    const name = (preview && preview.name) || hit.title;
+    const result = await api.importModpack(tempPath, name, !!customDirectory, customDirectory || null);
+
+    await refreshInstances();
+    renderInstanceList();
+
+    let msg = `Installed "${name}"`;
+    if (result.failed_files && result.failed_files.length > 0) {
+      msg += ` — ${result.failed_files.length} file(s) failed to download`;
+    }
+    if (result.unresolved_curseforge_mods) {
+      msg += ` — ${result.unresolved_curseforge_mods} CurseForge mod(s) need to be added manually (via Discover)`;
+    }
+    showToast(msg, result.failed_files && result.failed_files.length > 0 ? 'warning' : 'success');
+    if (downloadBtn) downloadBtn.textContent = 'Installed ✓';
+    if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, true, msg);
+    setTimeout(() => {
+      if (downloadBtn) {
+        downloadBtn.textContent = originalText;
+        downloadBtn.disabled = false;
+      }
+    }, 1500);
+  } catch (e) {
+    showToast('Failed to install modpack: ' + e, 'error');
+    if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, false, `Failed: ${e}`);
+    if (downloadBtn) {
+      downloadBtn.textContent = originalText;
+      downloadBtn.disabled = false;
+    }
+  } finally {
+    discoverModpackInstallRunning = false;
+    if (typeof unlisten === 'function') unlisten();
   }
 }
 
@@ -8398,12 +8703,28 @@ function initDiscover() {
       discoverState.environment = 'any';
       discoverState.resolution = '';
 
+      // Modpacks pick their own Minecraft version by nature of what's in
+      // the pack — don't carry over whatever Game Version was left selected
+      // from browsing Mods/Resourcepacks, and don't let the target
+      // instance auto-fill it either (see applyInstanceFiltersToDiscover).
+      // Leave it on "All Versions" until the user deliberately narrows it.
+      if (discoverState.type === 'modpack') {
+        discoverState.gameVersion = '';
+        const gvSelect = document.getElementById('discover-game-version-select');
+        if (gvSelect) gvSelect.value = '';
+      }
+
       const loaderSection = document.getElementById('filter-section-loader');
       const envSection = document.getElementById('filter-section-env');
       const resSection = document.getElementById('filter-section-resolution');
 
-      if (loaderSection) loaderSection.style.display = discoverState.type === 'mod' ? 'flex' : 'none';
-      if (envSection) envSection.style.display = discoverState.type === 'mod' ? 'flex' : 'none';
+      // Modpacks carry a loader (fabric/forge/etc.) and a client/server
+      // side just like mods do on Modrinth, so they get the same filters —
+      // only resourcepacks (Resolution) and plain mods vs modpacks (which
+      // both want Loader + Environment) differ here.
+      const wantsLoaderEnv = discoverState.type === 'mod' || discoverState.type === 'modpack';
+      if (loaderSection) loaderSection.style.display = wantsLoaderEnv ? 'flex' : 'none';
+      if (envSection) envSection.style.display = wantsLoaderEnv ? 'flex' : 'none';
       if (resSection) resSection.style.display = discoverState.type === 'resourcepack' ? 'flex' : 'none';
 
       updateDiscoverLoaderPillsUI();
@@ -11751,6 +12072,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initInstanceTroubleshootWindow();
   initMods();
   initModpackImportOverlay();
+  initDiscoverModpackDirOverlay();
   initDiscover();
   initSettings();
   initMusicSettings();
@@ -12202,24 +12524,11 @@ function initCrashDialog() {
     }
   });
 
-  document.getElementById('btn-crash-relaunch').addEventListener('click', async () => {
-    const versionId = overlay.dataset.versionId;
-    close();
-    if (versionId && api.launchGame) {
-      try {
-        await api.launchGame(versionId);
-        showToast('Relaunching instance…', 'info');
-      } catch (e) {
-        showToast('Failed to relaunch: ' + e, 'error');
-      }
-    }
-  });
-
+  // Always shown on a real crash — no "likely cause" analysis, no settings
+  // gate. The backend still runs its heuristics (see crash_analysis.rs) to
+  // decide *whether* this exit looked like a crash at all, but the popup
+  // itself intentionally says nothing more than "Your Game Crashed".
   api.onGameCrashed((event) => {
-    // Experimental toggle — the analysis is heuristic and can misdiagnose,
-    // so let people turn the popup off entirely rather than see a possibly
-    // wrong "likely cause" every time a game closes unexpectedly.
-    if (settings && settings.enable_crash_analysis !== true) return;
     showCrashDialog(event.payload);
   });
 }
@@ -12231,46 +12540,6 @@ function showCrashDialog(report) {
 
   overlay.dataset.versionId = report.version_id || '';
   overlay.dataset.instanceName = report.instance_name || '';
-
-  document.getElementById('crash-titlebar-text').textContent =
-    (report.instance_name || 'Instance') + ' — Not Responding';
-  document.getElementById('crash-heading').textContent = report.title || 'Instance has stopped working';
-  document.getElementById('crash-subheading').textContent =
-    `${report.instance_name || 'The instance'} closed unexpectedly. Zero Launcher looked through its log and found a likely cause below.`;
-  document.getElementById('crash-signature').textContent = report.signature || '(no log output captured)';
-
-  const fixesLabel = document.getElementById('crash-fixes-label');
-  const fixesEl = document.getElementById('crash-fixes');
-  fixesEl.innerHTML = '';
-
-  const fixes = Array.isArray(report.fixes) ? report.fixes : [];
-  fixesLabel.style.display = fixes.length ? '' : 'none';
-
-  // Fixes that act on a specific mod (disable/remove) get grouped into one
-  // compact list instead of a full card each once there's more than one —
-  // otherwise 5 incompatible mods would mean 5 near-identical cards.
-  const groupable = fixes.filter(f => f.kind === 'disable_mod' || f.kind === 'delete_mod' || f.kind === 'install_mod');
-  const rest = fixes.filter(f => f.kind !== 'disable_mod' && f.kind !== 'delete_mod' && f.kind !== 'install_mod');
-
-  // Keep whichever kind of fix appears first in the backend's list on top —
-  // e.g. "Update Minecraft" (an info card) is meant to read as the primary
-  // suggestion, with "disable all incompatible mods" as the fallback below.
-  const groupableCard = groupable.length > 1
-    ? buildGroupedModFixCard(report.category, groupable)
-    : null;
-  const restCards = rest.map(fix => buildSingleFixCard(fix));
-  const singleGroupCards = groupable.length <= 1 ? groupable.map(fix => buildSingleFixCard(fix)) : [];
-
-  const isGroupableKind = k => k === 'disable_mod' || k === 'delete_mod' || k === 'install_mod';
-  if (fixes.length && !isGroupableKind(fixes[0].kind)) {
-    restCards.forEach(c => fixesEl.appendChild(c));
-    singleGroupCards.forEach(c => fixesEl.appendChild(c));
-    if (groupableCard) fixesEl.appendChild(groupableCard);
-  } else {
-    if (groupableCard) fixesEl.appendChild(groupableCard);
-    singleGroupCards.forEach(c => fixesEl.appendChild(c));
-    restCards.forEach(c => fixesEl.appendChild(c));
-  }
 
   overlay.classList.remove('hidden');
 }
@@ -12636,17 +12905,67 @@ function getInstanceGameDir(versionId) {
 // ══════════════════════════════════════════════════════════════════
 // CUSTOM CONTEXT MENU (Lightweight & WebKitGTK Optimized)
 // ══════════════════════════════════════════════════════════════════
-function initCustomContextMenu() {
+// showCustomMenu()/closeCustomMenu() are the shared rendering/positioning
+// engine — used both by the global right-click handler below and by any
+// plain button that wants a small dropdown (e.g. the Discover modpack
+// card's 3-dot menu) instead of duplicating this per call site.
+function closeCustomMenu() {
+  const menuEl = document.getElementById('custom-context-menu');
+  const itemsContainer = document.getElementById('ctx-menu-items');
+  if (menuEl && !menuEl.classList.contains('hidden')) {
+    menuEl.classList.add('hidden');
+    if (itemsContainer) itemsContainer.innerHTML = '';
+  }
+}
+
+// items: [{ type: 'item', label, onClick, isPrimary, isDanger } | { type: 'divider' }]
+function showCustomMenu(x, y, items) {
   const menuEl = document.getElementById('custom-context-menu');
   const itemsContainer = document.getElementById('ctx-menu-items');
   if (!menuEl || !itemsContainer) return;
 
-  function closeContextMenu() {
-    if (!menuEl.classList.contains('hidden')) {
-      menuEl.classList.add('hidden');
-      itemsContainer.innerHTML = '';
+  itemsContainer.innerHTML = '';
+  items.forEach((item) => {
+    if (item.type === 'divider') {
+      const div = document.createElement('div');
+      div.className = 'ctx-divider';
+      itemsContainer.appendChild(div);
+    } else {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ctx-item' + (item.isPrimary ? ' ctx-primary' : '') + (item.isDanger ? ' ctx-danger' : '');
+      btn.textContent = item.label;
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        closeCustomMenu();
+        item.onClick();
+      });
+      itemsContainer.appendChild(btn);
     }
+  });
+
+  menuEl.classList.remove('hidden');
+  const menuWidth = 175;
+  const menuHeight = items.length * 32 + 16;
+
+  let posX = x;
+  let posY = y;
+
+  if (posX + menuWidth > window.innerWidth) {
+    posX = Math.max(8, window.innerWidth - menuWidth - 8);
   }
+  if (posY + menuHeight > window.innerHeight) {
+    posY = Math.max(8, window.innerHeight - menuHeight - 8);
+  }
+
+  menuEl.style.left = `${posX}px`;
+  menuEl.style.top = `${posY}px`;
+}
+
+function initCustomContextMenu() {
+  const menuEl = document.getElementById('custom-context-menu');
+  const itemsContainer = document.getElementById('ctx-menu-items');
+  if (!menuEl || !itemsContainer) return;
 
   // Prevent default browser context menu everywhere and render custom items
   document.addEventListener('contextmenu', (e) => {
@@ -12760,71 +13079,35 @@ function initCustomContextMenu() {
       }
     });
 
-    // Render text-only items
-    itemsContainer.innerHTML = '';
-    items.forEach((item) => {
-      if (item.type === 'divider') {
-        const div = document.createElement('div');
-        div.className = 'ctx-divider';
-        itemsContainer.appendChild(div);
-      } else {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'ctx-item' + (item.isPrimary ? ' ctx-primary' : '') + (item.isDanger ? ' ctx-danger' : '');
-        btn.textContent = item.label;
-        btn.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          closeContextMenu();
-          item.onClick();
-        });
-        itemsContainer.appendChild(btn);
-      }
-    });
-
-    // Positioning with viewport edge clamping
-    menuEl.classList.remove('hidden');
-    const menuWidth = 175;
-    const menuHeight = items.length * 32 + 16;
-
-    let posX = mouseX;
-    let posY = mouseY;
-
-    if (posX + menuWidth > window.innerWidth) {
-      posX = Math.max(8, window.innerWidth - menuWidth - 8);
-    }
-    if (posY + menuHeight > window.innerHeight) {
-      posY = Math.max(8, window.innerHeight - menuHeight - 8);
-    }
-
-    menuEl.style.left = `${posX}px`;
-    menuEl.style.top = `${posY}px`;
+    // Render + position via the shared helper.
+    showCustomMenu(mouseX, mouseY, items);
   });
 
   // Global dismiss handlers on any outside interaction
   window.addEventListener('pointerdown', (e) => {
     if (!menuEl.classList.contains('hidden') && !menuEl.contains(e.target)) {
-      closeContextMenu();
+      closeCustomMenu();
     }
   }, true);
 
   window.addEventListener('mousedown', (e) => {
     if (!menuEl.classList.contains('hidden') && !menuEl.contains(e.target)) {
-      closeContextMenu();
+      closeCustomMenu();
     }
   }, true);
 
   window.addEventListener('wheel', (e) => {
     if (!menuEl.classList.contains('hidden') && !menuEl.contains(e.target)) {
-      closeContextMenu();
+      closeCustomMenu();
     }
   }, { capture: true, passive: true });
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !menuEl.classList.contains('hidden')) {
-      closeContextMenu();
+      closeCustomMenu();
     }
   });
 
-  window.addEventListener('resize', closeContextMenu);
-  window.addEventListener('blur', closeContextMenu);
+  window.addEventListener('resize', closeCustomMenu);
+  window.addEventListener('blur', closeCustomMenu);
 }

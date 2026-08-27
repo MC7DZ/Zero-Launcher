@@ -31,6 +31,50 @@ fn modrinth_client() -> &'static reqwest::Client {
     })
 }
 
+/// Separate client for actually downloading file bytes (mod jars,
+/// resourcepacks, modpacks). `modrinth_client()`'s 20s `.timeout()` is a
+/// *whole-request* deadline that keeps counting through the entire body
+/// download, not just until headers arrive — fine for small API calls, but
+/// it silently aborts any mod jar that takes longer than 20 seconds to pull
+/// down (slow connection, or just a big file like a shaderpack/modpack).
+/// This client only bounds the connect phase and each individual read, so a
+/// large-but-healthy transfer is never killed just for taking a while.
+fn download_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .hickory_dns(true)
+            .user_agent(USER_AGENT)
+            .connect_timeout(Duration::from_secs(10))
+            // No whole-request `.timeout()` here on purpose — see above.
+            // `read_timeout` still guards against a connection that goes
+            // completely silent mid-transfer (stalled, not just slow).
+            .read_timeout(Duration::from_secs(30))
+            .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
+/// Runs a request-building closure against the download client, with the
+/// same short connect/timeout retry as `send_with_retry`.
+async fn send_download_with_retry(
+    build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let client = download_client();
+    let mut attempt = 0;
+    loop {
+        match build(client).send().await {
+            Ok(resp) => return Ok(resp),
+            Err(e) if attempt < 2 && (e.is_connect() || e.is_timeout()) => {
+                attempt += 1;
+                tokio::time::sleep(Duration::from_millis(400 * attempt as u64)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 /// Runs a request-building closure with a couple of short retries. DNS
 /// lookups/connects are the flakiest part of a request, so this absorbs a
 /// transient failure instead of surfacing an error on the first hiccup.
@@ -63,7 +107,7 @@ pub struct DiscoverHit {
     pub icon_url: Option<String>,
     pub downloads: u64,
     pub follows: u64,
-    pub project_type: String, // "mod" | "resourcepack"
+    pub project_type: String, // "mod" | "resourcepack" | "modpack"
     pub categories: Vec<String>,
     pub display_categories: Vec<String>,
     pub license: Option<String>,
@@ -122,7 +166,7 @@ struct RawSearchResponse {
 #[tauri::command]
 pub async fn discover_search(
     query: String,
-    project_type: String, // "mod" | "resourcepack"
+    project_type: String, // "mod" | "resourcepack" | "modpack"
     loader: Option<String>,
     game_version: Option<String>,
     categories: Option<Vec<String>>,
@@ -620,7 +664,7 @@ pub async fn discover_download(
         return Err("Download cancelled".to_string());
     }
 
-    let mut resp = send_with_retry(|client| client.get(&file_url))
+    let mut resp = send_download_with_retry(|client| client.get(&file_url))
         .await
         .map_err(|e| {
             cleanup(&state);
@@ -633,35 +677,120 @@ pub async fn discover_download(
         return Err(format!("Download failed: HTTP {}", status));
     }
 
+    let expected_len = resp.content_length();
+
     let dest = target_dir.join(&file_name);
     let mut file = std::fs::File::create(&dest).map_err(|e| {
         cleanup(&state);
         format!("Failed to create file: {e}")
     })?;
 
+    // Any failure past this point (cancel, read error, write error, or a
+    // short body) must remove whatever partial bytes already made it to
+    // disk — otherwise a corrupt/truncated jar is left sitting in `mods/`
+    // and the loader chokes on it (e.g. "zip END header not found") next
+    // launch, long after this download's own error was forgotten.
+    let fail = |state: &crate::state::AppState, dest: &PathBuf, msg: String| {
+        let _ = std::fs::remove_file(dest);
+        cleanup(state);
+        msg
+    };
+
+    let mut received: u64 = 0;
     loop {
         if is_cancelled() {
             drop(file);
-            let _ = std::fs::remove_file(&dest);
-            cleanup(&state);
-            return Err("Download cancelled".to_string());
+            return Err(fail(&state, &dest, "Download cancelled".to_string()));
         }
         match resp.chunk().await {
             Ok(Some(chunk)) => {
+                received += chunk.len() as u64;
                 if let Err(e) = file.write_all(&chunk) {
-                    cleanup(&state);
-                    return Err(format!("Failed to save file: {e}"));
+                    drop(file);
+                    return Err(fail(&state, &dest, format!("Failed to save file: {e}")));
                 }
             }
             Ok(None) => break,
             Err(e) => {
-                cleanup(&state);
-                return Err(format!("Failed to read download: {e}"));
+                drop(file);
+                return Err(fail(&state, &dest, format!("Failed to read download: {e}")));
             }
+        }
+    }
+    drop(file);
+
+    // The server told us how big the file should be up front — if we wrote
+    // fewer bytes than that, the connection dropped/was cut short without
+    // reqwest surfacing it as an `Err` above. Treat it the same as any other
+    // failed download rather than leaving the short file behind.
+    if let Some(expected) = expected_len {
+        if received != expected {
+            return Err(fail(
+                &state,
+                &dest,
+                format!(
+                    "Download incomplete: got {received} of {expected} bytes for {file_name}"
+                ),
+            ));
         }
     }
 
     cleanup(&state);
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// Downloads a Discover file (used for modpacks) to a scratch location on
+/// disk instead of straight into an instance's `mods`/`resourcepacks`
+/// folder, and hands back the local path. A modpack isn't "installed" by
+/// dropping a file somewhere — it's fed to `preview_modpack`/`import_modpack`
+/// exactly like a drag-and-dropped `.mrpack`/`.zip` — so this is the
+/// Discover-side counterpart of the file picker the Modpack Extractor
+/// normally reads from.
+#[tauri::command]
+pub async fn discover_download_to_temp(
+    file_url: String,
+    file_name: String,
+    state: tauri::State<'_, crate::state::AppState>,
+) -> Result<String, String> {
+    let temp_dir = state.data_dir.join("cache").join("discover_modpacks");
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create temp directory: {e}"))?;
+
+    let resp = send_download_with_retry(|client| client.get(&file_url))
+        .await
+        .map_err(|e| format!("Download failed: {e} (source: {:?})", e.source()))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", resp.status()));
+    }
+
+    let expected_len = resp.content_length();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read download: {e}"))?;
+
+    if let Some(expected) = expected_len {
+        if bytes.len() as u64 != expected {
+            return Err(format!(
+                "Download incomplete: got {} of {expected} bytes for {file_name}",
+                bytes.len()
+            ));
+        }
+    }
+
+    let safe_name: String = file_name
+        .chars()
+        .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
+        .collect();
+    // Prefixed with the process id so two launches never collide over the
+    // same leftover scratch file; a handful of small .mrpack files sitting
+    // in the cache dir between runs is cheap enough not to bother cleaning
+    // up eagerly.
+    let dest = temp_dir.join(format!("{}_{}", std::process::id(), safe_name));
+
+    std::fs::write(&dest, &bytes).map_err(|e| format!("Failed to save file: {e}"))?;
+
     Ok(dest.to_string_lossy().to_string())
 }
 

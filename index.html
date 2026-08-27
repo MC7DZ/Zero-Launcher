@@ -284,6 +284,28 @@
           <button class="overlay-close" id="btn-close-instance-confirm">✕</button>
         </div>
         <p id="instance-confirm-desc" style="color:var(--text-muted); font-size:13px; line-height:1.6; margin: 12px 0 0;"></p>
+
+        <!-- Optional "also wipe this instance's own folder" toggle — only
+             shown/used for the Delete action. Off by default and force-
+             disabled for instances whose data lives in the shared
+             .minecraft folder (see wireInstanceConfirmDataToggle). -->
+        <div id="instance-confirm-data-toggle-wrap" class="instance-danger-toggle-wrap hidden">
+          <label id="instance-confirm-data-toggle-row" class="toggle-row instance-danger-toggle-row">
+            <span class="instance-danger-toggle-control">
+              <input type="checkbox" id="instance-confirm-data-checkbox" />
+              <span class="toggle-slider"></span>
+              <svg class="instance-danger-toggle-icon" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 7.2a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7.6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7.2Z"/>
+                <path d="M9.5 12.4l5 5M14.5 12.4l-5 5"/>
+              </svg>
+            </span>
+            <span class="instance-danger-toggle-text">
+              <span class="instance-danger-toggle-title">Also delete instance data</span>
+              <span class="instance-danger-toggle-sub" id="instance-confirm-data-toggle-sub">Mods, worlds, saves, configs and screenshots in this instance's own folder — permanently.</span>
+            </span>
+          </label>
+        </div>
+
         <div class="overlay-actions" style="margin-top:22px; display:flex; gap:10px; justify-content:flex-end;">
           <button id="btn-instance-confirm-cancel" class="btn-ghost">Cancel</button>
           <button id="btn-instance-confirm-action" class="btn-accent">Confirm</button>
@@ -453,6 +475,22 @@
         <div class="overlay-actions" style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
           <button id="btn-crash-troubleshoot-no" class="btn-ghost">No, I'll figure it out</button>
           <button id="btn-crash-troubleshoot-yes" class="btn-accent">Yes, Troubleshoot</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Crash notice window: shown whenever an instance's process exits in a
+         way that looks like a real crash. Intentionally minimal — just the
+         fact that it crashed and a way to open the log, nothing else. -->
+    <div id="crash-overlay" class="overlay hidden">
+      <div class="overlay-card" style="max-width: 380px; width: 90%;">
+        <div class="overlay-header">
+          <h3 id="crash-titlebar-text">Your Game Crashed</h3>
+          <button class="overlay-close" id="btn-crash-close">✕</button>
+        </div>
+        <div class="overlay-actions" style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+          <button id="btn-crash-dismiss" class="btn-ghost">Dismiss</button>
+          <button id="btn-crash-view-log" class="btn-accent">Open Log</button>
         </div>
       </div>
     </div>
@@ -978,7 +1016,16 @@
 
         <!-- BOTTOM PANEL: Mods Content -->
         <div class="mods-bottom-panel">
-          <div id="mods-grid" class="mods-list"></div>
+          <!-- The grid gets its own scroll container. The loading overlay
+               below is a SIBLING of this wrapper (not a child of it), so it
+               stays fixed over the whole panel instead of scrolling away
+               with the grid's content — previously the overlay was
+               position:absolute *inside* the scrolling element itself,
+               which meant scrolling down slid it out of view and exposed
+               the already-loaded mods underneath before it had faded out. -->
+          <div class="mods-scroll-container">
+            <div id="mods-grid" class="mods-list"></div>
+          </div>
           <!-- Shown immediately on switching to the Mods tab, hidden once the
                list has actually rendered, so the empty→populated pop-in never
                reads as a flicker. -->
@@ -1143,6 +1190,7 @@
               <!-- Middle: Mods / Resourcepacks Toggle -->
               <div class="discover-header-center">
                 <div class="discover-type-toggle">
+                  <button id="discover-type-modpack" class="discover-segment" data-type="modpack">Modpacks</button>
                   <button id="discover-type-mod" class="discover-segment active" data-type="mod">Mods</button>
                   <button id="discover-type-resourcepack" class="discover-segment" data-type="resourcepack">Resourcepacks</button>
                 </div>
@@ -2471,6 +2519,44 @@
       <div class="bento-tile bento-tile-actions">
         <button id="btn-confirm-modpack-import" class="btn-accent">Extract & Install</button>
         <button id="btn-cancel-modpack-import-form" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Discover → "Install in custom directory" (3-dot menu on a modpack
+       card) — a compact, single-purpose version of the Modpack Extractor's
+       install-location picker: just the directory field, no name/summary
+       tiles, since the pack's own title is used as the instance name. -->
+  <div id="discover-modpack-dir-overlay" class="overlay hidden">
+    <div class="bento-modal bento-modal-compact">
+      <div class="bento-tile bento-tile-header">
+        <h3>Install in Custom Directory</h3>
+        <button class="overlay-close" id="btn-cancel-discover-modpack-dir">✕</button>
+      </div>
+
+      <div class="bento-tile bento-tile-name">
+        <label class="bento-tile-label">Modpack</label>
+        <div id="discover-modpack-dir-name" class="bento-tile-hint">—</div>
+      </div>
+
+      <div class="bento-tile bento-tile-location">
+        <label class="bento-tile-label">Directory</label>
+        <div class="bento-dir-path-row" style="margin-top:0;">
+          <input type="text" id="discover-modpack-dir-path" class="input-field" placeholder="/path/to/folder" style="flex:1;" />
+          <button id="discover-modpack-dir-browse" class="btn-secondary" type="button">Browse…</button>
+        </div>
+      </div>
+
+      <div id="discover-modpack-dir-progress-wrap" class="bento-tile bento-tile-progress hidden">
+        <div class="progress-text" id="discover-modpack-dir-status">Starting…</div>
+        <div class="progress-track">
+          <div class="progress-bar" id="discover-modpack-dir-bar"></div>
+        </div>
+      </div>
+
+      <div class="bento-tile bento-tile-actions">
+        <button id="btn-confirm-discover-modpack-dir" class="btn-accent">Install</button>
+        <button id="btn-cancel-discover-modpack-dir-form" class="btn-ghost">Cancel</button>
       </div>
     </div>
   </div>

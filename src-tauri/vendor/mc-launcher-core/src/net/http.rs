@@ -13,12 +13,22 @@ pub fn user_agent() -> String {
 
 /// Builds a blocking reqwest client.
 ///
-/// Tuned for downloading many small-to-medium files concurrently:
+/// Tuned for downloading many small-to-medium files concurrently, but also
+/// used for large mod/modpack files that can take well over a minute to
+/// transfer:
 /// - A connect timeout so a single unreachable/black-holed host fails fast
 ///   instead of hanging a worker (and, with the old batch downloader, the
 ///   whole batch) indefinitely.
-/// - A per-request timeout as a backstop against a connection that stalls
-///   mid-transfer.
+/// - Deliberately *no* overall per-request timeout. reqwest's `.timeout()`
+///   caps the *entire* request lifetime (connect + full body transfer), not
+///   just idle/stalled time — so a large file that is still actively
+///   downloading, just slowly (big mods, big modpack updates, a slow
+///   connection), would get aborted the instant it crossed that deadline
+///   even though bytes were still arriving. That previously showed up as
+///   big files reliably failing to install while small ones worked fine.
+///   The connect timeout below plus the caller's chunk-level retry/backoff
+///   logic (`net::download`) is what protects against truly stalled
+///   connections instead.
 /// - A pool of idle keep-alive connections per host sized for our worker
 ///   pool, so workers reuse TCP/TLS connections instead of renegotiating a
 ///   fresh handshake for every single file.
@@ -30,7 +40,6 @@ pub fn client() -> Result<Client> {
     Ok(Client::builder()
         .user_agent(user_agent())
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(60))
         .pool_max_idle_per_host(32)
         .pool_idle_timeout(Duration::from_secs(30))
         // Force outbound connections to bind from an IPv4 local address.

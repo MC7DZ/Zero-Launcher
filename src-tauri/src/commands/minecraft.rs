@@ -2521,6 +2521,59 @@ pub async fn delete_installed_version(
     Ok(())
 }
 
+/// Deletes an instance's own data folder — mods, worlds/saves, config,
+/// resourcepacks, shaderpacks, screenshots, logs, options.txt, etc. — i.e.
+/// everything under `InstalledInstance.directory`. This is opt-in and
+/// separate from `delete_installed_version` above, which only removes the
+/// shared `versions/<id>` folder.
+///
+/// `minecraft_directory` is the instance's shared `.minecraft`-style
+/// directory (versions/libraries/assets), passed so this can refuse to run
+/// when `directory` *is* that shared directory — true for every
+/// default-location instance, and for any instance saved before the
+/// directory/minecraft_directory split existed. Deleting the shared
+/// directory would wipe every other instance's data too, so this is always
+/// blocked, both here and by the frontend disabling the toggle for it.
+#[tauri::command]
+pub async fn delete_instance_data(
+    state: State<'_, AppState>,
+    directory: String,
+    minecraft_directory: Option<String>,
+) -> Result<(), String> {
+    if directory.trim().is_empty() {
+        return Err("No instance directory to delete".to_string());
+    }
+
+    let target = PathBuf::from(&directory);
+    if !target.is_dir() {
+        // Nothing to delete — already gone, treat as success.
+        return Ok(());
+    }
+    let canonical_target = std::fs::canonicalize(&target)
+        .map_err(|e| format!("Failed to resolve instance directory: {e}"))?;
+
+    // Figure out the shared directory this instance's core files live in,
+    // falling back to the globally configured default game directory when
+    // the instance predates the directory split (same fallback used
+    // elsewhere for `minecraft_dir()`).
+    let shared_dir = match minecraft_directory.filter(|d| !d.trim().is_empty()) {
+        Some(d) => PathBuf::from(d),
+        None => state.settings.lock().unwrap().resolved_game_directory(),
+    };
+    if let Ok(canonical_shared) = std::fs::canonicalize(&shared_dir) {
+        if canonical_target == canonical_shared {
+            return Err(
+                "Refusing to delete: this instance shares its data folder with your main .minecraft directory".to_string()
+            );
+        }
+    }
+
+    std::fs::remove_dir_all(&canonical_target)
+        .map_err(|e| format!("Failed to delete instance data folder: {e}"))?;
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinuxZlibCheckResult {
     pub has_conflict: bool,
