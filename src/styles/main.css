@@ -551,6 +551,7 @@ input, textarea, select, [contenteditable="true"] {
 .transparent-ui .mod-card,
 .transparent-ui .discover-card,
 .transparent-ui .preset-card,
+.transparent-ui .preset-type-section,
 .transparent-ui .setup-card,
 .transparent-ui .bento-tile,
 .transparent-ui .bento-panel,
@@ -590,7 +591,6 @@ input, textarea, select, [contenteditable="true"] {
 .transparent-ui .update-overlay-card,
 .transparent-ui .account-overlay-card,
 .transparent-ui .skin-viewer-modal,
-.transparent-ui .dressing-room-modal,
 .transparent-ui .dl-files-card,
 .transparent-ui .settings-modal-window,
 .transparent-ui .color-picker-window,
@@ -1394,6 +1394,379 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+/* ── Play Time analytics panel ──────────────────────────────────────────
+   Fills the "reserved for later" island with a range-switchable bar
+   chart driven by `playtime_history` (day -> seconds played). */
+.instance-hero-empty.playtime-panel {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 14px 16px 12px;
+  gap: 18px;
+  min-height: 300px;
+}
+
+/* ── Left side: global stats list ───────────────────────────────────── */
+.playtime-stats-side {
+  flex: 1 1 220px;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-right: 16px;
+  border-right: 1px solid rgba(var(--overlay-rgb), 0.07);
+}
+.playtime-stats-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+.playtime-stats-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  justify-content: center;
+}
+.playtime-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  background: rgba(var(--overlay-rgb), 0.035);
+  border: 1px solid rgba(var(--overlay-rgb), 0.06);
+  min-width: 0;
+  max-height: 58px;
+  flex: 1 1 0;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.playtime-stat-row:hover {
+  background: rgba(var(--overlay-rgb), 0.07);
+  border-color: rgba(var(--overlay-rgb), 0.12);
+  transform: translateX(2px);
+}
+.playtime-stat-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+  opacity: 0.85;
+  flex: 0 0 auto;
+}
+.playtime-stat-icon svg { width: 100%; height: 100%; display: block; }
+.playtime-stat-row-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.playtime-stat-row-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* ── Right side: header + chart + fact strip ────────────────────────── */
+.playtime-panel-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.playtime-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+  border-top: 1px solid rgba(var(--overlay-rgb), 0.06);
+  padding-top: 8px;
+}
+.playtime-fact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.playtime-fact-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.playtime-fact-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.playtime-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.playtime-panel-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.playtime-panel-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text);
+  white-space: nowrap;
+}
+.playtime-range-total {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.playtime-range-buttons {
+  display: flex;
+  gap: 4px;
+  background: rgba(var(--overlay-rgb), 0.04);
+  border: 1px solid rgba(var(--overlay-rgb), 0.07);
+  border-radius: 8px;
+  padding: 3px;
+  flex: 0 0 auto;
+}
+.playtime-range-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 5px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.playtime-range-btn:hover { color: var(--text); background: rgba(var(--overlay-rgb), 0.06); }
+.playtime-range-btn.active {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+.playtime-chart {
+  flex: 1 1 auto;
+  min-height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.playtime-chart-inner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+/* Horizontal reference lines behind the bars, each labelled with the time
+   value it represents. This is what turns "a couple of bars floating in a
+   big empty box" into an actual chart with a legible scale. */
+.playtime-grid {
+  position: absolute;
+  inset: 0 0 20px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 0;
+}
+.playtime-grid-line {
+  position: relative;
+  border-top: 1px dashed rgba(var(--overlay-rgb), 0.08);
+  height: 0;
+}
+.playtime-grid-line.baseline {
+  border-top: 1px solid rgba(var(--overlay-rgb), 0.14);
+}
+.playtime-grid-label {
+  position: absolute;
+  right: 2px;
+  top: -7px;
+  font-size: 8.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  opacity: 0.6;
+  background: var(--panel, #1b1b1b);
+  padding-left: 4px;
+}
+.playtime-empty-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 12px;
+  pointer-events: none;
+  /* Sits over the (visibly empty) bar grid rather than replacing it, so
+     the chart's shape/labels stay visible underneath as a preview of what
+     will fill in once there's data. */
+  background: linear-gradient(180deg, rgba(var(--panel-rgb, 27,27,27), 0.55), rgba(var(--panel-rgb, 27,27,27), 0.75));
+  border-radius: 8px;
+}
+.playtime-bars {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 100%;
+  gap: 3px;
+  position: relative;
+  z-index: 1;
+  padding-bottom: 20px;
+  box-sizing: border-box;
+}
+.playtime-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  cursor: default;
+}
+.playtime-bar-track {
+  width: 100%;
+  max-width: 22px;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-end;
+  min-height: 0;
+}
+.playtime-bar-fill {
+  width: 100%;
+  min-height: 2px;
+  background: linear-gradient(180deg, var(--accent-dim), rgba(var(--overlay-rgb), 0.02));
+  border-radius: 4px 4px 1px 1px;
+  transition: height 0.25s cubic-bezier(0.22, 1, 0.36, 1), background 0.15s ease, box-shadow 0.15s ease;
+}
+.playtime-bar-fill.empty {
+  background: rgba(var(--overlay-rgb), 0.08);
+  border: 1px dashed rgba(var(--overlay-rgb), 0.12);
+}
+.playtime-bar-col:hover .playtime-bar-fill,
+.playtime-bar-col.today .playtime-bar-fill {
+  background: linear-gradient(180deg, var(--accent), var(--accent-dim));
+  box-shadow: 0 0 10px 0 rgba(var(--accent-rgb, 183, 183, 183), 0.35);
+}
+.playtime-bar-col:hover .playtime-bar-fill.empty {
+  background: rgba(var(--overlay-rgb), 0.16);
+}
+.playtime-bar-label {
+  font-size: 8.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.playtime-bar-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--panel-solid, #1b1b1b);
+  border: 1px solid rgba(var(--overlay-rgb), 0.14);
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transform: translate(-50%, -100%);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  z-index: 5;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+}
+.playtime-bar-tooltip.visible { opacity: 1; }
+
+/* Panel is a row of two unequal columns. As the window narrows, shrink the
+   stats side gradually first (its content is short labels/numbers, so it
+   scales down cleanly) before falling back to a fully stacked layout once
+   there just isn't enough width left for two columns to coexist. */
+@media (max-width: 760px) {
+  .playtime-stats-side {
+    flex-basis: 170px;
+    max-width: 190px;
+    padding-right: 12px;
+    gap: 8px;
+  }
+  .playtime-stat-row {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .playtime-stat-icon {
+    width: 15px;
+    height: 15px;
+  }
+  .playtime-stat-row-label {
+    font-size: 9px;
+  }
+  .playtime-stat-row-value {
+    font-size: 12px;
+  }
+}
+@media (max-width: 560px) {
+  .instance-hero-empty.playtime-panel {
+    flex-direction: column;
+  }
+  .playtime-stats-side {
+    flex: 0 0 auto;
+    max-width: none;
+    padding-right: 0;
+    padding-bottom: 10px;
+    border-right: none;
+    border-bottom: 1px solid rgba(var(--overlay-rgb), 0.07);
+  }
+  .playtime-stats-list {
+    flex-direction: row;
+  }
+  .playtime-stat-row {
+    flex: 1 1 0;
+    padding: 10px 8px;
+    gap: 6px;
+  }
+  .playtime-stat-icon {
+    width: 16px;
+    height: 16px;
+  }
+  .playtime-stat-row-value {
+    font-size: 13px;
+  }
 }
 .detail-icon {
   width: 52px;
@@ -3696,6 +4069,23 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .toggle-row input:checked + .toggle-slider { background: var(--accent); }
 .toggle-row input:checked + .toggle-slider::after { transform: translateX(20px); }
 
+/* Sub-option nested under another toggle (e.g. "Make it smart" under
+   "Close launcher when game starts") — indented, smaller, and dimmed/
+   unclickable while its parent toggle is off. */
+.toggle-row-sub {
+  margin-left: 30px;
+  font-size: 12.5px;
+}
+.toggle-row-sub.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.settings-inline-hint {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
 /* "Also delete instance data" toggle on the delete-instance confirm modal.
    Plain borders + flat color only — no backdrop-filter, no box-shadow blur,
    nothing that repaints per-frame, so it stays cheap on WebKitGTK same as
@@ -3925,6 +4315,13 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: var(--text);
   overflow-y: auto;
   height: calc(100vh - 220px);
+  /* The rest of the app deliberately disables text selection (see the
+     global `user-select: none` on html/body in main.css) so ordinary UI
+     doesn't feel like a webpage, but that also blocked selecting/copying
+     actual log text here and in the console window (.log-entry below) —
+     re-enable it for both. */
+  -webkit-user-select: text;
+  user-select: text;
 }
 .log-viewer.dark-mode {
   background: linear-gradient(180deg, rgba(var(--overlay-rgb), 0.16), rgba(var(--overlay-rgb), 0.09));
@@ -3932,6 +4329,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .log-entry { padding: 6px 0; border-bottom: 1px solid rgba(var(--overlay-rgb),0.08); }
 .log-entry:last-child { border-bottom: none; }
 .log-entry { padding: 3px 0; border-bottom: 1px solid rgba(var(--overlay-rgb),0.02); }
+.log-entry { -webkit-user-select: text; user-select: text; }
 .log-time  { color: #6b7280; margin-right: 6px; }
 .log-source{ color: #a78bfa; margin-right: 6px; }
 .log-level-INFO  { color: #60a5fa; }
@@ -4360,11 +4758,48 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .dl-card {
-  padding: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
   border-radius: calc(var(--radius) - 4px);
   border: 1px solid var(--panel-border);
   background: rgba(var(--overlay-rgb), 0.04);
   animation: dl-card-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  /* Flat + cheap: no shadow, no blur, no per-frame-cost anywhere except
+     the transform-only bar/fill animations declared further down. */
+}
+
+/* Type icon docked to the left of the card — a mod/preset/loader image
+   when one is available, otherwise a flat line-icon glyph. Fixed square
+   so the row height never jumps between icon and no-icon cards. */
+.dl-card-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  margin-top: 1px;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--overlay-rgb), 0.08);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.dl-card-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.dl-card-icon svg { width: 18px; height: 18px; display: block; }
+/* Java's icon is full-color brand art, not a stroke glyph — give it a
+   touch of breathing room instead of filling the whole tile edge-to-edge. */
+.dl-card-icon.dl-card-icon-brand svg { width: 22px; height: 22px; }
+
+.dl-card-body {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -4708,7 +5143,15 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   gap: 10px;
   margin-bottom: 10px;
 }
-.dl-card-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.dl-card-heading { min-width: 0; }
+.dl-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .dl-card-stage {
   font-size: 11px;
   color: var(--text-muted);
@@ -4716,7 +5159,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 190px;
 }
 .dl-card-status-pill {
   font-size: 10px;
@@ -4798,8 +5240,32 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .dl-stat-value { font-size: 12.5px; font-weight: 600; color: var(--text); }
 
 .dl-card-actions { display: flex; gap: 8px; }
-.dl-card-actions .btn-secondary,
-.dl-card-actions .btn-danger-outline { flex: 1; padding: 6px 10px; font-size: 12px; }
+.dl-card-actions .btn-secondary { flex: 1; padding: 6px 10px; font-size: 12px; }
+
+/* Cancel is a flat, unambiguous "kill it now" action — no outline/ghost
+   treatment, no confirmation state, just a plain danger-tinted button
+   that removes the card the instant it's clicked (see JS: the card is
+   torn down optimistically, the backend cancel + cleanup happen after). */
+.dl-card-cancel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: rgba(232,76,61,0.12);
+  color: #e84c3d;
+  cursor: pointer;
+  transition: background var(--transition), transform 0.12s ease;
+}
+.dl-card-cancel svg { width: 12px; height: 12px; flex-shrink: 0; }
+.dl-card-cancel:hover { background: rgba(232,76,61,0.22); }
+.dl-card-cancel:active { transform: scale(0.96); }
+
 .dl-card-files {
   flex: 0 0 auto;
   width: 32px;
@@ -5003,32 +5469,34 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 .presets-container { display: block; }
 
+/* Flat row list — matches the main instance list's launcher style instead
+   of an app-store-style card grid. One column, compact rows. */
 .presets-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-@media (max-width: 1280px) {
-  .presets-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+/* Each preset type gets its own island — same flat background/border
+   treatment as .instance-sidebar, so "Fabric", "NeoForge", etc. read as
+   separate panels instead of a flat run of rows with only a divider line
+   between them. */
+.preset-type-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--panel, #1b1b1b);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
 }
-@media (max-width: 780px) {
-  .presets-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.preset-type-section { margin-bottom: 24px; }
 .preset-type-section:last-child { margin-bottom: 0; }
 
 .preset-type-header {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin-bottom: 12px;
-  padding-bottom: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--panel-border);
 }
 .preset-type-name {
@@ -5037,6 +5505,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--accent);
+  text-align: center;
 }
 .preset-type-count {
   font-size: 11px;
@@ -5047,53 +5516,69 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: var(--text-muted);
 }
 
+/* Same flat-row treatment as .instance-card: subtle overlay tint instead of
+   a solid panel card, no elevation/shadow on hover, no motion — cheap to
+   composite and consistent with the rest of the launcher. Sits nested
+   inside the .preset-type-section island, same relationship .instance-card
+   has to .instance-sidebar. */
 .preset-card {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 16px;
-  border-radius: var(--radius);
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(var(--overlay-rgb), 0.035);
+  border: 1px solid rgba(var(--overlay-rgb), 0.05);
+  user-select: none;
   contain: layout style paint;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 68px;
   transform: translateZ(0);
-  backface-visibility: hidden;
-  transition: transform var(--transition), box-shadow var(--transition), background var(--transition), border-color var(--transition);
+  transition: background var(--transition), border-color var(--transition);
 }
 .preset-card:hover {
-  transform: translateY(-2px);
-  background: var(--panel-hover);
-  border-color: var(--panel-border);
-  box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+  background: rgba(var(--overlay-rgb), 0.065);
+  border-color: rgba(var(--overlay-rgb), 0.09);
 }
 
 .preset-card-top {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
 }
 .preset-card-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
+  width: 46px;
+  height: 46px;
+  border-radius: 9px;
   overflow: hidden;
   flex-shrink: 0;
-  background: var(--panel-hover);
-  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.05);
 }
 .preset-card-icon img { width: 100%; height: 100%; object-fit: cover; }
 
-.preset-card-title { font-weight: 700; font-size: 15px; }
+.preset-card-title {
+  font-weight: 700;
+  font-size: 14.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .preset-card-desc {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
-  line-height: 1.4;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .preset-pill-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
   gap: 6px;
 }
 .preset-pill {
@@ -5105,6 +5590,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border: 1px solid rgba(var(--overlay-rgb),0.08);
   color: var(--text-muted);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .preset-pill.accent {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
@@ -5118,14 +5604,19 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .preset-card-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 4px;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.preset-card-actions .btn-accent {
+  padding: 8px 20px;
+  font-size: 12.5px;
 }
 
 .preset-card-target {
   font-size: 11px;
   color: var(--text-muted);
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6125,8 +6616,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .dressing-room-modal {
-  width: 560px;
-  max-width: 92vw;
+  width: 380px;
+  max-width: 88vw;
   height: 100vh;
   max-height: none;
   margin: 0;
@@ -6154,8 +6645,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  gap: 16px;
-  padding: 20px 24px 24px;
+  gap: 0;
+  padding: 0 20px 20px;
   transition: opacity 0.25s ease;
 }
 
@@ -6205,44 +6696,42 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   position: relative;
   z-index: 3;
   flex-shrink: 0;
-  margin-bottom: 0;
-  padding: 18px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.25);
 }
 
 .dressing-room-tabs {
   display: flex;
-  gap: 6px;
-  padding: 4px;
-  background: var(--panel);
-  border: 1px solid rgba(var(--overlay-rgb), 0.08);
-  border-radius: var(--radius-pill);
-  margin-bottom: 16px;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  margin-bottom: 0;
 }
 
 .dressing-room-tab {
   flex: 1;
   border: none;
+  border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font);
   font-weight: 700;
   font-size: 13px;
-  padding: 8px 0;
-  border-radius: var(--radius-pill);
+  padding: 12px 0 10px;
+  border-radius: 0;
   cursor: pointer;
-  transition: background var(--transition), color var(--transition);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
 
 .dressing-room-tab:hover {
-  background: var(--panel-hover);
+  background: rgba(var(--overlay-rgb), 0.04);
   color: var(--text);
 }
 
 .dressing-room-tab.active {
-  background: var(--accent-dim);
-  border: 1px solid var(--accent);
+  background: transparent;
+  border-bottom: 2px solid var(--accent);
   color: var(--accent);
 }
 
@@ -6279,6 +6768,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding-top: 16px;
 }
 
 .dressing-room-section {
@@ -6295,9 +6785,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 .dressing-room-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 16px;
-  padding: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  align-content: start;
+  gap: 10px;
+  padding: 0 2px 4px;
   flex: 1;
 }
 
@@ -6320,32 +6811,31 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-height: 220px;
-  background: var(--panel);
-  border: 1.5px dashed rgba(var(--overlay-rgb), 0.22);
-  border-radius: var(--radius);
+  gap: 8px;
+  min-height: 170px;
+  background: rgba(var(--overlay-rgb), 0.04);
+  border: 1px solid var(--panel-border);
+  border-radius: calc(var(--radius) - 4px);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background var(--transition), border-color var(--transition), color var(--transition), transform var(--transition);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
   font-family: var(--font);
 }
 
 .dressing-room-add-card:hover {
-  background: var(--panel-hover);
+  background: rgba(var(--overlay-rgb), 0.07);
   border-color: var(--accent);
   color: var(--accent);
-  transform: translateY(-2px);
 }
 
 .dressing-room-add-icon {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   color: currentColor;
 }
 
 .dressing-room-add-label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -6354,23 +6844,22 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  min-height: 220px;
-  height: 220px;
-  background: var(--panel);
-  border: 1px solid rgba(var(--overlay-rgb), 0.12);
-  border-radius: var(--radius);
-  padding: 10px 8px 8px;
+  min-height: 170px;
+  height: 170px;
+  background: rgba(var(--overlay-rgb), 0.04);
+  border: 1px solid var(--panel-border);
+  border-radius: calc(var(--radius) - 4px);
+  padding: 8px 6px 6px;
   cursor: pointer;
   position: relative;
-  transition: transform var(--transition), border-color var(--transition), background var(--transition), box-shadow var(--transition);
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
   overflow: hidden;
   user-select: none;
 }
 
 .dressing-room-skin-card:hover {
-  background: var(--panel-hover);
+  background: rgba(var(--overlay-rgb), 0.07);
   border-color: rgba(var(--accent-rgb, 183, 183, 183), 0.45);
-  transform: translateY(-2px);
 }
 
 .dressing-room-skin-card.equipped {
@@ -6438,8 +6927,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .dressing-room-card-canvas {
-  width: 130px;
-  height: 165px;
+  width: 100px;
+  height: 128px;
   display: block;
 }
 
@@ -6462,16 +6951,16 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   justify-content: flex-end;
   gap: 6px;
   aspect-ratio: 3 / 4;
-  background: var(--panel);
-  border: 1px solid rgba(var(--overlay-rgb), 0.08);
-  border-radius: var(--radius-sm);
+  background: rgba(var(--overlay-rgb), 0.04);
+  border: 1px solid var(--panel-border);
+  border-radius: calc(var(--radius) - 4px);
   padding: 8px;
   cursor: pointer;
   transition: background var(--transition), border-color var(--transition);
 }
 
 .dressing-room-cape-card:hover {
-  background: var(--panel-hover);
+  background: rgba(var(--overlay-rgb), 0.07);
 }
 
 .dressing-room-cape-card.equipped {
@@ -6743,6 +7232,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .mod-item,
 .is-webkit-gtk .mod-card,
 .is-webkit-gtk .preset-card,
+.is-webkit-gtk .preset-type-section,
 .is-webkit-gtk .overlay,
 .is-webkit-gtk .overlay-card,
 .is-webkit-gtk .settings-modal-window,
@@ -6788,10 +7278,13 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 /* Content visibility optimizations for large scrollable lists */
 .is-webkit-gtk .discover-card,
-.is-webkit-gtk .mod-item,
-.is-webkit-gtk .preset-card {
+.is-webkit-gtk .mod-item {
   content-visibility: auto;
   contain-intrinsic-size: 0 200px;
+}
+.is-webkit-gtk .preset-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 68px;
 }
 .is-webkit-gtk .discover-grid.view-list .discover-card {
   contain-intrinsic-size: 0 64px;
@@ -6816,7 +7309,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .hidden-instances-list,
 .is-webkit-gtk .logs-container,
 .is-webkit-gtk .presets-grid,
-.is-webkit-gtk .dressing-room-skins-grid,
+.is-webkit-gtk .dressing-room-section,
 .is-webkit-gtk #instance-list,
 .is-webkit-gtk #hidden-instances-list,
 .is-webkit-gtk #mods-grid,
@@ -6921,12 +7414,12 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 .is-webkit-gtk:not(.transparent-ui) .mod-card,
 .is-webkit-gtk:not(.transparent-ui) .discover-card,
-.is-webkit-gtk:not(.transparent-ui) .preset-card,
 .is-webkit-gtk:not(.transparent-ui) .glass-card,
 .is-webkit-gtk:not(.transparent-ui) .setup-card,
 .is-webkit-gtk:not(.transparent-ui) .bento-tile,
 .is-webkit-gtk:not(.transparent-ui) .hero-island,
 .is-webkit-gtk:not(.transparent-ui) .skin-panel,
+.is-webkit-gtk:not(.transparent-ui) .preset-type-section,
 .is-webkit-gtk:not(.transparent-ui) .instance-sidebar {
   background: #1b1b1b;
   border-color: rgba(255, 255, 255, 0.08);
@@ -6936,8 +7429,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 /* .instance-card now sits nested inside .instance-sidebar (same flat panel
    color), so it needs the lighter "nested card" shade — same idea as the
    skin-mini-preview-wrap rule right below — instead of matching flat #1b1b1b,
-   which would make every card blend invisibly into the sidebar behind it. */
-.is-webkit-gtk:not(.transparent-ui) .instance-card {
+   which would make every card blend invisibly into the sidebar behind it.
+   .preset-card sits in the exact same relationship to .preset-type-section. */
+.is-webkit-gtk:not(.transparent-ui) .instance-card,
+.is-webkit-gtk:not(.transparent-ui) .preset-card {
   background: #242424;
   border-color: rgba(255, 255, 255, 0.06);
   box-shadow: none;
@@ -7108,6 +7603,11 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   content-visibility: auto;
   contain-intrinsic-size: 0 72px;
 }
+.is-webkit-gtk .dressing-room-skin-card,
+.is-webkit-gtk .dressing-room-cape-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 220px;
+}
 
 /* ── 4. Promote ALL scroll containers to their own GPU layer ── */
 .is-webkit-gtk .settings-modal-body,
@@ -7183,7 +7683,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
          - perspective on the fixed ancestors is a cheap no-op that some
            WebKit builds use as another compositing hint. ── */
 .is-webkit-gtk #dl-widget-panel,
-.is-webkit-gtk .dl-widget-backdrop {
+.is-webkit-gtk .dl-widget-backdrop,
+.is-webkit-gtk .dressing-room-modal {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   contain: paint;
@@ -7289,4 +7790,45 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 .is-webkit-gtk .mods-drag-overlay-inner {
   box-shadow: none;
+}
+
+/* ═══ WebKitGTK Overrides — Play Time analytics panel ═══
+   This panel is the single most DOM-heavy island in the hero column: up
+   to ~30 bar columns (each with its own track/fill/label), 5 gridlines,
+   and 4 stat cards, all re-rendered on every range switch. WebKitGTK's
+   compositor is the weak link here — animated box-shadow/transform hover
+   effects and unscoped layout on a subtree this size are what actually
+   cost frames on it, not the DOM size itself. */
+.is-webkit-gtk .playtime-panel {
+  contain: layout style;
+}
+.is-webkit-gtk .playtime-stat-row {
+  /* The translateX hover slide is cheap on a real compositor but forces
+     a repaint of the whole row (background + border are already
+     changing) on WebKitGTK's path — drop the motion, keep the flat
+     color/border swap only. */
+  transition: background var(--transition), border-color var(--transition);
+  transform: none;
+}
+.is-webkit-gtk .playtime-stat-row:hover {
+  transform: none;
+}
+.is-webkit-gtk .playtime-chart-inner {
+  contain: layout style paint;
+}
+.is-webkit-gtk .playtime-bars {
+  contain: layout paint;
+}
+.is-webkit-gtk .playtime-bar-fill {
+  /* Bars already animate height on every range switch/re-render; the
+     glow box-shadow on hover/today is the expensive part on WebKitGTK,
+     not the height transition itself. */
+  box-shadow: none !important;
+}
+.is-webkit-gtk .playtime-bar-col:hover .playtime-bar-fill,
+.is-webkit-gtk .playtime-bar-col.today .playtime-bar-fill {
+  box-shadow: none;
+}
+.is-webkit-gtk .playtime-range-btn {
+  transition: background var(--transition), color var(--transition);
 }

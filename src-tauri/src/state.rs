@@ -53,6 +53,21 @@ pub struct AppState {
     pub msa_session_cache: Mutex<HashMap<String, CachedMsaSession>>,
     /// Mutex ensuring only one Microsoft OAuth refresh occurs at a time globally.
     pub msa_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Last time the frontend reported the user actively doing something in
+    /// the launcher window (mouse movement, clicks, typing) — see the
+    /// `report_activity` command. Used by "Close launcher when game
+    /// starts" → "Make it smart" to wait until the user has actually
+    /// stepped away before closing the window out from under them.
+    pub last_activity_at: Mutex<std::time::Instant>,
+    /// Last advancement/goal/challenge log line seen per running instance
+    /// (version_id -> (line, when)), used to dedupe the `game-advancement`
+    /// event. Some mod loaders and singleplayer setups print the same
+    /// "has made the advancement" announcement to the game log more than
+    /// once in quick succession (e.g. once from the server thread and
+    /// again as it's echoed back to the client) — without this, each of
+    /// those would tick the live Game Advancements counter up separately
+    /// for what is really a single advancement.
+    pub recent_advancement_lines: Mutex<HashMap<String, (String, std::time::Instant)>>,
 }
 
 #[derive(Clone)]
@@ -118,6 +133,8 @@ impl AppState {
             device_code_session: Mutex::new(None),
             msa_session_cache: Mutex::new(HashMap::new()),
             msa_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+            last_activity_at: Mutex::new(std::time::Instant::now()),
+            recent_advancement_lines: Mutex::new(HashMap::new()),
         }
     }
 
@@ -132,6 +149,24 @@ impl AppState {
             .get(id)
             .map(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
             .unwrap_or(false)
+    }
+
+    /// Returns `true` if this advancement/goal/challenge log line for the
+    /// given instance is a fresh one that should be counted, or `false` if
+    /// it's a near-duplicate of the last one seen for that same instance
+    /// within the last few seconds (and so should be ignored). Records the
+    /// line either way so the next call has something to compare against.
+    pub fn record_advancement_line(&self, version_id: &str, line: &str) -> bool {
+        const DEDUPE_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
+        let now = std::time::Instant::now();
+        let mut recent = self.recent_advancement_lines.lock().unwrap();
+        if let Some((last_line, last_seen)) = recent.get(version_id) {
+            if last_line == line && now.duration_since(*last_seen) < DEDUPE_WINDOW {
+                return false;
+            }
+        }
+        recent.insert(version_id.to_string(), (line.to_string(), now));
+        true
     }
 
     /// Get (or create) the cancellation flag for a generic download id.
@@ -332,5 +367,20 @@ impl AppState {
         if let Ok(data) = serde_json::to_string_pretty(value) {
             let _ = std::fs::write(&path, data);
         }
+    }
+
+    /// Persists the main screen's "Global Stats" panel to
+    /// `<data_dir>/stats.json` (the "Zero Launcher" folder), so the panel
+    /// can show last-known values immediately on the next launch instead
+    /// of appearing to reset while Mods Installed / Game Advancements are
+    /// rescanned from disk.
+    pub fn save_global_stats(&self, stats: &crate::models::GlobalStats) {
+        Self::save_json(&self.data_dir, "stats.json", stats);
+    }
+
+    /// Loads the last-persisted Global Stats snapshot, if any (e.g. first
+    /// run, or the file was deleted).
+    pub fn load_global_stats(&self) -> Option<crate::models::GlobalStats> {
+        Self::load_json(&self.data_dir, "stats.json")
     }
 }

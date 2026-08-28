@@ -27,6 +27,7 @@ import iconFabric from '../assets/loaders/fabric.png';
 import iconForge from '../assets/loaders/forge.png';
 import iconNeoforge from '../assets/loaders/neoforge.png';
 import iconQuilt from '../assets/loaders/quilt.png';
+import javaIconSvgRaw from '../assets/icons/java.svg?raw';
 import defaultOfflineSkin from '../assets/default-offline-skin.png';
 // "Unknown" placeholder skin — a question-mark-textured skin, bundled
 // locally (not hotlinked) so it always loads reliably regardless of
@@ -294,6 +295,7 @@ function refreshCardCullingIn(root) {
 
 const api = {
   playClickSound: () => invoke('play_click_sound'),
+  reportActivity: () => invoke('report_activity'),
   getAccounts: () => invoke('list_accounts'),
   addOfflineAccount: (username) => invoke('add_offline_account', { username }),
   removeAccount: (id) => invoke('remove_account', { id }),
@@ -354,6 +356,9 @@ const api = {
   listJavaInstallations: () => invoke('list_java_installations'),
   onJavaInstallProgress: (cb) => listen('java-install-progress', cb),
   listMods: (gameDir) => invoke('list_mods', { directory: gameDir }),
+  countAdvancements: (gameDir) => invoke('count_advancements', { directory: gameDir }),
+  loadGlobalStats: () => invoke('load_global_stats'),
+  saveGlobalStats: (stats) => invoke('save_global_stats', { stats }),
   // Backend only needs the mod file's path — it flips .jar <-> .jar.disabled
   // based on the current filename, so gameDir/enable aren't sent.
   toggleMod: (gameDir, modId, enable) => invoke('toggle_mod', { path: modId }),
@@ -383,6 +388,7 @@ const api = {
       },
     }),
   onModpackImportProgress: (cb) => listen('modpack-import-progress', cb),
+  onGenericDownloadProgress: (cb) => listen('generic-download-progress', cb),
   pauseDownload: () => invoke('pause_download'),
   resumeDownload: () => invoke('resume_download'),
   cancelDownload: () => invoke('cancel_download'),
@@ -438,6 +444,7 @@ const api = {
     invoke('apply_preset_config', { presetId, directory }),
   onInstanceLog: (cb) => listen('instance-log', cb),
   onRunningInstancesChanged: (cb) => listen('running-instances-changed', cb),
+  onGameAdvancement: (cb) => listen('game-advancement', cb),
   openInstanceConsoleWindow: async (versionId, name) => {
     const { WebviewWindow } = window.__TAURI__.webviewWindow;
     const label = 'console-' + versionId.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1269,6 +1276,58 @@ const DOWNLOAD_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://ww
 // buttons and overlay titles — same stroke style as DOWNLOAD_ICON_SVG above.
 const EXPORT_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 7.5 12 3l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const IMPORT_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 10.5 12 15l4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// ── Download-card type icons ────────────────────────────────────────
+// A card's left-hand icon reflects *what* is being downloaded: an actual
+// mod/resourcepack/modpack/preset/loader picture when one is known, or
+// one of these flat glyphs otherwise. Kept in the same stroke style as
+// the rest of the app's line icons (see DOWNLOAD_ICON_SVG above).
+const DL_ICON_UPDATE_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20 12a8 8 0 1 1-2.6-5.9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M20 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const DL_ICON_WRENCH_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14.7 6.3a4 4 0 0 0-5.4 4.7L4 16.3V20h3.7l5.3-5.3a4 4 0 0 0 4.7-5.4l-2.8 2.8-2-2 2.8-2.8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+const DL_ICON_PRESET_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4.5h9.5L19 8v11.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-14a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8.5 10.5h7M8.5 14h7M8.5 17.5h4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+const DL_ICON_PACKAGE_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 8.3 12 4l8.5 4.3V16L12 20.3 3.5 16V8.3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3.9 8.1 12 12.4l8.1-4.3M12 12.4V20.3" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+// Smart Java Detection uses the real Java coffee-cup mark (brand art, not
+// a stroke glyph) so it reads as "this is Java" at a glance.
+const DL_ICON_JAVA_SVG = javaIconSvgRaw;
+const DL_ICON_GENERIC_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6.5 11.5 12 17l5.5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+// Sets a download card's left icon. `opts.icon` picks the glyph family;
+// `opts.iconUrl` (mod/modpack/discover-hit art) takes priority when
+// present and falls back to the glyph if the image fails to load.
+function setDlCardIcon(iconEl, opts) {
+  opts = opts || {};
+  iconEl.classList.remove('dl-card-icon-brand');
+  if (opts.iconUrl) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.draggable = false;
+    img.loading = 'lazy';
+    img.addEventListener('error', () => { setDlCardIcon(iconEl, { icon: opts.icon || 'mod' }); }, { once: true });
+    img.src = opts.iconUrl;
+    iconEl.innerHTML = '';
+    iconEl.appendChild(img);
+    return;
+  }
+  switch (opts.icon) {
+    case 'loader':
+      iconEl.innerHTML = `<img src="${opts.loaderIconUrl || ''}" alt="" draggable="false" />`;
+      return;
+    case 'update':
+      iconEl.innerHTML = DL_ICON_UPDATE_SVG; return;
+    case 'wrench':
+      iconEl.innerHTML = DL_ICON_WRENCH_SVG; return;
+    case 'preset':
+      iconEl.innerHTML = DL_ICON_PRESET_SVG; return;
+    case 'java':
+      iconEl.classList.add('dl-card-icon-brand');
+      iconEl.innerHTML = DL_ICON_JAVA_SVG; return;
+    case 'mod':
+      iconEl.innerHTML = DL_ICON_PACKAGE_SVG; return;
+    default:
+      iconEl.innerHTML = DL_ICON_GENERIC_SVG; return;
+  }
+}
+
 let dlHideTimer = null;
 
 function fmtBytes(n) {
@@ -2022,6 +2081,7 @@ function initDownloadWidget() {
       onPause: null,
       onCancel: null,
       refs: {
+        icon: el.querySelector('.dl-card-icon'),
         title: el.querySelector('.dl-card-title'),
         stage: el.querySelector('.dl-card-stage'),
         pill: el.querySelector('.dl-card-status-pill'),
@@ -2047,12 +2107,17 @@ function initDownloadWidget() {
       }
     });
     card.refs.cancelBtn.addEventListener('click', () => {
-      if (!card.onCancel) return;
-      // Fire-and-forget: kill the download immediately rather than
-      // disabling the button and waiting on the promise first — the
-      // person clicked Cancel to stop it *now*, not to watch a
-      // "Cancelling…" state resolve.
-      card.onCancel().catch((e) => {
+      if (!card.onCancel || card.cancelling) return;
+      // Instant kill: tear the card down right now instead of waiting for
+      // the backend to confirm cancellation — the person clicked Cancel to
+      // stop it *now*, not to watch a "Cancelling…" state resolve. The
+      // actual stop signal (and best-effort cleanup of whatever was
+      // already written to disk) still happens, just after the UI has
+      // already moved on.
+      card.cancelling = true;
+      card.cancelled = true;
+      removeCard(id, 0);
+      Promise.resolve(card.onCancel()).catch((e) => {
         showToast('Failed to cancel download: ' + e, 'error');
       });
     });
@@ -2060,6 +2125,7 @@ function initDownloadWidget() {
       closePanel();
       openFilesWindow(card);
     });
+    setDlCardIcon(card.refs.icon, {});
     cards.set(id, card);
     showWidget();
     return card;
@@ -2087,7 +2153,7 @@ function initDownloadWidget() {
   // metadata fetches, and the "reuse cached files" copy step can all take
   // a few seconds before any of that happens, and without this the button
   // looked like it was doing nothing during that whole stretch.
-  function beginInstanceInstallPlaceholder(id, label) {
+  function beginInstanceInstallPlaceholder(id, label, loader) {
     let card = cards.get(id);
     if (!card) {
       card = createCard(id);
@@ -2097,6 +2163,7 @@ function initDownloadWidget() {
       };
       card.onCancel = async () => { await api.cancelDownload(); };
     }
+    setDlCardIcon(card.refs.icon, { icon: 'loader', loaderIconUrl: loaderIcon(loader) });
     card.status = 'downloading';
     card.percent = null;
     card.files = [];
@@ -2117,6 +2184,33 @@ function initDownloadWidget() {
     card.refs.pauseBtn.innerHTML = '⏸ Pause';
     refreshSummary();
   }
+
+  // Real byte-level progress for every generic download (mod updates,
+  // dependency installs, Fix Mods, preset apply, import mods, plain
+  // Discover downloads, and Java runtime downloads) — one shared event
+  // from the backend, keyed by the same download id each card already
+  // uses, so a single listener here drives percent/speed/downloaded for
+  // all of them instead of each feature needing its own progress plumbing.
+  api.onGenericDownloadProgress((event) => {
+    const p = event.payload || {};
+    const card = cards.get(p.id);
+    if (!card) return;
+    const r = card.refs;
+    if (p.total_bytes) {
+      const pct = Math.max(0, Math.min(100, (p.downloaded_bytes / p.total_bytes) * 100));
+      card.el.classList.remove('dl-card-indeterminate');
+      card.percent = pct;
+      r.bar.style.transform = `scaleX(${pct / 100})`;
+      r.percent.textContent = `${Math.round(pct)}%`;
+      const remaining = p.total_bytes - p.downloaded_bytes;
+      r.eta.textContent = p.speed_bps > 0 ? fmtEta(remaining / p.speed_bps) : '—';
+    }
+    r.speed.textContent = fmtSpeed(p.speed_bps);
+    r.downloaded.textContent = p.total_bytes
+      ? `${fmtBytes(p.downloaded_bytes)} / ${fmtBytes(p.total_bytes)}`
+      : fmtBytes(p.downloaded_bytes);
+    if (p.file_name) r.file.textContent = p.file_name;
+  });
 
   api.onDownloadProgress((event) => {
     const p = event.payload;
@@ -2216,6 +2310,7 @@ function initDownloadWidget() {
     opts = opts || {};
     let card = cards.get(id);
     if (!card) card = createCard(id);
+    setDlCardIcon(card.refs.icon, { icon: opts.icon, iconUrl: opts.iconUrl });
     card.files = [];
     card.fileByName = new Map();
     card.activeFileNames = new Set();
@@ -2228,7 +2323,11 @@ function initDownloadWidget() {
     // an active-file name) keep that row visible instead of hiding it —
     // used by the modpack extractor, which now reports these for real,
     // the same as an instance install.
-    card.el.classList.toggle('dl-card-no-stats', !opts.withStats);
+    // Any download that can report byte-level progress shows the stats
+    // row by default now (percent/speed/ETA/downloaded) — pass
+    // `withStats: false` explicitly to opt a card out (e.g. a purely
+    // count-based step with nothing to stream).
+    card.el.classList.toggle('dl-card-no-stats', opts.withStats === false);
     card.el.classList.toggle('dl-card-no-cancel', !!opts.noCancel);
     card.el.classList.toggle('dl-card-indeterminate', !opts.determinate);
     if (opts.determinate) card.refs.bar.style.transform = 'scaleX(0)';
@@ -2309,6 +2408,12 @@ function initDownloadWidget() {
     removeCard(id, 3000);
   }
 
+  function setGenericDownloadIcon(id, iconUrl, fallbackIcon) {
+    const card = cards.get(id);
+    if (!card) return;
+    setDlCardIcon(card.refs.icon, { iconUrl, icon: fallbackIcon });
+  }
+
   dlWidgetGeneric = {
     begin: beginGenericDownload,
     update: updateGenericDownload,
@@ -2316,6 +2421,7 @@ function initDownloadWidget() {
     isCancelled: isGenericDownloadCancelled,
     beginInstanceInstall: beginInstanceInstallPlaceholder,
     failInstanceInstall,
+    setIcon: setGenericDownloadIcon,
     fileStart,
     fileDone,
     seedFiles,
@@ -3001,9 +3107,7 @@ function closeDressingRoomModal() {
   pauseAllDressingRoomCards();
 
   // Resume main menu standee
-  if (skinMiniPreviewInstance) {
-    skinMiniPreviewInstance.renderPaused = false;
-  }
+  showSkinMiniPreview();
 }
 
 function setDressingRoomBusy(busy, message = 'Updating Mojang servers…') {
@@ -3777,7 +3881,26 @@ async function initSkinMiniPreview() {
   const anim = createSkinAnimation(currentSkinAnimName);
   if (anim) anim.speed = currentSkinSpeed;
 
-  canvas.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
+  // Bound once per canvas element (which persists across reinits, since
+  // reinit just fetches the same DOM node again) rather than re-added
+  // every time this function runs — otherwise a canvas that's been
+  // rebuilt a few times ends up with several stacked listeners all firing
+  // on the same event.
+  if (!canvas.dataset.contextLostBound) {
+    canvas.dataset.contextLostBound = '1';
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      // A tray restore can cause the underlying GPU surface to get torn
+      // down more than once in quick succession while the OS is still
+      // settling the window into place — a single one-shot rebuild right
+      // after unhide isn't always the last time it happens, which is why
+      // the model could come back briefly and then go blank again. So
+      // instead of only reinitializing from the tray-restore hook, any
+      // loss of this canvas's context — whenever it happens — schedules
+      // its own rebuild directly.
+      scheduleMiniPreviewRecover();
+    }, false);
+  }
 
   skinMiniPreviewInstance = new Render({
     canvas: canvas,
@@ -3838,6 +3961,131 @@ async function initSkinMiniPreview() {
   }
 
   updateSkinMiniPreview();
+}
+
+// Brings the 3D player model (the "standee" preview in the Instances
+// view's player card) back — the exact one-liner `closeDressingRoomModal`
+// uses to make the model reappear once the Dressing Room overlay closes.
+// Pulled out into its own function so the tray-restore path below can
+// reuse this same "make the player appear" logic instead of duplicating
+// (or diverging from) it.
+function showSkinMiniPreview() {
+  if (skinMiniPreviewInstance) {
+    skinMiniPreviewInstance.renderPaused = false;
+  }
+}
+
+// Called when the Rust side tells us the main window was just restored
+// from the system tray (or re-focused after single-instance re-launch).
+// Hiding the window natively — not a browser tab switch — is where the 3D
+// player model was going blank: the WebGL context can get lost while the
+// window is off-screen, and `isContextLost()` doesn't reliably report that
+// on every GPU/driver (WebKitGTK on Linux in particular), so we can't fully
+// trust it to decide whether a rebuild is needed. The modal viewer only
+// exists while its overlay is open, so it's fine to keep using the lighter
+// resume/wait-then-reinit path — but the standee preview (the one on the
+// main screen, which is what was actually going blank) is unconditionally
+// unloaded and reloaded from scratch: `reinitSkinMiniPreview(true)` throws
+// away the old <canvas> element and Render instance entirely and builds a
+// brand new one, which is more certain to come back clean than trying to
+// resuscitate whatever WebGL context the window came back with.
+function resumeSkinViewersAfterShow() {
+  const tryResume = (getInstance, reinit) => {
+    const inst = getInstance();
+    if (!inst) return;
+    try {
+      inst.renderPaused = false;
+      const ctx = inst.renderer?.getContext?.();
+      if (ctx && ctx.isContextLost && ctx.isContextLost()) {
+        setTimeout(() => {
+          const stillLost = ctx.isContextLost && ctx.isContextLost();
+          if (stillLost) reinit();
+        }, 1500);
+      } else {
+        try { inst.render(); } catch (e) {}
+      }
+    } catch (e) {}
+  };
+
+  // NOTE: this used to be wrapped in nested requestAnimationFrame() calls
+  // to wait for the window to finish compositing before touching WebGL.
+  // That was the actual bug: rAF callbacks are frozen by the browser
+  // whenever the page is (or still briefly reads as) not visible, which a
+  // just-restored tray window often still does for a tick — so the whole
+  // resume chain sat there never firing until something *else* (an actual
+  // OS-level visibility flip, like alt-tabbing) unblocked the rAF queue and
+  // let the plain `visibilitychange` handler's simpler `renderPaused =
+  // false` get a chance to run instead. setTimeout isn't gated by page
+  // visibility the same way, so it actually runs when this function is
+  // called instead of silently waiting on a frame that isn't coming.
+  setTimeout(() => {
+    resizeSkinViewer();
+    tryResume(() => skinViewerInstance, () => { /* modal viewer: user will reopen it */ });
+
+    // Standee preview: unload it (dispose the old Render instance + swap
+    // in a brand-new <canvas>) and load it back in, every time the window
+    // comes back from the tray — rather than betting on `isContextLost()`,
+    // which is exactly the kind of detection that's unreliable on
+    // WebKitGTK. It's a small, cheap model, so doing this unconditionally
+    // is fine.
+    reinitSkinMiniPreview(true);
+    BG.requestRedraw();
+  }, 60);
+}
+
+// Debounced entry point for rebuilding the standee preview after its WebGL
+// context is lost. Used both by the canvas's own 'webglcontextlost'
+// listener (context can die at any point, not just around a tray restore)
+// and by the tray-restore flow below. Debounced because a single restore
+// can sometimes fire the loss event more than once in quick succession as
+// the OS finishes settling the window — without this, that could kick off
+// several overlapping rebuilds instead of one clean one.
+let miniPreviewRecoverTimer = null;
+function scheduleMiniPreviewRecover(delay = 300) {
+  if (miniPreviewRecoverTimer) clearTimeout(miniPreviewRecoverTimer);
+  miniPreviewRecoverTimer = setTimeout(() => {
+    miniPreviewRecoverTimer = null;
+    reinitSkinMiniPreview();
+  }, delay);
+}
+
+// Swaps the standee's <canvas> element for a brand-new one with the same
+// id — a true "unload" rather than just discarding the Render instance
+// while reusing the same canvas/context. A cloned-and-replaced node has no
+// history: no stuck context-lost flag, no listeners carried over from a
+// context that half-recovered, nothing. Used for the tray-restore path,
+// where "just recreate the Render object" alone wasn't enough to stop the
+// model from going blank again shortly after coming back.
+function hardResetSkinMiniPreviewCanvas() {
+  const oldCanvas = document.getElementById('skin-mini-preview-canvas');
+  if (!oldCanvas || !oldCanvas.parentNode) return;
+  const freshCanvas = document.createElement('canvas');
+  freshCanvas.id = 'skin-mini-preview-canvas';
+  oldCanvas.parentNode.replaceChild(freshCanvas, oldCanvas);
+}
+
+// Hard fallback for `resumeSkinViewersAfterShow`: fully destroys and
+// rebuilds the standee preview's renderer. Only reached if the WebGL
+// context is still lost a couple of frames after the window comes back —
+// i.e. it's not going to recover on its own.
+// `hardReset` additionally throws away the <canvas> element itself (see
+// `hardResetSkinMiniPreviewCanvas` above) instead of just recreating the
+// Render object on the same node — used after a tray restore, where a
+// same-canvas rebuild was observed to work for a moment and then go blank
+// again.
+function reinitSkinMiniPreview(hardReset = false) {
+  const savedSkin = currentSkinSource;
+  const savedModel = currentSkinModelType;
+  try { skinMiniPreviewInstance?.dispose?.(); } catch (e) {}
+  skinMiniPreviewInstance = null;
+  if (skinMiniPreviewResizeObserver) {
+    try { skinMiniPreviewResizeObserver.disconnect(); } catch (e) {}
+    skinMiniPreviewResizeObserver = null;
+  }
+  if (hardReset) hardResetSkinMiniPreviewCanvas();
+  initSkinMiniPreview().then(() => {
+    if (savedSkin) loadSkinIntoViewer(savedSkin, savedModel);
+  }).catch(() => {});
 }
 
 let skinMiniPreviewResizeRaf = null;
@@ -4197,6 +4445,20 @@ function formatPlaytime(totalSecondsInput) {
   return parts.join(' ');
 }
 
+// Compact single-unit label for chart axis gridlines — "2h", "45m", "3d" —
+// deliberately terser than formatPlaytime() (which lists every unit) since
+// this has to fit next to a thin horizontal line without crowding it.
+function formatPlaytimeAxis(totalSeconds) {
+  const s = Math.max(0, Math.round(totalSeconds || 0));
+  if (s >= 86400) return `${Math.round(s / 86400)}d`;
+  if (s >= 3600) {
+    const h = s / 3600;
+    return `${h % 1 === 0 ? h : h.toFixed(1)}h`;
+  }
+  if (s >= 60) return `${Math.round(s / 60)}m`;
+  return `${s}s`;
+}
+
 // Human-friendly "Last Played" label: relative for anything recent, a plain
 // date once it's more than a week ago. `iso` is the RFC 3339 timestamp
 // stored in `last_played_at` (set the moment Play is pressed).
@@ -4234,6 +4496,406 @@ function updateSelectedInstancePlaytimeDisplay() {
   }
   playtimeEl.textContent = formatPlaytime(seconds) + (running ? ' (playing now)' : '');
 }
+
+// ── Play Time analytics panel ────────────────────────────────────────────
+// Turns the selected instance's `playtime_history` ({ "YYYY-MM-DD": seconds })
+// into ordered chart buckets for one of four ranges, then renders them as a
+// small CSS bar chart with a couple of derived "fun facts" underneath.
+let playtimeChartRange = 'week';
+
+function ptDayKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function buildPlaytimeBuckets(history, range) {
+  const hist = history || {};
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (range === 'week' || range === 'month') {
+    const days = range === 'week' ? 7 : 30;
+    const buckets = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = ptDayKey(d);
+      buckets.push({
+        label: range === 'week' ? d.toLocaleDateString(undefined, { weekday: 'short' }) : String(d.getDate()),
+        full: d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
+        seconds: hist[key] || 0,
+        isToday: i === 0,
+      });
+    }
+    return buckets;
+  }
+
+  if (range === 'year') {
+    const buckets = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      let seconds = 0;
+      for (const key in hist) {
+        const kd = new Date(key + 'T00:00:00');
+        if (kd.getFullYear() === d.getFullYear() && kd.getMonth() === d.getMonth()) seconds += hist[key];
+      }
+      buckets.push({
+        label: d.toLocaleDateString(undefined, { month: 'short' }),
+        full: d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+        seconds,
+        isToday: i === 0,
+      });
+    }
+    return buckets;
+  }
+
+  // "All time" needs at least one instant to anchor on when there's no
+  // history yet — fall back to the year view's last-12-months skeleton so
+  // the chart always has real calendar labels, even before any data exists.
+  if (Object.keys(hist).length === 0) return buildPlaytimeBuckets(hist, 'year');
+
+  const years = {};
+  for (const key in hist) years[key.slice(0, 4)] = (years[key.slice(0, 4)] || 0) + hist[key];
+  const sortedYears = Object.keys(years).sort();
+  if (sortedYears.length <= 1) return buildPlaytimeBuckets(history, 'year');
+  return sortedYears.map(y => ({ label: y, full: y, seconds: years[y], isToday: false }));
+}
+
+// Tracks the instance-list "shape" (version ids, joined) a global mod count
+// was last computed for, so switching the selected instance doesn't
+// re-trigger a full re-scan of every instance's mods folder, but installing/
+// removing an instance does.
+let playtimeGlobalModsCountFor = null;
+// Same shape-key caching as Mods Installed, but tracked separately since
+// this one is also force-invalidated whenever a play session ends (see
+// `api.onRunningInstancesChanged` below) — advancements can rack up
+// mid-session in a way mod counts never do, so "the instance list hasn't
+// changed" isn't a good enough reason to skip a recount here.
+let playtimeGlobalAdvancementsCountFor = null;
+// Game Advancements should only ever go up — a rescan finding fewer
+// completed advancements than we've already seen almost always means the
+// scan caught an instance mid-write, ran against an empty/just-refreshed
+// instance list, or hit a directory that's temporarily unreadable, not
+// that advancements were actually lost. This tracks the highest count
+// we've ever confirmed (from stats.json on load, a live game-advancement
+// tick, or a rescan) so nothing downstream is ever allowed to display or
+// persist a lower number.
+let advancementsFloor = 0;
+
+// Left-side "Global Stats" list — deliberately independent of whichever
+// instance is selected on the right; these four are summed across every
+// installed instance. Total Launches and Total Play Time are free reads off
+// data already in `instancesCache`; Mods Installed and Game Advancements
+// each need one call per instance (listing the mods folder / scanning
+// saves for completed advancements), so they're fetched once and cached
+// until there's a real reason to recount.
+//
+// The panel is also mirrored to `<Zero Launcher folder>/stats.json` (see
+// `api.loadGlobalStats`/`api.saveGlobalStats`) purely as a last-known-value
+// cache: Total Launches/Total Play Time already live safely on each
+// instance's own persisted record and Mods Installed/Game Advancements are
+// always freshly rescanned from disk, so nothing here is the source of
+// truth — but without the cache the panel visibly blanks out to "—"/"…"
+// for a moment right after every launcher restart while those rescans are
+// still in flight, which reads as the stats having been lost.
+let globalStatsPersistedLoadAttempted = false;
+function loadPersistedGlobalStatsOnce() {
+  if (globalStatsPersistedLoadAttempted || !api.loadGlobalStats) return;
+  globalStatsPersistedLoadAttempted = true;
+  api.loadGlobalStats().then(stats => {
+    if (!stats) return;
+    const launchesEl = document.getElementById('playtime-stat-launches');
+    const modsEl = document.getElementById('playtime-stat-mods');
+    const totalEl = document.getElementById('playtime-stat-total');
+    const advEl = document.getElementById('playtime-stat-advancements');
+    const isPlaceholder = (el) => el && (el.textContent === '—' || el.textContent === '' || el.textContent === '…');
+    // Only ever fills in a stat that hasn't already been given a real
+    // value yet — this is a placeholder for the moment between startup
+    // and the real recount finishing, never a replacement for it.
+    if (isPlaceholder(launchesEl)) launchesEl.textContent = String(stats.total_launches || 0);
+    if (isPlaceholder(totalEl)) {
+      totalEl.textContent = stats.total_playtime_seconds > 0 ? formatPlaytime(stats.total_playtime_seconds) : '0s';
+    }
+    if (isPlaceholder(modsEl)) modsEl.textContent = String(stats.mods_installed || 0);
+    advancementsFloor = Math.max(advancementsFloor, stats.game_advancements || 0);
+    if (isPlaceholder(advEl)) advEl.textContent = String(advancementsFloor);
+  }).catch(() => {});
+}
+
+// Writes the panel's current values out to stats.json. Skips saving while
+// Mods Installed/Game Advancements are still mid-rescan (showing '…') so a
+// transient placeholder never overwrites a good cached value with 0.
+function persistGlobalStats() {
+  if (!api.saveGlobalStats) return;
+  const modsEl = document.getElementById('playtime-stat-mods');
+  const advEl = document.getElementById('playtime-stat-advancements');
+  if ((modsEl && modsEl.textContent === '…') || (advEl && advEl.textContent === '…')) return;
+  const parseCount = (id) => {
+    const el = document.getElementById(id);
+    const n = el ? parseInt(el.textContent, 10) : NaN;
+    return Number.isNaN(n) ? null : n;
+  };
+  const launches = parseCount('playtime-stat-launches');
+  const mods = parseCount('playtime-stat-mods');
+  const advancements = parseCount('playtime-stat-advancements');
+  if (launches === null && mods === null && advancements === null) return;
+  const totalSeconds = getInstances().reduce((s, i) => s + (i.total_playtime_seconds || 0), 0);
+  api.saveGlobalStats({
+    total_launches: launches ?? 0,
+    total_playtime_seconds: totalSeconds,
+    mods_installed: mods ?? 0,
+    game_advancements: advancements ?? 0,
+  }).catch(() => {});
+}
+
+function renderGlobalPlaytimeStats() {
+  loadPersistedGlobalStatsOnce();
+  const launchesEl = document.getElementById('playtime-stat-launches');
+  const modsEl = document.getElementById('playtime-stat-mods');
+  const totalEl = document.getElementById('playtime-stat-total');
+  const advEl = document.getElementById('playtime-stat-advancements');
+  const all = getInstances();
+
+  if (launchesEl) {
+    const totalLaunches = all.reduce((s, i) => s + (i.launch_count || 0), 0);
+    launchesEl.textContent = String(totalLaunches);
+  }
+  if (totalEl) {
+    const totalSeconds = all.reduce((s, i) => s + (i.total_playtime_seconds || 0), 0);
+    totalEl.textContent = totalSeconds > 0 ? formatPlaytime(totalSeconds) : '0s';
+  }
+  if (modsEl) {
+    const shapeKey = all.map(i => i.version_id).sort().join(',');
+    if (all.length === 0) {
+      modsEl.textContent = '0';
+      playtimeGlobalModsCountFor = shapeKey;
+      persistGlobalStats();
+    } else if (playtimeGlobalModsCountFor !== shapeKey) {
+      playtimeGlobalModsCountFor = shapeKey;
+      modsEl.textContent = '…';
+      Promise.all(all.map(i => api.listMods(i.directory).catch(() => [])))
+        .then(lists => {
+          // Only apply if the instance list hasn't changed shape again
+          // while these were in flight.
+          if (playtimeGlobalModsCountFor === shapeKey) {
+            const total = lists.reduce((s, mods) => s + (mods || []).length, 0);
+            modsEl.textContent = String(total);
+            persistGlobalStats();
+          }
+        })
+        .catch(() => {
+          if (playtimeGlobalModsCountFor === shapeKey) modsEl.textContent = '—';
+        });
+    }
+  }
+  if (advEl) {
+    // Includes the running-instances-changed generation counter (bumped
+    // any time a session finishes — see below) so a session ending forces
+    // a recount even though the instance list itself didn't change shape.
+    const shapeKey = all.map(i => i.version_id).sort().join(',') + '|' + playtimeAdvancementsGeneration;
+    if (all.length === 0) {
+      // No instances currently loaded — this fires both for a genuinely
+      // empty launcher AND for the brief window before refreshInstances()
+      // has resolved, and those two cases are indistinguishable here. Never
+      // trust it enough to drop a known-higher count to 0: show/persist the
+      // floor instead, which is '0' for a truly fresh install anyway.
+      advEl.textContent = String(advancementsFloor);
+      playtimeGlobalAdvancementsCountFor = shapeKey;
+      persistGlobalStats();
+    } else if (playtimeGlobalAdvancementsCountFor !== shapeKey) {
+      playtimeGlobalAdvancementsCountFor = shapeKey;
+      advEl.textContent = '…';
+      Promise.all(all.map(i => api.countAdvancements(i.directory).catch(() => 0)))
+        .then(counts => {
+          if (playtimeGlobalAdvancementsCountFor === shapeKey) {
+            const total = counts.reduce((s, c) => s + (c || 0), 0);
+            advancementsFloor = Math.max(advancementsFloor, total);
+            advEl.textContent = String(advancementsFloor);
+            persistGlobalStats();
+          }
+        })
+        .catch(() => {
+          if (playtimeGlobalAdvancementsCountFor === shapeKey) advEl.textContent = '—';
+        });
+    }
+  }
+}
+
+// Bumped every time a play session ends (the pid watcher/process-exit path
+// that's already tracking playtime for us), so the Game Advancements stat
+// gets recounted after every session instead of only when instances are
+// installed/removed.
+let playtimeAdvancementsGeneration = 0;
+
+function renderPlaytimeChart() {
+  const chartEl = document.getElementById('playtime-chart');
+  const totalEl = document.getElementById('playtime-range-total');
+  const streakEl = document.getElementById('playtime-streak');
+  const bestDayEl = document.getElementById('playtime-best-day');
+  const avgEl = document.getElementById('playtime-daily-avg');
+  if (!chartEl) return;
+
+  renderGlobalPlaytimeStats();
+
+  const inst = getInstances().find(i => i.version_id === selectedInstanceId);
+  const history = inst ? (inst.playtime_history || {}) : {};
+  const hasAnyData = Object.keys(history).some(k => history[k] > 0);
+
+  // Always build real, dated buckets — even with zero seconds everywhere —
+  // so the chart shows an actual calendar grid (this week's day names, this
+  // year's months, etc.) instead of just going blank when there's no data.
+  const buckets = buildPlaytimeBuckets(history, playtimeChartRange);
+  const rangeTotal = buckets.reduce((s, b) => s + b.seconds, 0);
+
+  if (totalEl) totalEl.textContent = hasAnyData ? `${formatPlaytime(rangeTotal)} in range` : 'Nothing played yet';
+
+  // Current streak: consecutive played days ending today (or yesterday, so
+  // a streak doesn't reset to zero the moment you haven't opened it yet
+  // today).
+  if (streakEl) {
+    if (!hasAnyData) {
+      streakEl.textContent = '0 days';
+    } else {
+      let streak = 0;
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      if (!history[ptDayKey(d)]) d.setDate(d.getDate() - 1);
+      while (history[ptDayKey(d)]) {
+        streak++;
+        d.setDate(d.getDate() - 1);
+      }
+      streakEl.textContent = streak > 0 ? `${streak} day${streak === 1 ? '' : 's'}` : '0 days';
+    }
+  }
+
+  // Best single day across the instance's whole history (not just the
+  // selected range) — a nice constant to compare the current range against.
+  if (bestDayEl) {
+    if (!hasAnyData) {
+      bestDayEl.textContent = 'None yet';
+    } else {
+      const bestSecs = Math.max(0, ...Object.values(history));
+      bestDayEl.textContent = bestSecs > 0 ? formatPlaytime(bestSecs) : 'None yet';
+    }
+  }
+
+  // Average per *active* day in the selected range, so a chart with a lot
+  // of zero days doesn't make the average look artificially tiny.
+  if (avgEl) {
+    const activeDays = buckets.filter(b => b.seconds > 0).length;
+    avgEl.textContent = activeDays > 0 ? formatPlaytime(rangeTotal / activeDays) : '—';
+  }
+
+  // Render the bar grid unconditionally — real dated columns with empty
+  // (near-zero) tracks when a bucket has no play time — then, only if the
+  // *whole* instance has never been played, lay a small hint over the top
+  // instead of hiding the chart.
+  // Round the axis ceiling up to a "nice" number of hours/minutes so the
+  // gridlines read as real time markers instead of an arbitrary fraction of
+  // whatever the tallest bar happens to be — this is most of what made the
+  // chart feel like empty air with one bar floating in it.
+  const rawMax = Math.max(...buckets.map(b => b.seconds), 1);
+  const niceSteps = [300, 600, 900, 1800, 3600, 2 * 3600, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600, 2 * 86400, 5 * 86400, 10 * 86400, 30 * 86400];
+  let axisMax = niceSteps.find(s => s * 4 >= rawMax) || rawMax * 1.2;
+  axisMax = Math.max(axisMax, rawMax * 1.05, 60);
+  const maxSeconds = axisMax;
+  const n = buckets.length;
+  // Thin out labels once there'd be too many to read (month/all-time views).
+  const labelEvery = n <= 12 ? 1 : Math.ceil(n / 10);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'playtime-chart-inner';
+
+  // Horizontal gridlines with time labels (0%, 25%, 50%, 75%, 100% of the
+  // "nice" axis max) — gives the chart a real sense of scale instead of a
+  // few bars floating in a mostly-empty box.
+  const grid = document.createElement('div');
+  grid.className = 'playtime-grid';
+  [1, 0.75, 0.5, 0.25, 0].forEach(frac => {
+    const line = document.createElement('div');
+    line.className = 'playtime-grid-line' + (frac === 0 ? ' baseline' : '');
+    const label = document.createElement('span');
+    label.className = 'playtime-grid-label';
+    label.textContent = frac === 0 ? '0m' : formatPlaytimeAxis(maxSeconds * frac);
+    line.appendChild(label);
+    grid.appendChild(line);
+  });
+  wrap.appendChild(grid);
+
+  const bars = document.createElement('div');
+  bars.className = 'playtime-bars';
+  buckets.forEach((b, i) => {
+    const col = document.createElement('div');
+    col.className = 'playtime-bar-col' + (b.isToday ? ' today' : '');
+    col.title = `${b.full}: ${b.seconds > 0 ? formatPlaytime(b.seconds) : 'No play time'}`;
+
+    const track = document.createElement('div');
+    track.className = 'playtime-bar-track';
+    const fill = document.createElement('div');
+    fill.className = 'playtime-bar-fill' + (b.seconds > 0 ? '' : ' empty');
+    // A hairline-height "stub" for empty days keeps every column visible
+    // as part of the grid, rather than disappearing entirely.
+    const pct = b.seconds > 0 ? Math.max(4, (b.seconds / maxSeconds) * 100) : 16;
+    fill.style.height = pct + '%';
+    track.appendChild(fill);
+    col.appendChild(track);
+
+    const label = document.createElement('span');
+    label.className = 'playtime-bar-label';
+    label.textContent = (i % labelEvery === 0) ? b.label : '';
+    col.appendChild(label);
+
+    bars.appendChild(col);
+  });
+  wrap.appendChild(bars);
+
+  if (!hasAnyData) {
+    const hint = document.createElement('div');
+    hint.className = 'playtime-empty-hint';
+    hint.innerHTML = '<span class="hero-empty-label">No play sessions yet — hit ▶ Play to start tracking</span>';
+    wrap.appendChild(hint);
+  }
+
+  chartEl.replaceChildren(wrap);
+}
+
+function initPlaytimeRangeButtons() {
+  const buttons = document.querySelectorAll('.playtime-range-btn');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('active')) return;
+      buttons.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+      playtimeChartRange = btn.dataset.range;
+      renderPlaytimeChart();
+    });
+  });
+}
+initPlaytimeRangeButtons();
+
+// ── "Make it smart" activity tracking ────────────────────────────────────
+// Pings the backend at most once every few seconds while the user is doing
+// anything in the launcher window (mouse movement, clicks, scrolling,
+// typing). The launch flow reads this timestamp to decide whether the
+// window has actually gone idle before closing it — see Settings →
+// Window Behavior → "Close launcher when game starts" → "Make it smart",
+// and `commands::minecraft::launch_minecraft` on the Rust side.
+(function initActivityTracking() {
+  const THROTTLE_MS = 4000;
+  let lastSent = 0;
+  const ping = () => {
+    const now = Date.now();
+    if (now - lastSent < THROTTLE_MS) return;
+    lastSent = now;
+    api.reportActivity().catch(() => {});
+  };
+  ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach(evt => {
+    window.addEventListener(evt, ping, { passive: true, capture: true });
+  });
+  // Count as activity right away so a freshly opened launcher doesn't read
+  // as having been idle since process start.
+  ping();
+})();
 
 function updatePlayGearEnabled() {
   const gearBtn = document.getElementById('btn-play-options');
@@ -4278,6 +4940,7 @@ function selectInstance(id) {
     updatePlayGearEnabled();
     if (iconEl) iconEl.innerHTML = '';
     document.getElementById('play-status-text')?.classList.add('hidden');
+    renderPlaytimeChart();
     syncInstanceSelectionAcrossTabs().catch(() => {});
     return;
   }
@@ -4290,6 +4953,7 @@ function selectInstance(id) {
   dirEl.textContent = inst.directory || (settings ? settings.game_directory : '—');
   if (lastPlayedEl) lastPlayedEl.textContent = formatLastPlayed(inst.last_played_at);
   updateSelectedInstancePlaytimeDisplay();
+  renderPlaytimeChart();
   playBtn.disabled = !!inst.missing_jar;
   updatePlayGearEnabled();
   document.getElementById('play-status-text')?.classList.add('hidden');
@@ -4450,7 +5114,7 @@ async function troubleshootReinstallInstance(id) {
   const zlibOk = await confirmZlibIfConflict(inst.loader);
   if (!zlibOk) return;
   showToast(`Reinstalling ${inst.name || inst.version_id}…`, 'info');
-  if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, inst.minecraft_version);
+  if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, inst.minecraft_version, inst.loader);
   try {
     const newInstance = await api.installVersion(
       inst.minecraft_version,
@@ -4834,7 +5498,7 @@ function initInstanceActions() {
         // those files instead of re-downloading them.
         closeEditInstanceOverlay();
         showToast(`Reinstalling ${name || inst.name} as ${newMcVersion} (${loaderLabel(newLoader)})…`, 'info');
-        if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, newMcVersion);
+        if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, newMcVersion, newLoader);
         const newInstance = await api.installVersion(newMcVersion, newLoader, loaderVersion, inst.directory, name || inst.name, inst.version_id);
         // Remove the old version's files/tracking now that the new one is in place,
         // as long as it didn't just overwrite itself (same version_id/dir).
@@ -5238,7 +5902,7 @@ async function installInstance() {
   // tracks progress from here, so the user is free to keep using the app.
   document.getElementById('new-instance-overlay').classList.add('hidden');
   showToast(`Installing ${name}…`, 'info');
-  if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, mcVersion);
+  if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, mcVersion, loader);
 
   try {
     const result = await api.installVersion(mcVersion, loader, loaderVersion, directory, name);
@@ -5686,7 +6350,7 @@ function renderModCardContent(card) {
     updateBtn.classList.add('is-downloading');
     updateBtn.innerHTML = '<span class="mini-spinner"></span>';
     const dlId = genDlId('mod-update');
-    if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, 'Downloading…', `Updating ${modLabel}…`);
+    if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, 'Downloading…', `Updating ${modLabel}…`, { icon: 'update' });
     showToast(`Updating ${modLabel}…`, 'info');
     let ok = false;
     try {
@@ -6197,6 +6861,7 @@ async function confirmModpackImport() {
       determinate: true,
       withStats: true,
       noCancel: true, // extraction isn't cancellable mid-run yet; use the window's own Cancel to minimize it instead
+      icon: 'mod',
     });
   }
 
@@ -6786,7 +7451,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         showToast(`Updating ${up.length} mod(s) (may take a while)...`, 'info');
         const dlId = genDlId('mods-update-all');
-        if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, `Updating ${up.length} mod(s)…`, 'Starting…');
+        if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, `Updating ${up.length} mod(s)…`, 'Starting…', { icon: 'update' });
         if (dlWidgetGeneric) dlWidgetGeneric.seedFiles(dlId, up.map(u => (u.mod && (u.mod.name || u.mod.file_name)) || u.file.filename));
         let ok = 0;
         try {
@@ -6831,7 +7496,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (fixInline) { fixInline.classList.remove('open'); fixInline.setAttribute('aria-hidden', 'true'); }
       showToast('Checking for missing dependencies…', 'info');
       const dlId = genDlId('mods-deps');
-      if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, 'Downloading dependencies…', 'Checking mods…');
+      if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, 'Downloading dependencies…', 'Checking mods…', { icon: 'wrench' });
       let installed = 0;
       try {
         installed = await runInstallDeps(dlId);
@@ -6885,7 +7550,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const originalLabel = fixRunBtn.textContent;
       setUpdateButtonsBusy(true);
       const dlId = genDlId('fix-mods');
-      if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, 'Fixing mods…', 'Installing missing dependencies…');
+      if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, 'Fixing mods…', 'Installing missing dependencies…', { icon: 'wrench' });
 
       try {
         fixRunBtn.textContent = 'Installing deps…';
@@ -7239,9 +7904,11 @@ function buildPresetCard(preset) {
     title.textContent = preset.name;
     titleCol.appendChild(title);
 
+    // Compact single-line meta row (pills first, then the description as
+    // trailing muted text) — matches the instance list's name+meta layout
+    // instead of a multi-line card body.
     const pillRow = document.createElement('div');
     pillRow.className = 'preset-pill-row';
-    pillRow.style.marginTop = '6px';
     (preset.mod_loaders || []).forEach(l => {
       const p = document.createElement('span');
       p.className = 'preset-pill';
@@ -7260,15 +7927,17 @@ function buildPresetCard(preset) {
       pillRow.appendChild(p);
     }
     titleCol.appendChild(pillRow);
-    top.appendChild(titleCol);
-    card.appendChild(top);
 
     if (preset.description) {
       const desc = document.createElement('div');
       desc.className = 'preset-card-desc';
       desc.textContent = preset.description;
-      card.appendChild(desc);
+      desc.title = preset.description;
+      titleCol.appendChild(desc);
     }
+
+    top.appendChild(titleCol);
+    card.appendChild(top);
 
     const actions = document.createElement('div');
     actions.className = 'preset-card-actions';
@@ -7281,10 +7950,11 @@ function buildPresetCard(preset) {
     const targetLabel = document.createElement('span');
     targetLabel.className = 'preset-card-target';
     targetLabel.textContent = target ? `→ ${target.name || target.version_id}` : 'No instance selected';
+    targetLabel.title = targetLabel.textContent;
     actions.appendChild(targetLabel);
 
     const applyBtn = document.createElement('button');
-    applyBtn.className = 'btn-accent btn-sm';
+    applyBtn.className = 'btn-accent';
     applyBtn.textContent = 'Apply';
     applyBtn.disabled = !target;
     applyBtn.addEventListener('click', () => {
@@ -7457,8 +8127,16 @@ function initApplyPresetOverlayEvents() {
       // needed: flag the card as cancelled (so isCancelled(dlId) below sees
       // it immediately) and call cancelGenericDownload(dlId), the same id
       // each mod's discoverDownload() call is checking.
-      dlWidgetGeneric.begin(dlId, `Applying ${preset.name}`, `0 / ${selected.length} mods`, { determinate: true });
+      dlWidgetGeneric.begin(dlId, `Applying ${preset.name}`, `0 / ${selected.length} mods`, { determinate: true, icon: 'preset' });
       dlWidgetGeneric.seedFiles(dlId, selected.map(r => r.name));
+      // Swap the flat preset glyph for the preset's own icon once it
+      // resolves, if it has one — same lookup the preset cards themselves
+      // use, so this stays visually consistent with the rest of the app.
+      api.getPresetIconPath(preset.id).then((path) => {
+        if (!path) return;
+        const convert = window.__TAURI__.core.convertFileSrc;
+        dlWidgetGeneric.setIcon(dlId, convert ? convert(path) : path, 'preset');
+      }).catch(() => {});
     }
     const cancelled = () => dlWidgetGeneric && dlWidgetGeneric.isCancelled(dlId);
 
@@ -7845,7 +8523,7 @@ function initImportModsOverlayEvents() {
     const mcVersion = targetInstance.minecraft_version;
 
     if (dlWidgetGeneric) {
-      dlWidgetGeneric.begin(dlId, `Importing mods into ${targetInstance.name || targetInstance.version_id}`, `0 / ${selected.length} mods`, { determinate: true });
+      dlWidgetGeneric.begin(dlId, `Importing mods into ${targetInstance.name || targetInstance.version_id}`, `0 / ${selected.length} mods`, { determinate: true, icon: 'mod' });
       dlWidgetGeneric.seedFiles(dlId, selected.map(r => r.name));
     }
     const cancelled = () => dlWidgetGeneric && dlWidgetGeneric.isCancelled(dlId);
@@ -8379,7 +9057,7 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
   const originalText = downloadBtn ? downloadBtn.textContent : 'Download';
   if (downloadBtn) downloadBtn.textContent = 'Downloading…';
   const dlId = genDlId('discover-download');
-  if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, 'Downloading…', hit.title);
+  if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, 'Downloading…', hit.title, { icon: 'mod', iconUrl: hit.icon_url });
 
   try {
     await trackedDiscoverDownload(directory, hit.project_type, opt.dataset.fileUrl, opt.dataset.fileName, dlId);
@@ -8437,6 +9115,8 @@ async function installDiscoverModpack(hit, opt, downloadBtn, customDirectory) {
       determinate: true,
       withStats: true,
       noCancel: true,
+      icon: 'mod',
+      iconUrl: hit.icon_url,
     });
   }
 
@@ -9227,12 +9907,14 @@ function populateSettingsUI() {
 
   // Behavior
   document.getElementById('setting-close-on-launch').checked = !!settings.close_after_launch;
+  document.getElementById('setting-smart-close-on-launch').checked = settings.smart_close_on_launch !== false;
   document.getElementById('setting-minimize-on-launch').checked = !!settings.minimize_on_launch;
   document.getElementById('setting-on-game-close').value = settings.on_game_close || 'show';
   document.getElementById('setting-system-tray').checked = settings.enable_system_tray !== false;
   document.getElementById('setting-on-launcher-close').value = settings.on_launcher_close || 'tray';
   document.getElementById('setting-always-hide-to-tray').checked = !!settings.always_hide_to_tray;
   updateWindowBehaviorRowVisibility();
+  updateSmartCloseRowEnabled();
   document.getElementById('setting-mod-updates-startup').checked = settings.check_mod_updates_on_startup !== false;
   const clickSoundsEl = document.getElementById('setting-click-sounds');
   if (clickSoundsEl) clickSoundsEl.checked = settings.sound_effects_enabled !== false;
@@ -9584,6 +10266,10 @@ function collectSettingsFromUI() {
 
   // Behavior
   settings.close_after_launch = document.getElementById('setting-close-on-launch').checked;
+  // Sub-option only takes effect while its parent toggle is on, but its own
+  // saved value should reflect the checkbox regardless — no need to force
+  // it back to the default just because the parent's currently off.
+  settings.smart_close_on_launch = document.getElementById('setting-smart-close-on-launch').checked;
   settings.minimize_on_launch = document.getElementById('setting-minimize-on-launch').checked;
   settings.on_game_close = document.getElementById('setting-on-game-close').value;
   settings.enable_system_tray = document.getElementById('setting-system-tray').checked;
@@ -9781,7 +10467,7 @@ function initSettings() {
     'setting-bg-image-dim', 'setting-bg-image-brightness', 'setting-bg-image-blur',
     'setting-bg-image-tint', 'setting-bg-image-vignette',
     'setting-font-family',
-    'setting-close-on-launch', 'setting-minimize-on-launch',
+    'setting-close-on-launch', 'setting-smart-close-on-launch', 'setting-minimize-on-launch',
     'setting-on-game-close', 'setting-system-tray',
     'setting-on-launcher-close', 'setting-always-hide-to-tray',
     'setting-mod-updates-startup', 'setting-confirm-destructive',
@@ -9939,7 +10625,7 @@ function initSettings() {
     if (!javaWidgetActive[major]) {
       javaWidgetActive[major] = true;
       if (dlWidgetGeneric) {
-        dlWidgetGeneric.begin(dlId, 'Smart Java Detection', p.message, { determinate: true });
+        dlWidgetGeneric.begin(dlId, 'Smart Java Detection', p.message, { determinate: true, icon: 'java' });
       }
     }
     if (dlWidgetGeneric) dlWidgetGeneric.update(dlId, undefined, p.message, p.percent);
@@ -10692,7 +11378,7 @@ async function refreshRunningInstances() {
   // cheap getRunningInstances() call), so let it run in the background
   // instead of holding up this function's caller.
   refreshInstances()
-    .then(() => updateSelectedInstancePlaytimeDisplay())
+    .then(() => { updateSelectedInstancePlaytimeDisplay(); renderPlaytimeChart(); })
     .catch((e) => console.error('Failed to refresh instances after running-instances change', e));
   updateSelectedInstancePlaytimeDisplay();
 }
@@ -10721,7 +11407,34 @@ function initRunningInstancesWidget() {
 
   // Live updates: the backend fires this whenever an instance starts or
   // stops, so the buttons/Play button stay in sync without polling.
-  api.onRunningInstancesChanged(() => refreshRunningInstances());
+  api.onRunningInstancesChanged(() => {
+    refreshRunningInstances();
+    // A running instance just started or (more importantly here) finished
+    // a session — advancements may have changed, so force the Game
+    // Advancements stat to recount next render rather than trusting its
+    // shape-based cache.
+    playtimeAdvancementsGeneration++;
+    renderGlobalPlaytimeStats();
+  });
+
+  // Live updates: the backend watches each running instance's game log and
+  // fires this the instant it sees an advancement/goal/challenge line, so
+  // the Game Advancements stat ticks up immediately instead of waiting for
+  // the session to end and the save files to be rescanned. The eventual
+  // rescan (triggered above via playtimeAdvancementsGeneration once the
+  // session ends) still runs and is the source of truth — this is purely
+  // for instant feedback while playing.
+  api.onGameAdvancement(() => {
+    const advEl = document.getElementById('playtime-stat-advancements');
+    if (advEl) {
+      const current = parseInt(advEl.textContent, 10);
+      if (!Number.isNaN(current)) {
+        advancementsFloor = Math.max(advancementsFloor, current + 1);
+        advEl.textContent = String(advancementsFloor);
+        persistGlobalStats();
+      }
+    }
+  });
 
   initRiOverflowResizeObserver();
   refreshRunningInstances();
@@ -10772,6 +11485,21 @@ const BG = {
         }
       }
     });
+    // `document.hidden`/`visibilitychange` is what drives the pause above,
+    // but it's unreliable for a *natively* hidden window (tray hide isn't a
+    // tab switch): on some platforms/GPU drivers the WebGL context is
+    // actually torn down while the window is off-screen, and by the time
+    // `visibilitychange` fires again the context may not have finished
+    // coming back yet, so just flipping `renderPaused` off can be a no-op.
+    // The Rust side emits this explicit event on every tray/dock restore
+    // (see `launcher-shown` in lib.rs) as a second, more reliable signal to
+    // hard-resume the 3D preview(s) — see `resumeSkinViewersAfterShow`.
+    // Tray/dock restores get an extra beat before we touch WebGL: unlike a
+    // plain tab switch (where the context is usually still warm and the
+    // visibilitychange handler above resumes it right away), a window
+    // that's been natively hidden needs a bit longer for the OS to finish
+    // showing/compositing it before poking the renderer does any good.
+    listen('launcher-shown', () => setTimeout(() => resumeSkinViewersAfterShow(), 2000));
     this.createParticles();
     this.createOrbs();
     this.loop(0);
@@ -11590,6 +12318,19 @@ function updateWindowBehaviorRowVisibility() {
   if (alwaysRow) alwaysRow.classList.toggle('hidden', !trayEnabled);
 }
 
+// "Make it smart" is a sub-option of "Close launcher when game starts" —
+// it only means anything (and can only be turned on) while that parent
+// toggle is on, so lock it whenever the parent is off.
+function updateSmartCloseRowEnabled() {
+  const parentEl = document.getElementById('setting-close-on-launch');
+  const smartRow = document.getElementById('setting-smart-close-row');
+  const smartEl = document.getElementById('setting-smart-close-on-launch');
+  if (!parentEl || !smartRow || !smartEl) return;
+  const enabled = parentEl.checked;
+  smartRow.classList.toggle('disabled', !enabled);
+  smartEl.disabled = !enabled;
+}
+
 function initWindowBehaviorSettings() {
   const trayEl = document.getElementById('setting-system-tray');
   if (trayEl) {
@@ -11604,6 +12345,15 @@ function initWindowBehaviorSettings() {
   if (onLauncherCloseEl) onLauncherCloseEl.addEventListener('change', saveSettingsNow);
   const alwaysHideEl = document.getElementById('setting-always-hide-to-tray');
   if (alwaysHideEl) alwaysHideEl.addEventListener('change', saveSettingsNow);
+  const closeOnLaunchEl = document.getElementById('setting-close-on-launch');
+  if (closeOnLaunchEl) {
+    closeOnLaunchEl.addEventListener('change', () => {
+      updateSmartCloseRowEnabled();
+      saveSettingsNow();
+    });
+  }
+  const smartCloseEl = document.getElementById('setting-smart-close-on-launch');
+  if (smartCloseEl) smartCloseEl.addEventListener('change', saveSettingsNow);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -12988,6 +13738,19 @@ function initCustomContextMenu() {
         items.push({ type: 'divider' });
       }
     };
+
+    // The custom menu below replaces the browser's native one everywhere
+    // (see the preventDefault above), which also silently swallowed the
+    // native "Copy" entry — so selecting log text (in the Logs tab or the
+    // instance console) had no way to actually get copied. Add it back
+    // explicitly whenever there's an active text selection.
+    const selectedText = window.getSelection()?.toString() || '';
+    if (selectedText.trim()) {
+      addItem('Copy', () => {
+        navigator.clipboard.writeText(selectedText).catch(() => {});
+      }, { isPrimary: true });
+      addDivider();
+    }
 
     if (instanceCard) {
       const versionId = instanceCard.dataset.versionId;

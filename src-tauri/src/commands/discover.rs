@@ -3,6 +3,7 @@ use std::error::Error as _;
 use std::sync::OnceLock;
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 
 const MODRINTH_API: &str = "https://api.modrinth.com/v2";
 const USER_AGENT: &str = "ZeroLauncher/1.0 (discover-tab)";
@@ -612,6 +613,34 @@ pub async fn discover_get_projects_batch(
 
 // ── Download ────────────────────────────────────────────────────────────────
 
+// Emitted to the frontend while `discover_download` is streaming a file to
+// disk, so its downloads-menu card can show real percent/speed/downloaded
+// instead of sitting on the indeterminate sweep the whole time. Every
+// generic download (mod update, dependency install, Fix Mods, preset
+// apply, import mods, a plain Discover download) routes through this same
+// function, so wiring the event in here covers all of them at once instead
+// of needing a bespoke progress channel per feature.
+#[derive(Clone, Serialize)]
+pub struct GenericDownloadProgress {
+    id: String,
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+    speed_bps: f64,
+    file_name: String,
+}
+
+impl GenericDownloadProgress {
+    pub fn new(
+        id: String,
+        downloaded_bytes: u64,
+        total_bytes: Option<u64>,
+        speed_bps: f64,
+        file_name: String,
+    ) -> Self {
+        Self { id, downloaded_bytes, total_bytes, speed_bps, file_name }
+    }
+}
+
 /// Downloads a chosen file into the given instance's directory: mods (.jar)
 /// go into `mods/`, resource packs (.zip) go into `resourcepacks/`.
 ///
@@ -623,6 +652,7 @@ pub async fn discover_get_projects_batch(
 /// cancelled) aborts immediately instead of starting.
 #[tauri::command]
 pub async fn discover_download(
+    app: tauri::AppHandle,
     directory: String,
     project_type: String,
     file_url: String,
@@ -631,6 +661,7 @@ pub async fn discover_download(
     state: tauri::State<'_, crate::state::AppState>,
 ) -> Result<String, String> {
     use std::io::Write;
+    use std::time::Instant;
 
     let base_dir = PathBuf::from(&directory);
     let target_dir = if project_type == "resourcepack" {
@@ -696,6 +727,18 @@ pub async fn discover_download(
         msg
     };
 
+    // Progress is emitted at most every ~120ms (never on every chunk —
+    // chunks can arrive many times a millisecond on a fast connection,
+    // and re-rendering the card that often would just burn CPU on
+    // WebKitGTK's software-ish compositor for no visible benefit) and
+    // speed is a simple bytes-since-last-tick average rather than a
+    // whole-transfer average, so it actually reflects the current rate
+    // instead of slowly drifting after a slow start.
+    let start = Instant::now();
+    let mut last_emit = start;
+    let mut bytes_since_emit: u64 = 0;
+    let emit_every = Duration::from_millis(120);
+
     let mut received: u64 = 0;
     loop {
         if is_cancelled() {
@@ -705,9 +748,29 @@ pub async fn discover_download(
         match resp.chunk().await {
             Ok(Some(chunk)) => {
                 received += chunk.len() as u64;
+                bytes_since_emit += chunk.len() as u64;
                 if let Err(e) = file.write_all(&chunk) {
                     drop(file);
                     return Err(fail(&state, &dest, format!("Failed to save file: {e}")));
+                }
+                if let Some(id) = &download_id {
+                    let now = Instant::now();
+                    let elapsed = now.duration_since(last_emit);
+                    if elapsed >= emit_every {
+                        let speed_bps = bytes_since_emit as f64 / elapsed.as_secs_f64().max(0.001);
+                        let _ = app.emit(
+                            "generic-download-progress",
+                            GenericDownloadProgress {
+                                id: id.clone(),
+                                downloaded_bytes: received,
+                                total_bytes: expected_len,
+                                speed_bps,
+                                file_name: file_name.clone(),
+                            },
+                        );
+                        last_emit = now;
+                        bytes_since_emit = 0;
+                    }
                 }
             }
             Ok(None) => break,
@@ -718,6 +781,22 @@ pub async fn discover_download(
         }
     }
     drop(file);
+
+    // Final tick so the card lands on the true 100%/full byte count
+    // instead of whatever the last throttled sample happened to be.
+    if let Some(id) = &download_id {
+        let elapsed = start.elapsed().as_secs_f64().max(0.001);
+        let _ = app.emit(
+            "generic-download-progress",
+            GenericDownloadProgress {
+                id: id.clone(),
+                downloaded_bytes: received,
+                total_bytes: expected_len,
+                speed_bps: received as f64 / elapsed,
+                file_name: file_name.clone(),
+            },
+        );
+    }
 
     // The server told us how big the file should be up front — if we wrote
     // fewer bytes than that, the connection dropped/was cut short without

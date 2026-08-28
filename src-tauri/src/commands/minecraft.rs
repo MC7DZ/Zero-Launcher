@@ -604,7 +604,9 @@ pub async fn install_minecraft(
                     minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
                     installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                     total_playtime_seconds: 0,
+                    playtime_history: std::collections::HashMap::new(),
                     last_played_at: None,
+                    launch_count: 0,
                 };
 
                 {
@@ -1113,7 +1115,9 @@ pub async fn install_minecraft(
         minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
         installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         total_playtime_seconds: 0,
+                    playtime_history: std::collections::HashMap::new(),
                     last_played_at: None,
+                    launch_count: 0,
     };
 
     // Save instance to state
@@ -1290,7 +1294,9 @@ pub async fn launch_minecraft(
             minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
             installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             total_playtime_seconds: 0,
+                    playtime_history: std::collections::HashMap::new(),
                     last_played_at: None,
+                    launch_count: 0,
         };
 
         {
@@ -1355,11 +1361,16 @@ pub async fn launch_minecraft(
     }
     // Record "last played" right as Play is pressed (not only once the
     // process actually spawns), so it reflects the moment the user chose
-    // to launch even if setup/verification takes a while.
+    // to launch even if setup/verification takes a while. Bump the launch
+    // counter alongside it — same reasoning: a launch that gets attempted
+    // (even if it later fails to spawn) is still what the user asked for,
+    // and the frontend's global stats list wants this number regardless of
+    // outcome.
     {
         let mut instances = state.instances.lock().unwrap();
         if let Some(inst) = instances.iter_mut().find(|i| i.version_id == version_id) {
             inst.last_played_at = Some(chrono::Local::now().to_rfc3339());
+            inst.launch_count = inst.launch_count.saturating_add(1);
         }
     }
     state.save_instances();
@@ -1862,18 +1873,66 @@ pub async fn launch_minecraft(
     // previously only ever saved/loaded from Settings and never actually
     // applied anywhere.
     {
-        let (close_on_launch, minimize_on_launch) = {
+        let (close_on_launch, minimize_on_launch, smart_close) = {
             let s = state.settings.lock().unwrap();
-            (s.close_after_launch, s.minimize_on_launch)
+            (s.close_after_launch, s.minimize_on_launch, s.smart_close_on_launch)
         };
-        if let Some(window) = app.get_webview_window("main") {
-            if close_on_launch {
+        if close_on_launch {
+            if smart_close {
+                // "Make it smart": don't yank the window away immediately —
+                // wait until the user has actually stepped away from the
+                // launcher (no mouse/keyboard activity in it for a bit)
+                // before closing it. If they're mid-launch already idle,
+                // this closes almost right away; if they're still Browse
+                // mods or editing an instance, it waits for them to finish.
+                const IDLE_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(15);
+                const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1500);
+                // Safety net: never wait forever on a launcher that's kept
+                // "busy" indefinitely (e.g. activity pings still coming in
+                // from some other window/tab) — close it anyway after this
+                // much time so the setting doesn't silently stop doing
+                // anything.
+                const MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+                let app_smart = app.clone();
+                let vid_smart = version_id.clone();
+                tokio::spawn(async move {
+                    let waited_since = std::time::Instant::now();
+                    loop {
+                        tokio::time::sleep(POLL_INTERVAL).await;
+                        let state_smart = app_smart.state::<AppState>();
+                        // If the game already exited before the launcher
+                        // ever got a chance to close, there's nothing left
+                        // to protect the user's session from — stop.
+                        let still_running = state_smart
+                            .running_instances
+                            .lock()
+                            .unwrap()
+                            .get(&vid_smart)
+                            .map(|r| r.running)
+                            .unwrap_or(false);
+                        if !still_running {
+                            return;
+                        }
+                        let idle_for = state_smart.last_activity_at.lock().unwrap().elapsed();
+                        if idle_for >= IDLE_THRESHOLD || waited_since.elapsed() >= MAX_WAIT {
+                            if let Some(window) = app_smart.get_webview_window("main") {
+                                let _ = window.close();
+                            }
+                            return;
+                        }
+                    }
+                });
+            } else {
                 // "Close" here means the launcher's own window goes away,
                 // same as the user closing it themselves — so it's still
                 // governed by the On Launcher Close setting (hide to tray
                 // vs. quit outright) rather than always force-quitting.
-                let _ = window.close();
-            } else if minimize_on_launch {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.close();
+                }
+            }
+        } else if minimize_on_launch {
+            if let Some(window) = app.get_webview_window("main") {
                 let _ = window.minimize();
             }
         }
@@ -1894,6 +1953,23 @@ pub async fn launch_minecraft(
                 state_out.push_instance_log(&vid_out, entry.clone());
                 let _ = app_out.emit("log-entry", &entry);
                 let _ = app_out.emit("instance-log", &InstanceLogEvent { version_id: vid_out.clone(), entry });
+
+                // Live-tick the Game Advancements stat the moment the game
+                // log announces one, instead of only finding out once the
+                // session ends and the save files get rescanned. Deduped
+                // per-instance on the normalized message (not the raw
+                // line) since the server thread's announcement and its
+                // chat-thread echo have different prefixes but the same
+                // underlying message — both should count as one.
+                if is_advancement_log_line(&line) {
+                    let key = extract_advancement_message(&line);
+                    if state_out.record_advancement_line(&vid_out, key) {
+                        let _ = app_out.emit(
+                            "game-advancement",
+                            &AdvancementEvent { version_id: vid_out.clone(), line: line.clone() },
+                        );
+                    }
+                }
             }
         });
     }
@@ -1992,6 +2068,95 @@ pub async fn launch_minecraft(
     Ok(())
 }
 
+/// Recognizes a vanilla/Forge/Fabric game-log line announcing that a
+/// player just earned an advancement, reached a goal, or completed a
+/// challenge, e.g.:
+///   `[12:34:56] [Server thread/INFO]: Steve has made the advancement [Stone Age]`
+///   `[12:34:56] [Server thread/INFO]: Steve has reached the goal [Getting an Upgrade]`
+///   `[12:34:56] [Server thread/INFO]: Steve has completed the challenge [Diamonds!]`
+/// Matches regardless of which thread logged it — the same announcement
+/// commonly gets logged twice, once from the server thread and again as
+/// it's echoed back through the chat/client thread; `extract_advancement_message`
+/// below is what collapses those two copies into a single count.
+fn is_advancement_log_line(line: &str) -> bool {
+    line.contains("has made the advancement")
+        || line.contains("has reached the goal")
+        || line.contains("has completed the challenge")
+}
+
+/// Strips a game-log line down to just its message — dropping the
+/// `[HH:MM:SS] [ThreadName/LEVEL]: ` prefix, and a leading `[CHAT]` /
+/// `[Not Secure]`-style tag some setups add to the chat-mirrored copy of
+/// an advancement announcement — so the server-thread announcement and
+/// its chat echo normalize to the same text even though their prefixes
+/// differ. Used as the dedupe key in `AppState::record_advancement_line`
+/// so both copies of one advancement count as a single advancement.
+fn extract_advancement_message(line: &str) -> &str {
+    let msg = match line.rfind("]: ") {
+        Some(idx) => &line[idx + 3..],
+        None => line,
+    };
+    if let Some(rest) = msg.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let after = rest[end + 1..].trim_start();
+            if !after.is_empty() {
+                return after.trim();
+            }
+        }
+    }
+    msg.trim()
+}
+
+/// Counts completed advancements for a single instance's game directory.
+/// Vanilla/Forge/Fabric all write one JSON file per player per world at
+/// `<world>/advancements/<player-uuid>.json`, where every key besides the
+/// `DataVersion` field is an advancement id mapping to an object with a
+/// `done` bool. Summed across every save folder and every player file
+/// found in each, so a shared instance with multiple worlds/players still
+/// gets a meaningful total rather than just the most recently played one.
+pub fn count_advancements_in_dir(game_dir: &Path) -> u32 {
+    let saves_dir = game_dir.join("saves");
+    if !saves_dir.exists() {
+        return 0;
+    }
+    let mut total: u32 = 0;
+    let Ok(worlds) = std::fs::read_dir(&saves_dir) else { return 0; };
+    for world in worlds.flatten() {
+        let adv_dir = world.path().join("advancements");
+        if !adv_dir.is_dir() {
+            continue;
+        }
+        let Ok(files) = std::fs::read_dir(&adv_dir) else { continue; };
+        for file in files.flatten() {
+            let path = file.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else { continue; };
+            let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else { continue; };
+            let Some(obj) = json.as_object() else { continue; };
+            for (key, value) in obj {
+                if key == "DataVersion" {
+                    continue;
+                }
+                if value.get("done").and_then(|d| d.as_bool()).unwrap_or(false) {
+                    total += 1;
+                }
+            }
+        }
+    }
+    total
+}
+
+/// Frontend-facing wrapper for `count_advancements_in_dir` — mirrors
+/// `list_mods`'s shape (an explicit `directory` override, since the
+/// Global Stats panel calls this once per installed instance rather than
+/// against whichever instance happens to be "current").
+#[tauri::command]
+pub async fn count_advancements(directory: String) -> Result<u32, String> {
+    Ok(count_advancements_in_dir(Path::new(&directory)))
+}
+
 /// Add this session's elapsed time to an instance's cumulative
 /// `total_playtime_seconds` and persist `instances.json`. `started_at` is
 /// the `RunningInstanceInfo.started_at` timestamp recorded when the
@@ -2010,6 +2175,12 @@ fn accumulate_playtime(state: &AppState, version_id: &str, started_at: &str) {
     let mut instances = state.instances.lock().unwrap();
     if let Some(inst) = instances.iter_mut().find(|i| i.version_id == version_id) {
         inst.total_playtime_seconds = inst.total_playtime_seconds.saturating_add(elapsed_secs);
+        // Credit the elapsed time to the calendar day the session *started*
+        // on, so a short session just after midnight doesn't get split
+        // across two bars in the chart — good enough for analytics purposes.
+        let day_key = started.format("%Y-%m-%d").to_string();
+        let entry = inst.playtime_history.entry(day_key).or_insert(0);
+        *entry = entry.saturating_add(elapsed_secs);
     }
     drop(instances);
     state.save_instances();

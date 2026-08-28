@@ -60,6 +60,23 @@ pub fn get_launcher_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Reads the last-persisted "Global Stats" panel snapshot from
+/// `<data_dir>/stats.json`, if any — used to populate the panel
+/// immediately on startup rather than showing blank/zero values while
+/// Mods Installed / Game Advancements are rescanned from disk.
+#[tauri::command]
+pub fn load_global_stats(state: State<'_, AppState>) -> Result<Option<crate::models::GlobalStats>, String> {
+    Ok(state.load_global_stats())
+}
+
+/// Persists the "Global Stats" panel to `<data_dir>/stats.json`, called by
+/// the frontend every time it finishes recomputing the panel's values.
+#[tauri::command]
+pub fn save_global_stats(stats: crate::models::GlobalStats, state: State<'_, AppState>) -> Result<(), String> {
+    state.save_global_stats(&stats);
+    Ok(())
+}
+
 #[cfg(target_os = "linux")]
 fn play_native_click_sound() {
     static WRITTEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

@@ -211,6 +211,17 @@ pub struct LauncherSettings {
     pub enable_system_tray: bool,
     #[serde(default = "default_true")]
     pub close_after_launch: bool,
+    /// Sub-option of `close_after_launch`, only meaningful (and only
+    /// editable in Settings) while that's on. Instead of closing the
+    /// launcher window the instant a game starts, this waits until the
+    /// user has actually stepped away from the launcher — no mouse
+    /// movement, clicks, or keystrokes in it for a short while — before
+    /// closing it. If the user is still in there doing something (Browse
+    /// mods, editing an instance, etc.) when the game launches, the
+    /// window is left alone until they're done. See
+    /// `commands::minecraft::launch_minecraft`'s use of `last_activity_at`.
+    #[serde(default = "default_true")]
+    pub smart_close_on_launch: bool,
     #[serde(default)]
     pub tray_notification_shown: bool,
 
@@ -541,6 +552,7 @@ impl Default for LauncherSettings {
             restore_launcher_on_game_close: true,
             enable_system_tray: true,
             close_after_launch: true,
+            smart_close_on_launch: true,
             tray_notification_shown: false,
             on_game_close: default_on_game_close(),
             on_launcher_close: default_on_launcher_close(),
@@ -726,11 +738,28 @@ pub struct InstalledInstance {
     /// running.
     #[serde(default)]
     pub total_playtime_seconds: u64,
+    /// Per-day breakdown of `total_playtime_seconds`, keyed by local
+    /// calendar date (`YYYY-MM-DD`) with seconds played that day as the
+    /// value. Populated by the same call that updates
+    /// `total_playtime_seconds` — see `commands::minecraft::accumulate_playtime`.
+    /// Used to power the Play Time analytics chart on the instance panel.
+    /// `#[serde(default)]` keeps old `instances.json` files (saved before
+    /// this field existed) loading fine, with an empty history.
+    #[serde(default)]
+    pub playtime_history: std::collections::HashMap<String, u64>,
     /// When this instance was last launched (RFC 3339 timestamp), set right
     /// as Play is pressed — see `commands::minecraft::launch_minecraft`.
     /// `None` for an instance that's never been launched.
     #[serde(default)]
     pub last_played_at: Option<String>,
+    /// How many times Play has been pressed for this instance (bumped the
+    /// moment a launch is attempted — see `commands::minecraft::launch_minecraft`
+    /// — regardless of whether it went on to spawn successfully). Powers the
+    /// global "Total Launches" figure in the frontend's stats list.
+    /// `#[serde(default)]` keeps old `instances.json` files loading fine,
+    /// starting existing instances at 0 rather than failing to parse.
+    #[serde(default)]
+    pub launch_count: u64,
 }
 
 impl InstalledInstance {
@@ -845,4 +874,35 @@ pub struct RunningInstanceInfo {
 pub struct InstanceLogEvent {
     pub version_id: String,
     pub entry: LogEntry,
+}
+
+/// Emitted on the `game-advancement` event the moment a game-log line
+/// announcing a new advancement/goal/challenge is seen for a running
+/// instance, so the Game Advancements stat can tick up live instead of
+/// waiting for the session to end and rescanning the `advancements/`
+/// save files.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancementEvent {
+    pub version_id: String,
+    /// The raw log line that triggered this, kept around for debugging /
+    /// potential future display (e.g. toast with the advancement name).
+    pub line: String,
+}
+
+/// Cached snapshot of the main screen's "Global Stats" panel (Total
+/// Launches, Total Play Time, Mods Installed, Game Advancements),
+/// persisted to `<data_dir>/stats.json` (the "Zero Launcher" folder)
+/// every time the frontend finishes recomputing them. Total Launches and
+/// Total Play Time already live on each instance's own persisted record
+/// and never actually lose data — but Mods Installed and Game
+/// Advancements are recomputed by rescanning disk fresh every session,
+/// which briefly shows as empty/zero right after startup while that scan
+/// is still in flight. This cache lets the panel show the last known
+/// values immediately instead of appearing to have reset.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GlobalStats {
+    pub total_launches: u64,
+    pub total_playtime_seconds: u64,
+    pub mods_installed: u32,
+    pub game_advancements: u32,
 }

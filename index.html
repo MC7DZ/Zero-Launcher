@@ -219,10 +219,9 @@
     <!-- ═══ Dressing Room Modal Overlay ═══ -->
     <div id="dressing-room-overlay" class="overlay hidden">
       <div class="overlay-card dressing-room-modal">
-        <div class="overlay-header dressing-room-header">
-          <div class="skin-viewer-title-group">
-            <span class="skin-viewer-badge">WARDROBE</span>
-            <h3>Dressing Room</h3>
+        <div class="dressing-room-header dl-panel-heading-row">
+          <div class="dl-panel-heading-text">
+            <div class="dl-panel-heading">Dressing Room</div>
           </div>
           <button class="overlay-close" id="btn-close-dressing-room" title="Close Dressing Room">✕</button>
         </div>
@@ -789,9 +788,80 @@
                   </div>
                 </div>
 
-                <!-- Third panel — reserved for later use. -->
-                <div id="instance-hero-empty" class="hero-island instance-hero-empty">
-                  <span class="hero-empty-label">Empty Panel</span>
+                <!-- Third panel — Play Time analytics: a range-switchable bar
+                     chart built from the instance's `playtime_history` map. -->
+                <div id="instance-hero-empty" class="hero-island instance-hero-empty playtime-panel">
+                  <!-- Left side — global stats across every installed
+                       instance, not just the one selected on the right.
+                       List style (not a grid) per request. -->
+                  <div class="playtime-stats-side" id="playtime-stats-side">
+                    <span class="playtime-stats-title">Global Stats</span>
+                    <div class="playtime-stats-list">
+                      <div class="playtime-stat-row" title="Total number of times Play has been pressed, across every instance">
+                        <span class="playtime-stat-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+                        </span>
+                        <span class="playtime-stat-row-label">Total Launches</span>
+                        <span class="playtime-stat-row-value" id="playtime-stat-launches">—</span>
+                      </div>
+                      <div class="playtime-stat-row" title="Mods currently installed, summed across every instance's mods folder">
+                        <span class="playtime-stat-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M9 9h.01M15 9h.01M8 15c1.2 1 2.8 1 4 1s2.8 0 4-1"></path></svg>
+                        </span>
+                        <span class="playtime-stat-row-label">Mods Installed</span>
+                        <span class="playtime-stat-row-value" id="playtime-stat-mods">—</span>
+                      </div>
+                      <div class="playtime-stat-row" title="Combined play time of every instance you've installed">
+                        <span class="playtime-stat-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        </span>
+                        <span class="playtime-stat-row-label">Total Play Time</span>
+                        <span class="playtime-stat-row-value" id="playtime-stat-total">—</span>
+                      </div>
+                      <div class="playtime-stat-row" title="Advancements completed across every world in every instance">
+                        <span class="playtime-stat-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 5.4L20 8.2l-4 4 1 5.8L12 15.8 7 18l1-5.8-4-4 5.6-.8z"></path></svg>
+                        </span>
+                        <span class="playtime-stat-row-label">Game Advancements</span>
+                        <span class="playtime-stat-row-value" id="playtime-stat-advancements">—</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Right side — the range-switchable bar chart for the
+                       selected instance, with its own fact strip
+                       underneath (streak / best day / daily average). -->
+                  <div class="playtime-panel-main">
+                    <div class="playtime-panel-header">
+                      <div class="playtime-panel-title-group">
+                        <span class="playtime-panel-title">Play Time</span>
+                        <span id="playtime-range-total" class="playtime-range-total">—</span>
+                      </div>
+                      <div class="playtime-range-buttons" role="tablist" aria-label="Play time range">
+                        <button type="button" class="playtime-range-btn active" data-range="week" role="tab" aria-selected="true">Last Week</button>
+                        <button type="button" class="playtime-range-btn" data-range="month" role="tab" aria-selected="false">Last Month</button>
+                        <button type="button" class="playtime-range-btn" data-range="year" role="tab" aria-selected="false">Last Year</button>
+                        <button type="button" class="playtime-range-btn" data-range="all" role="tab" aria-selected="false">All Time</button>
+                      </div>
+                    </div>
+                    <div id="playtime-chart" class="playtime-chart">
+                      <span id="playtime-empty-label" class="hero-empty-label">No play sessions yet</span>
+                    </div>
+                    <div class="playtime-panel-footer">
+                      <div class="playtime-fact" title="Longest run of consecutive days played, ending today or yesterday">
+                        <span class="playtime-fact-label">Streak</span>
+                        <span id="playtime-streak" class="playtime-fact-value">—</span>
+                      </div>
+                      <div class="playtime-fact" title="Your single best day of play time on record">
+                        <span class="playtime-fact-label">Best Day</span>
+                        <span id="playtime-best-day" class="playtime-fact-value">—</span>
+                      </div>
+                      <div class="playtime-fact" title="Average play time per active day, over the selected range">
+                        <span class="playtime-fact-label">Daily Avg</span>
+                        <span id="playtime-daily-avg" class="playtime-fact-value">—</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1664,6 +1734,11 @@
                   <span class="toggle-slider"></span>
                   <span>Close launcher when game starts</span>
                 </label>
+                <label class="toggle-row toggle-row-sub" id="setting-smart-close-row" title="Waits until you've stepped away from the launcher (no clicks, typing, or mouse movement in it for a bit) before closing it, instead of closing the instant the game starts.">
+                  <input type="checkbox" id="setting-smart-close-on-launch" />
+                  <span class="toggle-slider"></span>
+                  <span>Make it smart <span class="settings-inline-hint">— wait until you're not doing anything in the launcher first</span></span>
+                </label>
                 <label class="toggle-row">
                   <input type="checkbox" id="setting-minimize-on-launch" />
                   <span class="toggle-slider"></span>
@@ -2406,44 +2481,56 @@
     </div>
   </div>
 
-  <!-- Template for a single download/install card, cloned per active item -->
+  <!-- Template for a single download/install card, cloned per active item.
+       Redesigned as a flat, lightweight row: a type icon docked to the
+       left (mod/preset/loader art, or a plain line-icon for update/fix/
+       java/generic), a compact header+progress stack next to it, and a
+       slim actions row. No nested panels, no heavy borders/shadows —
+       just one thin outline and a couple of flat fills, so it stays
+       cheap to paint on WebKitGTK. -->
   <template id="dl-card-template">
     <div class="dl-card dl-card-indeterminate">
-      <div class="dl-card-header">
-        <div>
-          <div class="dl-card-title">Minecraft</div>
-          <div class="dl-card-stage">Preparing…</div>
+      <div class="dl-card-icon" aria-hidden="true"></div>
+      <div class="dl-card-body">
+        <div class="dl-card-header">
+          <div class="dl-card-heading">
+            <div class="dl-card-title">Minecraft</div>
+            <div class="dl-card-stage">Preparing…</div>
+          </div>
+          <div class="dl-card-status-pill">Preparing</div>
         </div>
-        <div class="dl-card-status-pill">Preparing</div>
-      </div>
-      <div class="dl-card-track">
-        <div class="dl-card-bar" style="transform: scaleX(0);"></div>
-      </div>
-      <div class="dl-card-file">—</div>
-      <div class="dl-card-stats">
-        <div class="dl-stat">
-          <span class="dl-stat-label">Progress</span>
-          <span class="dl-stat-value dl-card-stat-percent">0%</span>
+        <div class="dl-card-track">
+          <div class="dl-card-bar" style="transform: scaleX(0);"></div>
         </div>
-        <div class="dl-stat">
-          <span class="dl-stat-label">Speed</span>
-          <span class="dl-stat-value dl-card-stat-speed">—</span>
+        <div class="dl-card-file">—</div>
+        <div class="dl-card-stats">
+          <div class="dl-stat">
+            <span class="dl-stat-label">Progress</span>
+            <span class="dl-stat-value dl-card-stat-percent">0%</span>
+          </div>
+          <div class="dl-stat">
+            <span class="dl-stat-label">Speed</span>
+            <span class="dl-stat-value dl-card-stat-speed">—</span>
+          </div>
+          <div class="dl-stat">
+            <span class="dl-stat-label">ETA</span>
+            <span class="dl-stat-value dl-card-stat-eta">—</span>
+          </div>
+          <div class="dl-stat">
+            <span class="dl-stat-label">Downloaded</span>
+            <span class="dl-stat-value dl-card-stat-downloaded">—</span>
+          </div>
         </div>
-        <div class="dl-stat">
-          <span class="dl-stat-label">ETA</span>
-          <span class="dl-stat-value dl-card-stat-eta">—</span>
+        <div class="dl-card-actions">
+          <button type="button" class="btn-secondary dl-card-pause">⏸ Pause</button>
+          <button type="button" class="dl-card-cancel" title="Stop and remove immediately — deletes anything already downloaded">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg>
+            <span>Cancel</span>
+          </button>
+          <button type="button" class="dl-card-files" title="Show files in this download">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h4l1.5 2h7A1.5 1.5 0 0 1 19.5 7.5v11A1.5 1.5 0 0 1 18 20H5.5A1.5 1.5 0 0 1 4 18.5v-13Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          </button>
         </div>
-        <div class="dl-stat">
-          <span class="dl-stat-label">Downloaded</span>
-          <span class="dl-stat-value dl-card-stat-downloaded">—</span>
-        </div>
-      </div>
-      <div class="dl-card-actions">
-        <button type="button" class="btn-secondary dl-card-pause">⏸ Pause</button>
-        <button type="button" class="btn-danger-outline dl-card-cancel">✕ Cancel</button>
-        <button type="button" class="dl-card-files" title="Show files in this download">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h4l1.5 2h7A1.5 1.5 0 0 1 19.5 7.5v11A1.5 1.5 0 0 1 18 20H5.5A1.5 1.5 0 0 1 4 18.5v-13Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-        </button>
       </div>
     </div>
   </template>

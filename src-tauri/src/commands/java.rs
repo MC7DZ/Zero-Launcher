@@ -374,6 +374,17 @@ async fn download_java_via_azul(app: &AppHandle, major: i32) -> Result<JavaInsta
             format!("Failed to download Java: {e}")
         })?;
 
+    let expected_len = resp.content_length();
+
+    // Same throttled progress emission as discover_download — shares the
+    // "generic-download-progress" event/id scheme so the frontend's one
+    // listener drives every card's percent/speed/downloaded stat the same
+    // way, regardless of which backend command is doing the fetching.
+    let start = std::time::Instant::now();
+    let mut last_emit = start;
+    let mut bytes_since_emit: u64 = 0;
+    let emit_every = std::time::Duration::from_millis(120);
+
     let mut bytes_buf: Vec<u8> = Vec::new();
     loop {
         if cancel_flag.load(Ordering::Relaxed) {
@@ -381,7 +392,27 @@ async fn download_java_via_azul(app: &AppHandle, major: i32) -> Result<JavaInsta
             return Err("Java download cancelled".to_string());
         }
         match resp.chunk().await {
-            Ok(Some(chunk)) => bytes_buf.extend_from_slice(&chunk),
+            Ok(Some(chunk)) => {
+                bytes_since_emit += chunk.len() as u64;
+                bytes_buf.extend_from_slice(&chunk);
+                let now = std::time::Instant::now();
+                let elapsed = now.duration_since(last_emit);
+                if elapsed >= emit_every {
+                    let speed_bps = bytes_since_emit as f64 / elapsed.as_secs_f64().max(0.001);
+                    let _ = app.emit(
+                        "generic-download-progress",
+                        crate::commands::discover::GenericDownloadProgress::new(
+                            download_id.clone(),
+                            bytes_buf.len() as u64,
+                            expected_len,
+                            speed_bps,
+                            package.name.clone(),
+                        ),
+                    );
+                    last_emit = now;
+                    bytes_since_emit = 0;
+                }
+            }
             Ok(None) => break,
             Err(e) => {
                 state.finish_generic_download(&download_id);

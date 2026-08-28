@@ -10,6 +10,7 @@ use discord_rpc::{DiscordRpcManager, DiscordRpcState};
 use std::sync::Mutex;
 use std::path::PathBuf;
 use tauri::Manager;
+use tauri::Emitter;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use tauri::image::Image;
@@ -58,6 +59,9 @@ pub fn run() {
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
+                // See the matching emit() calls in the tray handlers below for
+                // why this exists.
+                let _ = app.emit("launcher-shown", ());
             }
         }))
         .plugin(tauri_plugin_notification::init())
@@ -149,6 +153,12 @@ pub fn run() {
                                 let _ = window.show();
                                 let _ = window.unminimize();
                                 let _ = window.set_focus();
+                                // Tell the frontend the window is back so it can
+                                // resume/repair anything that pauses (or loses
+                                // its WebGL context) while natively hidden —
+                                // notably the 3D skin preview. See the JS-side
+                                // `listen('launcher-shown', ...)` handler.
+                                let _ = app.emit("launcher-shown", ());
                             }
                         }
                     }
@@ -170,6 +180,7 @@ pub fn run() {
                                 let _ = window.show();
                                 let _ = window.unminimize();
                                 let _ = window.set_focus();
+                                let _ = app.emit("launcher-shown", ());
                             }
                         }
                     }
@@ -245,6 +256,8 @@ pub fn run() {
             commands::cancel_generic_download,
             commands::open_launcher_folder,
             commands::get_launcher_version,
+            commands::load_global_stats,
+            commands::save_global_stats,
             commands::updater::check_for_update,
             commands::updater::download_update,
             commands::updater::install_update,
@@ -268,6 +281,7 @@ pub fn run() {
             commands::minecraft::resume_download,
             commands::minecraft::cancel_download,
             commands::minecraft::get_running_instances,
+            commands::minecraft::count_advancements,
             commands::minecraft::get_instance_console_logs,
             commands::minecraft::kill_instance,
             commands::minecraft::check_linux_zlib_conflict,
@@ -333,6 +347,7 @@ pub fn run() {
             commands::settings::save_settings,
             commands::settings::update_discord_presence,
             commands::settings::get_default_minecraft_dir,
+            commands::settings::report_activity,
             // Music
             commands::music::get_music_dir,
             commands::music::open_music_folder,

@@ -172,6 +172,12 @@
       background: rgba(10, 10, 14, 0.42) !important;
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
+      /* Explicit here too (not just inherited from .log-viewer in
+         main.css) so console log text can actually be selected and
+         copied — this window's own html/body reset further down doesn't
+         accidentally re-disable it. */
+      -webkit-user-select: text;
+      user-select: text;
     }
     [data-theme="light"] #console-viewer {
       /* Was rgba(255,255,255,0.5) — over the new, deliberately light
