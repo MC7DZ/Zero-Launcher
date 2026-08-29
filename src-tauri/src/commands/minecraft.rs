@@ -1691,6 +1691,29 @@ pub async fn launch_minecraft(
         .await
         .map_err(|e| { fail_cleanup(); format!("Java setup failed: {e}") })?;
 
+    // On Windows, Minecraft must be launched using javaw.exe (never java.exe)
+    // so Discord and system utilities properly recognize the game window
+    // and no stray console window is spawned.
+    let java_executable = if cfg!(target_os = "windows") {
+        if java_executable
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.eq_ignore_ascii_case("java.exe"))
+            .unwrap_or(false)
+        {
+            let javaw = java_executable.with_file_name("javaw.exe");
+            if javaw.is_file() {
+                javaw
+            } else {
+                java_executable
+            }
+        } else {
+            java_executable
+        }
+    } else {
+        java_executable
+    };
+
     // Check if the user cancelled the launch during Java setup
     {
         let is_running = state.running_instances.lock().unwrap()

@@ -118,9 +118,22 @@ fn to_installation(info: mc_launcher_core::types::JavaInformation) -> JavaInstal
     } else {
         "system"
     };
+    let executable = if cfg!(target_os = "windows") {
+        if let Some(ref javaw) = info.javaw_path {
+            if !javaw.is_empty() && Path::new(javaw).exists() {
+                javaw.clone()
+            } else {
+                info.java_path
+            }
+        } else {
+            info.java_path
+        }
+    } else {
+        info.java_path
+    };
     JavaInstallation {
         path: info.path,
-        executable: info.java_path,
+        executable,
         version: info.version,
         major,
         is_64bit: info.is_64bit,
@@ -533,16 +546,33 @@ pub async fn ensure_java_for_version(
         let raw_path = raw_path.trim();
         if !raw_path.is_empty() {
             let p = PathBuf::from(raw_path);
-            // Accept either a direct path to the `java`/`java.exe`
+            // Accept either a direct path to the `javaw`/`java`
             // executable, or a path to the Java home directory (what the
             // Settings dropdown actually stores).
             if p.is_file() {
+                if cfg!(target_os = "windows") {
+                    if p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.eq_ignore_ascii_case("java.exe"))
+                        .unwrap_or(false)
+                    {
+                        let javaw = p.with_file_name("javaw.exe");
+                        if javaw.is_file() {
+                            return Ok(javaw);
+                        }
+                    }
+                }
                 return Ok(p);
             }
-            let exe_name = if cfg!(target_os = "windows") { "java.exe" } else { "java" };
+            let exe_name = if cfg!(target_os = "windows") { "javaw.exe" } else { "java" };
             let exe = p.join("bin").join(exe_name);
             if exe.is_file() {
                 return Ok(exe);
+            }
+            let fallback_name = if cfg!(target_os = "windows") { "java.exe" } else { "java" };
+            let fallback_exe = p.join("bin").join(fallback_name);
+            if fallback_exe.is_file() {
+                return Ok(fallback_exe);
             }
             return Err(format!(
                 "The Java install selected in Settings ('{}') no longer exists. Pick another one, or switch back to Smart Java Detection.",
