@@ -607,6 +607,10 @@ pub async fn install_minecraft(
                     playtime_history: std::collections::HashMap::new(),
                     last_played_at: None,
                     launch_count: 0,
+                    java_path: None,
+                    min_ram_mb: None,
+                    max_ram_mb: None,
+                    jvm_args: None,
                 };
 
                 {
@@ -1115,9 +1119,13 @@ pub async fn install_minecraft(
         minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
         installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         total_playtime_seconds: 0,
-                    playtime_history: std::collections::HashMap::new(),
-                    last_played_at: None,
-                    launch_count: 0,
+        playtime_history: std::collections::HashMap::new(),
+        last_played_at: None,
+        launch_count: 0,
+        java_path: None,
+        min_ram_mb: None,
+        max_ram_mb: None,
+        jvm_args: None,
     };
 
     // Save instance to state
@@ -1294,9 +1302,13 @@ pub async fn launch_minecraft(
             minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
             installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             total_playtime_seconds: 0,
-                    playtime_history: std::collections::HashMap::new(),
-                    last_played_at: None,
-                    launch_count: 0,
+            playtime_history: std::collections::HashMap::new(),
+            last_played_at: None,
+            launch_count: 0,
+            java_path: None,
+            min_ram_mb: None,
+            max_ram_mb: None,
+            jvm_args: None,
         };
 
         {
@@ -1311,9 +1323,20 @@ pub async fn launch_minecraft(
             version_id
         ));
     }
-    let jvm_args_str = state.settings.lock().unwrap().jvm_args.clone();
-    let max_ram = state.settings.lock().unwrap().max_ram_mb;
-    let min_ram = state.settings.lock().unwrap().min_ram_mb;
+    let (inst_jvm_args, inst_max_ram, inst_min_ram, inst_java_path) = {
+        let instances = state.instances.lock().unwrap();
+        instances
+            .iter()
+            .find(|i| i.version_id == version_id)
+            .map(|i| (i.jvm_args.clone(), i.max_ram_mb, i.min_ram_mb, i.java_path.clone()))
+            .unwrap_or((None, None, None, None))
+    };
+
+    let jvm_args_str = inst_jvm_args
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| state.settings.lock().unwrap().jvm_args.clone());
+    let max_ram = inst_max_ram.unwrap_or_else(|| state.settings.lock().unwrap().max_ram_mb);
+    let min_ram = inst_min_ram.unwrap_or_else(|| state.settings.lock().unwrap().min_ram_mb);
 
     // Snapshot the instance's display info now, for the running-instances
     // list and per-instance console window title.
@@ -1687,7 +1710,7 @@ pub async fn launch_minecraft(
     // with a clear message instead of silently reaching out to the
     // network anyway (which is exactly what "Launch Offline" is supposed
     // to avoid).
-    let java_executable = crate::commands::java::ensure_java_for_version(&app, &state, &version, offline)
+    let java_executable = crate::commands::java::ensure_java_for_instance(&app, &state, &version, inst_java_path.as_deref(), offline)
         .await
         .map_err(|e| { fail_cleanup(); format!("Java setup failed: {e}") })?;
 
@@ -2548,6 +2571,10 @@ pub async fn update_instance(
     version_id: String,
     name: Option<String>,
     loader_version: Option<String>,
+    java_path: Option<String>,
+    min_ram_mb: Option<u32>,
+    max_ram_mb: Option<u32>,
+    jvm_args: Option<String>,
 ) -> Result<InstalledInstance, String> {
     // Renaming a loader instance also renames its on-disk version folder
     // (`versions/<old id>` -> `versions/<new id>`) so the folder keeps
@@ -2615,6 +2642,20 @@ pub async fn update_instance(
         }
         if let Some(lv) = loader_version {
             inst.loader_version = lv.trim().to_string();
+        }
+        if let Some(jp) = java_path {
+            let trimmed = jp.trim();
+            inst.java_path = if trimmed.is_empty() { None } else { Some(trimmed.to_string()) };
+        }
+        if let Some(min_r) = min_ram_mb {
+            inst.min_ram_mb = if min_r == 0 { None } else { Some(min_r) };
+        }
+        if let Some(max_r) = max_ram_mb {
+            inst.max_ram_mb = if max_r == 0 { None } else { Some(max_r) };
+        }
+        if let Some(ja) = jvm_args {
+            let trimmed = ja.trim();
+            inst.jvm_args = if trimmed.is_empty() { None } else { Some(trimmed.to_string()) };
         }
         if let Some(ref nvid) = new_version_id {
             inst.version_id = nvid.clone();

@@ -40,16 +40,9 @@
   scrollbar-color: rgba(var(--overlay-rgb), 0.12) transparent;
 }
 
-/* Smooth Scrolling — opt-in via Settings > Behavior (default on). */
-html.smooth-scroll,
-html.smooth-scroll * {
-  scroll-behavior: smooth;
-}
-html.smooth-scroll #instance-list,
-html.smooth-scroll #hidden-instances-list,
-html.smooth-scroll #mods-grid,
-html.smooth-scroll #discover-results {
-  scroll-behavior: auto;
+/* Force instant scrolling — smooth-scroll is too laggy on WebKitGTK. */
+* {
+  scroll-behavior: auto !important;
 }
 
 html, body {
@@ -161,16 +154,108 @@ input, textarea, select, [contenteditable="true"] {
 ::-webkit-scrollbar-thumb:hover { background: rgba(var(--overlay-rgb), 0.22); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-/* ═══ Top Bar ═══ */
+/* ═══ Custom Window Title Bar ═══ */
+#custom-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 38px;
+  padding: 0 0 0 16px;
+  background: transparent;
+  user-select: none;
+  z-index: 999;
+  flex-shrink: 0;
+}
+
+.titlebar-drag-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  height: 100%;
+  cursor: grab;
+}
+
+.titlebar-title-text {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.titlebar-controls {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.titlebar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 28px;
+  margin: 0 2px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.titlebar-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+}
+
+.titlebar-btn:active {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(0.96);
+}
+
+.titlebar-btn.titlebar-btn-close:hover {
+  background: rgba(232, 17, 35, 0.88);
+  color: #ffffff;
+}
+
+.titlebar-btn.titlebar-btn-close:active {
+  background: #c40e1d;
+  transform: scale(0.96);
+}
+
+.titlebar-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Titlebar Context Menu (hide — we use native WM menu now) */
+#titlebar-context-menu {
+  display: none !important;
+}
+
+.context-menu-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ═══ Top Bar (Floating Island) ═══ */
 #top-bar {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 10px 20px;
-  background: #1b1b1b;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 4px 14px 10px 14px;
+  padding: 8px 18px;
+  background: var(--panel-solid, #13131a);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius, 12px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
   flex-shrink: 0;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
+
 #top-bar #tab-bar {
   grid-column: 2;
   justify-self: center;
@@ -2121,7 +2206,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 10000;
   transform: translateZ(0);
   backface-visibility: hidden;
 }
@@ -2131,13 +2216,13 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 #modpack-import-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1100;
+  z-index: 10100;
 }
 
 #dl-files-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1150;
+  z-index: 10150;
 }
 
 #account-modal-overlay,
@@ -2146,7 +2231,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 #settings-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 10000;
 }
 
 /* High-priority alert / confirmation / troubleshoot overlays that must stack above all other windows */
@@ -2161,7 +2246,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 #crash-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1200;
+  z-index: 10200;
 }
 #theme-palettes-overlay {
   background: rgba(0, 0, 0, 0.08);
@@ -2958,6 +3043,301 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .bento-tile-preset-mods .apply-preset-mod-list { margin: 0; padding: 0; }
 .bento-tile-preset-progress { grid-column: 1 / -1; }
 .bento-tile-preset-actions { grid-column: 1 / -1; justify-content: space-between; align-items: center; }
+
+/* ── Hyprland Floating Islands Modal (Default Theme Colors & WebKitGTK Optimized) ── */
+.hypr-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 560px;
+  max-width: 94vw;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 6px;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Base Floating Island using default theme variables */
+.hypr-island {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.06), 0 10px 26px rgba(0, 0, 0, 0.25);
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+
+.hypr-island:hover {
+  border-color: rgba(var(--overlay-rgb), 0.16);
+}
+
+/* Header Island */
+.hypr-header-island {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--panel-solid);
+}
+
+.hypr-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hypr-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent-glow);
+}
+
+.hypr-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hypr-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.hypr-subtitle {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* Mod Loader Icon Buttons Row */
+.hypr-loader-button-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.hypr-loader-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.hypr-loader-btn:hover {
+  background: var(--panel-hover);
+  color: var(--text);
+  border-color: rgba(var(--overlay-rgb), 0.2);
+  transform: translateY(-2px);
+}
+
+.hypr-loader-btn.active {
+  background: var(--panel-hover);
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--accent-dim), inset 0 0 12px var(--accent-dim);
+  transform: translateY(-2px);
+}
+
+.hypr-loader-icon {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* Advanced Options Toggle Wrap */
+.hypr-advanced-toggle-wrap {
+  display: flex;
+}
+
+.hypr-advanced-toggle-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+}
+
+.hypr-toggle-icon {
+  font-size: 13px;
+  color: var(--accent);
+  margin-right: 6px;
+}
+
+.hypr-toggle-chevron {
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.hypr-advanced-toggle-btn[aria-expanded="true"] .hypr-toggle-chevron {
+  transform: rotate(180deg);
+}
+
+/* Advanced Island (Collapsible) */
+.hypr-advanced-island {
+  background: var(--panel);
+  border-color: var(--panel-border);
+  animation: hypr-island-slide 0.2s ease;
+}
+
+@keyframes hypr-island-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hypr-advanced-island.hidden {
+  display: none;
+}
+
+/* Path Box */
+.hypr-path-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--field-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+
+.hypr-path-text {
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+  user-select: text;
+}
+
+/* Actions Island */
+.hypr-actions-island {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 6px 2px 2px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* Custom Directory Selection Options in New Instance Modal */
+.hypr-dir-options-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.hypr-dir-card {
+  position: relative;
+  display: block;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+  border: 1px solid var(--panel-border);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.hypr-dir-card:hover {
+  background: var(--panel-hover);
+  border-color: rgba(var(--overlay-rgb), 0.2);
+}
+
+.hypr-dir-card.active {
+  background: var(--panel-hover);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-dim), inset 0 0 0 1px var(--accent);
+}
+
+.hypr-dir-radio {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hypr-dir-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hypr-dir-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color var(--transition-fast);
+}
+
+.hypr-dir-card.active .hypr-dir-title {
+  color: var(--accent);
+}
+
+.hypr-dir-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.hypr-dir-desc code {
+  font-family: var(--font);
+  background: rgba(var(--overlay-rgb), 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.hypr-pill-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent-glow);
+}
 
 /* Progress */
 .progress-track {
@@ -7210,14 +7590,127 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
 
-.header-icon-btn:hover {
-  background: #2a2a2a;
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.16);
+/* ═══ Java Manager Styling ═══ */
+.java-managed-list,
+.java-custom-list,
+.java-system-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
 }
 
-.header-icon-btn:active {
-  background: #333333;
+.java-row-item {
+  position: relative;
+  background: var(--field-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition: all var(--transition-fast);
+}
+
+.java-row-item:hover {
+  background: var(--panel-hover);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.java-row-item.installed {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.java-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.java-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.java-row-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.java-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-java-action {
+  padding: 5px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.btn-java-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.btn-java-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.java-installed-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+}
+
+.java-num-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--accent, #6ee7b7);
+  font-family: var(--font, monospace);
+  font-size: 12.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.java-location-box {
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--panel-border);
+  margin-top: 10px;
 }
 
 /* ── WebKitGTK & Linux Performance Engine ─────────────────────────────────── */
@@ -7236,16 +7729,25 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .overlay,
 .is-webkit-gtk .overlay-card,
 .is-webkit-gtk .settings-modal-window,
+.is-webkit-gtk .hypr-modal,
+.is-webkit-gtk .hypr-island,
+.is-webkit-gtk .edit-instance-modal,
+.is-webkit-gtk .create-instance-modal,
+.is-webkit-gtk .apply-preset-modal,
+.is-webkit-gtk .export-mods-modal,
+.is-webkit-gtk .import-mods-modal,
 .is-webkit-gtk .account-overlay-card,
 .is-webkit-gtk .skin-viewer-modal,
 .is-webkit-gtk .dressing-room-modal,
 .is-webkit-gtk .dl-files-card,
 .is-webkit-gtk .dressing-room-skin-card,
 .is-webkit-gtk .settings-card,
+.is-webkit-gtk .java-row-item,
 .is-webkit-gtk .bento-tile,
 .is-webkit-gtk .bento-panel,
 .is-webkit-gtk #bg-container,
 .is-webkit-gtk #bg-canvas,
+.is-webkit-gtk #custom-titlebar,
 .is-webkit-gtk #top-bar {
   -webkit-transform: translateZ(0);
   transform: translateZ(0);
@@ -7263,6 +7765,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 /* Make all overlay modal cards opaque when transparency is OFF */
+.is-webkit-gtk:not(.transparent-ui) .hypr-island,
 .is-webkit-gtk:not(.transparent-ui) .overlay-card,
 .is-webkit-gtk:not(.transparent-ui) .settings-modal-window,
 .is-webkit-gtk:not(.transparent-ui) .update-overlay-card,

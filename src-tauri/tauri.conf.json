@@ -15,12 +15,12 @@
       {
         "title": "ZeroLauncher",
         "label": "main",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
+        "width": 1300,
+        "height": 880,
+        "minWidth": 960,
+        "minHeight": 640,
         "center": true,
-        "decorations": true
+        "decorations": false
       }
     ],
     "security": {

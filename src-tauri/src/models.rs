@@ -136,6 +136,8 @@ pub struct LauncherSettings {
     ///   the `java`/`java.exe` executable itself.
     #[serde(default)]
     pub java_path: Option<String>,
+    #[serde(default)]
+    pub custom_java_paths: Vec<String>,
 
     /// "Always Launch Offline" — set from the gear menu next to Play.
     /// When true, every launch skips the pre-launch libraries/assets
@@ -519,6 +521,7 @@ impl Default for LauncherSettings {
             max_ram_mb: 4096,
             min_ram_mb: 512,
             java_path: None,
+            custom_java_paths: Vec::new(),
             always_launch_offline: false,
 
             accent_color: default_accent_color(),
@@ -760,6 +763,18 @@ pub struct InstalledInstance {
     /// starting existing instances at 0 rather than failing to parse.
     #[serde(default)]
     pub launch_count: u64,
+    /// Optional per-instance Java executable/home override.
+    #[serde(default)]
+    pub java_path: Option<String>,
+    /// Optional per-instance minimum RAM override (in MB).
+    #[serde(default)]
+    pub min_ram_mb: Option<u32>,
+    /// Optional per-instance maximum RAM override (in MB).
+    #[serde(default)]
+    pub max_ram_mb: Option<u32>,
+    /// Optional per-instance custom JVM arguments override.
+    #[serde(default)]
+    pub jvm_args: Option<String>,
 }
 
 impl InstalledInstance {
@@ -840,14 +855,6 @@ pub struct InstallProgress {
     pub error: Option<String>,
 }
 
-// ── Game Status ──────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GameStatus {
-    pub running: bool,
-    pub version_id: Option<String>,
-    pub pid: Option<u32>,
-}
 
 // ── Running / Ran Instances ─────────────────────────────────────────────────
 

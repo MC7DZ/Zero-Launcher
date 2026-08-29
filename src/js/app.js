@@ -342,10 +342,16 @@ const api = {
       }
     }),
   launchGame: (versionId, offline) => invoke('launch_minecraft', { versionId, offline: offline ?? null }),
-  getInstalledInstances: () => invoke('get_installed_instances'),
-  removeInstance: (versionId) => invoke('remove_instance', { versionId }),
-  updateInstance: (versionId, name, loaderVersion) =>
-    invoke('update_instance', { versionId, name, loaderVersion }),
+  updateInstance: (versionId, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs) =>
+    invoke('update_instance', {
+      versionId,
+      name: name || null,
+      loaderVersion: loaderVersion || null,
+      javaPath: javaPath !== undefined ? (javaPath || null) : null,
+      minRamMb: minRamMb ? Number(minRamMb) : null,
+      maxRamMb: maxRamMb ? Number(maxRamMb) : null,
+      jvmArgs: jvmArgs !== undefined ? (jvmArgs || null) : null,
+    }),
   deleteInstalledVersion: (versionId, directory) => invoke('delete_installed_version', { versionId, directory: directory || null }),
   deleteInstanceData: (directory, minecraftDirectory) => invoke('delete_instance_data', { directory, minecraftDirectory: minecraftDirectory || null }),
   scanMinecraftVersions: (directory) => invoke('scan_minecraft_versions', { directory: directory || null }),
@@ -354,6 +360,12 @@ const api = {
   unhideInstance: (versionId) => invoke('unhide_instance', { versionId }),
   getDependentInstances: (versionId) => invoke('get_dependent_instances', { versionId }),
   listJavaInstallations: () => invoke('list_java_installations'),
+  installManagedJava: (major) => invoke('install_managed_java', { major }),
+  deleteManagedJava: (major) => invoke('delete_managed_java', { major }),
+  getManagedJavaRootPath: () => invoke('get_managed_java_root_path'),
+  openManagedJavaDir: () => invoke('open_managed_java_dir'),
+  addCustomJavaPath: (path) => invoke('add_custom_java_path', { path }),
+  removeCustomJavaPath: (path) => invoke('remove_custom_java_path', { path }),
   onJavaInstallProgress: (cb) => listen('java-install-progress', cb),
   listMods: (gameDir) => invoke('list_mods', { directory: gameDir }),
   countAdvancements: (gameDir) => invoke('count_advancements', { directory: gameDir }),
@@ -5404,9 +5416,99 @@ function initInstanceActions() {
     }
   });
 
-  // New Instance overlay
+  // New Instance overlay (Hyprland Floating Islands)
   const overlay = document.getElementById('new-instance-overlay');
+  const instLoaderInput = document.getElementById('inst-loader');
+  const instLoaderVersionTile = document.getElementById('inst-loader-version-tile');
+  const btnToggleNewAdvanced = document.getElementById('btn-toggle-new-advanced');
+  const newInstAdvancedIsland = document.getElementById('new-inst-advanced-island');
+  const instJavaSelect = document.getElementById('inst-java-select');
+  const instMinRamInput = document.getElementById('inst-min-ram');
+  const instMaxRamInput = document.getElementById('inst-max-ram');
+  const instJvmArgsInput = document.getElementById('inst-jvm-args');
+  const instNameInput = document.getElementById('inst-name');
+  const instLoaderVersionInput = document.getElementById('inst-loader-version');
+
+  // Initialize loader button icons for New Instance
+  const newLoaderImgVanilla = document.getElementById('new-loader-img-vanilla');
+  if (newLoaderImgVanilla) newLoaderImgVanilla.src = iconVanilla;
+  const newLoaderImgFabric = document.getElementById('new-loader-img-fabric');
+  if (newLoaderImgFabric) newLoaderImgFabric.src = iconFabric;
+  const newLoaderImgForge = document.getElementById('new-loader-img-forge');
+  if (newLoaderImgForge) newLoaderImgForge.src = iconForge;
+  const newLoaderImgNeoforge = document.getElementById('new-loader-img-neoforge');
+  if (newLoaderImgNeoforge) newLoaderImgNeoforge.src = iconNeoforge;
+  const newLoaderImgQuilt = document.getElementById('new-loader-img-quilt');
+  if (newLoaderImgQuilt) newLoaderImgQuilt.src = iconQuilt;
+
+  function setNewInstanceLoader(loader) {
+    const norm = (loader || 'Fabric').trim();
+    if (instLoaderInput) instLoaderInput.value = norm;
+
+    const btns = document.querySelectorAll('#new-inst-loader-buttons .hypr-loader-btn');
+    btns.forEach(btn => {
+      const match = btn.getAttribute('data-loader').toLowerCase() === norm.toLowerCase();
+      btn.classList.toggle('active', match);
+    });
+
+    const isVanilla = norm.toLowerCase() === 'vanilla';
+    if (instLoaderVersionTile) {
+      instLoaderVersionTile.classList.toggle('hidden', isVanilla);
+    }
+  }
+
+  const newLoaderBtns = document.querySelectorAll('#new-inst-loader-buttons .hypr-loader-btn');
+  newLoaderBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const loader = btn.getAttribute('data-loader');
+      setNewInstanceLoader(loader);
+    });
+  });
+
+  async function populateNewJavaDropdown() {
+    if (!instJavaSelect) return;
+    instJavaSelect.innerHTML = `
+      <option value="">Use Settings (Default)</option>
+      <option value="__smart__">✦ Smart Java Detection (Auto)</option>
+    `;
+    let installs = _lastJavaInstallations;
+    if (!installs || installs.length === 0) {
+      try {
+        installs = await api.listJavaInstallations();
+        _lastJavaInstallations = installs || [];
+      } catch (_) {
+        installs = [];
+      }
+    }
+    (installs || []).forEach(inst => {
+      const opt = document.createElement('option');
+      opt.value = inst.path;
+      opt.textContent = javaOptionLabel(inst);
+      instJavaSelect.appendChild(opt);
+    });
+    instJavaSelect.value = '';
+  }
+
+  if (btnToggleNewAdvanced && newInstAdvancedIsland) {
+    btnToggleNewAdvanced.addEventListener('click', () => {
+      const isExpanded = btnToggleNewAdvanced.getAttribute('aria-expanded') === 'true';
+      btnToggleNewAdvanced.setAttribute('aria-expanded', String(!isExpanded));
+      newInstAdvancedIsland.classList.toggle('hidden', isExpanded);
+    });
+  }
+
   document.getElementById('btn-new-instance').addEventListener('click', async () => {
+    if (instNameInput) instNameInput.value = '';
+    setNewInstanceLoader('Fabric');
+    if (instLoaderVersionInput) instLoaderVersionInput.value = '';
+    if (instMinRamInput) instMinRamInput.value = '';
+    if (instMaxRamInput) instMaxRamInput.value = '';
+    if (instJvmArgsInput) instJvmArgsInput.value = '';
+    if (btnToggleNewAdvanced && newInstAdvancedIsland) {
+      btnToggleNewAdvanced.setAttribute('aria-expanded', 'false');
+      newInstAdvancedIsland.classList.add('hidden');
+    }
+    populateNewJavaDropdown();
     overlay.classList.remove('hidden');
     await loadMcVersions();
     await initInstanceDirField();
@@ -5417,31 +5519,100 @@ function initInstanceActions() {
   // Install
   document.getElementById('btn-start-install').addEventListener('click', installInstance);
 
-  // Vanilla has no loader version to configure, so hide that tile entirely
-  // when it's selected instead of leaving a meaningless field on screen.
-  const instLoaderSelect = document.getElementById('inst-loader');
-  const instLoaderVersionTile = document.getElementById('inst-loader-version-tile');
-  function syncLoaderVersionVisibility() {
-    const isVanilla = (instLoaderSelect.value || 'Vanilla').toLowerCase() === 'vanilla';
-    instLoaderVersionTile.classList.toggle('hidden', isVanilla);
-  }
-  if (instLoaderSelect) {
-    instLoaderSelect.addEventListener('change', syncLoaderVersionVisibility);
-    syncLoaderVersionVisibility();
-  }
-
   // Edit Instance overlay
   const editOverlay = document.getElementById('edit-instance-overlay');
   const editLoaderVersionTile = document.getElementById('edit-inst-loader-version-tile');
   const editMcVersionSelect = document.getElementById('edit-inst-mc-version');
-  const editLoaderSelect = document.getElementById('edit-inst-loader');
+  const editLoaderInput = document.getElementById('edit-inst-loader');
+  const editAdvancedIsland = document.getElementById('edit-inst-advanced-island');
+  const btnToggleEditAdvanced = document.getElementById('btn-toggle-edit-advanced');
+  const btnCopyEditDir = document.getElementById('btn-copy-edit-dir');
+  const editInstSubtitle = document.getElementById('edit-inst-subtitle');
+  const editJavaSelect = document.getElementById('edit-inst-java-select');
+  const editMinRamInput = document.getElementById('edit-inst-min-ram');
+  const editMaxRamInput = document.getElementById('edit-inst-max-ram');
+  const editJvmArgsInput = document.getElementById('edit-inst-jvm-args');
 
-  function syncEditLoaderVersionVisibility() {
-    const isVanilla = (editLoaderSelect.value || 'Vanilla').toLowerCase() === 'vanilla';
-    editLoaderVersionTile.classList.toggle('hidden', isVanilla);
+  // Initialize loader button icons
+  const editLoaderImgVanilla = document.getElementById('edit-loader-img-vanilla');
+  if (editLoaderImgVanilla) editLoaderImgVanilla.src = iconVanilla;
+  const editLoaderImgFabric = document.getElementById('edit-loader-img-fabric');
+  if (editLoaderImgFabric) editLoaderImgFabric.src = iconFabric;
+  const editLoaderImgForge = document.getElementById('edit-loader-img-forge');
+  if (editLoaderImgForge) editLoaderImgForge.src = iconForge;
+  const editLoaderImgNeoforge = document.getElementById('edit-loader-img-neoforge');
+  if (editLoaderImgNeoforge) editLoaderImgNeoforge.src = iconNeoforge;
+  const editLoaderImgQuilt = document.getElementById('edit-loader-img-quilt');
+  if (editLoaderImgQuilt) editLoaderImgQuilt.src = iconQuilt;
+
+  function setEditLoader(loader) {
+    const norm = (loader || 'Vanilla').trim();
+    if (editLoaderInput) editLoaderInput.value = norm;
+
+    const btns = document.querySelectorAll('#edit-inst-loader-buttons .hypr-loader-btn');
+    btns.forEach(btn => {
+      const match = btn.getAttribute('data-loader').toLowerCase() === norm.toLowerCase();
+      btn.classList.toggle('active', match);
+    });
+
+    const isVanilla = norm.toLowerCase() === 'vanilla';
+    if (editLoaderVersionTile) {
+      editLoaderVersionTile.classList.toggle('hidden', isVanilla);
+    }
   }
-  if (editLoaderSelect) {
-    editLoaderSelect.addEventListener('change', syncEditLoaderVersionVisibility);
+
+  const editLoaderBtns = document.querySelectorAll('#edit-inst-loader-buttons .hypr-loader-btn');
+  editLoaderBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const loader = btn.getAttribute('data-loader');
+      setEditLoader(loader);
+    });
+  });
+
+  async function populateEditJavaDropdown(selectedJava) {
+    if (!editJavaSelect) return;
+    editJavaSelect.innerHTML = `
+      <option value="">Use Settings (Default)</option>
+      <option value="__smart__">✦ Smart Java Detection (Auto)</option>
+    `;
+    let installs = _lastJavaInstallations;
+    if (!installs || installs.length === 0) {
+      try {
+        installs = await api.listJavaInstallations();
+        _lastJavaInstallations = installs || [];
+      } catch (_) {
+        installs = [];
+      }
+    }
+    (installs || []).forEach(inst => {
+      const opt = document.createElement('option');
+      opt.value = inst.path;
+      opt.textContent = javaOptionLabel(inst);
+      editJavaSelect.appendChild(opt);
+    });
+    editJavaSelect.value = selectedJava || '';
+  }
+
+  if (btnToggleEditAdvanced && editAdvancedIsland) {
+    btnToggleEditAdvanced.addEventListener('click', () => {
+      const isExpanded = btnToggleEditAdvanced.getAttribute('aria-expanded') === 'true';
+      btnToggleEditAdvanced.setAttribute('aria-expanded', String(!isExpanded));
+      editAdvancedIsland.classList.toggle('hidden', isExpanded);
+    });
+  }
+
+  if (btnCopyEditDir) {
+    btnCopyEditDir.addEventListener('click', () => {
+      const dirText = document.getElementById('edit-inst-dir').textContent;
+      if (dirText && dirText !== '—') {
+        navigator.clipboard.writeText(dirText).then(() => {
+          btnCopyEditDir.textContent = 'Copied!';
+          setTimeout(() => { btnCopyEditDir.textContent = 'Copy'; }, 1500);
+        }).catch(err => {
+          console.error('Failed to copy directory:', err);
+        });
+      }
+    });
   }
 
   document.getElementById('btn-edit-instance').addEventListener('click', async () => {
@@ -5450,12 +5621,26 @@ function initInstanceActions() {
     if (!inst) return;
 
     document.getElementById('edit-inst-name').value = inst.name || inst.version_id;
-    editLoaderSelect.value = loaderLabel(inst.loader);
+    if (editInstSubtitle) {
+      editInstSubtitle.textContent = inst.name || inst.version_id;
+    }
+    setEditLoader(loaderLabel(inst.loader));
     document.getElementById('edit-inst-loader-version').value = (inst.loader_version && inst.loader_version !== 'latest') ? inst.loader_version : '';
     document.getElementById('edit-inst-dir').textContent = inst.directory || (settings ? settings.game_directory : '—');
+    
+    // Per-instance advanced options
+    if (editMinRamInput) editMinRamInput.value = inst.min_ram_mb || '';
+    if (editMaxRamInput) editMaxRamInput.value = inst.max_ram_mb || '';
+    if (editJvmArgsInput) editJvmArgsInput.value = inst.jvm_args || '';
+    populateEditJavaDropdown(inst.java_path);
+
     editMcVersionSelect.innerHTML = '<option>Loading…</option>';
 
-    syncEditLoaderVersionVisibility();
+    // Collapse advanced options by default on open
+    if (btnToggleEditAdvanced && editAdvancedIsland) {
+      btnToggleEditAdvanced.setAttribute('aria-expanded', 'false');
+      editAdvancedIsland.classList.add('hidden');
+    }
 
     // Show the overlay right away — fetching the Minecraft version list can
     // take a moment on the first open (network round trip for the Mojang
@@ -5476,8 +5661,13 @@ function initInstanceActions() {
 
     const name = document.getElementById('edit-inst-name').value.trim();
     const newMcVersion = editMcVersionSelect.value;
-    let newLoader = (editLoaderSelect.value || 'vanilla').toLowerCase();
+    let newLoader = ((editLoaderInput ? editLoaderInput.value : 'Vanilla') || 'Vanilla').toLowerCase();
     const loaderVersion = document.getElementById('edit-inst-loader-version').value.trim() || 'latest';
+    
+    const javaPath = editJavaSelect ? editJavaSelect.value : '';
+    const minRamMb = editMinRamInput && editMinRamInput.value ? parseInt(editMinRamInput.value) : null;
+    const maxRamMb = editMaxRamInput && editMaxRamInput.value ? parseInt(editMaxRamInput.value) : null;
+    const jvmArgs = editJvmArgsInput ? editJvmArgsInput.value.trim() : '';
 
     const versionOrLoaderChanged =
       newMcVersion !== (inst.minecraft_version || inst.version_id) ||
@@ -5488,18 +5678,18 @@ function initInstanceActions() {
 
     try {
       if (!versionOrLoaderChanged) {
-        // Nothing that requires a reinstall changed — just update the
-        // lightweight metadata like before.
-        await api.updateInstance(selectedInstanceId, name || null, loaderVersion || 'latest');
+        // Nothing that requires a reinstall changed — update metadata & advanced settings
+        await api.updateInstance(selectedInstanceId, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs);
       } else {
-        // Minecraft version and/or loader changed — this instance needs
-        // to be reinstalled. If the exact same version/loader is already
-        // downloaded for another instance, install_minecraft will reuse
-        // those files instead of re-downloading them.
+        // Minecraft version and/or loader changed — reinstall with new version
         closeEditInstanceOverlay();
         showToast(`Reinstalling ${name || inst.name} as ${newMcVersion} (${loaderLabel(newLoader)})…`, 'info');
         if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, newMcVersion, newLoader);
         const newInstance = await api.installVersion(newMcVersion, newLoader, loaderVersion, inst.directory, name || inst.name, inst.version_id);
+        // Persist advanced settings onto the newly created instance record
+        try {
+          await api.updateInstance(newInstance.version_id, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs);
+        } catch (_) {}
         // Remove the old version's files/tracking now that the new one is in place,
         // as long as it didn't just overwrite itself (same version_id/dir).
         if (newInstance.version_id !== inst.version_id) {
@@ -5536,9 +5726,15 @@ function initInstanceActions() {
   const dirPathRow = document.getElementById('inst-dir-path-row');
   const dirPathInput = document.getElementById('inst-dir-path');
   const dirBrowseBtn = document.getElementById('inst-dir-browse');
+  const dirSeparatedCard = document.getElementById('dir-opt-separated-card');
+  const dirDefaultCard = document.getElementById('dir-opt-default-card');
+  const dirCustomCard = document.getElementById('dir-opt-custom-card');
 
   function syncDirRowVisibility() {
-    dirPathRow.classList.toggle('hidden', !dirCustomRadio.checked);
+    if (dirPathRow) dirPathRow.classList.toggle('hidden', !dirCustomRadio.checked);
+    if (dirSeparatedCard) dirSeparatedCard.classList.toggle('active', !!dirSeparatedRadio.checked);
+    if (dirDefaultCard) dirDefaultCard.classList.toggle('active', !!dirDefaultRadio.checked);
+    if (dirCustomCard) dirCustomCard.classList.toggle('active', !!dirCustomRadio.checked);
   }
   if (dirDefaultRadio && dirCustomRadio) {
     dirDefaultRadio.addEventListener('change', syncDirRowVisibility);
@@ -5571,6 +5767,9 @@ async function initInstanceDirField() {
   const dirPathRow = document.getElementById('inst-dir-path-row');
   const dirPathInput = document.getElementById('inst-dir-path');
   const defaultLabel = document.getElementById('inst-dir-default-path');
+  const dirSeparatedCard = document.getElementById('dir-opt-separated-card');
+  const dirDefaultCard = document.getElementById('dir-opt-default-card');
+  const dirCustomCard = document.getElementById('dir-opt-custom-card');
   if (!dirDefaultRadio) return;
 
   // Reset every time the form is (re)opened. If the user already has at
@@ -5582,8 +5781,12 @@ async function initInstanceDirField() {
   dirDefaultRadio.checked = !hasExistingInstances;
   if (dirSeparatedRadio) dirSeparatedRadio.checked = hasExistingInstances;
   dirCustomRadio.checked = false;
-  dirPathRow.classList.add('hidden');
-  dirPathInput.value = '';
+  if (dirPathRow) dirPathRow.classList.add('hidden');
+  if (dirPathInput) dirPathInput.value = '';
+
+  if (dirSeparatedCard) dirSeparatedCard.classList.toggle('active', hasExistingInstances);
+  if (dirDefaultCard) dirDefaultCard.classList.toggle('active', !hasExistingInstances);
+  if (dirCustomCard) dirCustomCard.classList.remove('active');
 
   try {
     if (!defaultMcDirCache) defaultMcDirCache = await api.getDefaultMcDir();
@@ -5898,6 +6101,11 @@ async function installInstance() {
     directory = baseDir ? `${baseDir}/!Instances/${safeName}` : null;
   }
 
+  const javaPath = instJavaSelect ? instJavaSelect.value : '';
+  const minRamMb = instMinRamInput && instMinRamInput.value ? parseInt(instMinRamInput.value) : null;
+  const maxRamMb = instMaxRamInput && instMaxRamInput.value ? parseInt(instMaxRamInput.value) : null;
+  const jvmArgs = instJvmArgsInput ? instJvmArgsInput.value.trim() : '';
+
   // Close the form right away — the floating download widget (bottom-left)
   // tracks progress from here, so the user is free to keep using the app.
   document.getElementById('new-instance-overlay').classList.add('hidden');
@@ -5914,12 +6122,22 @@ async function installInstance() {
     // Since this was just explicitly installed, make sure it's visible.
     if (result && result.version_id) {
       try { await api.unhideInstance(result.version_id); } catch (e) { /* not hidden — fine */ }
+      if (javaPath || minRamMb || maxRamMb || jvmArgs) {
+        try {
+          await api.updateInstance(result.version_id, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs);
+        } catch (e) {
+          console.warn('Could not set initial instance settings:', e);
+        }
+      }
     }
 
     await refreshInstances();
 
     showToast('Instance installed!', 'success');
     renderInstanceList();
+    if (result && result.version_id) {
+      selectInstance(result.version_id);
+    }
   } catch (e) {
     if (String(e).toLowerCase().includes('cancel')) {
       showToast('Installation cancelled', 'info');
@@ -8084,6 +8302,8 @@ function closeApplyPresetOverlay() {
 
 function initApplyPresetOverlayEvents() {
   document.getElementById('btn-close-apply-preset').addEventListener('click', closeApplyPresetOverlay);
+  const cancelBtn = document.getElementById('btn-cancel-apply-preset');
+  if (cancelBtn) cancelBtn.addEventListener('click', closeApplyPresetOverlay);
   document.getElementById('btn-preset-select-all').addEventListener('click', () => {
     if (!applyPresetState) return;
     applyPresetState.rows.forEach(r => { if (!r.checkbox.disabled) r.checkbox.checked = true; });
@@ -8310,6 +8530,8 @@ function closeExportModsOverlay() {
 
 function initExportModsOverlayEvents() {
   document.getElementById('btn-close-export-mods').addEventListener('click', closeExportModsOverlay);
+  const cancelBtn = document.getElementById('btn-cancel-export-mods');
+  if (cancelBtn) cancelBtn.addEventListener('click', closeExportModsOverlay);
   document.getElementById('btn-export-mods-select-all').addEventListener('click', () => {
     if (!exportModsState) return;
     exportModsState.rows.forEach(r => { r.checkbox.checked = true; });
@@ -8492,6 +8714,8 @@ function closeImportModsOverlay() {
 
 function initImportModsOverlayEvents() {
   document.getElementById('btn-close-import-mods').addEventListener('click', closeImportModsOverlay);
+  const cancelBtn = document.getElementById('btn-cancel-import-mods');
+  if (cancelBtn) cancelBtn.addEventListener('click', closeImportModsOverlay);
   document.getElementById('btn-import-mods-select-all').addEventListener('click', () => {
     if (!importModsState) return;
     importModsState.rows.forEach(r => { if (!r.checkbox.disabled) r.checkbox.checked = true; });
@@ -10023,11 +10247,6 @@ function applyThemeFromSettings() {
   if (!settings) return;
   const root = document.documentElement;
 
-  // Smooth scrolling — a plain class toggle so it's instant and doesn't
-  // need any other machinery; the CSS rule only kicks in while the class
-  // is present (see .smooth-scroll in main.css).
-  root.classList.toggle('smooth-scroll', settings.smooth_scrolling !== false);
-
   const preset = THEME_PRESETS.dark;
 
   // Colors — these fields have no picker UI anywhere in the app, so the
@@ -10406,6 +10625,180 @@ function addCustomJavaOption(path, select) {
   if (select) sel.value = path;
 }
 
+const MANAGED_JAVA_TARGETS = [
+  { major: 25, label: 'Java 25' },
+  { major: 21, label: 'Java 21' },
+  { major: 17, label: 'Java 17' },
+  { major: 16, label: 'Java 16' },
+  { major: 8, label: 'Java 8' },
+];
+
+let _managedJavaInstalling = {}; // major -> { stage, message, percent }
+
+async function renderJavaManager() {
+  const cardsContainer = document.getElementById('java-managed-cards-container');
+  const customContainer = document.getElementById('java-custom-cards-container');
+  const systemContainer = document.getElementById('java-system-list-container');
+  const rootPathLabel = document.getElementById('java-managed-root-path-label');
+  if (!cardsContainer) return;
+
+  try {
+    const rootPath = await api.getManagedJavaRootPath();
+    if (rootPathLabel) rootPathLabel.textContent = rootPath;
+  } catch (_) {}
+
+  let installs = [];
+  try {
+    installs = await api.listJavaInstallations();
+    _lastJavaInstallations = installs || [];
+  } catch (e) {
+    installs = _lastJavaInstallations || [];
+  }
+
+  // 1. Render Official Managed Runtimes List
+  cardsContainer.innerHTML = '';
+  MANAGED_JAVA_TARGETS.forEach(target => {
+    const installed = (installs || []).find(i => i.major === target.major && i.source === 'managed');
+    const isInstalling = _managedJavaInstalling[target.major];
+
+    const row = document.createElement('div');
+    row.className = `java-row-item ${installed ? 'installed' : ''}`;
+
+    let actionsHtml = '';
+
+    if (isInstalling) {
+      actionsHtml = `
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:12px; color:var(--accent);">${escapeHtml(isInstalling.stage || 'Installing…')}</span>
+          <button type="button" class="btn-java-action" disabled>Installing…</button>
+        </div>
+      `;
+    } else if (installed) {
+      actionsHtml = `<span class="java-installed-label">Installed</span>`;
+    } else {
+      actionsHtml = `
+        <button type="button" class="btn-java-action btn-install-java" data-major="${target.major}">
+          Install
+        </button>
+      `;
+    }
+
+    row.innerHTML = `
+      <div class="java-row-info" style="display:flex; flex-direction:row; align-items:center; gap:10px;">
+        <span class="java-num-icon">${target.major}</span>
+        <div class="java-row-title">
+          <span>${escapeHtml(target.label)}</span>
+        </div>
+      </div>
+      <div class="java-row-actions">
+        ${actionsHtml}
+      </div>
+    `;
+
+    cardsContainer.appendChild(row);
+  });
+
+  // Attach Managed List Listeners
+  cardsContainer.querySelectorAll('.btn-install-java').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const major = parseInt(btn.getAttribute('data-major'));
+      if (!major) return;
+      btn.disabled = true;
+      btn.textContent = 'Installing…';
+      _managedJavaInstalling[major] = { stage: 'Downloading', message: `Downloading Java ${major}…`, percent: 10 };
+      renderJavaManager();
+      try {
+        await api.installManagedJava(major);
+        showToast(`Java ${major} successfully installed!`, 'success');
+      } catch (e) {
+        showToast(`Failed to install Java ${major}: ${e}`, 'error');
+      } finally {
+        delete _managedJavaInstalling[major];
+        await renderJavaManager();
+        await populateJavaDropdown(settings && settings.java_path);
+      }
+    });
+  });
+
+  // 2. Render Custom Javas List
+  if (customContainer) {
+    customContainer.innerHTML = '';
+    const customInstalls = (installs || []).filter(i => i.source === 'custom');
+    if (customInstalls.length === 0) {
+      customContainer.innerHTML = `
+        <div style="font-size:12px; color:var(--text-muted); padding:10px 14px; background:rgba(255,255,255,0.02); border:1px dashed var(--panel-border); border-radius:6px;">
+          No custom Java installations added yet. Click "Browse for Java…" above to select an installed Java path.
+        </div>
+      `;
+    } else {
+      customInstalls.forEach(inst => {
+        const item = document.createElement('div');
+        item.className = 'java-row-item';
+        item.innerHTML = `
+          <div class="java-row-info" style="display:flex; flex-direction:row; align-items:center; gap:10px;">
+            <span class="java-num-icon">${inst.major || '?'}</span>
+            <div class="java-row-title">
+              <span>Java ${inst.major} (Custom)</span>
+            </div>
+          </div>
+          <div class="java-row-actions">
+            <button type="button" class="btn-java-action btn-remove-custom-java" data-path="${escapeHtml(inst.path)}">
+              Remove
+            </button>
+          </div>
+        `;
+        customContainer.appendChild(item);
+      });
+
+      customContainer.querySelectorAll('.btn-remove-custom-java').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const path = btn.getAttribute('data-path');
+          if (!path) return;
+          try {
+            await api.removeCustomJavaPath(path);
+            showToast('Custom Java path removed.', 'info');
+          } catch (e) {
+            showToast(`Could not remove Java path: ${e}`, 'error');
+          } finally {
+            await renderJavaManager();
+            await populateJavaDropdown(settings && settings.java_path);
+          }
+        });
+      });
+    }
+  }
+
+  // 3. Render Detected System Javas List
+  if (systemContainer) {
+    systemContainer.innerHTML = '';
+    const systemInstalls = (installs || []).filter(i => i.source === 'system');
+    if (systemInstalls.length === 0) {
+      systemContainer.innerHTML = `
+        <div style="font-size:12px; color:var(--text-muted); padding:8px 12px; opacity:0.7;">
+          No standard system JREs found in PATH or standard system directories.
+        </div>
+      `;
+    } else {
+      systemInstalls.forEach(inst => {
+        const item = document.createElement('div');
+        item.className = 'java-row-item';
+        item.innerHTML = `
+          <div class="java-row-info" style="display:flex; flex-direction:row; align-items:center; gap:10px;">
+            <span class="java-num-icon">${inst.major || '?'}</span>
+            <div class="java-row-title">
+              <span>Java ${inst.major}</span>
+            </div>
+          </div>
+          <div class="java-row-actions">
+            <span style="font-size:11px; opacity:0.6; padding:4px 8px;">System</span>
+          </div>
+        `;
+        systemContainer.appendChild(item);
+      });
+    }
+  }
+}
+
 // Fetches every detected Java installation (system + previously downloaded)
 // and rebuilds the Settings dropdown, preserving `currentValue` as the
 // selected option (adding it as a "custom" entry if it isn't in the list).
@@ -10443,9 +10836,6 @@ async function populateJavaDropdown(currentValue, showFeedback) {
   const wanted = currentValue || '';
   const matches = Array.from(sel.options).some(o => o.value === wanted);
   if (wanted && !matches) {
-    // A previously-selected custom path that isn't in the freshly
-    // detected list (e.g. it's outside the usual scan locations) — keep
-    // it selectable instead of silently reverting to Smart Detection.
     addCustomJavaOption(wanted, true);
   } else {
     sel.value = wanted;
@@ -10588,9 +10978,48 @@ function initSettings() {
       refreshJavaBtn.textContent = '⟳ Scanning…';
       try {
         await populateJavaDropdown(prevValue, true);
+        await renderJavaManager();
       } finally {
         refreshJavaBtn.disabled = false;
         refreshJavaBtn.textContent = prevLabel;
+      }
+    });
+  }
+
+  // Java Manager Panel Event Handlers
+  const btnRefreshJavaManager = document.getElementById('btn-refresh-java-manager');
+  if (btnRefreshJavaManager) {
+    btnRefreshJavaManager.addEventListener('click', async () => {
+      btnRefreshJavaManager.disabled = true;
+      try {
+        await renderJavaManager();
+        await populateJavaDropdown(settings && settings.java_path, true);
+      } finally {
+        btnRefreshJavaManager.disabled = false;
+      }
+    });
+  }
+
+  const btnOpenManagedDir = document.getElementById('btn-open-managed-java-dir');
+  if (btnOpenManagedDir) btnOpenManagedDir.addEventListener('click', () => api.openManagedJavaDir());
+
+  const btnOpenJavaDirLink = document.getElementById('btn-open-java-dir-link');
+  if (btnOpenJavaDirLink) btnOpenJavaDirLink.addEventListener('click', () => api.openManagedJavaDir());
+
+  const btnAddCustomJava = document.getElementById('btn-add-custom-java');
+  if (btnAddCustomJava) {
+    btnAddCustomJava.addEventListener('click', async () => {
+      try {
+        const picked = await window.__TAURI__.dialog.open({ multiple: false, title: 'Select Java Executable or Home Directory' });
+        if (picked) {
+          const path = Array.isArray(picked) ? picked[0] : picked;
+          const added = await api.addCustomJavaPath(path);
+          showToast(`Added Java ${added.major} (v${added.version})!`, 'success');
+          await renderJavaManager();
+          await populateJavaDropdown(path);
+        }
+      } catch (e) {
+        showToast('Could not add custom Java: ' + e, 'error');
       }
     });
   }
@@ -10946,6 +11375,7 @@ function openSettingsModal(targetSection) {
   overlay.classList.remove('hidden');
   loadSettings();
   renderHiddenInstancesSettings();
+  renderJavaManager();
   if (targetSection) {
     switchSettingsSection(targetSection);
   }
@@ -12805,10 +13235,181 @@ async function finishSetupWizard() {
   showToast('Setup complete! Welcome to Zero Launcher.', 'success');
 }
 
+function initCustomTitlebar() {
+  const minBtn = document.getElementById('titlebar-minimize');
+  const maxBtn = document.getElementById('titlebar-maximize');
+  const closeBtn = document.getElementById('titlebar-close');
+  const titlebar = document.getElementById('custom-titlebar');
+  const dragArea = titlebar?.querySelector('.titlebar-drag-area');
+
+  const doMinimize = async () => {
+    try { await invoke('window_minimize'); } catch (_) {
+      try { await window.__TAURI__?.window?.getCurrentWindow?.()?.minimize(); } catch (_) {}
+    }
+  };
+
+  const doToggleMaximize = async () => {
+    try { await invoke('window_toggle_maximize'); } catch (_) {
+      try { await window.__TAURI__?.window?.getCurrentWindow?.()?.toggleMaximize(); } catch (_) {}
+    }
+  };
+
+  const doClose = async () => {
+    try { await invoke('window_close'); } catch (_) {
+      try { await window.__TAURI__?.window?.getCurrentWindow?.()?.close(); } catch (_) {}
+    }
+  };
+
+  if (minBtn) minBtn.addEventListener('click', doMinimize);
+  if (maxBtn) maxBtn.addEventListener('click', doToggleMaximize);
+  if (closeBtn) closeBtn.addEventListener('click', doClose);
+
+  // Drag via startDragging (works reliably in WebKitGTK where data-tauri-drag-region can be flaky)
+  if (dragArea) {
+    dragArea.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // only left button drags
+      if (e.target.closest('.titlebar-controls')) return;
+      e.preventDefault();
+      try {
+        const win = window.__TAURI__?.window?.getCurrentWindow?.();
+        if (win?.startDragging) win.startDragging();
+      } catch (_) {}
+    });
+  }
+
+  // Double click drag area to toggle maximize
+  if (dragArea) {
+    dragArea.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.titlebar-controls')) return;
+      doToggleMaximize();
+    });
+  }
+
+  // Right-click on titlebar triggers custom rich window & launcher actions menu
+  if (titlebar) {
+    titlebar.addEventListener('contextmenu', async (e) => {
+      if (e.target.closest('.titlebar-controls')) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      let isMax = false;
+      try {
+        isMax = await invoke('window_is_maximized');
+      } catch (_) {}
+
+      const items = [
+        // ── Window Management ──
+        {
+          label: isMax ? 'Restore' : 'Maximize',
+          onClick: () => doToggleMaximize(),
+          isPrimary: true
+        },
+        {
+          label: 'Minimize',
+          onClick: () => doMinimize()
+        },
+        {
+          label: 'Always on Top',
+          onClick: async () => {
+            try {
+              const onTop = await invoke('window_toggle_always_on_top');
+              showToast(onTop ? 'Window pinned Always on Top' : 'Window unpinned', 'info');
+            } catch (_) {}
+          }
+        },
+        {
+          label: 'Toggle Fullscreen',
+          onClick: async () => {
+            try { await invoke('window_toggle_fullscreen'); } catch (_) {}
+          }
+        },
+        {
+          label: 'Center Window',
+          onClick: async () => {
+            try { await invoke('window_center'); } catch (_) {}
+          }
+        },
+        { type: 'divider' },
+
+        // ── Quick Navigation ──
+        {
+          label: 'Instances',
+          onClick: () => {
+            const tab = document.querySelector('.pill-tab[data-tab="instances"]');
+            if (tab) tab.click();
+          }
+        },
+        {
+          label: 'Mods',
+          onClick: () => {
+            const tab = document.querySelector('.pill-tab[data-tab="mods"]');
+            if (tab) tab.click();
+          }
+        },
+        {
+          label: 'Discover',
+          onClick: () => {
+            const tab = document.querySelector('.pill-tab[data-tab="discover"]');
+            if (tab) tab.click();
+          }
+        },
+        {
+          label: 'Settings',
+          onClick: () => {
+            const btn = document.getElementById('btn-open-settings-modal');
+            if (btn) btn.click();
+          }
+        },
+        {
+          label: 'Java Manager',
+          onClick: () => {
+            const btn = document.getElementById('btn-open-settings-modal');
+            if (btn) btn.click();
+            setTimeout(() => {
+              const javaTab = document.querySelector('.settings-tab-btn[data-panel="java-manager"]');
+              if (javaTab) javaTab.click();
+            }, 100);
+          }
+        },
+        { type: 'divider' },
+
+        // ── Utilities & Dev ──
+        {
+          label: 'Open Data Folder',
+          onClick: () => {
+            if (api.openLauncherFolder) api.openLauncherFolder().catch(() => {});
+          }
+        },
+        {
+          label: 'Reload UI',
+          onClick: () => window.location.reload()
+        },
+        {
+          label: 'Inspect (DevTools)',
+          onClick: () => {
+            if (api.openDevtools) api.openDevtools().catch(() => {});
+          }
+        },
+        { type: 'divider' },
+
+        // ── Close ──
+        {
+          label: 'Close',
+          onClick: () => doClose(),
+          isDanger: true
+        }
+      ];
+
+      showCustomMenu(e.clientX, e.clientY, items);
+    });
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // BOOT
 // ══════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  initCustomTitlebar();
   initClickSoundListener();
   initTabs();
   initAccountDropdown();
@@ -13695,7 +14296,7 @@ function showCustomMenu(x, y, items) {
   });
 
   menuEl.classList.remove('hidden');
-  const menuWidth = 175;
+  const menuWidth = Math.max(210, menuEl.offsetWidth || 230);
   const menuHeight = items.length * 32 + 16;
 
   let posX = x;
@@ -13719,6 +14320,8 @@ function initCustomContextMenu() {
 
   // Prevent default browser context menu everywhere and render custom items
   document.addEventListener('contextmenu', (e) => {
+    // Let the titlebar handle its own context menu independently
+    if (e.target.closest('#custom-titlebar')) return;
     e.preventDefault();
 
     const mouseX = e.clientX;

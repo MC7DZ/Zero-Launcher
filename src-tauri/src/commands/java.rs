@@ -142,29 +142,46 @@ fn to_installation(info: mc_launcher_core::types::JavaInformation) -> JavaInstal
 }
 
 /// Lists every Java installation we can find: common system locations
-/// (`/usr/lib/jvm`, `C:\Program Files\Java`, ...) plus anything previously
-/// auto-downloaded into the managed `java/` folder. Used to populate the
-/// Settings dropdown and to power Smart Java Detection.
-#[tauri::command]
-pub async fn list_java_installations() -> Result<Vec<JavaInstallation>, String> {
+pub async fn get_all_java_installations(
+    custom_paths: Vec<String>,
+) -> Result<Vec<JavaInstallation>, String> {
     let managed_root = managed_java_root();
     let _ = fs::create_dir_all(&managed_root);
 
+    let scan_root = managed_root.clone();
     let found = tokio::task::spawn_blocking(move || {
-        find_system_java_versions_information(Some(vec![managed_root]))
+        find_system_java_versions_information(Some(vec![scan_root]))
     })
     .await
     .map_err(|e| format!("Java scan failed: {e}"))?;
 
     let mut list: Vec<JavaInstallation> = found.into_iter().map(to_installation).collect();
 
-    // Dedupe by the *canonicalized* executable path. Different scan roots
-    // (system locations, symlinks like `default-java`, PATH, the managed
-    // folder) can all point at the same underlying JDK, and those paths
-    // won't necessarily end up adjacent after sorting — so a plain
-    // `dedup_by` (which only removes consecutive duplicates) misses most of
-    // them. Canonicalizing first also collapses `/usr/bin/java` ->
-    // `/usr/lib/jvm/java-21-openjdk-amd64/bin/java`-style symlink chains.
+    // Check custom java paths configured by the user
+    for cp in custom_paths {
+        let trimmed = cp.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let p = PathBuf::from(trimmed);
+        if p.exists() {
+            let home = if p.is_file() {
+                p.parent()
+                    .and_then(|bin| bin.parent())
+                    .map(|h| h.to_path_buf())
+                    .unwrap_or_else(|| p.clone())
+            } else {
+                p.clone()
+            };
+            if let Ok(info) = get_java_information(&home).or_else(|_| get_java_information(&p)) {
+                let mut inst = to_installation(info);
+                inst.source = "custom".to_string();
+                list.push(inst);
+            }
+        }
+    }
+
+    // Dedupe by the *canonicalized* executable path.
     let mut seen = std::collections::HashSet::new();
     list.retain(|j| {
         let key = fs::canonicalize(&j.executable)
@@ -174,6 +191,125 @@ pub async fn list_java_installations() -> Result<Vec<JavaInstallation>, String> 
 
     list.sort_by(|a, b| b.major.cmp(&a.major).then_with(|| a.path.cmp(&b.path)));
     Ok(list)
+}
+
+/// Lists every Java installation we can find: common system locations
+/// (`/usr/lib/jvm`, `C:\Program Files\Java`, ...) plus anything previously
+/// auto-downloaded into the managed `java/` folder or explicitly added as custom.
+#[tauri::command]
+pub async fn list_java_installations(
+    state: State<'_, AppState>,
+) -> Result<Vec<JavaInstallation>, String> {
+    let custom_paths: Vec<String> = state
+        .settings
+        .lock()
+        .ok()
+        .map(|st| st.custom_java_paths.clone())
+        .unwrap_or_default();
+
+    get_all_java_installations(custom_paths).await
+}
+
+/// Explicitly downloads and installs a managed Java runtime (e.g. 25, 21, 17, 16, 8)
+/// from Azul Zulu metadata API.
+#[tauri::command]
+pub async fn install_managed_java(app: AppHandle, major: i32) -> Result<JavaInstallation, String> {
+    download_java_via_azul(&app, major).await
+}
+
+/// Deletes a managed Java runtime from the `java/<major>` directory.
+#[tauri::command]
+pub async fn delete_managed_java(major: i32) -> Result<(), String> {
+    let root = managed_java_root();
+    let dir = root.join(major.to_string());
+    if dir.exists() {
+        fs::remove_dir_all(&dir).map_err(|e| format!("Failed to delete Java {major}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Returns the filesystem directory where managed Javas are installed.
+#[tauri::command]
+pub async fn get_managed_java_root_path() -> Result<String, String> {
+    let root = managed_java_root();
+    let _ = fs::create_dir_all(&root);
+    Ok(root.to_string_lossy().to_string())
+}
+
+/// Opens the managed Java directory in the operating system's default file manager.
+#[tauri::command]
+pub async fn open_managed_java_dir() -> Result<(), String> {
+    let root = managed_java_root();
+    let _ = fs::create_dir_all(&root);
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer").arg(&root).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&root).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&root).spawn();
+    }
+    Ok(())
+}
+
+/// Validates and adds a custom Java installation path to launcher settings.
+#[tauri::command]
+pub async fn add_custom_java_path(
+    _app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<JavaInstallation, String> {
+    let trimmed = path.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("Path cannot be empty".to_string());
+    }
+    let p = PathBuf::from(&trimmed);
+    if !p.exists() {
+        return Err(format!("The path '{}' does not exist.", trimmed));
+    }
+    let home = if p.is_file() {
+        p.parent()
+            .and_then(|bin| bin.parent())
+            .map(|h| h.to_path_buf())
+            .unwrap_or_else(|| p.clone())
+    } else {
+        p.clone()
+    };
+
+    let info = get_java_information(&home)
+        .or_else(|_| get_java_information(&p))
+        .map_err(|e| format!("Could not detect a valid Java installation at '{}': {e}", trimmed))?;
+
+    let mut inst = to_installation(info);
+    inst.source = "custom".to_string();
+
+    let mut settings = state.settings.lock().unwrap();
+    if !settings.custom_java_paths.contains(&trimmed) {
+        settings.custom_java_paths.push(trimmed);
+        drop(settings);
+        let _ = state.save_settings_to_disk();
+    }
+
+    Ok(inst)
+}
+
+/// Removes a custom Java path from launcher settings.
+#[tauri::command]
+pub async fn remove_custom_java_path(
+    _app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<(), String> {
+    let trimmed = path.trim();
+    let mut settings = state.settings.lock().unwrap();
+    settings.custom_java_paths.retain(|p| p != trimmed);
+    drop(settings);
+    let _ = state.save_settings_to_disk();
+    Ok(())
 }
 
 /// Determines the Java major version a given (already-loaded) Minecraft
@@ -583,7 +719,13 @@ pub async fn ensure_java_for_version(
 
     let required_major = required_java_major(version);
 
-    let installations = list_java_installations().await?;
+    let custom_paths = state
+        .settings
+        .lock()
+        .ok()
+        .map(|s| s.custom_java_paths.clone())
+        .unwrap_or_default();
+    let installations = get_all_java_installations(custom_paths).await?;
     if let Some(exact) = installations.iter().find(|j| j.major == required_major) {
         return Ok(PathBuf::from(&exact.executable));
     }
@@ -612,4 +754,71 @@ pub async fn ensure_java_for_version(
         }
     };
     Ok(PathBuf::from(&downloaded.executable))
+}
+
+/// Resolves Java executable for an instance, honoring any per-instance override
+/// before falling back to the launcher-wide Settings configuration.
+pub async fn ensure_java_for_instance(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    version: &VersionJson,
+    instance_java_override: Option<&str>,
+    offline: bool,
+) -> Result<PathBuf, String> {
+    if let Some(raw_path) = instance_java_override {
+        let raw_path = raw_path.trim();
+        if !raw_path.is_empty() && raw_path != "__smart__" {
+            let p = PathBuf::from(raw_path);
+            if p.is_file() {
+                if cfg!(target_os = "windows") {
+                    if p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.eq_ignore_ascii_case("java.exe"))
+                        .unwrap_or(false)
+                    {
+                        let javaw = p.with_file_name("javaw.exe");
+                        if javaw.is_file() {
+                            return Ok(javaw);
+                        }
+                    }
+                }
+                return Ok(p);
+            }
+            let exe_name = if cfg!(target_os = "windows") { "javaw.exe" } else { "java" };
+            let exe = p.join("bin").join(exe_name);
+            if exe.is_file() {
+                return Ok(exe);
+            }
+            let fallback_name = if cfg!(target_os = "windows") { "java.exe" } else { "java" };
+            let fallback_exe = p.join("bin").join(fallback_name);
+            if fallback_exe.is_file() {
+                return Ok(fallback_exe);
+            }
+            return Err(format!(
+                "The Java install configured for this instance ('{}') was not found.",
+                raw_path
+            ));
+        } else if raw_path == "__smart__" {
+            let required_major = required_java_major(version);
+            let custom_paths = state
+                .settings
+                .lock()
+                .ok()
+                .map(|s| s.custom_java_paths.clone())
+                .unwrap_or_default();
+            let installations = get_all_java_installations(custom_paths).await?;
+            if let Some(exact) = installations.iter().find(|j| j.major == required_major) {
+                return Ok(PathBuf::from(&exact.executable));
+            }
+            if offline {
+                return Err(format!(
+                    "Java {required_major} isn't installed, and this is an offline launch."
+                ));
+            }
+            let downloaded = download_java_via_azul(app, required_major).await?;
+            return Ok(PathBuf::from(&downloaded.executable));
+        }
+    }
+
+    ensure_java_for_version(app, state, version, offline).await
 }

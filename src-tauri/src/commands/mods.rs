@@ -390,7 +390,7 @@ fn try_read_forge_mod(archive: &mut zip::ZipArchive<std::fs::File>) -> Option<(S
     let name = extract_toml_value(&contents, "displayName").unwrap_or_else(|| "Unknown".to_string());
     let version = extract_toml_value(&contents, "version").unwrap_or_else(|| "?".to_string());
     let description = extract_toml_value(&contents, "description").unwrap_or_default();
-    let loader_id = extract_toml_value(&contents, "loaderVersion").unwrap_or_default();
+    let _loader_id = extract_toml_value(&contents, "loaderVersion").unwrap_or_default();
 
     let loader = if contents.contains("neoforge") || contents.contains("NeoForge") {
         "NeoForge".to_string()

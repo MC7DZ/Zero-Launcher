@@ -22,15 +22,32 @@
     <canvas id="bg-canvas"></canvas>
   </div>
   <div id="app">
+    <!-- ═══ Custom Title Bar ═══ -->
+    <div id="custom-titlebar" data-tauri-drag-region>
+      <div class="titlebar-drag-area" data-tauri-drag-region>
+        <span class="titlebar-title-text" data-tauri-drag-region>Zero Launcher</span>
+      </div>
+      <div class="titlebar-controls">
+        <button id="titlebar-minimize" class="titlebar-btn" title="Minimize">
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="6" x2="10" y2="6"/></svg>
+        </button>
+        <button id="titlebar-maximize" class="titlebar-btn" title="Maximize">
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="8" height="8" rx="1.5"/></svg>
+        </button>
+        <button id="titlebar-close" class="titlebar-btn titlebar-btn-close" title="Close">
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5"/></svg>
+        </button>
+      </div>
+    </div>
 
-    <!-- ═══ Top Bar Header ═══ -->
-    <header id="top-bar">
-      <div class="brand">
-        <div style="display:flex; align-items:center; gap:6px;">
+    <!-- ═══ Top Bar Header (Floating Island) ═══ -->
+    <header id="top-bar" data-tauri-drag-region>
+      <div class="brand" data-tauri-drag-region>
+        <div style="display:flex; align-items:center; gap:6px;" data-tauri-drag-region>
           <span class="brand-zero">ZERO</span>
           <span class="brand-beta">BETA</span>
         </div>
-        <span class="brand-launcher">LAUNCHER</span>
+        <span class="brand-launcher" data-tauri-drag-region>LAUNCHER</span>
       </div>
 
       <!-- Navigation Tabs in Top Bar -->
@@ -699,6 +716,452 @@
       </div>
     </div>
 
+    <!-- New Instance Form (overlay - Hyprland Floating Islands) -->
+    <div id="new-instance-overlay" class="overlay hidden">
+      <div class="hypr-modal create-instance-modal">
+        <!-- Header Island -->
+        <div class="hypr-island hypr-header-island">
+          <div class="hypr-header-left">
+            <div class="hypr-icon-badge">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </div>
+            <div class="hypr-header-titles">
+              <h3 class="hypr-title">Create New Instance</h3>
+              <span class="hypr-subtitle">Configure and download a fresh Minecraft installation</span>
+            </div>
+          </div>
+          <button class="overlay-close" id="btn-cancel-new-instance" title="Close">✕</button>
+        </div>
+
+        <!-- Primary Island: Name, Loaders Row, Version & Loader Version -->
+        <div class="hypr-island hypr-main-island">
+          <!-- Name Row -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="bento-tile-label" for="inst-name">Instance Name <span class="bento-tile-hint">(blank = Loader + Version)</span></label>
+            <input type="text" id="inst-name" class="input-field" placeholder="e.g. Survival 1.21 or Fabric Adventure" autocomplete="off" spellcheck="false" />
+          </div>
+
+          <!-- Mod Loader Buttons Row -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="bento-tile-label">Mod Loader</label>
+            <div class="hypr-loader-button-row" id="new-inst-loader-buttons">
+              <button type="button" class="hypr-loader-btn" data-loader="Vanilla" title="Vanilla">
+                <img id="new-loader-img-vanilla" class="hypr-loader-icon" alt="Vanilla" />
+                <span>Vanilla</span>
+              </button>
+              <button type="button" class="hypr-loader-btn active" data-loader="Fabric" title="Fabric">
+                <img id="new-loader-img-fabric" class="hypr-loader-icon" alt="Fabric" />
+                <span>Fabric</span>
+              </button>
+              <button type="button" class="hypr-loader-btn" data-loader="Forge" title="Forge">
+                <img id="new-loader-img-forge" class="hypr-loader-icon" alt="Forge" />
+                <span>Forge</span>
+              </button>
+              <button type="button" class="hypr-loader-btn" data-loader="NeoForge" title="NeoForge">
+                <img id="new-loader-img-neoforge" class="hypr-loader-icon" alt="NeoForge" />
+                <span>NeoForge</span>
+              </button>
+              <button type="button" class="hypr-loader-btn" data-loader="Quilt" title="Quilt">
+                <img id="new-loader-img-quilt" class="hypr-loader-icon" alt="Quilt" />
+                <span>Quilt</span>
+              </button>
+            </div>
+            <input type="hidden" id="inst-loader" value="Fabric" />
+          </div>
+
+          <!-- Under loaders: Minecraft Version and Loader Version -->
+          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+            <div class="form-group">
+              <label class="bento-tile-label" for="inst-mc-version">Minecraft Version</label>
+              <select id="inst-mc-version" class="input-field">
+                <option>Loading…</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="inst-loader-version-tile">
+              <label class="bento-tile-label" for="inst-loader-version">Loader Version <span class="bento-tile-hint">(blank is latest)</span></label>
+              <input type="text" id="inst-loader-version" class="input-field" placeholder="Latest (Recommended)" autocomplete="off" />
+            </div>
+          </div>
+
+          <!-- Game Directory & Isolation Options (Normal Options) -->
+          <div class="form-group">
+            <label class="bento-tile-label">Game Directory &amp; Isolation</label>
+            <div class="hypr-dir-options-grid">
+              <label class="hypr-dir-card active" id="dir-opt-separated-card">
+                <input type="radio" name="inst-dir-choice" id="inst-dir-separated" checked class="hypr-dir-radio" />
+                <div class="hypr-dir-details">
+                  <div class="hypr-dir-title">Isolated Instance <span class="hypr-pill-badge">Recommended</span></div>
+                  <div class="hypr-dir-desc">Keeps mods, saves, and configs in their own folder under <code>!Instances</code></div>
+                </div>
+              </label>
+
+              <label class="hypr-dir-card" id="dir-opt-default-card">
+                <input type="radio" name="inst-dir-choice" id="inst-dir-default" class="hypr-dir-radio" />
+                <div class="hypr-dir-details">
+                  <div class="hypr-dir-title">Shared Default <span id="inst-dir-default-path" class="bento-tile-hint">(~/.minecraft)</span></div>
+                  <div class="hypr-dir-desc">Stores all files in the standard root Minecraft directory</div>
+                </div>
+              </label>
+
+              <label class="hypr-dir-card" id="dir-opt-custom-card">
+                <input type="radio" name="inst-dir-choice" id="inst-dir-custom" class="hypr-dir-radio" />
+                <div class="hypr-dir-details">
+                  <div class="hypr-dir-title">Custom Directory</div>
+                  <div class="hypr-dir-desc">Specify a custom installation folder on your disk</div>
+                </div>
+              </label>
+            </div>
+
+            <div id="inst-dir-path-row" class="hidden" style="display: flex; gap: 8px; margin-top: 10px;">
+              <input type="text" id="inst-dir-path" class="input-field" placeholder="/path/to/folder" style="flex: 1;" />
+              <button id="inst-dir-browse" class="btn-secondary" type="button" style="padding: 6px 14px; font-size: 12px;">Browse…</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Advanced Options Toggle -->
+        <div class="hypr-advanced-toggle-wrap">
+          <button type="button" id="btn-toggle-new-advanced" class="btn-secondary hypr-advanced-toggle-btn" aria-expanded="false">
+            <span class="hypr-toggle-icon">⚙</span>
+            <span>Advanced Options</span>
+            <span class="hypr-toggle-chevron">▾</span>
+          </button>
+        </div>
+
+        <!-- Advanced Options Island (Collapsible) -->
+        <div id="new-inst-advanced-island" class="hypr-island hypr-advanced-island hidden">
+          <!-- Java Runtime -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="bento-tile-label" for="inst-java-select">Java Runtime</label>
+            <select id="inst-java-select" class="input-field">
+              <option value="">Use Settings (Default)</option>
+              <option value="__smart__">✦ Smart Java Detection (Auto)</option>
+            </select>
+            <span class="bento-tile-hint" style="margin-top: 4px; display: block;">Pick a specific Java version for this instance or use launcher Settings.</span>
+          </div>
+
+          <!-- RAM Settings (Min / Max) -->
+          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+            <div class="form-group">
+              <label class="bento-tile-label" for="inst-min-ram">Min RAM (MB)</label>
+              <input type="number" id="inst-min-ram" class="input-field" placeholder="Default (Settings)" min="256" step="256" />
+            </div>
+            <div class="form-group">
+              <label class="bento-tile-label" for="inst-max-ram">Max RAM (MB)</label>
+              <input type="number" id="inst-max-ram" class="input-field" placeholder="Default (Settings)" min="512" step="256" />
+            </div>
+          </div>
+
+          <!-- Custom JVM Arguments -->
+          <div class="form-group" style="margin-bottom: 10px;">
+            <label class="bento-tile-label" for="inst-jvm-args">Custom JVM Arguments</label>
+            <input type="text" id="inst-jvm-args" class="input-field" placeholder="-XX:+UseG1GC ... (leave blank to use Settings)" />
+          </div>
+        </div>
+
+        <!-- Install Progress (if active) -->
+        <div id="install-progress-wrap" class="hypr-island hidden" style="padding: 12px 16px;">
+          <div class="progress-text" id="install-status" style="font-size: 12px; margin-bottom: 6px; color: var(--text);">Starting install…</div>
+          <div class="progress-track" style="height: 6px; background: rgba(var(--overlay-rgb), 0.1); border-radius: 99px; overflow: hidden;">
+            <div class="progress-bar" id="install-bar" style="height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease;"></div>
+          </div>
+        </div>
+
+        <!-- Floating Action Island -->
+        <div class="hypr-actions-island">
+          <button id="btn-cancel-install-form" class="btn-ghost">Cancel</button>
+          <button id="btn-start-install" class="btn-accent">Install &amp; Play</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Instance overlay (Hyprland Floating Islands) -->
+    <div id="edit-instance-overlay" class="overlay hidden">
+      <div class="hypr-modal edit-instance-modal">
+        <!-- Header Island -->
+        <div class="hypr-island hypr-header-island">
+          <div class="hypr-header-left">
+            <div class="hypr-icon-badge">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+              </svg>
+            </div>
+            <div class="hypr-header-titles">
+              <h3 class="hypr-title">Edit Instance</h3>
+              <span class="hypr-subtitle" id="edit-inst-subtitle">Customize version & configuration</span>
+            </div>
+          </div>
+          <button class="overlay-close" id="btn-cancel-edit-instance" title="Close">✕</button>
+        </div>
+
+        <!-- Primary Island: Name, Loaders Row, Version & Loader Version -->
+        <div class="hypr-island hypr-main-island">
+          <!-- Name Row -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="bento-tile-label" for="edit-inst-name">Instance Name</label>
+            <input type="text" id="edit-inst-name" class="input-field" placeholder="My Instance" autocomplete="off" spellcheck="false" />
+          </div>
+
+          <!-- Mod Loader Buttons Row -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="bento-tile-label">Mod Loader <span class="bento-tile-hint">(changing this reinstalls)</span></label>
+            <div class="hypr-loader-button-row" id="edit-inst-loader-buttons">
+              <button type="button" class="hypr-loader-btn active" data-loader="Vanilla" title="Vanilla">
+                <img id="edit-loader-img-vanilla" class="hypr-loader-icon" alt="Vanilla" />
+                <span>Vanilla</span>
+              </button>
+              <button type="button" class="hypr-loader-btn" data-loader="Fabric" title="Fabric">
+                <img id="edit-loader-img-fabric" class="hypr-loader-icon" alt="Fabric" />
+                <span>Fabric</span>
+              </button>
+              <button type="button" class="hypr-loader-btn" data-loader="Forge" title="Forge">
+                <img id="edit-loader-img-forge" class="hypr-loader-icon" alt="Forge" />
+                <span>Forge</span>
+              </button>
+              <button type="button" class="hypr-loader-btn" data-loader="NeoForge" title="NeoForge">
+                <img id="edit-loader-img-neoforge" class="hypr-loader-icon" alt="NeoForge" />
+                <span>NeoForge</span>
+              </button>
+              <button type="button" class="hypr-loader-btn" data-loader="Quilt" title="Quilt">
+                <img id="edit-loader-img-quilt" class="hypr-loader-icon" alt="Quilt" />
+                <span>Quilt</span>
+              </button>
+            </div>
+            <input type="hidden" id="edit-inst-loader" value="Vanilla" />
+          </div>
+
+          <!-- Under loaders: Minecraft Version and Loader Version -->
+          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label class="bento-tile-label" for="edit-inst-mc-version">Minecraft Version</label>
+              <select id="edit-inst-mc-version" class="input-field">
+                <option>Loading…</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="edit-inst-loader-version-tile">
+              <label class="bento-tile-label" for="edit-inst-loader-version">Loader Version <span class="bento-tile-hint">(blank is latest)</span></label>
+              <input type="text" id="edit-inst-loader-version" class="input-field" placeholder="Latest (blank is latest)" autocomplete="off" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Advanced Options Toggle -->
+        <div class="hypr-advanced-toggle-wrap">
+          <button type="button" id="btn-toggle-edit-advanced" class="btn-secondary hypr-advanced-toggle-btn" aria-expanded="false">
+            <span class="hypr-toggle-icon">⚙</span>
+            <span>Advanced Options</span>
+            <span class="hypr-toggle-chevron">▾</span>
+          </button>
+        </div>
+
+        <!-- Advanced Options Island (Collapsible) -->
+        <div id="edit-inst-advanced-island" class="hypr-island hypr-advanced-island hidden">
+          <!-- Java Runtime -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="bento-tile-label" for="edit-inst-java-select">Java Runtime</label>
+            <select id="edit-inst-java-select" class="input-field">
+              <option value="">Use Settings (Default)</option>
+              <option value="__smart__">✦ Smart Java Detection (Auto)</option>
+            </select>
+            <span class="bento-tile-hint" style="margin-top: 4px; display: block;">Override Java specifically for this instance, or keep "Use Settings".</span>
+          </div>
+
+          <!-- RAM Settings (Min / Max) -->
+          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+            <div class="form-group">
+              <label class="bento-tile-label" for="edit-inst-min-ram">Min RAM (MB)</label>
+              <input type="number" id="edit-inst-min-ram" class="input-field" placeholder="Default (Settings)" min="256" step="256" />
+            </div>
+            <div class="form-group">
+              <label class="bento-tile-label" for="edit-inst-max-ram">Max RAM (MB)</label>
+              <input type="number" id="edit-inst-max-ram" class="input-field" placeholder="Default (Settings)" min="512" step="256" />
+            </div>
+          </div>
+
+          <!-- Custom JVM Arguments -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="bento-tile-label" for="edit-inst-jvm-args">Custom JVM Arguments</label>
+            <input type="text" id="edit-inst-jvm-args" class="input-field" placeholder="-XX:+UseG1GC ... (leave blank to use Settings)" />
+          </div>
+
+          <!-- Game Directory Display -->
+          <div class="form-group">
+            <label class="bento-tile-label">Game Directory</label>
+            <div class="hypr-path-box">
+              <span id="edit-inst-dir" class="hypr-path-text">—</span>
+              <button type="button" id="btn-copy-edit-dir" class="btn-secondary" style="padding: 3px 10px; font-size: 11px;" title="Copy Path">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating Action Island -->
+        <div class="hypr-actions-island">
+          <button id="btn-cancel-edit-instance-2" class="btn-ghost">Cancel</button>
+          <button id="btn-save-edit-instance" class="btn-accent">Save Changes</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Apply Preset overlay (Hyprland Floating Islands) -->
+    <div id="apply-preset-overlay" class="overlay hidden">
+      <div class="hypr-modal apply-preset-modal">
+        <!-- Header Island -->
+        <div class="hypr-island hypr-header-island">
+          <div class="hypr-header-left">
+            <div class="hypr-icon-badge">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                <line x1="12" y1="22.08" x2="12" y2="12"></line>
+              </svg>
+            </div>
+            <div class="hypr-header-titles">
+              <h3 class="hypr-title" id="apply-preset-title">Apply Preset</h3>
+              <span class="hypr-subtitle">Select mods to download and configure</span>
+            </div>
+          </div>
+          <button class="overlay-close" id="btn-close-apply-preset" title="Close">✕</button>
+        </div>
+
+        <!-- Info & Config Island -->
+        <div class="hypr-island">
+          <div id="apply-preset-info" class="apply-preset-info"></div>
+
+          <div class="hidden" id="apply-preset-config-row" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-border);">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--text);">
+              <input type="checkbox" id="apply-preset-use-config" checked />
+              <span>Use the recommended mods configuration</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Mod List Island -->
+        <div class="hypr-island" style="padding: 14px 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <label class="bento-tile-label" style="margin: 0;">Mods in Preset</label>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="btn-secondary" id="btn-preset-select-all" style="padding: 3px 10px; font-size: 11px;">Select All</button>
+              <button type="button" class="btn-secondary" id="btn-preset-select-none" style="padding: 3px 10px; font-size: 11px;">Select None</button>
+            </div>
+          </div>
+          <div id="apply-preset-mod-list" class="apply-preset-mod-list" style="max-height: 240px; overflow-y: auto;"></div>
+        </div>
+
+        <!-- Progress Island (when applying) -->
+        <div id="apply-preset-progress" class="hypr-island hidden" style="padding: 12px 16px;">
+          <div class="progress-text" id="apply-preset-progress-label" style="font-size: 12px; margin-bottom: 6px; color: var(--text);">Applying…</div>
+          <div class="progress-track" style="height: 6px; background: rgba(var(--overlay-rgb), 0.1); border-radius: 99px; overflow: hidden;">
+            <div class="progress-bar" id="apply-preset-progress-bar" style="height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease;"></div>
+          </div>
+        </div>
+
+        <!-- Actions Island -->
+        <div class="hypr-actions-island">
+          <button class="btn-ghost" id="btn-cancel-apply-preset">Cancel</button>
+          <button class="btn-accent" id="btn-apply-preset-confirm" title="Download the checked mods and apply this preset to the target instance">Apply Preset</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Export Mods Overlay (Hyprland Floating Islands) ── -->
+    <div id="export-mods-overlay" class="overlay hidden">
+      <div class="hypr-modal export-mods-modal">
+        <!-- Header Island -->
+        <div class="hypr-island hypr-header-island">
+          <div class="hypr-header-left">
+            <div class="hypr-icon-badge">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 15V3"></path>
+                <path d="M7.5 7.5 12 3l4.5 4.5"></path>
+                <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path>
+              </svg>
+            </div>
+            <div class="hypr-header-titles">
+              <h3 class="hypr-title" id="export-mods-title">Export Mods</h3>
+              <span class="hypr-subtitle">Share your mod list as a portable JSON preset</span>
+            </div>
+          </div>
+          <button class="overlay-close" id="btn-close-export-mods" title="Close">✕</button>
+        </div>
+
+        <div class="hypr-island">
+          <div id="export-mods-info" class="apply-preset-info"></div>
+        </div>
+
+        <div class="hypr-island" style="padding: 14px 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <label class="bento-tile-label" style="margin: 0;">Mods to Export</label>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="btn-secondary" id="btn-export-mods-select-all" style="padding: 3px 10px; font-size: 11px;">Select All</button>
+              <button type="button" class="btn-secondary" id="btn-export-mods-select-none" style="padding: 3px 10px; font-size: 11px;">Select None</button>
+            </div>
+          </div>
+          <div id="export-mods-list" class="apply-preset-mod-list" style="max-height: 240px; overflow-y: auto;"></div>
+        </div>
+
+        <div class="hypr-actions-island">
+          <button class="btn-ghost" id="btn-cancel-export-mods">Cancel</button>
+          <button class="btn-accent export-mods-accent-btn" id="btn-export-mods-confirm" title="Choose a save location and write the selected mods to a JSON file">Export Mods</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Import Mods Overlay (Hyprland Floating Islands) ── -->
+    <div id="import-mods-overlay" class="overlay hidden">
+      <div class="hypr-modal import-mods-modal">
+        <!-- Header Island -->
+        <div class="hypr-island hypr-header-island">
+          <div class="hypr-header-left">
+            <div class="hypr-icon-badge">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v12"></path>
+                <path d="M7.5 10.5 12 15l4.5-4.5"></path>
+                <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path>
+              </svg>
+            </div>
+            <div class="hypr-header-titles">
+              <h3 class="hypr-title" id="import-mods-title">Import Mods</h3>
+              <span class="hypr-subtitle">Install mods from a preset file into your instance</span>
+            </div>
+          </div>
+          <button class="overlay-close" id="btn-close-import-mods" title="Close">✕</button>
+        </div>
+
+        <div class="hypr-island">
+          <div id="import-mods-info" class="apply-preset-info"></div>
+        </div>
+
+        <div class="hypr-island" style="padding: 14px 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <label class="bento-tile-label" style="margin: 0;">Mods to Import</label>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="btn-secondary" id="btn-import-mods-select-all" style="padding: 3px 10px; font-size: 11px;">Select All</button>
+              <button type="button" class="btn-secondary" id="btn-import-mods-select-none" style="padding: 3px 10px; font-size: 11px;">Select None</button>
+            </div>
+          </div>
+          <div id="import-mods-list" class="apply-preset-mod-list" style="max-height: 240px; overflow-y: auto;"></div>
+        </div>
+
+        <div id="import-mods-progress" class="hypr-island hidden" style="padding: 12px 16px;">
+          <div class="progress-text" id="import-mods-progress-label" style="font-size: 12px; margin-bottom: 6px; color: var(--text);">Importing…</div>
+          <div class="progress-track" style="height: 6px; background: rgba(var(--overlay-rgb), 0.1); border-radius: 99px; overflow: hidden;">
+            <div class="progress-bar" id="import-mods-progress-bar" style="height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease;"></div>
+          </div>
+        </div>
+
+        <div class="hypr-actions-island">
+          <button class="btn-ghost" id="btn-cancel-import-mods">Cancel</button>
+          <button class="btn-accent import-mods-accent-btn" id="btn-import-mods-confirm" title="Download and install the checked mods into the target instance">Import Selected</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══ Tab Content ═══ -->
     <main id="tab-content">
 
@@ -926,126 +1389,6 @@
             </div>
           </div>
         </div>
-
-        <!-- New Instance Form (overlay) -->
-        <div id="new-instance-overlay" class="overlay hidden">
-          <div class="bento-modal">
-            <div class="bento-tile bento-tile-header">
-              <h3>Create New Instance</h3>
-              <button class="overlay-close" id="btn-cancel-new-instance">✕</button>
-            </div>
-
-            <div class="bento-tile bento-tile-name">
-              <label class="bento-tile-label">Name</label>
-              <input type="text" id="inst-name" class="input-field" placeholder="My Instance (blank = Loader + Version)" />
-            </div>
-
-            <div class="bento-tile bento-tile-version">
-              <label class="bento-tile-label">Minecraft Version</label>
-              <select id="inst-mc-version" class="input-field">
-                <option>Loading…</option>
-              </select>
-            </div>
-
-            <div class="bento-tile bento-tile-loader">
-              <label class="bento-tile-label">Mod Loader</label>
-              <select id="inst-loader" class="input-field">
-                <option value="Fabric" selected>Fabric</option>
-                <option value="Vanilla">Vanilla</option>
-                <option value="Forge">Forge</option>
-                <option value="Quilt">Quilt</option>
-                <option value="NeoForge">NeoForge</option>
-              </select>
-            </div>
-
-            <div class="bento-tile bento-tile-loader-version" id="inst-loader-version-tile">
-              <label class="bento-tile-label">Loader Version <span class="bento-tile-hint">(blank = latest)</span></label>
-              <input type="text" id="inst-loader-version" class="input-field" placeholder="Latest" />
-            </div>
-
-            <div class="bento-tile bento-tile-location">
-              <label class="bento-tile-label">Install Location</label>
-              <div class="bento-radio-group">
-                <label class="bento-radio-row">
-                  <input type="radio" name="inst-dir-choice" id="inst-dir-default" />
-                  <span>Use default Minecraft directory <span id="inst-dir-default-path" class="bento-tile-hint">(~/.minecraft)</span></span>
-                </label>
-                <label class="bento-radio-row">
-                  <input type="radio" name="inst-dir-choice" id="inst-dir-separated" />
-                  <span>Separated folder <span id="inst-dir-separated-path" class="bento-tile-hint">(keeps this instance's mods, saves, and config on their own)</span></span>
-                </label>
-                <label class="bento-radio-row">
-                  <input type="radio" name="inst-dir-choice" id="inst-dir-custom" />
-                  <span>Use a custom directory</span>
-                </label>
-              </div>
-              <div id="inst-dir-path-row" class="hidden bento-dir-path-row">
-                <input type="text" id="inst-dir-path" class="input-field" placeholder="/path/to/folder" style="flex:1;" />
-                <button id="inst-dir-browse" class="btn-secondary" type="button">Browse…</button>
-              </div>
-            </div>
-
-            <div id="install-progress-wrap" class="bento-tile bento-tile-progress hidden">
-              <div class="progress-text" id="install-status">Starting install…</div>
-              <div class="progress-track">
-                <div class="progress-bar" id="install-bar"></div>
-              </div>
-            </div>
-
-            <div class="bento-tile bento-tile-actions">
-              <button id="btn-start-install" class="btn-accent">Install & Play</button>
-              <button id="btn-cancel-install-form" class="btn-ghost">Cancel</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Edit Instance overlay -->
-        <div id="edit-instance-overlay" class="overlay hidden">
-          <div class="bento-modal">
-            <div class="bento-tile bento-tile-header">
-              <h3>Edit Instance</h3>
-              <button class="overlay-close" id="btn-cancel-edit-instance">✕</button>
-            </div>
-
-            <div class="bento-tile bento-tile-name">
-              <label class="bento-tile-label">Name</label>
-              <input type="text" id="edit-inst-name" class="input-field" placeholder="My Instance" />
-            </div>
-
-            <div class="bento-tile bento-tile-version">
-              <label class="bento-tile-label">Minecraft Version <span class="bento-tile-hint">(changing this reinstalls)</span></label>
-              <select id="edit-inst-mc-version" class="input-field">
-                <option>Loading…</option>
-              </select>
-            </div>
-
-            <div class="bento-tile bento-tile-loader">
-              <label class="bento-tile-label">Mod Loader <span class="bento-tile-hint">(changing this reinstalls)</span></label>
-              <select id="edit-inst-loader" class="input-field">
-                <option value="Vanilla">Vanilla</option>
-                <option value="Fabric">Fabric</option>
-                <option value="Forge">Forge</option>
-                <option value="Quilt">Quilt</option>
-                <option value="NeoForge">NeoForge</option>
-              </select>
-            </div>
-
-            <div class="bento-tile bento-tile-loader-version" id="edit-inst-loader-version-tile">
-              <label class="bento-tile-label">Loader Version <span class="bento-tile-hint">(blank = latest)</span></label>
-              <input type="text" id="edit-inst-loader-version" class="input-field" placeholder="Latest" />
-            </div>
-
-            <div class="bento-tile bento-tile-location">
-              <label class="bento-tile-label">Game Directory</label>
-              <div id="edit-inst-dir" class="bento-tile-static-value">—</div>
-            </div>
-
-            <div class="bento-tile bento-tile-actions">
-              <button id="btn-save-edit-instance" class="btn-accent">Save Changes</button>
-              <button id="btn-cancel-edit-instance-2" class="btn-ghost">Cancel</button>
-            </div>
-          </div>
-        </div>
       </section>
 
       <!-- ── Mods Tab ── -->
@@ -1149,99 +1492,6 @@
 
         <div id="presets-grid" class="presets-container"></div>
       </section>
-
-      <!-- Apply Preset overlay -->
-      <div id="apply-preset-overlay" class="overlay hidden">
-        <div class="bento-modal bento-modal-preset">
-          <div class="bento-tile bento-tile-header">
-            <h3 id="apply-preset-title">Apply Preset</h3>
-            <button class="overlay-close" id="btn-close-apply-preset">✕</button>
-          </div>
-
-          <div class="bento-tile bento-tile-preset-info">
-            <div id="apply-preset-info" class="apply-preset-info"></div>
-          </div>
-
-          <div class="bento-tile bento-tile-preset-config hidden" id="apply-preset-config-row">
-            <label class="discover-filter-check-row">
-              <input type="checkbox" id="apply-preset-use-config" checked />
-              <span>Use the recommended mods config</span>
-            </label>
-          </div>
-
-          <div class="bento-tile bento-tile-preset-mods">
-            <div id="apply-preset-mod-list" class="apply-preset-mod-list"></div>
-          </div>
-
-          <div id="apply-preset-progress" class="bento-tile bento-tile-preset-progress hidden">
-            <div class="apply-preset-progress-label" id="apply-preset-progress-label">Applying…</div>
-          </div>
-
-          <div class="bento-tile bento-tile-actions bento-tile-preset-actions">
-            <div style="display:flex; gap:8px;">
-              <button class="btn-pill btn-sm" id="btn-preset-select-all" title="Check every mod in this preset">Select All</button>
-              <button class="btn-pill btn-sm" id="btn-preset-select-none" title="Uncheck every mod in this preset">Select None</button>
-            </div>
-            <button class="btn-accent" id="btn-apply-preset-confirm" title="Download the checked mods and apply this preset to the target instance">Apply Preset</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Export Mods Overlay ── -->
-      <div id="export-mods-overlay" class="overlay hidden">
-        <div class="bento-modal bento-modal-preset">
-          <div class="bento-tile bento-tile-header">
-            <h3 id="export-mods-title" class="export-mods-accent"><span class="btn-pill-icon"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 7.5 12 3l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Export Mods</h3>
-            <button class="overlay-close" id="btn-close-export-mods">✕</button>
-          </div>
-
-          <div class="bento-tile bento-tile-preset-info">
-            <div id="export-mods-info" class="apply-preset-info"></div>
-          </div>
-
-          <div class="bento-tile bento-tile-preset-mods">
-            <div id="export-mods-list" class="apply-preset-mod-list"></div>
-          </div>
-
-          <div class="bento-tile bento-tile-actions bento-tile-preset-actions">
-            <div style="display:flex; gap:8px;">
-              <button class="btn-pill btn-sm" id="btn-export-mods-select-all" title="Check every mod">Select All</button>
-              <button class="btn-pill btn-sm" id="btn-export-mods-select-none" title="Uncheck every mod">Select None</button>
-            </div>
-            <button class="btn-accent export-mods-accent-btn" id="btn-export-mods-confirm" title="Choose a save location and write the selected mods to a JSON file">Export</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Import Mods Overlay ── -->
-      <div id="import-mods-overlay" class="overlay hidden">
-        <div class="bento-modal bento-modal-preset">
-          <div class="bento-tile bento-tile-header">
-            <h3 id="import-mods-title" class="import-mods-accent"><span class="btn-pill-icon"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 10.5 12 15l4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Import Mods</h3>
-            <button class="overlay-close" id="btn-close-import-mods">✕</button>
-          </div>
-
-          <div class="bento-tile bento-tile-preset-info">
-            <div id="import-mods-info" class="apply-preset-info"></div>
-          </div>
-
-          <div class="bento-tile bento-tile-preset-mods">
-            <div id="import-mods-list" class="apply-preset-mod-list"></div>
-          </div>
-
-          <div id="import-mods-progress" class="bento-tile bento-tile-preset-progress hidden">
-            <div class="apply-preset-progress-label" id="import-mods-progress-label">Importing…</div>
-          </div>
-
-          <div class="bento-tile bento-tile-actions bento-tile-preset-actions">
-            <div style="display:flex; gap:8px;">
-              <button class="btn-pill btn-sm" id="btn-import-mods-select-all" title="Check every downloadable mod">Select All</button>
-              <button class="btn-pill btn-sm" id="btn-import-mods-select-none" title="Uncheck every mod">Select None</button>
-            </div>
-            <button class="btn-accent import-mods-accent-btn" id="btn-import-mods-confirm" title="Download and install the checked mods into the target instance">Import Selected</button>
-          </div>
-        </div>
-      </div>
 
       <!-- ── Discover Tab (Two-Island Modern Architecture) ── -->
       <section id="tab-discover" class="tab-page">
@@ -1393,15 +1643,21 @@
             </button>
             <button class="settings-nav-btn" data-section="behavior">
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="4.5" rx="2.25"/><circle cx="8" cy="8.25" r="1.4" fill="currentColor"/><rect x="3" y="13.5" width="18" height="4.5" rx="2.25"/><circle cx="16" cy="15.75" r="1.4" fill="currentColor"/></svg>
-              <span>Behavior</span>
-            </button>
-            <button class="settings-nav-btn" data-section="window-behavior">
-              <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
-              <span>Window Behavior</span>
+              <span>Behavior &amp; Window</span>
             </button>
             <button class="settings-nav-btn" data-section="performance">
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 21a9 9 0 1 1 9-9"/><path d="M12 12 8.5 8.5"/><path d="M12 12 15 6"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>
-              <span>Performance &amp; Java</span>
+              <span>Performance &amp; Advanced</span>
+            </button>
+            <button class="settings-nav-btn" data-section="java-manager">
+              <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8h1a4 4 0 0 1 0 8h-1"></path>
+                <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path>
+                <line x1="6" y1="1" x2="6" y2="4"></line>
+                <line x1="10" y1="1" x2="10" y2="4"></line>
+                <line x1="14" y1="1" x2="14" y2="4"></line>
+              </svg>
+              <span>Java Manager</span>
             </button>
             <button class="settings-nav-btn" data-section="discord-rpc">
               <svg class="settings-nav-icon" viewBox="0 -28.5 256 256" fill="currentColor"><path d="M216.856339,16.5966031 C200.285002,8.84328665 182.566144,3.2084988 164.041564,0 C161.766523,4.11318106 159.108624,9.64549908 157.276099,14.0464379 C137.583995,11.0849896 118.072967,11.0849896 98.7430163,14.0464379 C96.9108417,9.64549908 94.1925838,4.11318106 91.8971895,0 C73.3526068,3.2084988 55.6133949,8.86399117 39.0420583,16.6376612 C5.61752293,67.146514 -3.4433191,116.400813 1.08711069,164.955721 C23.2560196,181.510915 44.7403634,191.567697 65.8621325,198.148576 C71.0772151,190.971126 75.7283628,183.341335 79.7352139,175.300261 C72.104019,172.400575 64.7949724,168.822202 57.8887866,164.667963 C59.7209612,163.310589 61.5131304,161.891452 63.2445898,160.431257 C105.36741,180.133187 151.134928,180.133187 192.754523,160.431257 C194.506336,161.891452 196.298154,163.310589 198.110326,164.667963 C191.183787,168.842556 183.854737,172.420929 176.223542,175.320965 C180.230393,183.341335 184.861538,190.991831 190.096624,198.16893 C211.238746,191.588051 232.743023,181.531619 254.911949,164.955721 C260.227747,108.668201 245.831087,59.8662432 216.856339,16.5966031 Z M85.4738752,135.09489 C72.8290281,135.09489 62.4592217,123.290155 62.4592217,108.914901 C62.4592217,94.5396472 72.607595,82.7145587 85.4738752,82.7145587 C98.3405064,82.7145587 108.709962,94.5189427 108.488529,108.914901 C108.508531,123.290155 98.3405064,135.09489 85.4738752,135.09489 Z M170.525237,135.09489 C157.88039,135.09489 147.510584,123.290155 147.510584,108.914901 C147.510584,94.5396472 157.658606,82.7145587 170.525237,82.7145587 C183.391518,82.7145587 193.761324,94.5189427 193.539891,108.914901 C193.539891,123.290155 183.391518,135.09489 170.525237,135.09489 Z"/></svg>
@@ -1675,13 +1931,16 @@
               </button>
             </div>
 
-            <!-- Behavior Panel -->
+            <!-- Combined Behavior & Window Panel -->
             <div id="settings-panel-behavior" class="settings-tab-panel">
               <div class="settings-panel-heading">
-                <h3>Behavior Settings</h3>
-                <p>Configure launcher interactions, updates, click sounds, and confirmations.</p>
+                <h3>Launcher &amp; Window Behavior</h3>
+                <p>Configure launcher interactions, updates, click sounds, confirmations, and window lifecycle.</p>
               </div>
-              <div style="display:flex; flex-direction:column; gap:12px;">
+
+              <!-- Section 1: Launcher Interactions -->
+              <div style="font-size:12px; opacity:0.85; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:var(--accent);">Launcher Interactions</div>
+              <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px;">
                 <label class="toggle-row">
                   <input type="checkbox" id="setting-mod-updates-startup" />
                   <span class="toggle-slider"></span>
@@ -1718,17 +1977,14 @@
                   <span>Auto Check For Launcher Updates (Recommended)</span>
                 </label>
               </div>
-            </div>
 
-            <!-- Window Behavior Panel -->
-            <div id="settings-panel-window-behavior" class="settings-tab-panel">
-              <div class="settings-panel-heading">
-                <h3>Window Behavior</h3>
-                <p>Control what happens when launching Minecraft, closing instances, or minimizing.</p>
-              </div>
+              <div class="dropdown-divider" style="margin: 16px 0;"></div>
 
-              <div style="font-size:12px; opacity:0.7; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700;">When launching a game</div>
-              <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px;">
+              <!-- Section 2: Window & Game Lifecycle -->
+              <div style="font-size:12px; opacity:0.85; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:var(--accent);">Window &amp; Game Lifecycle</div>
+              
+              <div style="font-size:11.5px; opacity:0.7; margin-bottom:8px; font-weight:600;">When launching a game</div>
+              <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:18px;">
                 <label class="toggle-row">
                   <input type="checkbox" id="setting-close-on-launch" />
                   <span class="toggle-slider"></span>
@@ -1746,8 +2002,8 @@
                 </label>
               </div>
 
-              <div style="font-size:12px; opacity:0.7; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700;">When a Minecraft instance closes</div>
-              <div class="form-group" style="margin-bottom:20px;">
+              <div style="font-size:11.5px; opacity:0.7; margin-bottom:8px; font-weight:600;">When a Minecraft instance closes</div>
+              <div class="form-group" style="margin-bottom:18px;">
                 <select id="setting-on-game-close" class="input-field">
                   <option value="show">Show &amp; focus the launcher</option>
                   <option value="none">Don't show the launcher</option>
@@ -1755,7 +2011,7 @@
                 </select>
               </div>
 
-              <div style="font-size:12px; opacity:0.7; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700;">When you close the launcher window</div>
+              <div style="font-size:11.5px; opacity:0.7; margin-bottom:8px; font-weight:600;">When you close the launcher window</div>
               <div style="display:flex; flex-direction:column; gap:10px;">
                 <label class="toggle-row">
                   <input type="checkbox" id="setting-system-tray" />
@@ -1776,11 +2032,11 @@
               </div>
             </div>
 
-            <!-- Performance & Java Panel -->
+            <!-- Performance & Advanced Panel -->
             <div id="settings-panel-performance" class="settings-tab-panel">
               <div class="settings-panel-heading">
-                <h3>Performance &amp; Java</h3>
-                <p>Manage RAM allocation, JVM flags, Java runtime environments, and download limits.</p>
+                <h3>Performance &amp; Advanced</h3>
+                <p>Manage RAM allocation, JVM flags, game directory, and background instances.</p>
               </div>
 
               <div class="form-group" style="margin-bottom:14px;">
@@ -1792,17 +2048,14 @@
                 <div class="form-group"><label>Max RAM (MB)</label><input type="number" id="setting-max-ram" class="input-field" /></div>
               </div>
               <div class="form-group" style="margin-bottom:14px;">
-                <label>Java Version</label>
+                <label>Default Java Version</label>
                 <select id="setting-java-select" class="input-field">
                   <option value="">✦ Smart Java Detection (Recommended)</option>
                 </select>
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
-                  <span id="java-select-hint" style="font-size:12px; opacity:0.7;">Automatically picks (or downloads) the right Java for each instance.</span>
-                  <button type="button" id="btn-refresh-java" class="btn-secondary" style="padding:4px 10px; font-size:12px;">⟳ Refresh</button>
-                </div>
+                <span id="java-select-hint" style="font-size:12px; opacity:0.7; display:block; margin-top:4px;">Automatically picks (or downloads) the right Java for each instance. Managed in Java Manager.</span>
               </div>
               <div class="form-group" style="margin-bottom:18px;">
-                <label>JVM Arguments</label>
+                <label>Global JVM Arguments</label>
                 <input type="text" id="setting-jvm-args" class="input-field" placeholder="-XX:+UseG1GC" />
               </div>
 
@@ -1831,6 +2084,68 @@
                 <div id="hidden-instances-list" class="instance-list hidden-instances-list">
                   <div class="empty-state"><span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 12C3 9 7 5 12 5s9 4 10.5 7c-1.5 3-5.5 7-10.5 7S3 15 1.5 12Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.6"/></svg></span><span>No hidden instances</span></div>
                 </div>
+              </div>
+            </div>
+
+            <!-- Java Manager Panel -->
+            <div id="settings-panel-java-manager" class="settings-tab-panel">
+              <div class="settings-panel-heading">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+                  <div>
+                    <h3>Java Manager</h3>
+                    <p>Manage official Java runtimes, system JREs, and custom Java installations.</p>
+                  </div>
+                  <div style="display:flex; gap:8px;">
+                    <button type="button" id="btn-refresh-java-manager" class="btn-secondary" style="padding:6px 14px; font-size:12px; border-radius:6px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); display:inline-flex; align-items:center; gap:6px;">
+                      <span>⟳</span> Refresh
+                    </button>
+                    <button type="button" id="btn-open-managed-java-dir" class="btn-secondary" style="padding:6px 14px; font-size:12px; border-radius:6px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); display:inline-flex; align-items:center; gap:6px;">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg> Open Folder
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Official Runtimes Section -->
+              <div style="font-size:12px; opacity:0.85; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:var(--accent);">
+                Official Runtimes
+              </div>
+              <div class="java-managed-list" id="java-managed-cards-container">
+                <!-- Cards for Java 25, 21, 17, 16, 8 rendered by JS -->
+              </div>
+
+              <!-- Storage Location Note -->
+              <div class="java-location-box" id="java-location-box">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                  <div>
+                    <span style="font-weight:600; font-size:12px; color:var(--text);">Managed Java Folder:</span>
+                    <code id="java-managed-root-path-label" style="font-size:11px; margin-left:6px; opacity:0.85; word-break:break-all;">Loading…</code>
+                  </div>
+                  <button type="button" id="btn-open-java-dir-link" class="btn-secondary btn-sm" style="font-size:11px; padding:4px 10px; border-radius:6px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); flex-shrink:0;">Open Folder</button>
+                </div>
+              </div>
+
+              <div class="dropdown-divider" style="margin: 20px 0;"></div>
+
+              <!-- Custom & System Installations Section -->
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                <div style="font-size:12px; opacity:0.85; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:var(--accent);">
+                  Custom &amp; System Installations
+                </div>
+                <button type="button" id="btn-add-custom-java" class="btn-secondary btn-sm" style="font-size:12px; padding:5px 14px; border-radius:6px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); display:inline-flex; align-items:center; gap:6px;">
+                  <span>➕</span> Browse for Java…
+                </button>
+              </div>
+
+              <!-- Custom Added Javas List -->
+              <div id="java-custom-cards-container" class="java-custom-list" style="margin-bottom:14px;">
+                <!-- Populated dynamically -->
+              </div>
+
+              <!-- Detected System Runtimes List -->
+              <div style="font-size:11.5px; opacity:0.7; font-weight:600; margin-bottom:8px;">System Javas</div>
+              <div id="java-system-list-container" class="java-system-list">
+                <!-- Populated dynamically -->
               </div>
             </div>
 

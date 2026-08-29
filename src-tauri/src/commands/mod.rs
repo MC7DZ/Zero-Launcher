@@ -127,3 +127,49 @@ fn play_native_click_sound() {
 pub fn play_click_sound() {
     play_native_click_sound();
 }
+
+#[tauri::command]
+pub fn window_minimize(window: tauri::Window) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
+    if window.is_maximized().unwrap_or(false) {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+pub fn window_close(window: tauri::Window) -> Result<(), String> {
+    window.close().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn window_is_maximized(window: tauri::Window) -> Result<bool, String> {
+    window.is_maximized().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn window_center(window: tauri::Window) -> Result<(), String> {
+    window.center().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn window_toggle_fullscreen(window: tauri::Window) -> Result<bool, String> {
+    let is_fs = window.is_fullscreen().unwrap_or(false);
+    window.set_fullscreen(!is_fs).map_err(|e| e.to_string())?;
+    Ok(!is_fs)
+}
+
+#[tauri::command]
+pub fn window_toggle_always_on_top(window: tauri::Window) -> Result<bool, String> {
+    // There is no is_always_on_top in some platforms, but we can track or toggle
+    static ALWAYS_ON_TOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let next_state = !ALWAYS_ON_TOP.load(std::sync::atomic::Ordering::Relaxed);
+    window.set_always_on_top(next_state).map_err(|e| e.to_string())?;
+    ALWAYS_ON_TOP.store(next_state, std::sync::atomic::Ordering::Relaxed);
+    Ok(next_state)
+}

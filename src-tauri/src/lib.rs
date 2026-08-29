@@ -292,6 +292,12 @@ pub fn run() {
             commands::modpack::import_modpack,
             // Java
             commands::java::list_java_installations,
+            commands::java::install_managed_java,
+            commands::java::delete_managed_java,
+            commands::java::get_managed_java_root_path,
+            commands::java::open_managed_java_dir,
+            commands::java::add_custom_java_path,
+            commands::java::remove_custom_java_path,
             // Accounts
             commands::accounts::add_offline_account,
             commands::accounts::remove_account,
@@ -365,6 +371,13 @@ pub fn run() {
             commands::logs::get_latest_log_contents,
             commands::logs::resolve_background_path,
             commands::open_devtools,
+            commands::window_minimize,
+            commands::window_toggle_maximize,
+            commands::window_close,
+            commands::window_is_maximized,
+            commands::window_center,
+            commands::window_toggle_fullscreen,
+            commands::window_toggle_always_on_top,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

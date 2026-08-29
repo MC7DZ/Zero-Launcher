@@ -142,6 +142,7 @@ impl AppState {
     /// returns true (i.e. "treat as cancelled") for any id that hasn't been
     /// registered — that path shouldn't normally be hit since callers
     /// register the id before checking it.
+    #[allow(dead_code)]
     pub fn is_generic_download_cancelled(&self, id: &str) -> bool {
         self.generic_cancels
             .lock()
@@ -196,6 +197,7 @@ impl AppState {
     /// Fully clear a generic download id's cancellation state (used once a
     /// card is truly done, so a later, unrelated download can't reuse a
     /// stale id and be immediately treated as cancelled).
+    #[allow(dead_code)]
     pub fn clear_generic_download(&self, id: &str) {
         self.generic_cancels.lock().unwrap().remove(id);
     }
