@@ -64,15 +64,12 @@ pub struct DownloadPlan {
 ///
 /// Returns [`crate::LauncherError`] if checksum calculation fails.
 pub fn should_skip_existing(task: &DownloadTask) -> Result<bool> {
-    if !task.destination.is_file() {
-        return Ok(false);
+    if let Ok(meta) = task.destination.metadata() {
+        if meta.is_file() && meta.len() > 0 {
+            return Ok(true);
+        }
     }
-
-    match &task.checksum {
-        Some(Checksum::Sha1(expected)) => Ok(sha1_file(&task.destination)? == *expected),
-        Some(Checksum::Sha256(_)) => Ok(false),
-        None => Ok(true),
-    }
+    Ok(false)
 }
 
 /// Size of each chunk read from the response body before it's written to

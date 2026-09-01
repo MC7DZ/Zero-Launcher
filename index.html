@@ -5,6 +5,88 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ZeroLauncher</title>
+
+  <!-- ══ Splash screen: inline so it renders INSTANTLY before any external CSS/JS ══ -->
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{background:transparent;overflow:hidden;height:100%;width:100%;border-radius:12px}
+    #startup-splash-screen{
+      position:fixed;inset:0;z-index:999999;
+      background:#17171c radial-gradient(circle at 50% 42%, rgba(255,255,255,0.04) 0%, #17171c 65%);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      user-select:none;-webkit-user-select:none;
+      transition:opacity .3s cubic-bezier(0.16, 1, 0.3, 1);
+      font-family:'JetBrains Mono','Fira Code',Consolas,Monaco,monospace;
+      border-radius:12px;
+      overflow:hidden;
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,0.09), 0 0 0 1px rgba(0,0,0,0.7);
+      isolation:isolate;
+      transform:translateZ(0);
+      contain:strict;
+    }
+    #startup-splash-screen.splash-hidden{opacity:0;pointer-events:none}
+    .sl-drag{position:absolute;top:0;left:0;right:0;height:38px;-webkit-app-region:drag;cursor:default}
+    .sl-wrap{display:flex;flex-direction:column;align-items:center;gap:18px;position:relative;z-index:1}
+    
+    .sl-ring-container{
+      position:relative;width:130px;height:130px;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .sl-glow-bg{
+      position:absolute;width:96px;height:96px;border-radius:50%;
+      background:radial-gradient(circle, rgba(183,183,183,0.12) 0%, transparent 70%);
+      animation:sl-pulse 3s ease-in-out infinite;
+      pointer-events:none;
+    }
+    .sl-svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
+    .sl-track{fill:none;stroke:rgba(255,255,255,0.06);stroke-width:4}
+    .sl-arc{
+      fill:none;stroke:url(#sl-grad);stroke-width:4.5;stroke-linecap:round;
+      stroke-dasharray:326.7;stroke-dashoffset:326.7;
+      transition:stroke-dashoffset .22s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .sl-logo{
+      width:76px;height:76px;object-fit:contain;position:relative;z-index:2;
+      filter:drop-shadow(0 4px 14px rgba(0,0,0,0.5));
+      animation:sl-breathe 3.5s ease-in-out infinite;
+    }
+    
+    .sl-brand{display:flex;align-items:center;gap:7px;color:#fff;font-weight:800;font-size:17px;letter-spacing:2.5px}
+    .sl-brand-sub{font-weight:600;color:rgba(255,255,255,.6);font-size:14px;letter-spacing:1.5px}
+    .sl-badge{
+      font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;
+      background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);
+      color:rgba(255,255,255,.6);letter-spacing:1px;
+    }
+    
+    .sl-status-container{display:flex;flex-direction:column;align-items:center;gap:6px}
+    .sl-status{font-size:11.5px;color:rgba(255,255,255,.6);letter-spacing:.3px;min-height:16px;text-align:center}
+    
+    .sl-dots{display:flex;gap:4px;align-items:center;justify-content:center}
+    .sl-dots span{
+      width:4px;height:4px;border-radius:50%;
+      background:rgba(255,255,255,0.4);
+      animation:sl-dot-pulse 1.4s ease-in-out infinite;
+    }
+    .sl-dots span:nth-child(2){animation-delay:.2s}
+    .sl-dots span:nth-child(3){animation-delay:.4s}
+    
+    .sl-footer{position:absolute;bottom:18px;font-size:10px;color:rgba(255,255,255,.2);letter-spacing:.8px}
+
+    @keyframes sl-breathe{
+      0%,100%{transform:scale(1)}
+      50%{transform:scale(1.035)}
+    }
+    @keyframes sl-pulse{
+      0%,100%{transform:scale(0.95);opacity:0.4}
+      50%{transform:scale(1.15);opacity:0.85}
+    }
+    @keyframes sl-dot-pulse{
+      0%,80%,100%{transform:scale(0.7);opacity:0.3}
+      40%{transform:scale(1.2);opacity:1}
+    }
+  </style>
+
   <link rel="stylesheet" href="/src/styles/main.css" />
   <script>
     if (navigator.userAgent.includes('Linux') || navigator.platform.includes('Linux') || /WebKit/.test(navigator.userAgent)) {
@@ -14,6 +96,40 @@
 </head>
 
 <body>
+  <!-- ═══ Startup Splash (renders instantly — styles are inline above) ═══ -->
+  <div id="startup-splash-screen" data-tauri-drag-region>
+    <div class="sl-drag" data-tauri-drag-region></div>
+    <div class="sl-wrap" data-tauri-drag-region>
+      <div class="sl-ring-container" data-tauri-drag-region>
+        <div class="sl-glow-bg" data-tauri-drag-region></div>
+        <svg class="sl-svg" viewBox="0 0 120 120" aria-hidden="true">
+          <defs>
+            <linearGradient id="sl-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#ffffff"/>
+              <stop offset="50%" stop-color="#d4d4d8"/>
+              <stop offset="100%" stop-color="#8a8a93"/>
+            </linearGradient>
+          </defs>
+          <circle class="sl-track" cx="60" cy="60" r="52"/>
+          <circle id="splash-ring-arc" class="sl-arc" cx="60" cy="60" r="52"/>
+        </svg>
+        <img class="sl-logo" src="/src/assets/logo.png" alt="" data-tauri-drag-region />
+      </div>
+      <div class="sl-brand" data-tauri-drag-region>
+        <span>ZERO</span>
+        <span class="sl-brand-sub">LAUNCHER</span>
+        <span class="sl-badge">BETA</span>
+      </div>
+      <div class="sl-status-container" data-tauri-drag-region>
+        <div id="splash-status-text" class="sl-status">Starting up…</div>
+        <div class="sl-dots" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+    <div class="sl-footer" data-tauri-drag-region>Zero Launcher</div>
+  </div>
+
   <!-- Unified Background System -->
   <div id="bg-container">
     <div id="bg-image-layer"></div>
@@ -21,7 +137,18 @@
     <div id="bg-overlay-vignette"></div>
     <canvas id="bg-canvas"></canvas>
   </div>
+
   <div id="app">
+    <!-- ═══ Native Window Resize Edge Handles (Frameless WebKitGTK) ═══ -->
+    <div class="window-resize-handle window-resize-n" data-direction="North"></div>
+    <div class="window-resize-handle window-resize-s" data-direction="South"></div>
+    <div class="window-resize-handle window-resize-w" data-direction="West"></div>
+    <div class="window-resize-handle window-resize-e" data-direction="East"></div>
+    <div class="window-resize-handle window-resize-nw" data-direction="NorthWest"></div>
+    <div class="window-resize-handle window-resize-ne" data-direction="NorthEast"></div>
+    <div class="window-resize-handle window-resize-sw" data-direction="SouthWest"></div>
+    <div class="window-resize-handle window-resize-se" data-direction="SouthEast"></div>
+
     <!-- ═══ Custom Title Bar ═══ -->
     <div id="custom-titlebar" data-tauri-drag-region>
       <div class="titlebar-drag-area" data-tauri-drag-region>
@@ -342,7 +469,7 @@
         <p style="color:var(--text-muted); font-size:13px; line-height:1.5;">
           If you delete it, those instances will automatically reinstall it the next time you launch them.
           You can also just hide it instead — it stays fully installed, disappears from your Instances list,
-          and you can unhide it again anytime in Settings (⚙) → Performance & Java → Hidden Instances.
+          and you can unhide it again anytime in Settings (⚙) → Performance & Advanced → Hidden Instances.
         </p>
         <div class="overlay-actions" style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
           <button id="btn-vanilla-delete-cancel" class="btn-ghost">Cancel</button>
@@ -1427,6 +1554,29 @@
           </div>
         </div>
 
+        <!-- SUBPANEL: Modpack Mods Switcher (Visible only for Modpack instances) -->
+        <div id="modpack-mods-subpanel" class="modpack-mods-subpanel hidden">
+          <div class="modpack-subpanel-left">
+            <span class="modpack-subpanel-badge">📦 MODPACK</span>
+            <span id="modpack-subpanel-name" class="modpack-subpanel-name">Modpack</span>
+          </div>
+          <div class="modpack-subpanel-center">
+            <div class="modpack-view-tabs">
+              <button type="button" id="btn-mods-view-normal" class="modpack-view-tab active" title="Show user added/custom mods">
+                <span class="modpack-tab-label">User Mods</span>
+                <span id="badge-normal-mods-count" class="modpack-tab-count">0</span>
+              </button>
+              <button type="button" id="btn-mods-view-modpack" class="modpack-view-tab" title="Show official built-in modpack mods">
+                <span class="modpack-tab-label">Modpack Mods</span>
+                <span id="badge-modpack-mods-count" class="modpack-tab-count">0</span>
+              </button>
+            </div>
+          </div>
+          <div class="modpack-subpanel-right">
+            <span id="modpack-subpanel-hint" class="modpack-subpanel-hint">Showing user installed mods</span>
+          </div>
+        </div>
+
         <!-- BOTTOM PANEL: Mods Content -->
         <div class="mods-bottom-panel">
           <!-- The grid gets its own scroll container. The loading overlay
@@ -1507,12 +1657,13 @@
                 <span id="discover-results-count" class="discover-results-count">Loading…</span>
               </div>
 
-              <!-- Middle: Mods / Resourcepacks Toggle -->
+              <!-- Middle: Mods / Resourcepacks / Shaders Toggle -->
               <div class="discover-header-center">
                 <div class="discover-type-toggle">
                   <button id="discover-type-modpack" class="discover-segment" data-type="modpack">Modpacks</button>
                   <button id="discover-type-mod" class="discover-segment active" data-type="mod">Mods</button>
                   <button id="discover-type-resourcepack" class="discover-segment" data-type="resourcepack">Resourcepacks</button>
+                  <button id="discover-type-shader" class="discover-segment" data-type="shader">Shaderpacks</button>
                 </div>
               </div>
 
@@ -1562,7 +1713,7 @@
                 </select>
               </div>
 
-              <!-- Mod Loader (for mods) -->
+              <!-- Mod Loader (for mods/modpacks) -->
               <div class="discover-filter-field" id="filter-section-loader">
                 <label class="discover-filter-label">Mod Loader</label>
                 <div class="discover-loader-pills" id="discover-loader-pills">
@@ -1574,6 +1725,25 @@
                 </div>
               </div>
 
+              <!-- Shader Loader (for shaderpacks — not automated) -->
+              <div class="discover-filter-field" id="filter-section-shader-loader" style="display: none;">
+                <label class="discover-filter-label">Shader Loader</label>
+                <div class="discover-loader-pills" id="discover-shader-loader-pills">
+                  <button type="button" class="discover-loader-pill active" data-loader="any">All</button>
+                  <button type="button" class="discover-loader-pill" data-loader="iris">Iris</button>
+                  <button type="button" class="discover-loader-pill" data-loader="optifine">OptiFine</button>
+                  <button type="button" class="discover-loader-pill" data-loader="canvas">Canvas</button>
+                </div>
+              </div>
+
+              <!-- Performance Impact (for shaderpacks) -->
+              <div class="discover-filter-field" id="filter-section-performance-impact" style="display: none;">
+                <label class="discover-filter-label" for="discover-performance-impact-select">Performance Impact</label>
+                <select id="discover-performance-impact-select" class="input-field">
+                  <option value="">Any Performance</option>
+                </select>
+              </div>
+
               <!-- Resolution (for resourcepacks) -->
               <div class="discover-filter-field" id="filter-section-resolution" style="display: none;">
                 <label class="discover-filter-label" for="discover-resolution-select">Resolution</label>
@@ -1582,10 +1752,16 @@
                 </select>
               </div>
 
-              <!-- Categories -->
+              <!-- Categories / Style -->
               <div class="discover-filter-field" id="filter-section-category">
-                <label class="discover-filter-label">Categories</label>
+                <label class="discover-filter-label" id="discover-category-label">Categories</label>
                 <div id="discover-categories-list" class="discover-categories-box"></div>
+              </div>
+
+              <!-- Features (for shaderpacks) -->
+              <div class="discover-filter-field" id="filter-section-features" style="display: none;">
+                <label class="discover-filter-label">Features</label>
+                <div id="discover-features-list" class="discover-categories-box"></div>
               </div>
 
               <!-- Environment (for mods) -->
@@ -1598,7 +1774,7 @@
                 </select>
               </div>
 
-              <!-- License (for mods & resourcepacks) -->
+              <!-- License -->
               <div class="discover-filter-field" id="filter-section-license">
                 <label class="discover-filter-label" for="discover-license-select">License</label>
                 <select id="discover-license-select" class="input-field">
@@ -1637,7 +1813,21 @@
         <!-- Body: Left Sidebar + Right Panels -->
         <div class="settings-modal-body">
           <nav class="settings-modal-sidebar">
-            <button class="settings-nav-btn active" data-section="appearance">
+            <!-- Left-side Settings Search Bar -->
+            <div class="settings-search-bar-wrap">
+              <div class="settings-search-bar-inner">
+                <svg class="settings-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="settings-search-input" class="settings-search-input" placeholder="Search settings…" autocomplete="off" spellcheck="false" />
+                <button id="settings-search-clear" class="settings-search-clear hidden" title="Clear search">✕</button>
+              </div>
+              <div id="settings-search-results" class="settings-search-results hidden"></div>
+            </div>
+
+            <div class="settings-sidebar-nav-list">
+              <button class="settings-nav-btn active" data-section="appearance">
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z"/><circle cx="7.5" cy="10.5" r="1.3" fill="currentColor"/><circle cx="11.5" cy="7" r="1.3" fill="currentColor"/><circle cx="16" cy="8.5" r="1.3" fill="currentColor"/><circle cx="17" cy="13" r="1.3" fill="currentColor"/></svg>
               <span>Appearance</span>
             </button>
@@ -1675,7 +1865,8 @@
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01" stroke-linecap="round"/></svg>
               <span>About &amp; Updates</span>
             </button>
-          </nav>
+          </div>
+        </nav>
 
           <!-- Right Content Area -->
           <div class="settings-modal-content">
@@ -1960,11 +2151,6 @@
                   <input type="checkbox" id="setting-auto-apply-instance-filters" />
                   <span class="toggle-slider"></span>
                   <span>Auto-select loader &amp; game version in Discover when picking an instance</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-smooth-scrolling" />
-                  <span class="toggle-slider"></span>
-                  <span>Smooth scrolling</span>
                 </label>
                 <label class="toggle-row">
                   <input type="checkbox" id="setting-notify-auto-mod-updates" />
@@ -2285,15 +2471,6 @@
               <div style="display:flex; flex-direction:column; gap:12px;">
 
                 <label class="toggle-row">
-                  <input type="checkbox" id="setting-clear-session-on-exit" />
-                  <span class="toggle-slider"></span>
-                  <span>Clear Account Session on Exit</span>
-                </label>
-                <p class="settings-hint" style="margin:0 0 4px; opacity:0.7; font-size:12px; line-height:1.5;">
-                  Signs every account out when the launcher closes. Accounts stay saved on disk.
-                </p>
-
-                <label class="toggle-row">
                   <input type="checkbox" id="setting-redact-tokens" />
                   <span class="toggle-slider"></span>
                   <span>Redact Auth Tokens in Logs</span>
@@ -2353,46 +2530,89 @@
               </div>
             </div>
 
-            <!-- About Panel -->
+            <!-- About & Updates Panel (App System Info & Updates) -->
             <div id="settings-panel-about" class="settings-tab-panel">
               <div class="settings-panel-heading">
-                <h3>About &amp; Updates</h3>
-                <p>Version details, launcher directories, update checker, and setup wizard.</p>
+                <h3>App System Info &amp; Updates</h3>
+                <p>System details, launcher version, update checker, and installation directories.</p>
               </div>
 
-              <p class="settings-hint" style="margin:0; opacity:0.85; font-size:12.5px; line-height:1.5;">
-                Zero Launcher is a modern, ultra-lightweight Minecraft launcher.
-              </p>
-
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 16px; border-radius:8px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); margin: 14px 0;">
-                <span style="font-size:13px; opacity:0.85;">Current Launcher Version</span>
-                <span id="settings-launcher-version" style="font-size:13px; font-weight:600; font-family:monospace; color:var(--accent);">—</span>
+              <!-- Section 1: Application -->
+              <div class="about-section-wrap">
+                <div class="about-section-header">Application</div>
+                <div class="about-card about-app-card">
+                  <div class="about-metadata-grid">
+                    <div class="about-meta-item">
+                      <span class="about-meta-label">Version</span>
+                      <span class="about-meta-val" id="about-info-version">Zero Launcher (Loading…)</span>
+                    </div>
+                    <div class="about-meta-item">
+                      <span class="about-meta-label">Operating system</span>
+                      <span class="about-meta-val" id="about-info-os">Linux</span>
+                    </div>
+                    <div class="about-meta-item" style="grid-column: 1 / -1;">
+                      <span class="about-meta-label">Architecture</span>
+                      <span class="about-meta-val" id="about-info-arch">x64 (Linux)</span>
+                    </div>
+                  </div>
+                  <div class="about-logo-container">
+                    <img src="/src/assets/logo.png" alt="Zero Launcher Logo" class="about-app-logo" />
+                  </div>
+                </div>
               </div>
 
-              <div style="display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap;">
-                <button type="button" id="btn-reopen-setup" class="btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-                  </svg>
-                  Reopen Setup Wizard
-                </button>
-                <button type="button" id="btn-open-launcher-folder" class="btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
-                  </svg>
-                  Open Zero Launcher Folder
-                </button>
-                <button type="button" id="btn-check-for-updates" class="btn-secondary" style="display:inline-flex; align-items:center; gap:8px;">
-                  <svg id="btn-check-for-updates-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 3v6h-6"/>
-                  </svg>
-                  Check for Updates
-                </button>
+              <!-- Section 2: Updates -->
+              <div class="about-section-wrap">
+                <div class="about-section-header">Updates</div>
+                <div class="about-card about-update-card">
+                  <div class="about-update-left">
+                    <div class="about-update-title">Check for updates</div>
+                    <div class="about-update-subtext" id="about-update-subtext">You're up to date</div>
+                    <div class="about-update-meta" id="about-update-last-checked">Last checked: Today</div>
+                    <div class="about-update-status-line hidden" id="about-update-status-line">
+                      <span class="about-update-status-msg" id="about-update-status-msg">Checking for updates…</span>
+                    </div>
+                  </div>
+                  <div class="about-update-right">
+                    <div class="about-status-icon-wrap" id="about-status-icon-wrap">
+                      <svg class="about-status-check-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </div>
+                    <button type="button" id="btn-check-for-updates" class="about-check-now-btn" title="Check for launcher updates">
+                      <svg id="btn-check-for-updates-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 1 1-3.5-7.1"></path>
+                        <path d="M21 3v6h-6"></path>
+                      </svg>
+                      <span>Check now</span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div id="update-check-status" class="update-check-status hidden" style="margin-top: 12px;">
-                <svg id="update-check-status-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
-                <span id="update-check-status-text"></span>
+              <!-- Section 3: Launcher Folder -->
+              <div class="about-section-wrap">
+                <div class="about-section-header">Launcher Folder</div>
+                <div class="about-card about-folders-card">
+                  <div class="about-folders-left">
+                    <div style="font-size:13.5px; font-weight:600; color:#fff;">Launcher Installation Directories</div>
+                    <div style="font-size:12px; color:#a1a1aa;">Access local launcher configuration, mod caches, and logs.</div>
+                  </div>
+                  <div class="about-folders-actions">
+                    <button type="button" id="btn-open-launcher-folder" class="about-action-btn">
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+                      </svg>
+                      <span>Open Launcher Folder</span>
+                    </button>
+                    <button type="button" id="btn-reopen-setup" class="about-action-btn">
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                      </svg>
+                      <span>Reopen Setup Wizard</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2850,17 +3070,22 @@
     </div>
   </template>
 
-  <!-- Lightweight window listing the individual files for one download-widget card -->
-  <div id="dl-files-overlay" class="overlay hidden">
-    <div class="overlay-card dl-files-card">
-      <div class="overlay-header dl-files-header">
-        <h3 id="dl-files-title">Files</h3>
-        <button class="overlay-close" id="btn-close-dl-files">✕</button>
+  <!-- Side companion panel for live files breakdown — docks to the right of #dl-widget-panel without dimming -->
+  <div id="dl-files-panel" class="dl-files-panel hidden" role="region" aria-label="Download Files">
+    <div class="dl-panel-heading-row dl-files-heading-row">
+      <div class="dl-panel-heading-text">
+        <div class="dl-panel-heading" id="dl-files-title">Files Breakdown</div>
+        <div class="dl-files-subtitle" id="dl-files-subtitle">Active task</div>
       </div>
-      <div id="dl-files-list" class="dl-files-list"><div id="dl-files-viewport" class="dl-files-viewport"></div></div>
-      <div class="dl-files-footer">
-        <span id="dl-files-speed" class="dl-files-speed">—</span>
+      <div class="dl-files-header-actions">
+        <button type="button" id="btn-close-dl-files" class="overlay-close" title="Close Files Panel">✕</button>
       </div>
+    </div>
+    <div id="dl-files-list" class="dl-files-list">
+      <div id="dl-files-viewport" class="dl-files-viewport"></div>
+    </div>
+    <div class="dl-files-footer">
+      <span id="dl-files-count" class="dl-files-count-label">0 files</span>
     </div>
   </div>
 

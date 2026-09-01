@@ -222,14 +222,44 @@ struct ModrinthEnv {
 }
 
 fn mrpack_loader_key(dependencies: &std::collections::HashMap<String, String>) -> Option<(String, String)> {
-    for (key, loader_name) in [
-        ("fabric-loader", "fabric"),
-        ("quilt-loader", "quilt"),
-        ("forge", "forge"),
-        ("neoforge", "neoforge"),
-    ] {
-        if let Some(version) = dependencies.get(key) {
-            return Some((loader_name.to_string(), version.clone()));
+    // 1. Direct normalized key matching
+    for (k, v) in dependencies {
+        let clean = k.trim().to_lowercase().replace('_', "-");
+        match clean.as_str() {
+            "fabric-loader" | "fabric" => return Some(("fabric".to_string(), v.trim().to_string())),
+            "quilt-loader" | "quilt" => return Some(("quilt".to_string(), v.trim().to_string())),
+            "neoforge" | "neoforge-loader" | "neo-forge" => return Some(("neoforge".to_string(), v.trim().to_string())),
+            "forge" | "forge-loader" | "minecraft-forge" => return Some(("forge".to_string(), v.trim().to_string())),
+            _ => {}
+        }
+    }
+    // 2. Substring fallback for custom keys
+    for (k, v) in dependencies {
+        let clean = k.trim().to_lowercase();
+        if clean == "minecraft" || clean == "game" {
+            continue;
+        }
+        if clean.contains("fabric") {
+            return Some(("fabric".to_string(), v.trim().to_string()));
+        }
+        if clean.contains("quilt") {
+            return Some(("quilt".to_string(), v.trim().to_string()));
+        }
+        if clean.contains("neoforge") || clean.contains("neo-forge") || clean.contains("neo_forge") {
+            return Some(("neoforge".to_string(), v.trim().to_string()));
+        }
+        if clean.contains("forge") {
+            return Some(("forge".to_string(), v.trim().to_string()));
+        }
+    }
+    None
+}
+
+fn mrpack_minecraft_version(dependencies: &std::collections::HashMap<String, String>) -> Option<String> {
+    for (k, v) in dependencies {
+        let clean = k.trim().to_lowercase();
+        if clean == "minecraft" || clean == "game" || clean == "minecraft-version" {
+            return Some(v.trim().to_string());
         }
     }
     None
@@ -791,7 +821,7 @@ pub async fn preview_modpack(file_path: String) -> Result<ModpackPreview, String
             .unwrap_or((Some("vanilla".to_string()), None));
         return Ok(ModpackPreview {
             name: index.name,
-            minecraft_version: index.dependencies.get("minecraft").cloned(),
+            minecraft_version: mrpack_minecraft_version(&index.dependencies),
             loader,
             loader_version,
             file_count: index.files.len() as u32,
@@ -867,10 +897,7 @@ pub async fn import_modpack(
 
     // ── Resolve minecraft version / loader / loader version ────────────
     let (mc_version, loader, loader_version, pack_name) = if let Some(idx) = &mrpack_index {
-        let mc_version = idx
-            .dependencies
-            .get("minecraft")
-            .cloned()
+        let mc_version = mrpack_minecraft_version(&idx.dependencies)
             .ok_or("Modpack is missing a Minecraft version")?;
         let (loader, loader_version) =
             mrpack_loader_key(&idx.dependencies).unwrap_or(("vanilla".to_string(), "latest".to_string()));
@@ -960,7 +987,7 @@ pub async fn import_modpack(
     let mut failed_files = Vec::new();
     let mut unresolved_curseforge_mods = 0usize;
 
-    if let Some(idx) = mrpack_index {
+    if let Some(ref idx) = mrpack_index {
         let downloaded_failures = download_pack_files(&app, &state, &idx.files, &game_dir).await?;
         failed_files.extend(downloaded_failures);
 
@@ -999,6 +1026,38 @@ pub async fn import_modpack(
         logger::info(&app, &state, "MODPACK", &format!("Copied {overrides_copied} override file(s)"));
     }
 
+    // Record list of all modpack mods in .zerolauncher_modpack.json for separation from user mods
+    let mut pack_mod_files = Vec::new();
+    if let Some(idx) = &mrpack_index {
+        for f in &idx.files {
+            if f.path.starts_with("mods/") || f.path.starts_with("mods\\") {
+                if let Some(filename) = Path::new(&f.path).file_name() {
+                    pack_mod_files.push(filename.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    let mods_dir = game_dir.join("mods");
+    if mods_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&mods_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if (name.ends_with(".jar") || name.ends_with(".jar.disabled")) && !pack_mod_files.contains(&name) {
+                    pack_mod_files.push(name);
+                }
+            }
+        }
+    }
+
+    let modpack_info = ModpackInfo {
+        pack_name: pack_name.clone().unwrap_or_else(|| instance_name.to_string()),
+        mods: pack_mod_files,
+    };
+    let _ = std::fs::write(
+        game_dir.join(".zerolauncher_modpack.json"),
+        serde_json::to_string_pretty(&modpack_info).unwrap_or_default(),
+    );
+
     logger::info(&app, &state, "MODPACK", &format!("Modpack import finished — {} file(s) failed", failed_files.len()));
     emit_progress(&app, "done", "Modpack imported".into(), 0, 0, true, None);
 
@@ -1012,5 +1071,61 @@ pub async fn import_modpack(
         failed_files,
         unresolved_curseforge_mods,
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModpackInfo {
+    pub pack_name: String,
+    pub mods: Vec<String>,
+}
+
+/// Retrieves modpack information and the list of official modpack mods for a given instance directory.
+#[tauri::command]
+pub async fn get_modpack_info(
+    directory: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Option<ModpackInfo>, String> {
+    let base_dir = if let Some(dir) = directory.filter(|d| !d.trim().is_empty()) {
+        PathBuf::from(dir)
+    } else {
+        state.settings.lock().unwrap().resolved_game_directory()
+    };
+
+    // 1. Check .zerolauncher_modpack.json
+    let meta_path = base_dir.join(".zerolauncher_modpack.json");
+    if meta_path.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&meta_path) {
+            if let Ok(info) = serde_json::from_str::<ModpackInfo>(&content) {
+                return Ok(Some(info));
+            }
+        }
+    }
+
+    // 2. Check modrinth.index.json if present (Modrinth mrpack export)
+    let mr_index = base_dir.join("modrinth.index.json");
+    if mr_index.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&mr_index) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                let name = val.get("name").and_then(|n| n.as_str()).unwrap_or("Modpack").to_string();
+                let mut mods = Vec::new();
+                if let Some(files) = val.get("files").and_then(|f| f.as_array()) {
+                    for f in files {
+                        if let Some(p) = f.get("path").and_then(|p| p.as_str()) {
+                            if p.starts_with("mods/") || p.starts_with("mods\\") {
+                                if let Some(filename) = Path::new(p).file_name() {
+                                    mods.push(filename.to_string_lossy().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                if !mods.is_empty() {
+                    return Ok(Some(ModpackInfo { pack_name: name, mods }));
+                }
+            }
+        }
+    }
+
+    Ok(None)
 }
 

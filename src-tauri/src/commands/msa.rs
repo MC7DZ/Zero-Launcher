@@ -205,12 +205,16 @@ pub(crate) async fn refresh_microsoft_login(
     };
     let client_id = AZURE_CLIENT_ID.to_string();
 
-    let login = match tokio::task::spawn_blocking(move || {
+    let refresh_task = tokio::task::spawn_blocking(move || {
         msa::complete_refresh(&client_id, None, &refresh_token).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("Refresh task failed: {e}"))?
-    {
+    });
+
+    let refresh_outcome = match tokio::time::timeout(std::time::Duration::from_secs(6), refresh_task).await {
+        Ok(res) => res.map_err(|e| format!("Refresh task failed: {e}"))?,
+        Err(_) => Err("Microsoft authentication timed out after 6 seconds".to_string()),
+    };
+
+    let login = match refresh_outcome {
         Ok(login) => login,
         Err(e) => {
             let lower = e.to_lowercase();

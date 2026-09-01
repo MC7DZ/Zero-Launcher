@@ -45,6 +45,23 @@
   scroll-behavior: auto !important;
 }
 
+
+
+/* Hardware accelerated layer promotion for all scroll viewports */
+.tab-page,
+.settings-modal-content,
+.settings-modal-sidebar,
+.instances-grid,
+.mods-list,
+.discover-grid,
+.presets-grid,
+.logs-container {
+  -webkit-overflow-scrolling: touch !important;
+  overflow-anchor: none !important;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+
 html, body {
   height: 100%;
   width: 100%;
@@ -56,6 +73,7 @@ html, body {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
+  border-radius: 12px;
 }
 
 input, textarea, select, [contenteditable="true"] {
@@ -88,6 +106,7 @@ input, textarea, select, [contenteditable="true"] {
   z-index: 0;
   overflow: hidden;
   background-color: var(--bg, #0a0a0f);
+  border-radius: 12px;
 }
 
 #bg-canvas {
@@ -145,6 +164,23 @@ input, textarea, select, [contenteditable="true"] {
   flex-direction: column;
   height: 100vh;
   background: transparent;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09), 0 0 0 1px rgba(0, 0, 0, 0.7);
+  isolation: isolate;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Fullscreen / Maximized state: square corners */
+.is-maximized,
+.is-maximized html,
+.is-maximized body,
+.is-maximized #app,
+.is-maximized #bg-container,
+.is-maximized #startup-splash-screen {
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 /* ─── Scrollbar (WebKitGTK) ─── */
@@ -163,8 +199,30 @@ input, textarea, select, [contenteditable="true"] {
   padding: 0 0 0 16px;
   background: transparent;
   user-select: none;
-  z-index: 999;
+  position: relative;
+  z-index: 99999;
   flex-shrink: 0;
+}
+
+/* ═══ Window Resize Edge Handles (WebKitGTK Frameless) ═══ */
+.window-resize-handle {
+  position: fixed;
+  z-index: 9999999;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.window-resize-n  { top: 0; left: 10px; right: 10px; height: 6px; cursor: n-resize; }
+.window-resize-s  { bottom: 0; left: 10px; right: 10px; height: 6px; cursor: s-resize; }
+.window-resize-w  { left: 0; top: 10px; bottom: 10px; width: 6px; cursor: w-resize; }
+.window-resize-e  { right: 0; top: 10px; bottom: 10px; width: 6px; cursor: e-resize; }
+.window-resize-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nw-resize; }
+.window-resize-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: ne-resize; }
+.window-resize-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: sw-resize; }
+.window-resize-se { bottom: 0; right: 0; width: 12px; height: 12px; cursor: se-resize; }
+
+.is-maximized .window-resize-handle {
+  display: none !important;
 }
 
 .titlebar-drag-area {
@@ -188,6 +246,9 @@ input, textarea, select, [contenteditable="true"] {
   display: flex;
   align-items: center;
   height: 100%;
+  position: relative;
+  z-index: 99999;
+  pointer-events: auto;
 }
 
 .titlebar-btn {
@@ -581,24 +642,13 @@ input, textarea, select, [contenteditable="true"] {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  animation: tabFadeIn 0.25s ease;
   contain: layout paint;
-  /* Promote the scroll container to its own compositor layer. Without
-     this, scrolling forces the browser to repaint the fixed background
-     canvas, top bar, and every card/shadow on the page each frame along
-     with the content — that repaint cost is what reads as scroll lag.
-     translateZ(0) is the cheapest way to isolate this element's paints
-     from the rest of the app so only its own content repaints. */
+  /* Promote the scroll container to its own compositor layer. */
   transform: translateZ(0);
   backface-visibility: hidden;
 }
 .tab-page.active { display: block; }
 .tab-page.mods-two-pane-page.active { display: flex; overflow: hidden; padding: 20px; }
-
-@keyframes tabFadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
 
 /* ═══ Glass Card ═══ */
 .glass-card,
@@ -2219,12 +2269,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   z-index: 10100;
 }
 
-#dl-files-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10150;
-}
-
 #account-modal-overlay,
 #skin-viewer-overlay,
 #dressing-room-overlay,
@@ -3430,6 +3474,114 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   gap: 5px;
 }
 
+/* ── Modpack Subpanel (Switch between User Mods and Modpack Mods) ── */
+.modpack-mods-subpanel {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, rgba(147, 51, 234, 0.15), rgba(33, 33, 33, 0.65));
+  border: 1px solid rgba(168, 85, 247, 0.28);
+  margin-top: -2px;
+  margin-bottom: 2px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modpack-subpanel-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.modpack-subpanel-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.modpack-subpanel-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modpack-subpanel-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.modpack-view-tabs {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 4px;
+}
+
+.modpack-view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.modpack-view-tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.modpack-view-tab.active {
+  background: #9333ea;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(147, 51, 234, 0.4);
+}
+
+.modpack-tab-count {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+}
+
+.modpack-subpanel-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.modpack-subpanel-hint {
+  font-size: 11px;
+  color: #a855f7;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
 /* ── Bottom Panel (Content Island) ──
    No longer the scrolling element itself — see .mods-scroll-container
    below. This box only establishes the positioning context so
@@ -3443,6 +3595,23 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: rgba(33,33,33,0.35);
   border: 1px solid rgba(255,255,255,0.06);
   overflow: hidden;
+  transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* Distinctive color when viewing Modpack Built-in Mods */
+.mods-two-pane-page.modpack-mods-active .mods-bottom-panel {
+  background: radial-gradient(circle at top right, rgba(147, 51, 234, 0.1), rgba(18, 18, 24, 0.75));
+  border-color: rgba(168, 85, 247, 0.35);
+  box-shadow: 0 0 30px rgba(147, 51, 234, 0.07);
+}
+
+.mods-two-pane-page.modpack-mods-active .mod-card {
+  border-color: rgba(168, 85, 247, 0.22);
+}
+
+.mods-two-pane-page.modpack-mods-active .mod-card:hover {
+  border-color: rgba(168, 85, 247, 0.5);
+  box-shadow: 0 4px 18px rgba(147, 51, 234, 0.15);
 }
 
 /* The actual scrolling element. Previously this scrolling behavior lived
@@ -5670,40 +5839,105 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .dl-card.dl-card-no-stats .dl-card-file { display: none; }
 .dl-card.dl-card-no-cancel .dl-card-cancel { display: none; }
 
-/* ── Download files window — one small overlay, a plain flat list of
-   filenames (each just an underlined row, no per-file bar/status chip),
-   with an overall speed readout + Cancel in the footer. ── */
-.dl-files-card { width: 560px; max-height: 85vh; padding: 26px; }
-.dl-files-header { position: relative; }
-.dl-files-header h3 {
-  text-align: center;
-  width: 100%;
-  /* h3 was set to width:100% inside a flex row that also holds the
-     close button — that made the title stretch the full row and sit
-     underneath/behind the close button instead of leaving room for
-     it, so the title text and the ✕ overlapped. Taking the button out
-     of flow (below) and reserving space here keeps the title centered
-     without colliding with it. */
-  padding: 0 32px;
-  box-sizing: border-box;
-}
-.dl-files-header .overlay-close {
-  position: absolute;
+/* ── Files Breakdown Side Panel (Docked to the right edge like the Dressing Room) ── */
+#dl-files-panel {
+  position: fixed;
+  top: 0;
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  left: auto;
+  z-index: 925;
+  width: 380px;
+  max-width: 88vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius) 0 0 var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-right: none;
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.6);
+  background: #18181c;
+  transform: translate3d(100%, 0, 0);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.24s cubic-bezier(0.22, 0.9, 0.3, 1), opacity 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  contain: strict;
+  will-change: transform, opacity;
 }
-.dl-files-list { position: relative; max-height: 480px; overflow-y: auto; overflow-x: hidden; margin-top: 4px; will-change: scroll-position; }
-.dl-files-viewport { position: relative; width: 100%; contain: layout style; }
-.dl-files-empty { color: var(--text-muted); font-size: 13px; padding: 8px 2px; }
+
+#dl-files-panel.hidden {
+  display: none;
+}
+
+#dl-files-panel.dl-files-open {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dl-files-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #131317;
+}
+
+.dl-files-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+  margin-top: 2px;
+}
+
+.dl-files-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.dl-files-list {
+  position: relative;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 16px;
+  margin: 0;
+  will-change: scroll-position;
+  contain: content;
+  transform: translateZ(0);
+}
+
+.dl-files-viewport {
+  position: relative;
+  width: 100%;
+  contain: layout style;
+}
+
+.dl-files-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 24px 8px;
+  text-align: center;
+}
+
 .dl-file-row {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 5px;
-  padding: 0 2px;
-  border-bottom: 1px solid var(--panel-border);
-  font-size: 13px;
+  gap: 4px;
+  padding: 0 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12.5px;
   color: var(--text);
   position: absolute;
   left: 0;
@@ -5714,42 +5948,47 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   will-change: transform;
   transform: translateZ(0);
 }
-.dl-file-row .dl-file-name-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.dl-file-row .dl-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dl-file-row .dl-file-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dl-file-row .dl-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 .dl-file-row .dl-file-pct {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   color: var(--text-muted);
-  min-width: 34px;
+  min-width: 32px;
   text-align: right;
 }
+
 .dl-file-row.dl-file-downloading .dl-file-pct { color: #60a5fa; }
 .dl-file-row.dl-file-completed .dl-file-pct { color: var(--text-muted); }
 .dl-file-row.dl-file-failed .dl-file-pct { color: #f87171; }
-.dl-file-row.dl-file-pending { opacity: 0.55; }
-.dl-file-row.dl-file-downloading .dl-file-name { color: #60a5fa; }
+.dl-file-row.dl-file-pending { opacity: 0.5; }
+.dl-file-row.dl-file-downloading .dl-file-name { color: #60a5fa; font-weight: 500; }
 .dl-file-row.dl-file-completed { opacity: 0.65; }
 .dl-file-row.dl-file-failed .dl-file-name { color: #f87171; }
 
-/* Per-file progress bar — real byte-level percent when the backend
-   reports content-length for that file, otherwise an indeterminate
-   sweep so a file with unknown size still visibly reads as active. */
 .dl-file-track {
-  height: 4px;
+  height: 3px;
   border-radius: var(--radius-pill);
-  background: rgba(var(--overlay-rgb), 0.08);
+  background: rgba(255, 255, 255, 0.07);
   overflow: hidden;
   flex-shrink: 0;
 }
+
 .dl-file-bar {
-  /* Fixed-width + transform: scaleX() instead of an inline `width: N%`
-     per update — same reasoning as .dl-card-bar above. This one matters
-     even more here: with a big modpack, several dozen of these rows can
-     be live (scrolled into view) with concurrent downloads all ticking
-     at once, so a layout-property update per row per tick is where the
-     "downloads menu" lag was worst on WebKitGTK. JS sets `transform:
-     scaleX(pct/100)` in place of the old `width: pct%`. */
   height: 100%;
   width: 100%;
   transform-origin: left center;
@@ -5758,14 +5997,13 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: linear-gradient(90deg, var(--accent), #34e0a1);
   will-change: transform;
 }
-.dl-file-row.dl-file-completed .dl-file-bar { background: rgba(var(--overlay-rgb), 0.25); }
+
+.dl-file-row.dl-file-completed .dl-file-bar { background: rgba(255, 255, 255, 0.2); }
 .dl-file-row.dl-file-failed .dl-file-bar { background: #f87171; transform: scaleX(1) !important; }
 .dl-file-row.dl-file-indeterminate .dl-file-bar {
-  /* No !important here — author-!important beats CSS animations in the
-     cascade, which would freeze the sweep on its first frame. The
-     keyframes below set the same 0.35 scale as their 0% state anyway. */
   animation: dl-file-bar-indeterminate 1.1s ease-in-out infinite;
 }
+
 @keyframes dl-file-bar-indeterminate {
   0%   { transform: translateX(-100%) scaleX(0.35); }
   100% { transform: translateX(285%) scaleX(0.35); }
@@ -5776,9 +6014,17 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 16px;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: #131317;
+  flex-shrink: 0;
 }
-.dl-files-speed { font-size: 13px; color: var(--text-muted); }
+
+.dl-files-count-label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
 
 
 /* ══════════════════════════════════════════════════════════════════
@@ -7310,6 +7556,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   width: 100px;
   height: 128px;
   display: block;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
 }
 
 .dressing-room-skin-name {
@@ -7434,46 +7683,46 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: #f5c518;
 }
 
-/* ═══ Settings Modal Window (Two-Pane) ═══ */
+/* ═══ Settings Modal Window (Two-Pane Modernized & WebKitGTK-Optimized) ═══ */
 .settings-modal-window {
-  width: 1220px;
-  max-width: 96vw;
-  height: 88vh;
-  max-height: 900px;
+  width: 1180px;
+  max-width: 95vw;
+  height: 86vh;
+  max-height: 880px;
   display: flex;
   flex-direction: column;
-  background: #1b1b1b;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  background: #17171c;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
   transform: translateZ(0);
   backface-visibility: hidden;
   overflow: hidden;
   position: relative;
-  transition: width 0.18s ease, height 0.18s ease;
 }
 
 .settings-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 30px;
+  padding: 16px 24px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
-  background: rgba(0, 0, 0, 0.25);
+  background: #131317;
 }
 
 .settings-modal-title {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
-  color: var(--text);
+  color: #fff;
+  letter-spacing: -0.01em;
 }
 
 .settings-modal-title svg {
-  color: var(--accent);
+  color: var(--accent, #b7b7b7);
 }
 
 .settings-modal-body {
@@ -7481,73 +7730,224 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  background: #17171c;
 }
 
+/* ── Left Sidebar ── */
 .settings-modal-sidebar {
-  width: 250px;
+  width: 255px;
   flex-shrink: 0;
-  background: rgba(12, 12, 12, 0.5);
+  background: #141418;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 18px 12px;
+  padding: 14px 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
   overflow-y: auto;
-  contain: layout paint;
-  will-change: scroll-position;
-  overscroll-behavior-y: contain;
-  transform: translateZ(0);
-  backface-visibility: hidden;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  position: relative;
+}
+
+/* ── Sidebar Search Bar (Left Side) ── */
+.settings-search-bar-wrap {
+  position: relative;
+  width: 100%;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.settings-search-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #202026;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  padding: 0 10px;
+  height: 36px;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.settings-search-bar-inner:focus-within {
+  border-color: var(--accent, #b7b7b7);
+  background: #262630;
+}
+
+.settings-search-icon {
+  color: #8e8e98;
+  flex-shrink: 0;
+}
+
+.settings-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-family: var(--font);
+  font-size: 12.5px;
+  padding: 0;
+  caret-color: var(--accent, #b7b7b7);
+}
+
+.settings-search-input::placeholder {
+  color: #71717a;
+}
+
+.settings-search-clear {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.12s ease;
+}
+
+.settings-search-clear:hover {
+  color: #fff;
+}
+
+/* Launcher Gray Search Results Dropdown (Fits within sidebar width) */
+.settings-search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: #1e1e24;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+  z-index: 10500;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 5px;
+  scrollbar-width: thin;
+}
+
+.settings-search-results.hidden { display: none; }
+
+.settings-search-result-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-search-result-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-search-result-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #e4e4e7;
+  width: 100%;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.settings-search-result-label mark {
+  background: transparent;
+  color: var(--accent, #b7b7b7);
+  font-weight: 700;
+}
+
+.settings-search-result-section {
+  font-size: 10px;
+  font-weight: 600;
+  color: #a1a1aa;
+  background: #2a2a34;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.settings-search-no-results {
+  text-align: center;
+  padding: 16px;
+  font-size: 12.5px;
+  color: #71717a;
+}
+
+/* ── Sidebar Navigation Buttons ── */
+.settings-sidebar-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
 }
 
 .settings-nav-btn {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 11px 16px;
-  border-radius: var(--radius-sm, 8px);
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--text-muted);
+  color: #a1a1aa;
   font-family: var(--font);
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background 0.12s ease, color 0.12s ease;
   white-space: nowrap;
   user-select: none;
 }
 
 .settings-nav-btn:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.05);
   color: #fff;
 }
 
 .settings-nav-btn.active {
   background: rgba(255, 255, 255, 0.09);
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 3px solid var(--accent);
-  font-weight: 700;
+  font-weight: 600;
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .settings-nav-icon {
-  width: 19px;
-  height: 19px;
+  width: 17px;
+  height: 17px;
   flex-shrink: 0;
+  opacity: 0.85;
 }
 
+.settings-nav-btn.active .settings-nav-icon {
+  opacity: 1;
+  color: var(--accent, #b7b7b7);
+}
+
+/* ── Right Content Panels (Ultra-Smooth WebKitGTK Scrolling) ── */
 .settings-modal-content {
   flex: 1;
   min-width: 0;
-  padding: 28px 40px;
+  padding: 24px 36px;
   overflow-y: auto;
-  contain: layout paint;
-  will-change: scroll-position;
-  overscroll-behavior-y: contain;
+  overflow-x: hidden;
+  background: #17171c;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
   transform: translateZ(0);
-  backface-visibility: hidden;
+  contain: content;
+  will-change: scroll-position;
 }
 
 .settings-tab-panel {
@@ -7560,20 +7960,250 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 .settings-panel-heading {
   margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .settings-panel-heading h3 {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
   margin: 0 0 4px;
-  color: var(--text);
+  color: #fff;
+  letter-spacing: -0.01em;
 }
 
 .settings-panel-heading p {
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 12.5px;
+  color: #a1a1aa;
   margin: 0;
   line-height: 1.4;
+}
+
+@keyframes settingHighlightPulse {
+  0% { outline: 2px solid var(--accent, #b7b7b7); box-shadow: 0 0 16px rgba(255, 255, 255, 0.35); }
+  70% { outline: 2px solid var(--accent, #b7b7b7); box-shadow: 0 0 10px rgba(255, 255, 255, 0.15); }
+  100% { outline: 2px solid transparent; box-shadow: none; }
+}
+.setting-highlight-pulse {
+  animation: settingHighlightPulse 1.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  border-radius: 8px;
+}
+
+/* ── App System Info & Updates Panel Styling ── */
+.about-section-wrap {
+  margin-bottom: 20px;
+}
+
+.about-section-header {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.about-card {
+  background: #1c1c22;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.about-app-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.about-metadata-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 24px;
+  flex: 1;
+}
+
+.about-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.about-meta-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a1a1aa;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.about-meta-val {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.about-logo-container {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px;
+}
+
+.about-app-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.about-update-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.about-update-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.about-update-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.about-update-subtext {
+  font-size: 12.5px;
+  color: #a1a1aa;
+}
+
+.about-update-meta {
+  font-size: 11px;
+  color: #71717a;
+  margin-top: 2px;
+}
+
+.about-update-status-line {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11.5px;
+  font-weight: 500;
+  width: fit-content;
+  color: #d4d4d8;
+}
+
+.about-update-status-line.hidden {
+  display: none !important;
+}
+
+.about-update-status-line.is-checking {
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+.about-update-status-line.is-available {
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+}
+
+.about-update-status-line.is-error {
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.about-update-status-line.is-uptodate {
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #4ade80;
+}
+
+.about-update-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.about-status-icon-wrap {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.12);
+  flex-shrink: 0;
+}
+
+.about-check-now-btn {
+  background: #23232a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #fff;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: var(--font);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.about-check-now-btn:hover {
+  background: #2b2b34;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.about-folders-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.about-folders-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.about-action-btn {
+  background: #23232a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #e4e4e7;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: var(--font);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.about-action-btn:hover {
+  background: #2b2b34;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .header-icon-btn {
@@ -7739,7 +8369,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .account-overlay-card,
 .is-webkit-gtk .skin-viewer-modal,
 .is-webkit-gtk .dressing-room-modal,
-.is-webkit-gtk .dl-files-card,
+.is-webkit-gtk #dl-files-panel,
 .is-webkit-gtk .dressing-room-skin-card,
 .is-webkit-gtk .settings-card,
 .is-webkit-gtk .java-row-item,
@@ -7772,7 +8402,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk:not(.transparent-ui) .account-overlay-card,
 .is-webkit-gtk:not(.transparent-ui) .skin-viewer-modal,
 .is-webkit-gtk:not(.transparent-ui) .dressing-room-modal,
-.is-webkit-gtk:not(.transparent-ui) .dl-files-card {
+.is-webkit-gtk:not(.transparent-ui) #dl-files-panel {
   background: #1b1b1b;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   backdrop-filter: none;
@@ -8335,3 +8965,4 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .playtime-range-btn {
   transition: background var(--transition), color var(--transition);
 }
+

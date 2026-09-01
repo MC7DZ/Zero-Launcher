@@ -379,6 +379,25 @@ struct AzulPackage {
 /// newer JRE is more likely to satisfy a loader installer's own
 /// requirements. Returns `None` if nothing has been downloaded yet — in
 /// that case the caller should fall back to system detection.
+pub fn find_managed_java_for_major(major: i32) -> Option<PathBuf> {
+    let dir = managed_java_root().join(major.to_string());
+    if dir.is_dir() {
+        if let Some(home) = find_java_home(&dir, 4) {
+            let exe_name = if cfg!(target_os = "windows") { "javaw.exe" } else { "java" };
+            let exe = home.join("bin").join(exe_name);
+            if exe.is_file() {
+                return Some(exe);
+            }
+            let fallback_name = if cfg!(target_os = "windows") { "java.exe" } else { "java" };
+            let fallback_exe = home.join("bin").join(fallback_name);
+            if fallback_exe.is_file() {
+                return Some(fallback_exe);
+            }
+        }
+    }
+    None
+}
+
 pub fn find_any_managed_java() -> Option<PathBuf> {
     let root = managed_java_root();
     let mut entries: Vec<PathBuf> = fs::read_dir(&root)
@@ -719,6 +738,11 @@ pub async fn ensure_java_for_version(
 
     let required_major = required_java_major(version);
 
+    // Fast path: check managed Java directory first (<managed_root>/<major>)
+    if let Some(managed) = find_managed_java_for_major(required_major) {
+        return Ok(managed);
+    }
+
     let custom_paths = state
         .settings
         .lock()
@@ -800,6 +824,9 @@ pub async fn ensure_java_for_instance(
             ));
         } else if raw_path == "__smart__" {
             let required_major = required_java_major(version);
+            if let Some(managed) = find_managed_java_for_major(required_major) {
+                return Ok(managed);
+            }
             let custom_paths = state
                 .settings
                 .lock()

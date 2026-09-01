@@ -60,6 +60,73 @@ pub fn get_launcher_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct SystemInfo {
+    pub os_name: String,
+    pub arch: String,
+    pub launcher_version: String,
+}
+
+#[tauri::command]
+pub fn get_system_info() -> SystemInfo {
+    let mut os_name = "Linux".to_string();
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
+            for line in content.lines() {
+                if let Some(val) = line.strip_prefix("PRETTY_NAME=") {
+                    let cleaned = val.trim_matches('"').trim_matches('\'').trim();
+                    if !cleaned.is_empty() {
+                        os_name = cleaned.to_string();
+                        break;
+                    }
+                } else if let Some(val) = line.strip_prefix("NAME=") {
+                    let cleaned = val.trim_matches('"').trim_matches('\'').trim();
+                    if !cleaned.is_empty() && (os_name == "Linux" || os_name == "linux") {
+                        os_name = cleaned.to_string();
+                    }
+                }
+            }
+        }
+        if os_name.eq_ignore_ascii_case("linux") {
+            os_name = "Linux".to_string();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        os_name = "Windows".to_string();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        os_name = "macOS".to_string();
+    }
+
+    let arch_raw = std::env::consts::ARCH;
+    let arch_display = match arch_raw {
+        "x86_64" => "x64 (64-bit)",
+        "aarch64" => "ARM64 (64-bit)",
+        "x86" => "x86 (32-bit)",
+        "arm" => "ARM (32-bit)",
+        other => other,
+    };
+
+    let target_os = match std::env::consts::OS {
+        "linux" => "Linux",
+        "windows" => "Windows",
+        "macos" => "macOS",
+        other => other,
+    };
+
+    SystemInfo {
+        os_name,
+        arch: format!("{} ({})", arch_display, target_os),
+        launcher_version: env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
 /// Reads the last-persisted "Global Stats" panel snapshot from
 /// `<data_dir>/stats.json`, if any — used to populate the panel
 /// immediately on startup rather than showing blank/zero values while
@@ -172,4 +239,16 @@ pub fn window_toggle_always_on_top(window: tauri::Window) -> Result<bool, String
     window.set_always_on_top(next_state).map_err(|e| e.to_string())?;
     ALWAYS_ON_TOP.store(next_state, std::sync::atomic::Ordering::Relaxed);
     Ok(next_state)
+}
+
+/// Explicitly releases unused memory pages back to the operating system
+#[tauri::command]
+pub fn trim_memory() {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        extern "C" {
+            fn malloc_trim(pad: usize) -> i32;
+        }
+        malloc_trim(0);
+    }
 }

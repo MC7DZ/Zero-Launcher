@@ -19,37 +19,21 @@ fn modrinth_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .hickory_dns(true)
             .user_agent(USER_AGENT)
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(20))
-            // See vendor/mc-launcher-core's http.rs client() for why:
-            // forces IPv4 so a broken/non-routable IPv6 setup can't stall
-            // requests waiting on a dead address before falling back.
             .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new())
     })
 }
 
-/// Separate client for actually downloading file bytes (mod jars,
-/// resourcepacks, modpacks). `modrinth_client()`'s 20s `.timeout()` is a
-/// *whole-request* deadline that keeps counting through the entire body
-/// download, not just until headers arrive — fine for small API calls, but
-/// it silently aborts any mod jar that takes longer than 20 seconds to pull
-/// down (slow connection, or just a big file like a shaderpack/modpack).
-/// This client only bounds the connect phase and each individual read, so a
-/// large-but-healthy transfer is never killed just for taking a while.
 fn download_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .hickory_dns(true)
             .user_agent(USER_AGENT)
             .connect_timeout(Duration::from_secs(10))
-            // No whole-request `.timeout()` here on purpose — see above.
-            // `read_timeout` still guards against a connection that goes
-            // completely silent mid-transfer (stalled, not just slow).
             .read_timeout(Duration::from_secs(30))
             .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
             .build()
@@ -666,6 +650,8 @@ pub async fn discover_download(
     let base_dir = PathBuf::from(&directory);
     let target_dir = if project_type == "resourcepack" {
         base_dir.join("resourcepacks")
+    } else if project_type == "shader" {
+        base_dir.join("shaderpacks")
     } else {
         base_dir.join("mods")
     };
@@ -1050,6 +1036,52 @@ pub async fn discover_get_resolutions(project_type: String) -> Result<Vec<Discov
     Ok(raw
         .into_iter()
         .filter(|c| c.project_type == project_type && c.header == "resolutions")
+        .map(|c| DiscoverCategory { name: c.name, project_type: c.project_type, header: c.header })
+        .collect())
+}
+
+/// Returns performance impact tags (potato, low, medium, high, extreme) for shaders.
+#[tauri::command]
+pub async fn discover_get_performance_impacts(project_type: String) -> Result<Vec<DiscoverCategory>, String> {
+    let resp = send_with_retry(|client| client.get(format!("{MODRINTH_API}/tag/category")))
+        .await
+        .map_err(|e| format!("Failed to reach Modrinth: {e} (source: {:?})", e.source()))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to fetch performance impacts: HTTP {}", resp.status()));
+    }
+
+    let raw: Vec<RawCategory> = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse category list: {e}"))?;
+
+    Ok(raw
+        .into_iter()
+        .filter(|c| c.project_type == project_type && (c.header.eq_ignore_ascii_case("performance impact") || c.header.eq_ignore_ascii_case("performance_impact") || c.header.eq_ignore_ascii_case("performance")))
+        .map(|c| DiscoverCategory { name: c.name, project_type: c.project_type, header: c.header })
+        .collect())
+}
+
+/// Returns feature tags (shadows, reflections, atmosphere, bloom, etc.) for shaders.
+#[tauri::command]
+pub async fn discover_get_features(project_type: String) -> Result<Vec<DiscoverCategory>, String> {
+    let resp = send_with_retry(|client| client.get(format!("{MODRINTH_API}/tag/category")))
+        .await
+        .map_err(|e| format!("Failed to reach Modrinth: {e} (source: {:?})", e.source()))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to fetch features: HTTP {}", resp.status()));
+    }
+
+    let raw: Vec<RawCategory> = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse category list: {e}"))?;
+
+    Ok(raw
+        .into_iter()
+        .filter(|c| c.project_type == project_type && c.header.eq_ignore_ascii_case("features"))
         .map(|c| DiscoverCategory { name: c.name, project_type: c.project_type, header: c.header })
         .collect())
 }

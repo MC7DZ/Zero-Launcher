@@ -66,9 +66,17 @@ fn describe_send_error(e: reqwest::Error) -> Box<dyn std::error::Error> {
 /// one fails.
 fn http_client() -> Client {
     Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(3))
+        .timeout(std::time::Duration::from_secs(6))
         .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
-        .unwrap_or_else(|_| Client::new())
+        .unwrap_or_else(|_| {
+            Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(3))
+                .timeout(std::time::Duration::from_secs(6))
+                .build()
+                .unwrap_or_else(|_| Client::new())
+        })
 }
 
 /// Response from starting a device-code sign-in — the code and URL to show

@@ -74,6 +74,7 @@ function initClickSoundListener() {
 const INSTANCE_CONFIRM_SVGS = {
   delete: `<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/>`,
   hide: `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`,
+  warning: `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>`,
 };
 
 // Optional "also delete this instance's own data folder" toggle, shown on
@@ -85,7 +86,7 @@ const INSTANCE_CONFIRM_SVGS = {
 // folder *is* the shared default `.minecraft` folder: turning it on there
 // would wipe every instance's data, not just this one, so the checkbox is
 // force-disabled and forced off rather than merely defaulting to off.
-function showInstanceConfirmModal({ type, title, message, confirmText, isDanger, dataToggle, onConfirm }) {
+function showInstanceConfirmModal({ type, title, message, confirmText, isDanger, dataToggle, onConfirm, onCancel }) {
   const overlay = document.getElementById('instance-confirm-overlay');
   const heading = document.getElementById('instance-confirm-heading');
   const icon = document.getElementById('instance-confirm-icon');
@@ -112,40 +113,77 @@ function showInstanceConfirmModal({ type, title, message, confirmText, isDanger,
   desc.textContent = message || '';
   actionBtn.textContent = confirmText || 'Confirm';
 
-  // Always defaults to off — this only ever turns it back off explicitly,
-  // never leaves a previous modal's "on" state lingering into this one.
+  // Defaults to off unless the caller explicitly asks for it to be on
+  // (defaultChecked). Always resets state between invocations so a
+  // previous modal's checked/unchecked state never bleeds into the next.
   if (dataToggle && dataToggle.show) {
-    toggleWrap.classList.remove('hidden');
-    toggleChk.checked = false;
-    toggleChk.disabled = !!dataToggle.disabled;
-    toggleRow.classList.toggle('disabled', !!dataToggle.disabled);
-    toggleSub.textContent = dataToggle.disabled
-      ? (dataToggle.disabledReason || "Not available for this instance.")
-      : (dataToggle.reason || "Mods, worlds, saves, configs and screenshots in this instance's own folder — permanently.");
+    if (toggleWrap) toggleWrap.classList.remove('hidden');
+    if (toggleChk) {
+      // Pre-tick when the caller says so (e.g. instances with a dedicated
+      // data directory where wiping it on delete is safe and expected).
+      toggleChk.checked = !dataToggle.disabled && !!dataToggle.defaultChecked;
+      toggleChk.disabled = !!dataToggle.disabled;
+    }
+    if (toggleRow) toggleRow.classList.toggle('disabled', !!dataToggle.disabled);
+    if (toggleSub) {
+      toggleSub.textContent = dataToggle.disabled
+        ? (dataToggle.disabledReason || "Not available for this instance.")
+        : (dataToggle.reason || "Mods, worlds, saves, configs and screenshots in this instance's own folder — permanently.");
+    }
   } else {
-    toggleWrap.classList.add('hidden');
-    toggleChk.checked = false;
-    toggleChk.disabled = false;
-    toggleRow.classList.remove('disabled');
+    if (toggleWrap) toggleWrap.classList.add('hidden');
+    if (toggleChk) {
+      toggleChk.checked = false;
+      toggleChk.disabled = false;
+    }
+    if (toggleRow) toggleRow.classList.remove('disabled');
   }
 
   const cleanup = () => {
     overlay.classList.add('hidden');
     actionBtn.onclick = null;
-    cancelBtn.onclick = null;
-    closeBtn.onclick = null;
+    if (cancelBtn) cancelBtn.onclick = null;
+    if (closeBtn) closeBtn.onclick = null;
   };
 
-  cancelBtn.onclick = cleanup;
-  closeBtn.onclick = cleanup;
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      cleanup();
+      if (onCancel) onCancel();
+    };
+  }
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      cleanup();
+      if (onCancel) onCancel();
+    };
+  }
   actionBtn.onclick = async () => {
     // Disabled implies "always off" regardless of what's checked.
-    const deleteData = !!(dataToggle && dataToggle.show && !dataToggle.disabled && toggleChk.checked);
+    const deleteData = !!(dataToggle && dataToggle.show && !dataToggle.disabled && toggleChk && toggleChk.checked);
     cleanup();
     if (onConfirm) await onConfirm(deleteData);
   };
 
   overlay.classList.remove('hidden');
+}
+
+/**
+ * Promise-based custom modal helper replacing native window.confirm()
+ * entirely so the browser "JavaScript - http://localhost:1420" dialog never appears.
+ */
+function showConfirmDialog({ type = 'delete', title = 'Confirm Action', message = '', confirmText = 'Confirm', isDanger = false } = {}) {
+  return new Promise((resolve) => {
+    showInstanceConfirmModal({
+      type,
+      title,
+      message,
+      confirmText,
+      isDanger,
+      onConfirm: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  });
 }
 
 // ── 3D Skin Viewer (skin3d) ──
@@ -322,6 +360,7 @@ const api = {
   openMusicFolder: () => invoke('open_music_folder'),
   openLauncherFolder: () => invoke('open_launcher_folder'),
   getLauncherVersion: () => invoke('get_launcher_version'),
+  getSystemInfo: () => invoke('get_system_info'),
   checkForUpdate: () => invoke('check_for_update'),
   downloadUpdate: (url) => invoke('download_update', { url }),
   installUpdate: (downloadedPath, relaunch) => invoke('install_update', { downloadedPath, relaunch }),
@@ -399,6 +438,7 @@ const api = {
         custom_directory: customDirectory || null,
       },
     }),
+  getModpackInfo: (directory) => invoke('get_modpack_info', { directory: directory || null }),
   onModpackImportProgress: (cb) => listen('modpack-import-progress', cb),
   onGenericDownloadProgress: (cb) => listen('generic-download-progress', cb),
   pauseDownload: () => invoke('pause_download'),
@@ -437,6 +477,8 @@ const api = {
   discoverGetGameVersions: () => invoke('discover_get_game_versions'),
   discoverGetCategories: (projectType) => invoke('discover_get_categories', { projectType }),
   discoverGetResolutions: (projectType) => invoke('discover_get_resolutions', { projectType }),
+  discoverGetPerformanceImpacts: (projectType) => invoke('discover_get_performance_impacts', { projectType }),
+  discoverGetFeatures: (projectType) => invoke('discover_get_features', { projectType }),
   discoverGetLicenses: () => invoke('discover_get_licenses'),
   cacheModIcon: (url) => invoke('cache_mod_icon', { url }),
   identifyModsByHash: (hashes) => invoke('identify_mods_by_hash', { hashes }),
@@ -1524,6 +1566,7 @@ function initDownloadWidget() {
   }
   function closePanel() {
     if (!isPanelOpen() && panel.classList.contains('hidden')) return;
+    if (typeof closeFilesWindow === 'function') closeFilesWindow();
     panel.classList.remove('dl-panel-open');
     backdrop.classList.remove('dl-backdrop-open');
     const done = () => {
@@ -1760,14 +1803,15 @@ function initDownloadWidget() {
     if (emptyState) emptyState.classList.toggle('hidden', hasCards);
   }
 
-  // ── Files window — one small overlay shared by every card, showing the
-  // list of individual files that download/install process has touched
-  // (each just a name + status: downloading / completed / failed). ──
-  const filesOverlay = document.getElementById('dl-files-overlay');
+  // ── Files side panel — companion drawer attached flush to the right of
+  // the downloads panel, showing live per-file breakdown without dimming. ──
+  const filesPanel = document.getElementById('dl-files-panel');
   const filesList = document.getElementById('dl-files-list');
   const filesViewport = document.getElementById('dl-files-viewport');
   const filesTitle = document.getElementById('dl-files-title');
+  const filesSubtitle = document.getElementById('dl-files-subtitle');
   const filesSpeed = document.getElementById('dl-files-speed');
+  const filesCount = document.getElementById('dl-files-count');
 
   // Virtualized rendering: with a big modpack, `card.files` can easily hit
   // several hundred entries. Keeping a live DOM row per file (even a
@@ -1775,18 +1819,18 @@ function initDownloadWidget() {
   // lay out, which is what caused the lag — the fix isn't fewer updates,
   // it's fewer DOM nodes. Only the rows actually scrolled into view (plus
   // a small buffer) are ever real elements; everything else just lives in
-  // `card.files` as plain data until it scrolls into range. Rows are also
-  // now a plain flat list (name + underline, no per-row track/bar), which
-  // trims one child element off every row versus the old bar-per-row
-  // layout — fewer nodes to lay out on top of the already-cheap lookups.
+  // `card.files` as plain data until it scrolls into range.
   const ROW_HEIGHT = 44; // must match .dl-file-row's fixed height in CSS
   const ROW_GAP = 0;
   const ROW_STEP = ROW_HEIGHT + ROW_GAP;
   const OVERSCAN = 8; // extra rows rendered above/below the visible band
 
   function renderFilesList(card) {
-    filesTitle.textContent = card.titleText || 'Files';
-    filesSpeed.textContent = card.refs && card.refs.speed ? card.refs.speed.textContent : '—';
+    if (filesTitle) filesTitle.textContent = card.titleText || 'Files Breakdown';
+    if (filesSubtitle) filesSubtitle.textContent = card.refs && card.refs.stage ? card.refs.stage.textContent : 'In Progress';
+    if (filesSpeed) filesSpeed.textContent = card.refs && card.refs.speed ? card.refs.speed.textContent : '—';
+    if (filesCount) filesCount.textContent = `${card.files.length} file${card.files.length === 1 ? '' : 's'}`;
+
     if (!card.files.length) {
       filesViewport.style.height = '0px';
       filesViewport.innerHTML = '';
@@ -1796,16 +1840,12 @@ function initDownloadWidget() {
       filesViewport.appendChild(empty);
       return;
     }
+
+    const emptyEl = filesViewport.querySelector('.dl-files-empty');
+    if (emptyEl) emptyEl.remove();
+
     const wasNearTop = filesList.scrollTop <= 4;
 
-    // Newest/most-recently-touched file first (top), oldest at the
-    // bottom — so whatever the download is doing right now is always
-    // the first thing visible without having to scroll. We used to build
-    // this by copying+reversing `card.files` on every render call, which
-    // is an O(n) allocation for a list that can be thousands of entries
-    // long. Since we only ever need a small windowed slice (firstIndex..
-    // lastIndex) for the visible rows, we instead index straight into
-    // `card.files` from the end — no copy, no reversal.
     const total = card.files.length;
     const ordered = (i) => card.files[total - 1 - i];
 
@@ -1813,7 +1853,7 @@ function initDownloadWidget() {
 
     if (!card.fileRowEls) card.fileRowEls = new Map(); // name -> {row, status, bar, index}
 
-    const viewportHeight = filesList.clientHeight || 360;
+    const viewportHeight = filesList.clientHeight || 400;
     const scrollTop = filesList.scrollTop;
     const firstIndex = Math.max(0, Math.floor(scrollTop / ROW_STEP) - OVERSCAN);
     const lastIndex = Math.min(
@@ -1827,11 +1867,6 @@ function initDownloadWidget() {
       wantedNames.add(f.name);
       let refs = card.fileRowEls.get(f.name);
       if (!refs) {
-        // Flat row: just the filename, no per-row progress track/bar —
-        // one child element instead of the old name+status+track+bar
-        // structure, which keeps each row cheap to lay out even when
-        // hundreds are being created/recycled per second during a big
-        // install.
         const row = document.createElement('div');
         const nameRow = document.createElement('div');
         nameRow.className = 'dl-file-name-row';
@@ -1855,15 +1890,8 @@ function initDownloadWidget() {
       }
       refs.row.className = 'dl-file-row dl-file-' + f.status;
       refs.row.style.top = `${i * ROW_STEP}px`;
-      // Real byte-level percent when the server reported one; otherwise
-      // fall back to an indeterminate sweep so the row still reads as
-      // "in progress" rather than looking stalled at 0%. Completed/failed
-      // rows snap to a settled full/empty bar instead of animating.
       const known = typeof f.percent === 'number';
       refs.row.classList.toggle('dl-file-indeterminate', f.status === 'downloading' && !known);
-      // transform: scaleX(), not width — see .dl-file-bar in main.css for
-      // why (layout-property updates on dozens of concurrently-visible
-      // rows were the main source of the downloads-menu lag on WebKitGTK).
       if (f.status === 'completed') {
         refs.bar.style.transform = 'scaleX(1)';
         refs.pct.textContent = '100%';
@@ -1882,10 +1910,6 @@ function initDownloadWidget() {
       }
     }
 
-    // Anything with a live row that scrolled out of the rendered band (or
-    // dropped out of `card.files` entirely) gets its DOM node removed —
-    // this is what keeps the node count bounded no matter how many total
-    // files the download touches.
     for (const [name, refs] of card.fileRowEls) {
       if (!wantedNames.has(name)) {
         refs.row.remove();
@@ -1893,9 +1917,6 @@ function initDownloadWidget() {
       }
     }
 
-    // Only follow new activity to the top automatically if the person was
-    // already up there — if they've scrolled down to look at earlier
-    // files, leave them where they are instead of yanking the list back.
     if (wasNearTop) filesList.scrollTop = 0;
   }
 
@@ -1914,24 +1935,52 @@ function initDownloadWidget() {
   }, { passive: true });
 
   let filesWindowCardId = null;
+
+  function isFilesWindowOpen() {
+    return filesPanel && filesPanel.classList.contains('dl-files-open');
+  }
+
   function openFilesWindow(card) {
+    if (!filesPanel) return;
+    if (filesWindowCardId === card.id && isFilesWindowOpen()) {
+      closeFilesWindow();
+      return;
+    }
+    if (filesWindowCardId !== card.id) {
+      if (filesViewport) filesViewport.innerHTML = '';
+      if (card) card.fileRowEls = null;
+    }
     filesWindowCardId = card.id;
     renderFilesList(card);
-    filesOverlay.classList.remove('hidden');
+    filesPanel.classList.remove('hidden');
+    void filesPanel.offsetWidth;
+    filesPanel.classList.add('dl-files-open');
   }
+
+  function closeFilesWindow() {
+    if (!filesPanel) return;
+    filesWindowCardId = null;
+    filesPanel.classList.remove('dl-files-open');
+    setTimeout(() => {
+      if (!isFilesWindowOpen()) {
+        filesPanel.classList.add('hidden');
+      }
+    }, 220);
+  }
+
   let refreshFilesRaf = null;
   function refreshFilesWindowIfOpen(id) {
-    if (filesWindowCardId !== id || filesOverlay.classList.contains('hidden')) return;
+    if (filesWindowCardId !== id || !isFilesWindowOpen()) return;
     if (refreshFilesRaf) return;
     refreshFilesRaf = requestAnimationFrame(() => {
       refreshFilesRaf = null;
-      if (filesWindowCardId !== id || filesOverlay.classList.contains('hidden')) return;
+      if (filesWindowCardId !== id || !isFilesWindowOpen()) return;
       const card = cards.get(id);
       if (card) renderFilesList(card);
     });
   }
   const closeFilesBtn = document.getElementById('btn-close-dl-files');
-  if (closeFilesBtn) closeFilesBtn.addEventListener('click', () => filesOverlay.classList.add('hidden'));
+  if (closeFilesBtn) closeFilesBtn.addEventListener('click', closeFilesWindow);
 
   // card.fileByName: name -> entry, kept in sync with card.files so
   // fileStart/fileProgress/fileDone never need to scan (or, worse,
@@ -2133,8 +2182,8 @@ function initDownloadWidget() {
         showToast('Failed to cancel download: ' + e, 'error');
       });
     });
-    card.refs.filesBtn.addEventListener('click', () => {
-      closePanel();
+    card.refs.filesBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       openFilesWindow(card);
     });
     setDlCardIcon(card.refs.icon, {});
@@ -3019,83 +3068,134 @@ function closeSkinViewerModal() {
   }
 }
 
-let dressingRoomCardRenders = new Map();
-let dressingRoomIntersectionObserver = null;
+// ── Ultra-lightweight 2D Skin & Cape Preview Engine for Dressing Room ──
+// Completely bypasses Three.js WebGL contexts and continuous animation loops
+// on WebKitGTK / Linux, ensuring 0 GPU lag and instant rendering.
+const skinImageCache = new Map();
 
-// Best-effort trim of a per-card skin3d Render's WebGL cost: cap the
-// device pixel ratio (a 130x165 card doesn't need to render at a laptop's
-// full 2x/3x retina density) and drop antialiasing on the underlying
-// three.js renderer. WebKitGTK's GL path is noticeably more expensive per
-// pixel than Chromium/macOS WebKit, so this matters more here than it
-// would elsewhere. Wrapped defensively since skin3d doesn't officially
-// document `.renderer` as public API — if a future version renames or
-// removes it, this just silently no-ops instead of breaking the card.
-function lightenCardRenderer(render) {
-  try {
-    const renderer = render && render.renderer;
-    if (renderer && typeof renderer.setPixelRatio === 'function') {
-      renderer.setPixelRatio(1);
-    }
-  } catch (_) {}
+function getLoadedSkinImage(url) {
+  if (skinImageCache.has(url)) {
+    return Promise.resolve(skinImageCache.get(url));
+  }
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      skinImageCache.set(url, img);
+      resolve(img);
+    };
+    img.onerror = (e) => reject(e);
+    img.src = url;
+  });
 }
 
-function setupDressingRoomObserver() {
-  if (dressingRoomIntersectionObserver) {
-    dressingRoomIntersectionObserver.disconnect();
+function drawSkin2DPreview(canvas, img) {
+  if (!canvas || !img) return;
+  const ctx = canvas.getContext('2d', { alpha: true });
+  if (!ctx) return;
+
+  const width = canvas.width || 100;
+  const height = canvas.height || 128;
+  canvas.width = width;
+  canvas.height = height;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.imageSmoothingEnabled = false;
+
+  const scale = 3.5;
+  const charW = 16 * scale; // 56px
+  const charH = 32 * scale; // 112px
+  const ox = Math.round((width - charW) / 2);
+  const oy = Math.round((height - charH) / 2);
+
+  const is64x64 = img.height >= 64;
+
+  // 1. Head Base: (8, 8, 8, 8)
+  ctx.drawImage(img, 8, 8, 8, 8, ox + 4 * scale, oy, 8 * scale, 8 * scale);
+
+  // 2. Torso Base: (20, 20, 8, 12)
+  ctx.drawImage(img, 20, 20, 8, 12, ox + 4 * scale, oy + 8 * scale, 8 * scale, 12 * scale);
+
+  // 3. Right Arm Base: (44, 20, 4, 12)
+  ctx.drawImage(img, 44, 20, 4, 12, ox, oy + 8 * scale, 4 * scale, 12 * scale);
+
+  // 4. Left Arm Base:
+  if (is64x64) {
+    ctx.drawImage(img, 36, 52, 4, 12, ox + 12 * scale, oy + 8 * scale, 4 * scale, 12 * scale);
+  } else {
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.drawImage(img, 44, 20, 4, 12, -(ox + 16 * scale), oy + 8 * scale, 4 * scale, 12 * scale);
+    ctx.restore();
   }
-  const scrollContainer = document.getElementById('dressing-room-skins');
-  try {
-    dressingRoomIntersectionObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        const card = entry.target;
-        const skinId = card.dataset.skinId;
-        const item = dressingRoomCardRenders.get(skinId);
-        if (!item) continue;
-        if (entry.isIntersecting) {
-          item.isVisible = true;
-          if (item.render) {
-            item.render.renderPaused = false;
-          } else if (item.lazyInit) {
-            item.lazyInit();
-          }
-        } else {
-          item.isVisible = false;
-          if (item.render) {
-            item.render.renderPaused = true;
-          }
-        }
-      }
-    }, {
-      root: scrollContainer || null,
-      rootMargin: '120px 0px 120px 0px',
-      threshold: 0.01
-    });
-  } catch (err) {
-    console.warn('IntersectionObserver init error:', err);
+
+  // 5. Right Leg Base: (4, 20, 4, 12)
+  ctx.drawImage(img, 4, 20, 4, 12, ox + 4 * scale, oy + 20 * scale, 4 * scale, 12 * scale);
+
+  // 6. Left Leg Base:
+  if (is64x64) {
+    ctx.drawImage(img, 20, 52, 4, 12, ox + 8 * scale, oy + 20 * scale, 4 * scale, 12 * scale);
+  } else {
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.drawImage(img, 4, 20, 4, 12, -(ox + 12 * scale), oy + 20 * scale, 4 * scale, 12 * scale);
+    ctx.restore();
+  }
+
+  // 7. Head Overlay (Hat): (40, 8, 8, 8)
+  ctx.drawImage(img, 40, 8, 8, 8, ox + 4 * scale, oy, 8 * scale, 8 * scale);
+
+  // 8. Torso Overlay (Jacket): (20, 36, 8, 12)
+  if (is64x64) {
+    ctx.drawImage(img, 20, 36, 8, 12, ox + 4 * scale, oy + 8 * scale, 8 * scale, 12 * scale);
+  }
+
+  // 9. Right Arm Overlay (Sleeve): (44, 36, 4, 12)
+  if (is64x64) {
+    ctx.drawImage(img, 44, 36, 4, 12, ox, oy + 8 * scale, 4 * scale, 12 * scale);
+  }
+
+  // 10. Left Arm Overlay (Sleeve): (52, 52, 4, 12)
+  if (is64x64) {
+    ctx.drawImage(img, 52, 52, 4, 12, ox + 12 * scale, oy + 8 * scale, 4 * scale, 12 * scale);
+  }
+
+  // 11. Right Leg Overlay (Pants): (4, 36, 4, 12)
+  if (is64x64) {
+    ctx.drawImage(img, 4, 36, 4, 12, ox + 4 * scale, oy + 20 * scale, 4 * scale, 12 * scale);
+  }
+
+  // 12. Left Leg Overlay (Pants): (4, 52, 4, 12)
+  if (is64x64) {
+    ctx.drawImage(img, 4, 52, 4, 12, ox + 8 * scale, oy + 20 * scale, 4 * scale, 12 * scale);
   }
 }
 
-function pauseAllDressingRoomCards() {
-  for (const item of dressingRoomCardRenders.values()) {
-    if (item.render) {
-      item.render.renderPaused = true;
-    }
-  }
+function drawCape2DPreview(canvas, img) {
+  if (!canvas || !img) return;
+  const ctx = canvas.getContext('2d', { alpha: true });
+  if (!ctx) return;
+
+  const width = canvas.width || 100;
+  const height = canvas.height || 128;
+  canvas.width = width;
+  canvas.height = height;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.imageSmoothingEnabled = false;
+
+  // Cape back texture: (1, 1, 10, 16)
+  const scale = 5.5;
+  const capeW = Math.round(10 * scale); // 55px
+  const capeH = Math.round(16 * scale); // 88px
+  const ox = Math.round((width - capeW) / 2);
+  const oy = Math.round((height - capeH) / 2);
+
+  // Draw crisp back of cape
+  ctx.drawImage(img, 1, 1, 10, 16, ox, oy, capeW, capeH);
 }
 
-function cleanupDressingRoomCards() {
-  if (dressingRoomIntersectionObserver) {
-    dressingRoomIntersectionObserver.disconnect();
-  }
-  for (const item of dressingRoomCardRenders.values()) {
-    if (item.render && typeof item.render.dispose === 'function') {
-      try { item.render.dispose(); } catch (_) {}
-    }
-  }
-  dressingRoomCardRenders.clear();
-}
-
-/// Dressing Room — 3D Wardrobe for browsing, adding, and equipping skins and capes.
+/// Dressing Room — Wardrobe for browsing, adding, and equipping skins and capes.
 async function openDressingRoomModal() {
   const overlay = document.getElementById('dressing-room-overlay');
   if (!overlay) return;
@@ -3106,7 +3206,6 @@ async function openDressingRoomModal() {
     skinMiniPreviewInstance.renderPaused = true;
   }
 
-  setupDressingRoomObserver();
   await populateDressingRoomSkins();
 }
 
@@ -3114,9 +3213,6 @@ function closeDressingRoomModal() {
   const overlay = document.getElementById('dressing-room-overlay');
   if (!overlay) return;
   overlay.classList.add('hidden');
-
-  // Pause all 3D cards in the Dressing Room
-  pauseAllDressingRoomCards();
 
   // Resume main menu standee
   showSkinMiniPreview();
@@ -3139,8 +3235,6 @@ async function populateDressingRoomSkins() {
   const grid = document.getElementById('dressing-room-skins-grid');
   if (!grid) return;
 
-  cleanupDressingRoomCards();
-  setupDressingRoomObserver();
   grid.innerHTML = '';
 
   const accounts = await api.getAccounts().catch(() => []);
@@ -3221,6 +3315,8 @@ async function populateDressingRoomSkins() {
     canvasWrap.className = 'dressing-room-card-canvas-wrap';
     const canvas = document.createElement('canvas');
     canvas.className = 'dressing-room-card-canvas';
+    canvas.width = 100;
+    canvas.height = 128;
     canvasWrap.appendChild(canvas);
     card.appendChild(canvasWrap);
 
@@ -3230,6 +3326,12 @@ async function populateDressingRoomSkins() {
     nameLabel.textContent = skin.name || skin.id;
     nameLabel.title = skin.name || skin.id;
     card.appendChild(nameLabel);
+
+    // Render 2D pixel-perfect skin model
+    const skinAssetUrl = window.__TAURI__.core.convertFileSrc(skin.path);
+    getLoadedSkinImage(skinAssetUrl)
+      .then((img) => drawSkin2DPreview(canvas, img))
+      .catch((err) => console.warn('Failed to load skin image:', err));
 
     // Click handler -> equip skin (only equips after server confirms)
     card.addEventListener('click', async () => {
@@ -3284,74 +3386,7 @@ async function populateDressingRoomSkins() {
       }
     });
 
-    // 3D Player Viewer initialization (Lazy loaded per card when visible).
-    // This used to also be called eagerly right below, which meant every
-    // single skin card spun up its own WebGL context + render loop the
-    // instant the grid was built, regardless of whether it was ever
-    // scrolled into view. WebKitGTK handles many concurrent GL contexts
-    // far worse than Chromium/WebKit-on-macOS does, so a wardrobe with
-    // 20-30 skins was opening 20-30 live contexts at once — that's the
-    // main source of the lag. Now init only happens via the
-    // IntersectionObserver below (which already fires immediately for
-    // any card visible at the time it's observed, so on-screen cards
-    // still render right away — off-screen ones just don't, until scrolled
-    // into the 120px margin).
-    const skinAssetUrl = window.__TAURI__.core.convertFileSrc(skin.path);
-    let cardRender = null;
-    const initCardRender = async () => {
-      if (cardRender) return;
-      try {
-        canvas.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
-        const anim = new IdleAnimation();
-        anim.speed = 1.0;
-        cardRender = new Render({
-          canvas: canvas,
-          width: 130,
-          height: 165,
-          fov: 42,
-          zoom: 0.88,
-          preserveDrawingBuffer: false,
-          enableControls: false,
-          enableRotation: false,
-          allowZoom: false,
-          animation: anim,
-        });
-        if (cardRender.controls) {
-          cardRender.controls.enabled = false;
-          cardRender.controls.enableRotate = false;
-          cardRender.controls.enableZoom = false;
-          cardRender.controls.enablePan = false;
-        }
-        if (cardRender.playerWrapper) {
-          cardRender.playerWrapper.position.y = -1.2;
-        }
-        lightenCardRenderer(cardRender);
-        await cardRender.loadSkin(skinAssetUrl, { model: 'auto-detect' });
-
-        const entry = dressingRoomCardRenders.get(skin.id);
-        if (entry) {
-          entry.render = cardRender;
-          if (!entry.isVisible) {
-            cardRender.renderPaused = true;
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to load 3D skin for card:', skin.name, err);
-      }
-    };
-
-    dressingRoomCardRenders.set(skin.id, {
-      render: null,
-      canvas,
-      card,
-      lazyInit: initCardRender,
-      isVisible: true,
-    });
-
     grid.appendChild(card);
-    if (dressingRoomIntersectionObserver) {
-      dressingRoomIntersectionObserver.observe(card);
-    }
   }
 }
 
@@ -3359,14 +3394,6 @@ async function populateDressingRoomCapes() {
   const grid = document.getElementById('dressing-room-capes-grid');
   if (!grid) return;
 
-  // Same reasoning as populateDressingRoomSkins: without this, switching
-  // from the Skins tab to Capes tab left every skin card's WebGL context
-  // alive underneath while a full new set of cape contexts spun up on top
-  // of them — effectively doubling the live GL context count for as long
-  // as the wardrobe stayed open. Tear down whatever the previous tab had
-  // before building this one.
-  cleanupDressingRoomCards();
-  setupDressingRoomObserver();
   grid.innerHTML = '';
 
   const accounts = await api.getAccounts().catch(() => []);
@@ -3499,6 +3526,8 @@ async function populateDressingRoomCapes() {
     canvasWrap.className = 'dressing-room-card-canvas-wrap';
     const canvas = document.createElement('canvas');
     canvas.className = 'dressing-room-card-canvas';
+    canvas.width = 100;
+    canvas.height = 128;
     canvasWrap.appendChild(canvas);
     card.appendChild(canvasWrap);
 
@@ -3508,6 +3537,11 @@ async function populateDressingRoomCapes() {
     nameLabel.textContent = cape.alias || 'Minecraft Cape';
     nameLabel.title = cape.alias || 'Minecraft Cape';
     card.appendChild(nameLabel);
+
+    // Render 2D pixel-perfect cape texture
+    getLoadedSkinImage(cape.url)
+      .then((img) => drawCape2DPreview(canvas, img))
+      .catch((err) => console.warn('Failed to load cape image:', err));
 
     // Click handler -> Equip Cape on Mojang servers (only updates after server confirms)
     card.addEventListener('click', async () => {
@@ -3537,68 +3571,6 @@ async function populateDressingRoomCapes() {
     });
 
     grid.appendChild(card);
-
-    // 3D cape viewer — now lazy via the shared IntersectionObserver instead
-    // of firing for every cape the instant the tab opens. This mirrors the
-    // skins tab fix: previously every cape card opened its own WebGL
-    // context immediately (and there wasn't even an observer wired up for
-    // this grid at all), so a wardrobe with many capes meant that many
-    // concurrent GL contexts — a major lag source on WebKitGTK.
-    const capeKey = `cape-${cape.id}`;
-    card.dataset.skinId = capeKey; // key the shared observer looks up by
-    let capeRender = null;
-    const initCapeRender = async () => {
-      if (capeRender) return;
-      try {
-        canvas.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
-        const anim = new IdleAnimation();
-        anim.speed = 0.8;
-        capeRender = new Render({
-          canvas: canvas,
-          width: 130,
-          height: 165,
-          fov: 42,
-          zoom: 0.88,
-          preserveDrawingBuffer: false,
-          enableControls: false,
-          enableRotation: false,
-          animation: anim,
-        });
-        lightenCardRenderer(capeRender);
-
-        // Rotate scene 180 degrees so the back/cape is fully displayed
-        if (capeRender.playerObject) {
-          capeRender.playerObject.rotation.y = Math.PI;
-        }
-
-        // Load skin and cape
-        const skinUrl = currentMiniPreviewSkinUrl || `https://mineskin.eu/skin/${encodeURIComponent(active.username)}`;
-        await capeRender.loadSkin(skinUrl, { model: 'auto-detect' }).catch(() => {});
-        await capeRender.loadCape(cape.url).catch(() => {});
-
-        const entry = dressingRoomCardRenders.get(capeKey);
-        if (entry) {
-          entry.render = capeRender;
-          if (!entry.isVisible) {
-            capeRender.renderPaused = true;
-          }
-        }
-      } catch (err) {
-        console.warn('Could not initialize cape card 3D viewer:', err);
-      }
-    };
-
-    dressingRoomCardRenders.set(capeKey, {
-      render: null,
-      canvas,
-      card,
-      lazyInit: initCapeRender,
-      isVisible: true,
-    });
-
-    if (dressingRoomIntersectionObserver) {
-      dressingRoomIntersectionObserver.observe(card);
-    }
   }
 }
 
@@ -4301,7 +4273,7 @@ function initInstanceListDelegation() {
           }
           renderInstanceList();
           renderHiddenInstancesSettings();
-          showToast(`"${instName}" hidden — unhide it anytime in Settings (⚙) → Performance & Java`, 'success');
+          showToast(`"${instName}" hidden — unhide it anytime in Settings (⚙) → Performance & Advanced → Hidden Instances`, 'success');
         } catch (e) {
           showToast('Failed to hide instance: ' + e, 'error');
         }
@@ -4313,7 +4285,7 @@ function initInstanceListDelegation() {
         showInstanceConfirmModal({
           type: 'hide',
           title: 'Hide Instance',
-          message: `Hide "${instName}" from your instances list? You can unhide and manage it anytime in Settings (⚙) → Performance & Java → Hidden Instances.`,
+          message: `Hide "${instName}" from your instances list? You can unhide and manage it anytime in Settings (⚙) → Performance & Advanced → Hidden Instances.`,
           confirmText: 'Hide Instance',
           isDanger: false,
           onConfirm: doHide
@@ -5043,11 +5015,13 @@ async function syncInstanceSelectionAcrossTabs() {
 // before the directory split existed (empty minecraft_directory).
 function instanceDataDeletionIsUnsafe(inst) {
   if (!inst) return true;
-  const ownDir = (inst.directory || '').trim();
+  const ownDir = (inst.directory || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
   if (!ownDir) return true;
-  const sharedDir = (inst.minecraft_directory || (settings && settings.game_directory) || '').trim();
+  const sharedDir = (inst.minecraft_directory || (settings && settings.game_directory) || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
   if (!sharedDir) return true;
-  return ownDir === sharedDir;
+  if (ownDir.toLowerCase() === sharedDir.toLowerCase()) return true;
+  if (ownDir.toLowerCase() === `${sharedDir.toLowerCase()}/!instances`) return true;
+  return false;
 }
 
 // Actually deletes an instance's files + tracked entry (shared by the plain
@@ -5275,7 +5249,13 @@ function initInstanceActions() {
         showCrashTroubleshootWindow(inst, 'Launch timed out after 20 seconds. This usually means the instance is broken or missing files.');
       } else {
         const errStr = String(e || '');
-        if (errStr.includes('xrandr') || errStr.includes('xorg-xrandr')) {
+        // Silently swallow "Launch cancelled by user" — this fires when the
+        // user kills a starting instance before it fully launches (e.g. via
+        // the running-instances widget's Stop button). It's intentional and
+        // expected, not an error the user needs to act on.
+        if (errStr.toLowerCase().includes('launch cancelled by user') || errStr.toLowerCase().includes('cancelled by user')) {
+          // no-op: user intentionally stopped the launch
+        } else if (errStr.includes('xrandr') || errStr.includes('xorg-xrandr')) {
           showXrandrWarningModal(() => {
             document.getElementById('btn-play')?.click();
           });
@@ -5366,6 +5346,13 @@ function initInstanceActions() {
       await doDelete(false);
     } else {
       const dataUnsafe = instanceDataDeletionIsUnsafe(inst);
+      // For instances with their own dedicated directory (a modpack installed
+      // into !Instances/<name> or a user-chosen custom path), pre-tick the
+      // "also delete instance data" checkbox — their data folder is entirely
+      // separate from the shared .minecraft directory, so wiping it is always
+      // safe and is what most users expect when they say "delete this modpack".
+      // The user can still un-tick it if they want to keep the folder.
+      const dataDeletionDefaultOn = !dataUnsafe;
       showInstanceConfirmModal({
         type: 'delete',
         title: 'Delete Instance',
@@ -5375,6 +5362,7 @@ function initInstanceActions() {
         dataToggle: {
           show: true,
           disabled: dataUnsafe,
+          defaultChecked: dataDeletionDefaultOn,
           disabledReason: "Not available — this instance stores its data in your main .minecraft folder, shared with other instances.",
         },
         onConfirm: doDelete
@@ -6521,12 +6509,16 @@ function renderModCardContent(card) {
   card._isRendered = true;
   card.classList.remove('is-unloaded');
 
+  const isModpackMod = !!mod._isModpackMod;
+  const modpackBadge = isModpackMod ? '<span class="modpack-subpanel-badge" style="font-size:9px; padding:1px 6px; margin-left:4px;">Modpack Built-in</span>' : '';
+  const updateBtnHtml = isModpackMod ? '' : `<button class="btn-update-mod" data-path="${discoverEscape(mod.path)}" title="Update to latest version" type="button">${DOWNLOAD_ICON_SVG}</button>`;
+
   const badges = (mod.loader || '').split(',').map(l => l.trim()).filter(Boolean).map(l => `<span class="loader-badge ${l.toLowerCase()}">${l}</span>`).join(' ');
   card.innerHTML = `
     <div class="mod-info">
       <div class="mod-icon loading">${ICON_UNKNOWN_SVG}</div>
       <div class="mod-meta">
-        <div class="mod-name">${discoverEscape(mod.name || '')}</div>
+        <div class="mod-name">${discoverEscape(mod.name || '')}${modpackBadge}</div>
         <div class="mod-desc">${mod.description ? (mod.description.length > 140 ? discoverEscape(mod.description.slice(0,137)) + '...' : discoverEscape(mod.description)) : ''}</div>
         <div class="mod-version">${discoverEscape(mod.version || '')}${badges ? ' ' + badges : ''}</div>
       </div>
@@ -6536,7 +6528,7 @@ function renderModCardContent(card) {
         <input type="checkbox" ${mod.enabled ? 'checked' : ''} data-path="${discoverEscape(mod.path)}" class="mod-toggle-input">
         <span class="mod-toggle-slider"></span>
       </label>
-      <button class="btn-update-mod" data-path="${discoverEscape(mod.path)}" title="Update to latest version" type="button">${DOWNLOAD_ICON_SVG}</button>
+      ${updateBtnHtml}
       <button class="btn-danger-pill btn-sm btn-delete-mod" data-path="${discoverEscape(mod.path)}" title="Delete mod">🗑</button>
     </div>
   `;
@@ -6553,11 +6545,12 @@ function renderModCardContent(card) {
   }
 
   const updateBtn = card.querySelector('.btn-update-mod');
-  if (modUpdateInfo.has(mod.path)) {
+  if (updateBtn && modUpdateInfo.has(mod.path)) {
     updateBtn.classList.add('has-update');
     card.classList.add('mod-update-glow');
   }
-  updateBtn.addEventListener('click', async (ev) => {
+  if (updateBtn) {
+    updateBtn.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     const info = modUpdateInfo.get(card.dataset.path);
     if (!info) return;
@@ -6588,7 +6581,8 @@ function renderModCardContent(card) {
     } finally {
       if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, ok, ok ? `Updated ${modLabel}` : undefined);
     }
-  });
+    });
+  }
 
   const toggleInput = card.querySelector('.mod-toggle-input');
   toggleInput.addEventListener('change', async () => {
@@ -6614,7 +6608,15 @@ function renderModCardContent(card) {
 
   card.querySelector('.btn-delete-mod').addEventListener('click', async (ev) => {
     ev.stopPropagation();
-    if (!confirm('Delete this mod?')) return;
+    const modLabel = mod.name || mod.file_name || 'this mod';
+    const proceed = await showConfirmDialog({
+      type: 'delete',
+      title: 'Delete Mod',
+      message: `Are you sure you want to delete "${modLabel}"?`,
+      confirmText: 'Delete',
+      isDanger: true,
+    });
+    if (!proceed) return;
     try {
       await api.deleteMod(directory, card.dataset.path);
       card.remove();
@@ -6734,19 +6736,72 @@ function hideModsTabLoading() {
   }, 120);
 }
 
+let currentModpackInfo = null;
+let activeModsView = 'normal'; // 'normal' | 'modpack'
+
 async function loadMods() {
   if (!settings) return;
   const grid = document.getElementById('mods-grid');
   const countEl = document.getElementById('mods-count');
   const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
+  const subpanel = document.getElementById('modpack-mods-subpanel');
+  const tabMods = document.getElementById('tab-mods');
 
   const isFirstLoad = grid.children.length === 0;
   if (isFirstLoad) grid.innerHTML = '<div class="empty-state"><span>Loading mods…</span></div>';
 
   const targetInstance = getModsTargetInstance();
   const directory = targetInstance ? (targetInstance.directory || settings.game_directory) : settings.game_directory;
+
+  // Check if current instance is a modpack
+  try {
+    currentModpackInfo = await api.getModpackInfo(directory);
+  } catch {
+    currentModpackInfo = null;
+  }
+
+  const isModpackInstance = !!(currentModpackInfo && currentModpackInfo.mods && currentModpackInfo.mods.length > 0);
+  if (subpanel) {
+    subpanel.classList.toggle('hidden', !isModpackInstance);
+    if (isModpackInstance) {
+      const nameEl = document.getElementById('modpack-subpanel-name');
+      if (nameEl) nameEl.textContent = currentModpackInfo.pack_name || targetInstance?.name || 'Modpack';
+    }
+  }
+
+  if (!isModpackInstance) {
+    activeModsView = 'normal';
+  }
+
+  if (tabMods) {
+    tabMods.classList.toggle('modpack-mods-active', activeModsView === 'modpack');
+  }
+
+  // Update top toolbar action buttons visibility
+  const isModpackView = isModpackInstance && activeModsView === 'modpack';
+  const updateAllBtn = document.getElementById('btn-update-all-mods');
+  const checkUpdatesBtn = document.getElementById('btn-check-updates');
+  const fixModsRunBtn = document.getElementById('btn-fix-mods-run');
+  const fixModsWrapper = document.querySelector('.fix-mods-wrapper');
+  if (checkUpdatesBtn) checkUpdatesBtn.style.display = isModpackView ? 'none' : '';
+  if (fixModsRunBtn) fixModsRunBtn.style.display = isModpackView ? 'none' : '';
+  if (fixModsWrapper) fixModsWrapper.style.display = isModpackView ? 'none' : '';
+  if (updateAllBtn) updateAllBtn.style.display = isModpackView ? 'none' : '';
+
+  const hintEl = document.getElementById('modpack-subpanel-hint');
+  if (hintEl) {
+    hintEl.textContent = isModpackView
+      ? '🔒 Modpack Managed (Read-only for Updates)'
+      : 'Showing user installed mods';
+  }
+
+  const normalTabBtn = document.getElementById('btn-mods-view-normal');
+  const modpackTabBtn = document.getElementById('btn-mods-view-modpack');
+  if (normalTabBtn) normalTabBtn.classList.toggle('active', activeModsView === 'normal');
+  if (modpackTabBtn) modpackTabBtn.classList.toggle('active', activeModsView === 'modpack');
+
   modUpdateInfo = modUpdateInfoByDir.get(modsCacheKey(targetInstance, directory)) || new Map();
-  refreshUpdateAllButtonState();
+  if (!isModpackView) refreshUpdateAllButtonState();
 
   const preservedIcons = new Map();
   grid.querySelectorAll('.mod-card').forEach(card => {
@@ -6760,20 +6815,51 @@ async function loadMods() {
   });
 
   try {
-    const mods = await api.listMods(directory);
+    const allMods = await api.listMods(directory);
+    
+    // Separate mods into normal and modpack
+    const packModSet = new Set(
+      (currentModpackInfo && currentModpackInfo.mods ? currentModpackInfo.mods : []).map(m => {
+        const base = m.split(/[/\\]/).pop().toLowerCase();
+        return base.endsWith('.disabled') ? base.slice(0, -9) : base;
+      })
+    );
+
+    const normalMods = [];
+    const modpackMods = [];
+
+    allMods.forEach(mod => {
+      const fileName = (mod.path || '').split(/[/\\]/).pop().toLowerCase();
+      const cleanFileName = fileName.endsWith('.disabled') ? fileName.slice(0, -9) : fileName;
+      if (packModSet.has(cleanFileName) || packModSet.has(fileName)) {
+        mod._isModpackMod = true;
+        modpackMods.push(mod);
+      } else {
+        mod._isModpackMod = false;
+        normalMods.push(mod);
+      }
+    });
+
+    const normalCountEl = document.getElementById('badge-normal-mods-count');
+    const modpackCountEl = document.getElementById('badge-modpack-mods-count');
+    if (normalCountEl) normalCountEl.textContent = normalMods.length;
+    if (modpackCountEl) modpackCountEl.textContent = modpackMods.length;
+
+    const displayedMods = isModpackView ? modpackMods : (isModpackInstance ? normalMods : allMods);
+
     const frag = document.createDocumentFragment();
-    if (mods.length === 0) {
+    if (displayedMods.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
-      empty.innerHTML = `<span class="empty-icon">${ICON_EMPTY_BOX_SVG}</span><span>No mods found</span>`;
+      empty.innerHTML = `<span class="empty-icon">${ICON_EMPTY_BOX_SVG}</span><span>${isModpackView ? 'No modpack mods found' : 'No user mods added'}</span>`;
       frag.appendChild(empty);
     } else {
-      mods.forEach(mod => frag.appendChild(createVirtualModCard(mod, directory, preservedIcons.get(mod.path))));
+      displayedMods.forEach(mod => frag.appendChild(createVirtualModCard(mod, directory, preservedIcons.get(mod.path))));
     }
     grid.innerHTML = '';
     grid.appendChild(frag);
 
-    if (deleteSelectedBtn) deleteSelectedBtn.classList.toggle('hidden', mods.length === 0);
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.toggle('hidden', displayedMods.length === 0);
     updateModsCount();
     filterMods();
   } catch (e) {
@@ -6796,16 +6882,42 @@ function initMods() {
       checkSelectedInstanceForUpdates().catch(e => console.error('Update check failed', e));
     });
   }
+
+  const normalTabBtn = document.getElementById('btn-mods-view-normal');
+  const modpackTabBtn = document.getElementById('btn-mods-view-modpack');
+  if (normalTabBtn) {
+    normalTabBtn.addEventListener('click', () => {
+      if (activeModsView !== 'normal') {
+        activeModsView = 'normal';
+        loadMods();
+      }
+    });
+  }
+  if (modpackTabBtn) {
+    modpackTabBtn.addEventListener('click', () => {
+      if (activeModsView !== 'modpack') {
+        activeModsView = 'modpack';
+        loadMods();
+      } else {
+        activeModsView = 'normal';
+        loadMods();
+      }
+    });
+  }
+
   const searchInput = document.getElementById('mods-search');
   if (searchInput) {
     searchInput.addEventListener('input', filterMods);
   }
-  document.getElementById('btn-open-mods').addEventListener('click', async () => {
-    if (!settings) return;
-    const directory = getModsTargetDirectory();
-    try { await api.openModsFolder(directory); }
-    catch (e) { showToast('Failed to open folder', 'error'); }
-  });
+  const btnOpenMods = document.getElementById('btn-open-mods');
+  if (btnOpenMods) {
+    btnOpenMods.addEventListener('click', async () => {
+      if (!settings) return;
+      const directory = getModsTargetDirectory();
+      try { await api.openModsFolder(directory); }
+      catch (e) { showToast('Failed to open folder', 'error'); }
+    });
+  }
 
   const exportModsBtn = document.getElementById('btn-export-mods');
   if (exportModsBtn) exportModsBtn.addEventListener('click', () => openExportModsOverlay());
@@ -6818,7 +6930,14 @@ function initMods() {
     deleteSelectedBtn.addEventListener('click', async () => {
       const selected = Array.from(document.querySelectorAll('.mod-card.selected'));
       if (selected.length === 0) return;
-      if (!confirm(`Delete ${selected.length} selected mod(s)?`)) return;
+      const proceed = await showConfirmDialog({
+        type: 'delete',
+        title: 'Delete Selected Mods',
+        message: `Are you sure you want to delete ${selected.length} selected mod(s)?`,
+        confirmText: `Delete ${selected.length} Mod(s)`,
+        isDanger: true,
+      });
+      if (!proceed) return;
       const paths = selected.map(card => card.dataset.path).filter(Boolean);
       try {
         await Promise.all(paths.map(path => api.deleteMod(path)));
@@ -7078,8 +7197,13 @@ async function confirmModpackImport() {
     dlWidgetGeneric.begin(MODPACK_IMPORT_CARD_ID, `Modpack: ${name}`, 'Reading modpack…', {
       determinate: true,
       withStats: true,
-      noCancel: true, // extraction isn't cancellable mid-run yet; use the window's own Cancel to minimize it instead
       icon: 'mod',
+      onCancel: async () => {
+        modpackImportTaskRunning = false;
+        closeModpackImportOverlay();
+        if (window.hwDone) window.hwDone('modpack-import-overlay');
+        showToast(`Cancelled import of "${name}"`, 'info');
+      },
     });
   }
 
@@ -7843,10 +7967,13 @@ const discoverPrefs = loadDiscoverPrefs();
 
 let discoverState = {
   query: '',
-  type: 'mod',       // 'modpack' | 'mod' | 'resourcepack'
+  type: 'mod',       // 'modpack' | 'mod' | 'resourcepack' | 'shader'
   loader: 'any',
+  shaderLoader: 'any',
   gameVersion: '',        // '' = any
   categories: [],         // selected category slugs
+  features: [],           // selected feature slugs (for shaders)
+  performanceImpact: '',  // selected performance impact slug (for shaders)
   environment: 'any',     // 'any' | 'client' | 'server' (mods only)
   resolution: '',         // '' = any, else e.g. "16x-32x" (resourcepacks only)
   license: '',            // '' = any, else SPDX short id
@@ -7864,8 +7991,10 @@ let discoverState = {
 // cached so re-opening a filter dropdown doesn't refetch every time.
 let discoverTagCache = {
   gameVersions: null,      // DiscoverGameVersion[]
-  categoriesByType: {},    // { mod: DiscoverCategory[], resourcepack: DiscoverCategory[] }
+  categoriesByType: {},    // { mod: DiscoverCategory[], resourcepack: DiscoverCategory[], shader: DiscoverCategory[] }
   resolutions: null,       // DiscoverCategory[] (resourcepacks only)
+  performanceImpacts: null,// DiscoverCategory[] (shaders only)
+  features: null,          // DiscoverCategory[] (shaders only)
   licenses: null,          // DiscoverLicense[]
 };
 
@@ -8877,11 +9006,8 @@ function applyInstanceFiltersToDiscover(inst) {
   }
 
   const gameVersion = inst.minecraft_version || '';
-  // Modpacks install a whole new instance (their own Minecraft version +
-  // loader), so auto-copying the *targeted* instance's version here would
-  // just get overwritten by the pack anyway — leave Game Version alone and
-  // let the user pick it themselves when browsing modpacks.
-  if (discoverState.type !== 'modpack' && gameVersion && discoverState.gameVersion !== gameVersion) {
+  // Modpacks and Shaders do not auto-override the Minecraft version — let the user pick freely
+  if (discoverState.type !== 'modpack' && discoverState.type !== 'shader' && gameVersion && discoverState.gameVersion !== gameVersion) {
     discoverState.gameVersion = gameVersion;
     const gvSelect = document.getElementById('discover-game-version-select');
     if (gvSelect) gvSelect.value = gameVersion;
@@ -8926,7 +9052,7 @@ function updateDiscoverPagination() {
   if (info) info.textContent = `Page ${discoverState.page} of ${totalPages}`;
   if (prevBtn) prevBtn.disabled = discoverState.page <= 1;
   if (nextBtn) nextBtn.disabled = discoverState.page >= totalPages;
-  const typeLabel = discoverState.type === 'modpack' ? 'modpacks' : discoverState.type === 'mod' ? 'mods' : 'resourcepacks';
+  const typeLabel = discoverState.type === 'modpack' ? 'modpacks' : discoverState.type === 'mod' ? 'mods' : discoverState.type === 'shader' ? 'shaders' : 'resourcepacks';
   if (countLabel) countLabel.textContent = `${formatDiscoverCount(discoverState.totalHits)} ${typeLabel}`;
 }
 
@@ -8935,16 +9061,25 @@ async function performDiscoverSearch() {
   if (!grid) return;
   showDiscoverSkeletons();
 
-  // Modpacks carry a loader and client/server side on Modrinth just like
-  // mods do, so both filters need to actually reach the search call here —
-  // not just be visible in the sidebar (that's the segment-click handler's
-  // job; this is what makes the selected values do anything).
+  const isShader = discoverState.type === 'shader';
   const wantsLoaderEnv = discoverState.type === 'mod' || discoverState.type === 'modpack';
-  const loaderFilter = (wantsLoaderEnv && discoverState.loader !== 'any') ? discoverState.loader : null;
+  const loaderFilter = isShader
+    ? (discoverState.shaderLoader !== 'any' ? discoverState.shaderLoader : null)
+    : (wantsLoaderEnv && discoverState.loader !== 'any' ? discoverState.loader : null);
   const gameVersion = discoverState.gameVersion || null;
-  const categoriesFilter = (discoverState.type === 'resourcepack' && discoverState.resolution)
-    ? [...discoverState.categories, discoverState.resolution]
-    : (discoverState.categories.length > 0 ? discoverState.categories : null);
+  
+  let combinedCategories = [...discoverState.categories];
+  if (discoverState.type === 'resourcepack' && discoverState.resolution) {
+    combinedCategories.push(discoverState.resolution);
+  } else if (isShader) {
+    if (discoverState.performanceImpact) {
+      combinedCategories.push(discoverState.performanceImpact);
+    }
+    if (discoverState.features && discoverState.features.length > 0) {
+      combinedCategories.push(...discoverState.features);
+    }
+  }
+  const categoriesFilter = combinedCategories.length > 0 ? combinedCategories : null;
 
   try {
     const result = await api.discoverSearch(
@@ -9175,6 +9310,8 @@ function renderCardContent(card) {
   downloadBtn.addEventListener('click', () => downloadDiscoverSelection(hit, versionSelect, downloadBtn));
 
   if (menuBtn) {
+    menuBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    menuBtn.addEventListener('mousedown', (e) => e.stopPropagation());
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const rect = menuBtn.getBoundingClientRect();
@@ -9212,11 +9349,17 @@ function buildDiscoverCard(hit) {
 }
 
 function isDiscoverVersionCompatible(version, hit, target) {
+  // Modpacks always install as a fresh, standalone instance with their own
+  // Minecraft version and mod loader, so they are never constrained or
+  // marked incompatible based on whatever target instance is currently selected.
+  if (!hit || hit.project_type === 'modpack' || discoverState.type === 'modpack') {
+    return true;
+  }
   if (!target) return true;
   if (target.minecraft_version && version.game_versions && !version.game_versions.includes(target.minecraft_version)) {
     return false;
   }
-  if (hit.project_type === 'mod' || hit.project_type === 'modpack') {
+  if (hit.project_type === 'mod') {
     const loader = (target.loader || 'vanilla').toLowerCase();
     if (loader !== 'vanilla') {
       const loaders = (version.loaders || []).map(l => l.toLowerCase());
@@ -9249,7 +9392,13 @@ async function resolveDiscoverDownloadOption(hit, versionSelect, downloadBtn, ta
 
   if (opt.dataset.incompatible) {
     const targetLabel = target ? (target.name || target.version_id) : 'the targeted instance';
-    const proceed = confirm(`This version doesn't match ${targetLabel} and is marked (Incompatible). Download it anyway?`);
+    const proceed = await showConfirmDialog({
+      type: 'warning',
+      title: 'Incompatible Version',
+      message: `This version doesn't match ${targetLabel} and is marked as Incompatible. Download it anyway?`,
+      confirmText: 'Download Anyway',
+      isDanger: false,
+    });
     if (!proceed) {
       if (downloadBtn) downloadBtn.disabled = false;
       return null;
@@ -9338,7 +9487,6 @@ async function installDiscoverModpack(hit, opt, downloadBtn, customDirectory) {
     dlWidgetGeneric.begin(dlId, `Modpack: ${hit.title}`, 'Downloading…', {
       determinate: true,
       withStats: true,
-      noCancel: true,
       icon: 'mod',
       iconUrl: hit.icon_url,
     });
@@ -9484,6 +9632,75 @@ async function populateDiscoverResolutions() {
   });
 }
 
+async function populateDiscoverPerformanceImpacts() {
+  const perfSelect = document.getElementById('discover-performance-impact-select');
+  if (!perfSelect) return;
+  if (!discoverTagCache.performanceImpacts) {
+    try {
+      discoverTagCache.performanceImpacts = await api.discoverGetPerformanceImpacts('shader');
+    } catch {
+      discoverTagCache.performanceImpacts = [];
+    }
+  }
+  perfSelect.innerHTML = '<option value="">Any Performance</option>';
+  const impacts = (discoverTagCache.performanceImpacts && discoverTagCache.performanceImpacts.length > 0)
+    ? discoverTagCache.performanceImpacts
+    : [
+        { name: 'potato' },
+        { name: 'low' },
+        { name: 'medium' },
+        { name: 'high' },
+        { name: 'extreme' }
+      ];
+  impacts.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    opt.textContent = p.name.charAt(0).toUpperCase() + p.name.slice(1);
+    if (discoverState.performanceImpact === p.name) opt.selected = true;
+    perfSelect.appendChild(opt);
+  });
+}
+
+async function populateDiscoverFeatures() {
+  const box = document.getElementById('discover-features-list');
+  if (!box) return;
+  if (!discoverTagCache.features) {
+    try {
+      discoverTagCache.features = await api.discoverGetFeatures('shader');
+    } catch {
+      discoverTagCache.features = [];
+    }
+  }
+  const feats = (discoverTagCache.features && discoverTagCache.features.length > 0)
+    ? discoverTagCache.features
+    : [
+        { name: 'shadows' },
+        { name: 'reflections' },
+        { name: 'bloom' },
+        { name: 'atmosphere' },
+        { name: 'volumetric-clouds' },
+        { name: 'ray-tracing' },
+        { name: 'screen-space-reflections' },
+        { name: 'motion-blur' },
+        { name: 'depth-of-field' },
+        { name: 'pbr' },
+        { name: 'vanilla-plus' }
+      ];
+  box.innerHTML = '';
+  feats.forEach(f => {
+    const label = document.createElement('label');
+    label.className = 'discover-category-item';
+    const checked = discoverState.features.includes(f.name);
+    label.innerHTML = `<input type="checkbox" value="${discoverEscape(f.name)}" ${checked ? 'checked' : ''}/> <span>${discoverEscape(f.name.replace(/-/g, ' '))}</span>`;
+    label.querySelector('input').addEventListener('change', () => {
+      discoverState.features = Array.from(box.querySelectorAll('input[type="checkbox"]:checked')).map(i => i.value);
+      discoverState.page = 1;
+      performDiscoverSearch();
+    });
+    box.appendChild(label);
+  });
+}
+
 async function populateDiscoverLicenses() {
   const licSelect = document.getElementById('discover-license-select');
   if (!licSelect) return;
@@ -9513,12 +9730,19 @@ function updateDiscoverLoaderPillsUI() {
   });
 }
 
+function updateDiscoverShaderLoaderPillsUI() {
+  document.querySelectorAll('#discover-shader-loader-pills .discover-loader-pill').forEach(pill => {
+    pill.classList.toggle('active', pill.dataset.loader === discoverState.shaderLoader);
+  });
+}
+
 function initDiscover() {
   const queryInput = document.getElementById('discover-query');
   const searchBtn = document.getElementById('discover-search-btn');
   const targetSelect = document.getElementById('discover-target-instance');
   const gvSelect = document.getElementById('discover-game-version-select');
   const resSelect = document.getElementById('discover-resolution-select');
+  const perfSelect = document.getElementById('discover-performance-impact-select');
   const envSelect = document.getElementById('discover-environment-select');
   const licSelect = document.getElementById('discover-license-select');
   const resetBtn = document.getElementById('discover-filters-reset');
@@ -9564,10 +9788,27 @@ function initDiscover() {
     });
   }
 
+  if (perfSelect) {
+    perfSelect.addEventListener('change', (e) => {
+      discoverState.performanceImpact = e.target.value;
+      discoverState.page = 1;
+      performDiscoverSearch();
+    });
+  }
+
   document.querySelectorAll('#discover-loader-pills .discover-loader-pill').forEach(pill => {
     pill.addEventListener('click', () => {
       discoverState.loader = pill.dataset.loader;
       updateDiscoverLoaderPillsUI();
+      discoverState.page = 1;
+      performDiscoverSearch();
+    });
+  });
+
+  document.querySelectorAll('#discover-shader-loader-pills .discover-loader-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      discoverState.shaderLoader = pill.dataset.loader;
+      updateDiscoverShaderLoaderPillsUI();
       discoverState.page = 1;
       performDiscoverSearch();
     });
@@ -9603,37 +9844,46 @@ function initDiscover() {
       discoverState.type = btn.dataset.type;
       discoverState.page = 1;
       discoverState.categories = [];
+      discoverState.features = [];
+      discoverState.performanceImpact = '';
       discoverState.loader = 'any';
+      discoverState.shaderLoader = 'any';
       discoverState.environment = 'any';
       discoverState.resolution = '';
 
-      // Modpacks pick their own Minecraft version by nature of what's in
-      // the pack — don't carry over whatever Game Version was left selected
-      // from browsing Mods/Resourcepacks, and don't let the target
-      // instance auto-fill it either (see applyInstanceFiltersToDiscover).
-      // Leave it on "All Versions" until the user deliberately narrows it.
-      if (discoverState.type === 'modpack') {
+      // Modpacks and Shaders do not carry over the target instance game version
+      if (discoverState.type === 'modpack' || discoverState.type === 'shader') {
         discoverState.gameVersion = '';
         const gvSelect = document.getElementById('discover-game-version-select');
         if (gvSelect) gvSelect.value = '';
       }
 
       const loaderSection = document.getElementById('filter-section-loader');
+      const shaderLoaderSection = document.getElementById('filter-section-shader-loader');
+      const perfSection = document.getElementById('filter-section-performance-impact');
+      const featuresSection = document.getElementById('filter-section-features');
+      const categoryLabel = document.getElementById('discover-category-label');
       const envSection = document.getElementById('filter-section-env');
       const resSection = document.getElementById('filter-section-resolution');
 
-      // Modpacks carry a loader (fabric/forge/etc.) and a client/server
-      // side just like mods do on Modrinth, so they get the same filters —
-      // only resourcepacks (Resolution) and plain mods vs modpacks (which
-      // both want Loader + Environment) differ here.
+      const isShader = discoverState.type === 'shader';
       const wantsLoaderEnv = discoverState.type === 'mod' || discoverState.type === 'modpack';
       if (loaderSection) loaderSection.style.display = wantsLoaderEnv ? 'flex' : 'none';
+      if (shaderLoaderSection) shaderLoaderSection.style.display = isShader ? 'flex' : 'none';
+      if (perfSection) perfSection.style.display = isShader ? 'flex' : 'none';
+      if (featuresSection) featuresSection.style.display = isShader ? 'flex' : 'none';
       if (envSection) envSection.style.display = wantsLoaderEnv ? 'flex' : 'none';
       if (resSection) resSection.style.display = discoverState.type === 'resourcepack' ? 'flex' : 'none';
+      if (categoryLabel) categoryLabel.textContent = isShader ? 'Style & Categories' : 'Categories';
 
       updateDiscoverLoaderPillsUI();
+      updateDiscoverShaderLoaderPillsUI();
       populateDiscoverCategories();
       if (discoverState.type === 'resourcepack') populateDiscoverResolutions();
+      if (isShader) {
+        populateDiscoverPerformanceImpacts();
+        populateDiscoverFeatures();
+      }
       applyInstanceFiltersToDiscover(currentDiscoverTargetInstance());
       performDiscoverSearch();
     });
@@ -9646,11 +9896,17 @@ function initDiscover() {
       discoverState.gameVersion = '';
       if (gvSelect) gvSelect.value = '';
       discoverState.loader = 'any';
+      discoverState.shaderLoader = 'any';
       updateDiscoverLoaderPillsUI();
+      updateDiscoverShaderLoaderPillsUI();
       discoverState.categories = [];
+      discoverState.features = [];
+      discoverState.performanceImpact = '';
       document.querySelectorAll('#discover-categories-list input[type="checkbox"]').forEach(i => { i.checked = false; });
+      document.querySelectorAll('#discover-features-list input[type="checkbox"]').forEach(i => { i.checked = false; });
       discoverState.resolution = '';
       if (resSelect) resSelect.value = '';
+      if (perfSelect) perfSelect.value = '';
       discoverState.environment = 'any';
       if (envSelect) envSelect.value = 'any';
       discoverState.license = '';
@@ -10145,8 +10401,6 @@ function populateSettingsUI() {
   document.getElementById('setting-confirm-destructive').checked = settings.confirm_destructive_actions !== false;
   const autoApplyFiltersEl = document.getElementById('setting-auto-apply-instance-filters');
   if (autoApplyFiltersEl) autoApplyFiltersEl.checked = settings.auto_apply_instance_filters_in_discover !== false;
-  const smoothScrollingEl = document.getElementById('setting-smooth-scrolling');
-  if (smoothScrollingEl) smoothScrollingEl.checked = settings.smooth_scrolling !== false;
   const notifyAutoUpdatesEl = document.getElementById('setting-notify-auto-mod-updates');
   if (notifyAutoUpdatesEl) notifyAutoUpdatesEl.checked = settings.notify_on_auto_mod_updates !== false;
   const autoCheckLauncherUpdatesEl = document.getElementById('setting-auto-check-launcher-updates');
@@ -10222,8 +10476,6 @@ function populateSettingsUI() {
   // Privacy & Developer
   const hideUsernameEl = document.getElementById('setting-hide-username');
   if (hideUsernameEl) hideUsernameEl.checked = !!settings.hide_username;
-  const clearSessionChk = document.getElementById('setting-clear-session-on-exit');
-  if (clearSessionChk) clearSessionChk.checked = !!settings.clear_session_on_exit;
   document.getElementById('setting-redact-tokens').checked = settings.redact_tokens !== false;
   const redactPathsChk = document.getElementById('setting-redact-paths');
   if (redactPathsChk) redactPathsChk.checked = settings.redact_paths !== false;
@@ -10500,8 +10752,6 @@ function collectSettingsFromUI() {
   settings.confirm_destructive_actions = document.getElementById('setting-confirm-destructive').checked;
   const autoApplyFiltersElCollect = document.getElementById('setting-auto-apply-instance-filters');
   if (autoApplyFiltersElCollect) settings.auto_apply_instance_filters_in_discover = autoApplyFiltersElCollect.checked;
-  const smoothScrollingElCollect = document.getElementById('setting-smooth-scrolling');
-  if (smoothScrollingElCollect) settings.smooth_scrolling = smoothScrollingElCollect.checked;
   const notifyAutoUpdatesElCollect = document.getElementById('setting-notify-auto-mod-updates');
   if (notifyAutoUpdatesElCollect) settings.notify_on_auto_mod_updates = notifyAutoUpdatesElCollect.checked;
   const autoCheckLauncherUpdatesElCollect = document.getElementById('setting-auto-check-launcher-updates');
@@ -10556,8 +10806,6 @@ function collectSettingsFromUI() {
   // Privacy & Developer
   const hideUsernameEl2 = document.getElementById('setting-hide-username');
   if (hideUsernameEl2) settings.hide_username = hideUsernameEl2.checked;
-  const clearSessionChk2 = document.getElementById('setting-clear-session-on-exit');
-  if (clearSessionChk2) settings.clear_session_on_exit = clearSessionChk2.checked;
   settings.redact_tokens = document.getElementById('setting-redact-tokens').checked;
   const redactPathsChk2 = document.getElementById('setting-redact-paths');
   if (redactPathsChk2) settings.redact_paths = redactPathsChk2.checked;
@@ -10674,7 +10922,14 @@ async function renderJavaManager() {
         </div>
       `;
     } else if (installed) {
-      actionsHtml = `<span class="java-installed-label">Installed</span>`;
+      actionsHtml = `
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="java-installed-label">Installed ✓</span>
+          <button type="button" class="btn-java-action btn-delete-managed-java" data-major="${target.major}" title="Uninstall Java ${target.major}" style="color:#ef4444; border-color:rgba(239,68,68,0.35);">
+            Uninstall
+          </button>
+        </div>
+      `;
     } else {
       actionsHtml = `
         <button type="button" class="btn-java-action btn-install-java" data-major="${target.major}">
@@ -10698,7 +10953,7 @@ async function renderJavaManager() {
     cardsContainer.appendChild(row);
   });
 
-  // Attach Managed List Listeners
+  // Attach Managed List Listeners (Install & Uninstall)
   cardsContainer.querySelectorAll('.btn-install-java').forEach(btn => {
     btn.addEventListener('click', async () => {
       const major = parseInt(btn.getAttribute('data-major'));
@@ -10714,6 +10969,24 @@ async function renderJavaManager() {
         showToast(`Failed to install Java ${major}: ${e}`, 'error');
       } finally {
         delete _managedJavaInstalling[major];
+        await renderJavaManager();
+        await populateJavaDropdown(settings && settings.java_path);
+      }
+    });
+  });
+
+  cardsContainer.querySelectorAll('.btn-delete-managed-java').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const major = parseInt(btn.getAttribute('data-major'));
+      if (!major) return;
+      btn.disabled = true;
+      btn.textContent = 'Removing…';
+      try {
+        await api.deleteManagedJava(major);
+        showToast(`Java ${major} uninstalled.`, 'info');
+      } catch (e) {
+        showToast(`Failed to uninstall Java ${major}: ${e}`, 'error');
+      } finally {
         await renderJavaManager();
         await populateJavaDropdown(settings && settings.java_path);
       }
@@ -10862,7 +11135,7 @@ function initSettings() {
     'setting-on-launcher-close', 'setting-always-hide-to-tray',
     'setting-mod-updates-startup', 'setting-confirm-destructive',
     'setting-auto-apply-instance-filters',
-    'setting-smooth-scrolling', 'setting-notify-auto-mod-updates', 'setting-auto-check-launcher-updates',
+    'setting-notify-auto-mod-updates', 'setting-auto-check-launcher-updates',
     'setting-enable-discord-rpc',
     'setting-rpc-show-in-launcher', 'setting-rpc-show-instance', 'setting-rpc-show-version',
     'setting-rpc-show-server-ip', 'setting-rpc-show-game-state',
@@ -10872,7 +11145,6 @@ function initSettings() {
     'setting-rpc-tab-settings', 'setting-rpc-tab-logs',
     'setting-rpc-state-launching', 'setting-rpc-state-main-menu',
     'setting-rpc-state-singleplayer', 'setting-rpc-state-multiplayer',
-    'setting-clear-session-on-exit',
     'setting-redact-tokens', 'setting-redact-paths', 'setting-hide-launch-command',
     'setting-debug-mode',
     'setting-crash-analysis',
@@ -11218,13 +11490,8 @@ function initSettings() {
     });
   }
 
-  // Current Launcher Version (About & Initial Setup card)
-  const launcherVersionEl = document.getElementById('settings-launcher-version');
-  if (launcherVersionEl) {
-    api.getLauncherVersion()
-      .then(v => { launcherVersionEl.textContent = `v${v}`; })
-      .catch(() => { launcherVersionEl.textContent = 'unknown'; });
-  }
+  // System Info & Updates Panel (About tab)
+  updateAboutSystemInfo();
 
   // Open Zero Launcher Folder (About & Initial Setup card)
   const openLauncherFolderBtn = document.getElementById('btn-open-launcher-folder');
@@ -11242,7 +11509,14 @@ function initSettings() {
   const resetBtn = document.getElementById('btn-reset-settings');
   if (resetBtn) {
     resetBtn.addEventListener('click', async () => {
-      if (!confirm('Reset all settings to default? This cannot be undone.')) return;
+      const proceed = await showConfirmDialog({
+        type: 'warning',
+        title: 'Reset Settings',
+        message: 'Reset all settings to default? This cannot be undone.',
+        confirmText: 'Reset to Defaults',
+        isDanger: true,
+      });
+      if (!proceed) return;
       try {
         // Send default settings
         settings = await api.getSettings();
@@ -11367,15 +11641,37 @@ function initSettings() {
       }
     });
   });
+
+  initSettingsSearch();
 }
 
 function openSettingsModal(targetSection) {
   const overlay = document.getElementById('settings-modal-overlay');
   if (!overlay) return;
   overlay.classList.remove('hidden');
+  document.body.classList.add('settings-modal-active');
+
+  // Pause heavy background systems (Canvas particle loop, WebGL 3D skin viewers)
+  // to give 100% CPU and GPU priority to the Settings UI on WebKitGTK
+  if (typeof BG !== 'undefined' && BG.pause) BG.pause();
+  if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
+  if (skinViewerInstance) skinViewerInstance.renderPaused = true;
+
+  // Reset search state on modal open
+  const searchInput = document.getElementById('settings-search-input');
+  const clearBtn = document.getElementById('settings-search-clear');
+  const resultsDropdown = document.getElementById('settings-search-results');
+  if (searchInput) searchInput.value = '';
+  if (clearBtn) clearBtn.classList.add('hidden');
+  if (resultsDropdown) {
+    resultsDropdown.classList.add('hidden');
+    resultsDropdown.innerHTML = '';
+  }
+
   loadSettings();
   renderHiddenInstancesSettings();
   renderJavaManager();
+  updateAboutSystemInfo();
   if (targetSection) {
     switchSettingsSection(targetSection);
   }
@@ -11384,6 +11680,13 @@ function openSettingsModal(targetSection) {
 function closeSettingsModal() {
   const overlay = document.getElementById('settings-modal-overlay');
   if (overlay) overlay.classList.add('hidden');
+  document.body.classList.remove('settings-modal-active');
+
+  // Resume background engine
+  if (typeof BG !== 'undefined' && BG.resume) BG.resume();
+
+  // Fully resume and refresh the 3D player skin preview immediately
+  resumeSkinViewersAfterShow();
 }
 
 function switchSettingsSection(sectionName) {
@@ -11408,9 +11711,203 @@ function switchSettingsSection(sectionName) {
     panel.classList.toggle('active', panel.id === `settings-panel-${sectionName}`);
   });
 
+  if (sectionName === 'java-manager' || sectionName === 'java') {
+    renderJavaManager();
+  }
+
   if (sectionName) {
     localStorage.setItem('zero_settings_last_section', sectionName);
   }
+}
+
+// ── Settings Search Engine ──
+const SETTINGS_SEARCH_CATALOG = [
+  // Appearance
+  { label: 'Theme Palettes (Quick Presets)', keywords: 'theme palette preset color plate dark catppuccin nord dracula midnight', section: 'appearance', sectionLabel: 'Appearance', targetId: 'quick-palettes-container' },
+  { label: 'Accent Color', keywords: 'accent color hex tint primary silver custom color picker', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-accent-hex-input' },
+  { label: 'Background Base Color', keywords: 'background base color dark shade hex palette', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-hex-input' },
+  { label: 'Background Style', keywords: 'background gradient theme midnight sunset forest ocean monochrome glow', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-style' },
+  { label: 'Animation Style', keywords: 'animation style waves particles fireflies canvas background', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-style' },
+  { label: 'Animation Speed', keywords: 'animation speed velocity fast slow rate', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-speed' },
+  { label: 'Animation FPS', keywords: 'animation fps framerate 60 120 30 performance hz', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-fps' },
+  { label: 'Animation Intensity', keywords: 'animation intensity brightness glow opacity', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-intensity' },
+  { label: 'Background Animations', keywords: 'enable background animations toggle particles off on', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-enable' },
+  { label: 'Transparent UI Cards', keywords: 'transparent ui cards high performance opacity glass acrylic', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-transparency' },
+  { label: 'Use Background Image', keywords: 'custom wallpaper background image photo wallpaper picture', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-use-bg-image' },
+  { label: 'Background Image File', keywords: 'browse background image file wallpaper photo', section: 'appearance', sectionLabel: 'Appearance', targetId: 'btn-browse-bg-image' },
+  { label: 'Background Image Fit', keywords: 'image fit cover contain stretch center tile wallpaper', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-fit' },
+  { label: 'Background Image Dim Overlay', keywords: 'dim overlay dark brightness opacity wallpaper', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-dim' },
+  { label: 'Background Image Brightness', keywords: 'image brightness contrast light dark wallpaper', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-brightness' },
+  { label: 'Background Image Blur', keywords: 'image blur radius gaussian wallpaper frosted glass', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-blur' },
+  { label: 'UI Font Family', keywords: 'font typography text typeface font-family geist inter system', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-font-family' },
+  { label: 'Notification Style', keywords: 'notification toast alert style modern classic minimal pill', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-notif-style' },
+  { label: 'Background Music Volume', keywords: 'music volume audio sound bgm sound track level slider', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-music-volume' },
+  { label: 'Music Unfocused Behavior', keywords: 'music unfocused switch behavior pause continue lower volume', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-music-switch-behavior' },
+  { label: 'Manage Music Library', keywords: 'music library audio files bgm mp3 ogg tracks song folder', section: 'appearance', sectionLabel: 'Appearance', targetId: 'btn-open-music-library' },
+
+  // Behavior & Window
+  { label: 'Check Mod Updates on Startup', keywords: 'mod updates check startup launch automatically notify', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-mod-updates-startup' },
+  { label: 'UI Click Sounds', keywords: 'click sounds audio sfx buttons interaction feedback', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-click-sounds' },
+  { label: 'Confirm Before Deleting Items', keywords: 'confirm delete destructive warning modal pop-up prompt', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-confirm-destructive' },
+  { label: 'Auto-select Loader & Game Version in Discover', keywords: 'auto select filter discover instance match sync versions', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-auto-apply-instance-filters' },
+  { label: 'Notify on Automatic Mod Updates', keywords: 'notify auto mod update notification alert popup toast', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-notify-auto-mod-updates' },
+  { label: 'Auto Check For Launcher Updates', keywords: 'auto check launcher updates releases newer version github', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-auto-check-launcher-updates' },
+  { label: 'Close Launcher When Game Starts', keywords: 'close launcher on launch game start exit hide', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-close-on-launch' },
+  { label: 'Smart Close on Launch', keywords: 'smart close delay wait idle launcher game launch', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-smart-close-on-launch' },
+  { label: 'Minimize Launcher While Game Is Running', keywords: 'minimize launcher launch iconify taskbar game playing', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-minimize-on-launch' },
+  { label: 'When Minecraft Closes Behavior', keywords: 'game close instance exit show focus launcher quit terminate', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-on-game-close' },
+  { label: 'System Tray Icon', keywords: 'system tray tray icon minimize background notification area taskbar', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-system-tray' },
+  { label: 'When You Close Launcher Window', keywords: 'close window launcher tray exit hide everything quit', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-on-launcher-close' },
+  { label: 'Always Hide to Tray', keywords: 'always hide to tray background running taskbar tray icon', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-always-hide-to-tray' },
+
+  // Performance & Advanced
+  { label: 'Minecraft Game Directory', keywords: 'game directory path folder custom .minecraft isolated location storage', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-game-dir' },
+  { label: 'Min RAM Allocation', keywords: 'min ram memory xms java megabytes mb allocation heap', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-min-ram' },
+  { label: 'Max RAM Allocation', keywords: 'max ram memory xmx java megabytes mb gigabytes allocation heap', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-max-ram' },
+  { label: 'Default Java Version', keywords: 'default java version runtime jre jdk smart detection auto pick override', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-java-select' },
+  { label: 'Global JVM Arguments', keywords: 'jvm args arguments flags options -XX:+UseG1GC garbage collector heap optimization', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-jvm-args' },
+  { label: 'Concurrent Downloads', keywords: 'concurrent downloads parallel threads speed network bandwidth fast', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-download-threads' },
+  { label: 'Hidden Instances List', keywords: 'hidden instances unhide restore vanilla hidden list', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'hidden-instances-list' },
+
+  // Java Manager
+  { label: 'Java Manager & Installed Runtimes', keywords: 'java manager installed runtimes jdk jre openjdk azul temurin zulu 8 17 21', section: 'java-manager', sectionLabel: 'Java Manager', targetId: 'java-manager-installed-list' },
+  { label: 'Download Java 21', keywords: 'download java 21 lts modern minecraft 1.20.5 1.21 openjdk', section: 'java-manager', sectionLabel: 'Java Manager', targetId: 'btn-download-java-21' },
+  { label: 'Download Java 17', keywords: 'download java 17 lts minecraft 1.18 1.19 1.20 openjdk', section: 'java-manager', sectionLabel: 'Java Manager', targetId: 'btn-download-java-17' },
+  { label: 'Download Java 8', keywords: 'download java 8 legacy 1.8 1.12.2 1.16.5 openjdk', section: 'java-manager', sectionLabel: 'Java Manager', targetId: 'btn-download-java-8' },
+
+  // Discord RPC
+  { label: 'Enable Discord Rich Presence', keywords: 'discord rich presence rpc activity status playing game show profile', section: 'discord-rpc', sectionLabel: 'Discord RPC', targetId: 'setting-enable-discord-rpc' },
+  { label: 'Show RPC While in Launcher', keywords: 'discord rpc launcher menu browsing browsing idle status', section: 'discord-rpc', sectionLabel: 'Discord RPC', targetId: 'setting-rpc-show-in-launcher' },
+  { label: 'Show Instance Name on Discord', keywords: 'discord instance name rpc show playing profile', section: 'discord-rpc', sectionLabel: 'Discord RPC', targetId: 'setting-rpc-show-instance' },
+  { label: 'Show Minecraft Version on Discord', keywords: 'discord minecraft version 1.21 fabric forge rpc status', section: 'discord-rpc', sectionLabel: 'Discord RPC', targetId: 'setting-rpc-show-version' },
+  { label: 'Show Server IP on Discord', keywords: 'discord server ip multiplayer hostname address status', section: 'discord-rpc', sectionLabel: 'Discord RPC', targetId: 'setting-rpc-show-server-ip' },
+  { label: 'Discord Application ID', keywords: 'discord app id custom application client id rpc asset', section: 'discord-rpc', sectionLabel: 'Discord RPC', targetId: 'setting-rpc-app-id' },
+  { label: 'Custom Discord RPC Activity Status', keywords: 'custom discord rpc state text details subtitle description', section: 'discord-rpc', sectionLabel: 'Discord RPC', targetId: 'setting-rpc-custom-state' },
+
+  // Privacy & Dev
+  { label: 'Redact Sensitive Tokens in Logs', keywords: 'redact tokens auth bearer access secrets logs hide privacy', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'setting-redact-tokens' },
+  { label: 'Redact Absolute Paths in Logs', keywords: 'redact absolute paths usernames home directories logs privacy', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'setting-redact-paths' },
+  { label: 'Hide Launch Command', keywords: 'hide launch command terminal shell jvm arguments security', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'setting-hide-launch-command' },
+  { label: 'Debug Mode', keywords: 'debug mode verbose logging developer diagnostics trace', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'setting-debug-mode' },
+  { label: 'Open Launcher Logs Folder', keywords: 'open logs folder directory files crashlog launcher.log log viewer', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'btn-open-logs-folder' },
+
+  // Experimental
+  { label: 'Crash Diagnostics & Auto-Troubleshoot', keywords: 'crash diagnostics troubleshoot automatic analysis error scan fix', section: 'experimental', sectionLabel: 'Experimental', targetId: 'setting-crash-analysis' },
+  { label: 'Auto Open Game Console on Launch', keywords: 'auto open console game log output window live terminal', section: 'experimental', sectionLabel: 'Experimental', targetId: 'setting-auto-open-console' },
+
+  // About & Updates
+  { label: 'Check for Launcher Updates', keywords: 'check launcher updates update zero launcher version github releases download new', section: 'about', sectionLabel: 'About & Updates', targetId: 'btn-check-launcher-updates' },
+  { label: 'Open Launcher Data Folder', keywords: 'open data folder appdata .zerolauncher storage instances files config directory', section: 'about', sectionLabel: 'About & Updates', targetId: 'btn-open-app-data' },
+  { label: 'Reset All Settings', keywords: 'reset all settings restore default wipe configuration options restart fresh', section: 'about', sectionLabel: 'About & Updates', targetId: 'btn-reset-settings' },
+];
+
+function initSettingsSearch() {
+  const searchInput = document.getElementById('settings-search-input');
+  const clearBtn = document.getElementById('settings-search-clear');
+  const resultsDropdown = document.getElementById('settings-search-results');
+  if (!searchInput || !resultsDropdown) return;
+
+  const closeResults = () => {
+    resultsDropdown.classList.add('hidden');
+    resultsDropdown.innerHTML = '';
+  };
+
+  const performSearch = (query) => {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      if (clearBtn) clearBtn.classList.add('hidden');
+      closeResults();
+      return;
+    }
+    if (clearBtn) clearBtn.classList.remove('hidden');
+
+    const matches = SETTINGS_SEARCH_CATALOG.filter(item => {
+      return item.label.toLowerCase().includes(q) ||
+             item.sectionLabel.toLowerCase().includes(q) ||
+             item.keywords.toLowerCase().includes(q);
+    });
+
+    resultsDropdown.innerHTML = '';
+    if (matches.length === 0) {
+      const noRes = document.createElement('div');
+      noRes.className = 'settings-search-no-results';
+      noRes.textContent = `No settings found for "${query}"`;
+      resultsDropdown.appendChild(noRes);
+    } else {
+      matches.forEach(item => {
+        const itemEl = document.createElement('div');
+        itemEl.className = 'settings-search-result-item';
+
+        // Highlight matching term in label
+        const regex = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        const highlightedLabel = item.label.replace(regex, '<mark>$1</mark>');
+
+        itemEl.innerHTML = `
+          <span class="settings-search-result-label">${highlightedLabel}</span>
+          <span class="settings-search-result-section">${item.sectionLabel}</span>
+        `;
+
+        itemEl.addEventListener('click', () => {
+          navigateToSetting(item);
+          closeResults();
+        });
+
+        resultsDropdown.appendChild(itemEl);
+      });
+    }
+
+    resultsDropdown.classList.remove('hidden');
+  };
+
+  searchInput.addEventListener('input', (e) => {
+    performSearch(e.target.value);
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeResults();
+      searchInput.blur();
+    } else if (e.key === 'Enter') {
+      const firstItem = resultsDropdown.querySelector('.settings-search-result-item');
+      if (firstItem) {
+        firstItem.click();
+      }
+    }
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      clearBtn.classList.add('hidden');
+      closeResults();
+      searchInput.focus();
+    });
+  }
+
+  // Dismiss dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.settings-search-bar-wrap')) {
+      closeResults();
+    }
+  });
+}
+
+function navigateToSetting(item) {
+  // 1. Switch to the target section tab
+  switchSettingsSection(item.section);
+
+  // 2. Find and highlight target element
+  setTimeout(() => {
+    const targetEl = document.getElementById(item.targetId) || document.querySelector(`[data-target="${item.targetId}"]`);
+    if (targetEl) {
+      const container = targetEl.closest('.form-group') || targetEl.closest('.toggle-row') || targetEl.closest('.form-row') || targetEl;
+      container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      container.classList.remove('setting-highlight-pulse');
+      void container.offsetWidth; // trigger reflow for animation restart
+      container.classList.add('setting-highlight-pulse');
+      setTimeout(() => container.classList.remove('setting-highlight-pulse'), 2100);
+    }
+  }, 100);
 }
 
 /// Render the "Hidden Instances" list in Settings → Performance & Java —
@@ -11797,16 +12294,6 @@ async function refreshRunningInstances() {
   }
   renderRunningInstancesPanel();
   updatePlayButtonRunningState();
-  // A session ending is exactly when its accumulated total_playtime_seconds
-  // changes on disk, so the Play Time row ought to pick that up — but
-  // refreshInstances() does a live filesystem scan (scanMinecraftVersions)
-  // plus several IPC round-trips and then rebuilds the whole instance list,
-  // which is noticeably slow on WebKitGTK. That used to be awaited right
-  // here, so every single Play click blocked on a full disk rescan before
-  // the UI could respond — the "huge lag" on launch. It's not needed for
-  // the running-instances UI itself (that's already updated above from the
-  // cheap getRunningInstances() call), so let it run in the background
-  // instead of holding up this function's caller.
   refreshInstances()
     .then(() => { updateSelectedInstancePlaytimeDisplay(); renderPlaytimeChart(); })
     .catch((e) => console.error('Failed to refresh instances after running-instances change', e));
@@ -11905,6 +12392,7 @@ const BG = {
         this._scheduled = false;
         if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
         if (skinViewerInstance) skinViewerInstance.renderPaused = true;
+        try { invoke('trim_memory'); } catch (_) {}
       } else {
         this.requestRedraw();
         const skinModalOpen = !document.getElementById('skin-viewer-overlay')?.classList.contains('hidden');
@@ -11935,11 +12423,25 @@ const BG = {
     this.loop(0);
   },
 
+  pause() {
+    this.paused = true;
+    if (this.animId) {
+      cancelAnimationFrame(this.animId);
+      this.animId = null;
+    }
+    this._scheduled = false;
+  },
+
+  resume() {
+    this.paused = false;
+    this.requestRedraw();
+  },
+
   // Ensures a frame is scheduled without stacking duplicate rAF loops —
   // used after the loop has gone idle (static scene, or paused for
   // visibility) and something needs to be redrawn once.
   requestRedraw() {
-    if (document.hidden) return;
+    if (document.hidden || this.paused) return;
     if (this._scheduled) return;
     this._scheduled = true;
     this.animId = requestAnimationFrame((t) => this.loop(t));
@@ -13264,6 +13766,25 @@ function initCustomTitlebar() {
   if (maxBtn) maxBtn.addEventListener('click', doToggleMaximize);
   if (closeBtn) closeBtn.addEventListener('click', doClose);
 
+  let resizeRaf = null;
+  const updateMaximizeState = () => {
+    if (resizeRaf) cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(async () => {
+      try {
+        const isMax = await invoke('window_is_maximized');
+        document.documentElement.classList.toggle('is-maximized', !!isMax);
+      } catch (_) {
+        try {
+          const win = window.__TAURI__?.window?.getCurrentWindow?.();
+          const isMax = await win?.isMaximized?.();
+          document.documentElement.classList.toggle('is-maximized', !!isMax);
+        } catch (_) {}
+      }
+    });
+  };
+  window.addEventListener('resize', updateMaximizeState, { passive: true });
+  setTimeout(updateMaximizeState, 50);
+
   // Drag via startDragging (works reliably in WebKitGTK where data-tauri-drag-region can be flaky)
   if (dragArea) {
     dragArea.addEventListener('mousedown', (e) => {
@@ -13284,6 +13805,35 @@ function initCustomTitlebar() {
       doToggleMaximize();
     });
   }
+
+  // Support dragging window during splash screen
+  const splashDrag = document.querySelector('.sl-drag');
+  if (splashDrag) {
+    splashDrag.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      try {
+        const win = window.__TAURI__?.window?.getCurrentWindow?.();
+        if (win?.startDragging) win.startDragging();
+      } catch (_) {}
+    });
+  }
+
+  // Native window edge / corner resize dragging (WebKitGTK frameless)
+  document.querySelectorAll('.window-resize-handle').forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const dir = handle.dataset.direction;
+      if (!dir) return;
+      try {
+        const win = window.__TAURI__?.window?.getCurrentWindow?.();
+        if (win?.startResizeDragging) {
+          win.startResizeDragging(dir);
+        }
+      } catch (_) {}
+    });
+  });
 
   // Right-click on titlebar triggers custom rich window & launcher actions menu
   if (titlebar) {
@@ -13406,9 +13956,34 @@ function initCustomTitlebar() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// BOOT
+// BOOT & STARTUP LOADING SCREEN (Lightweight for WebKitGTK)
 // ══════════════════════════════════════════════════════════════════
+const SPLASH_CIRCUMFERENCE = 2 * Math.PI * 52; // r=52 matches SVG
+
+function setStartupSplashProgress(percent, message) {
+  const arc  = document.getElementById('splash-ring-arc');
+  const text = document.getElementById('splash-status-text');
+  if (arc) {
+    const p = Math.min(100, Math.max(0, percent));
+    arc.style.strokeDashoffset = SPLASH_CIRCUMFERENCE * (1 - p / 100);
+  }
+  if (text && message) text.textContent = message;
+}
+
+function hideStartupSplashScreen() {
+  const splash = document.getElementById('startup-splash-screen');
+  if (!splash) return;
+  setStartupSplashProgress(100, 'Ready');
+  setTimeout(() => {
+    splash.classList.add('splash-hidden');
+    setTimeout(() => {
+      try { splash.remove(); } catch (_) { splash.style.display = 'none'; }
+    }, 380);
+  }, 140);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+  setStartupSplashProgress(20, 'Initializing interface…');
   initCustomTitlebar();
   initClickSoundListener();
   initTabs();
@@ -13416,32 +13991,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   initDownloadWidget();
   initHiddenWindowsWidget();
   initInstanceActions();
-  initSkinViewerUI();
-  initDressingRoomUI();
-  initSkinMiniPreview();
-  initCrashTroubleshootWindow();
-  initInstanceTroubleshootWindow();
-  initMods();
-  initModpackImportOverlay();
-  initDiscoverModpackDirOverlay();
-  initDiscover();
-  initSettings();
-  initMusicSettings();
-  initWindowBehaviorSettings();
   initRunningInstancesWidget();
-  initApplyPresetOverlayEvents();
-  initExportModsOverlayEvents();
-  initImportModsOverlayEvents();
-  initSetupWizard();
   initCustomContextMenu();
 
-  // Load initial data
-  try {
-    settings = await api.getSettings();
-  } catch (e) {
-    console.error('Settings load failed', e);
-    settings = { game_directory: '' };
-  }
+  setStartupSplashProgress(50, 'Loading configuration & data…');
+  // Parallel asynchronous fetching: Settings, Accounts, Instances concurrently
+  const [loadedSettings] = await Promise.all([
+    api.getSettings().catch(e => {
+      console.error('Settings load failed', e);
+      return { game_directory: '' };
+    }),
+    refreshAccountUI().catch(e => console.error('Accounts load failed', e)),
+    refreshInstances().catch(e => console.error('Instances load failed', e))
+  ]);
+
+  settings = loadedSettings || { game_directory: '' };
 
   BG.init();
   populateSettingsUI();
@@ -13449,32 +14013,55 @@ document.addEventListener('DOMContentLoaded', async () => {
   BG.applyBackgroundImage();
   MUSIC.init();
 
-  await refreshAccountUI();
-  await refreshInstances();
+  setStartupSplashProgress(85, 'Rendering instances…');
   renderInstanceList();
   if (getInstances().length > 0) {
     // Prefer the favorited instance on startup, if one is set and still
-    // exists — falls back to the first instance otherwise (same as before).
+    // exists — falls back to the first instance otherwise.
     const favId = getFavoriteInstance();
     const favInstance = favId ? getInstances().find(inst => inst.version_id === favId) : null;
     selectInstance(favInstance ? favInstance.version_id : getInstances()[0].version_id);
   }
 
-  // Auto-open Setup Wizard on first launch if Finished_setup is not true
+  // Check setup wizard
   const isFinished = settings && (settings.Finished_setup === true || settings.setup_finished === true || settings.finished_setup_upper === true);
   if (!isFinished) {
+    initSetupWizard();
     openSetupWizard(false);
   }
 
-  // Check the currently selected instance for mod updates in the background
-  // — Update All stays disabled until this finishes so it can't run against
-  // a stale check.
-  checkSelectedInstanceForUpdates().catch(e => console.error('Startup update check failed', e));
+  // Dismiss splash screen instantly
+  setStartupSplashProgress(100, 'Ready');
+  hideStartupSplashScreen();
 
-  initCrashDialog();
-  initLaunchVerifyStatus();
-  initAutoUpdate();
-  initUpdateConsentPrompt();
+  // Lazy-load / defer all non-immediate background overlays and modules
+  const scheduleIdle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1));
+  scheduleIdle(() => {
+    initSettings();
+    initMusicSettings();
+    initWindowBehaviorSettings();
+    initSkinViewerUI();
+    initDressingRoomUI();
+    initSkinMiniPreview();
+    initMods();
+    initModpackImportOverlay();
+    initDiscoverModpackDirOverlay();
+    initDiscover();
+    initApplyPresetOverlayEvents();
+    initExportModsOverlayEvents();
+    initImportModsOverlayEvents();
+    if (isFinished) initSetupWizard();
+    initCrashTroubleshootWindow();
+    initInstanceTroubleshootWindow();
+    initCrashDialog();
+    initLaunchVerifyStatus();
+    initAutoUpdate();
+    initUpdateChecker();
+    initUpdateConsentPrompt();
+
+    // Check the currently selected instance for mod updates in the background
+    checkSelectedInstanceForUpdates().catch(e => console.error('Startup update check failed', e));
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -13759,10 +14346,50 @@ function initAutoUpdate() {
       if (unlistenProgress) { unlistenProgress(); unlistenProgress = null; }
     }
   });
+}
 
-  // Only runs the silent background check if the user has actually
-  // opted in (Settings → Auto Check For Launcher Updates). The manual
-  // "Check for Updates" button below always works regardless.
+function updateAboutSystemInfo() {
+  const versionEl = document.getElementById('about-info-version');
+  const osEl = document.getElementById('about-info-os');
+  const archEl = document.getElementById('about-info-arch');
+
+  api.getSystemInfo()
+    .then((info) => {
+      if (info) {
+        if (versionEl) versionEl.textContent = `Zero Launcher (v${info.launcher_version})`;
+        if (osEl) osEl.textContent = info.os_name || 'Linux';
+        if (archEl) archEl.textContent = info.arch || 'x64 (Linux)';
+      }
+    })
+    .catch(() => {
+      // Fallback to browser navigator
+      const ua = navigator.userAgent || '';
+      const platform = navigator.platform || '';
+
+      let osName = 'Linux';
+      if (ua.includes('Win') || platform.includes('Win')) osName = 'Windows';
+      else if (ua.includes('Mac') || platform.includes('Mac')) osName = 'macOS';
+      else if (ua.includes('Linux') || platform.includes('Linux')) osName = 'Linux';
+
+      let archName = `x64 (${osName})`;
+      if (ua.includes('x86_64') || ua.includes('x64') || ua.includes('Win64') || platform.includes('64')) {
+        archName = `x64 (${osName})`;
+      } else if (ua.includes('aarch64') || ua.includes('arm64') || platform.includes('arm')) {
+        archName = `ARM64 (${osName})`;
+      }
+
+      if (osEl) osEl.textContent = osName;
+      if (archEl) archEl.textContent = archName;
+      if (versionEl) {
+        api.getLauncherVersion()
+          .then(v => { versionEl.textContent = `Zero Launcher (v${v})`; })
+          .catch(() => { versionEl.textContent = 'Zero Launcher'; });
+      }
+    });
+}
+
+function initUpdateChecker() {
+  // Check on startup if enabled in settings
   if (settings && settings.auto_check_launcher_updates === true) {
     api.checkForUpdate()
       .then((update) => {
@@ -13770,57 +14397,81 @@ function initAutoUpdate() {
         showUpdatePrompt(update);
       })
       .catch((e) => {
-        // Silent — a failed background version check shouldn't interrupt
-        // startup (no internet, manifest URL not set up yet, etc.).
         console.warn('Update check failed:', e);
       });
   }
 
-  // Manual "Check for Updates" button (Settings → About & Initial Setup),
-  // with an inline status line for the result.
+  // Manual "Check now" button (Settings → About & Updates)
   const checkBtn = document.getElementById('btn-check-for-updates');
   const checkBtnIcon = document.getElementById('btn-check-for-updates-icon');
-  const statusEl = document.getElementById('update-check-status');
-  const statusIcon = document.getElementById('update-check-status-icon');
-  const statusText = document.getElementById('update-check-status-text');
+  const subtextEl = document.getElementById('about-update-subtext');
+  const lastCheckedEl = document.getElementById('about-update-last-checked');
+  const statusIconWrap = document.getElementById('about-status-icon-wrap');
+  const statusLine = document.getElementById('about-update-status-line');
+  const statusMsg = document.getElementById('about-update-status-msg');
 
-  const ICONS = {
-    uptodate: '<path d="M20 6 9 17l-5-5"/>',
-    available: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
-    error: '<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>',
+  const formatLastCheckedTime = () => {
+    const now = new Date();
+    return `Last checked: Today at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   };
 
-  const setStatus = (kind, text) => {
-    statusEl.classList.remove('hidden', 'is-checking', 'is-uptodate', 'is-available', 'is-error');
-    statusEl.classList.add(`is-${kind}`);
-    statusText.textContent = text;
-    statusIcon.innerHTML = ICONS[kind] || '';
+  const setStatusLine = (type, msg) => {
+    if (!statusLine || !statusMsg) return;
+    statusLine.classList.remove('hidden', 'is-checking', 'is-uptodate', 'is-available', 'is-error');
+    statusLine.classList.add(`is-${type}`);
+    statusMsg.textContent = msg;
   };
 
   if (checkBtn) {
     checkBtn.addEventListener('click', async () => {
       checkBtn.disabled = true;
-      checkBtnIcon.classList.add('is-spinning');
-      statusEl.classList.remove('hidden', 'is-uptodate', 'is-available', 'is-error');
-      statusEl.classList.add('is-checking');
-      statusText.textContent = 'Checking for updates…';
-      statusIcon.innerHTML = ICONS.available;
+      if (checkBtnIcon) checkBtnIcon.classList.add('is-spinning');
+      if (subtextEl) subtextEl.textContent = 'Checking for updates…';
+      setStatusLine('is-checking', 'Checking for updates from server…');
 
       try {
         const update = await api.checkForUpdate();
         if (update) {
-          setStatus('available', `Update available — v${update.version}`);
+          if (subtextEl) subtextEl.textContent = `Update available — v${update.version}`;
+          setStatusLine('is-available', `Update v${update.version} available! Click to review and install.`);
+          if (statusIconWrap) {
+            statusIconWrap.style.background = 'rgba(59, 130, 246, 0.15)';
+            statusIconWrap.innerHTML = `
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>
+              </svg>
+            `;
+          }
           showUpdatePrompt(update);
         } else {
           const current = await api.getLauncherVersion().catch(() => null);
-          setStatus('uptodate', current ? `You're up to date (v${current})` : "You're up to date");
+          if (subtextEl) subtextEl.textContent = current ? `You're up to date (v${current})` : "You're up to date";
+          setStatusLine('is-uptodate', 'You are running the latest version of Zero Launcher.');
+          if (statusIconWrap) {
+            statusIconWrap.style.background = 'rgba(34, 197, 94, 0.12)';
+            statusIconWrap.innerHTML = `
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            `;
+          }
         }
+        if (lastCheckedEl) lastCheckedEl.textContent = formatLastCheckedTime();
       } catch (e) {
         console.error('Manual update check failed:', e);
-        setStatus('error', 'Could not check for updates. Check your connection and try again.');
+        if (subtextEl) subtextEl.textContent = 'Could not check for updates. Check connection.';
+        setStatusLine('is-error', 'Unable to reach update servers. Check your internet connection.');
+        if (statusIconWrap) {
+          statusIconWrap.style.background = 'rgba(239, 68, 68, 0.15)';
+          statusIconWrap.innerHTML = `
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>
+            </svg>
+          `;
+        }
       } finally {
         checkBtn.disabled = false;
-        checkBtnIcon.classList.remove('is-spinning');
+        if (checkBtnIcon) checkBtnIcon.classList.remove('is-spinning');
       }
     });
   }
@@ -13854,6 +14505,13 @@ function initLaunchVerifyStatus() {
       textEl.classList.remove('hidden');
     } else if (!p.active && p.version_id === selectedInstanceId) {
       textEl.classList.add('hidden');
+    }
+  });
+
+  listen('toast-notification', (event) => {
+    const p = event.payload;
+    if (p && p.message) {
+      showToast(p.message, p.type || 'info', p.title);
     }
   });
 }
@@ -14295,22 +14953,23 @@ function showCustomMenu(x, y, items) {
     }
   });
 
+  // Show menu element before computing offset sizes
   menuEl.classList.remove('hidden');
-  const menuWidth = Math.max(210, menuEl.offsetWidth || 230);
-  const menuHeight = items.length * 32 + 16;
 
-  let posX = x;
-  let posY = y;
+  // Position using real measured dimensions (measured after display so sizes are known)
+  menuEl.style.left = '0px';
+  menuEl.style.top = '0px';
+  const menuWidth  = menuEl.offsetWidth  || 230;
+  const menuHeight = menuEl.offsetHeight || (items.length * 32 + 16);
+  const margin = 8;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
 
-  if (posX + menuWidth > window.innerWidth) {
-    posX = Math.max(8, window.innerWidth - menuWidth - 8);
-  }
-  if (posY + menuHeight > window.innerHeight) {
-    posY = Math.max(8, window.innerHeight - menuHeight - 8);
-  }
+  const posX = Math.min(x, vw - menuWidth  - margin);
+  const posY = Math.min(y, vh - menuHeight - margin);
 
-  menuEl.style.left = `${posX}px`;
-  menuEl.style.top = `${posY}px`;
+  menuEl.style.left = `${Math.max(margin, posX)}px`;
+  menuEl.style.top  = `${Math.max(margin, posY)}px`;
 }
 
 function initCustomContextMenu() {
@@ -14402,7 +15061,15 @@ function initCustomContextMenu() {
       });
 
       addItem('Delete', async () => {
-        if (!confirm('Delete this mod?')) return;
+        const modLabel = (mod ? mod.name || mod.file_name : null) || 'this mod';
+        const proceed = await showConfirmDialog({
+          type: 'delete',
+          title: 'Delete Mod',
+          message: `Are you sure you want to delete "${modLabel}"?`,
+          confirmText: 'Delete',
+          isDanger: true,
+        });
+        if (!proceed) return;
         const targetInstance = getModsTargetInstance();
         const dir = (targetInstance ? (targetInstance.directory || settings.game_directory) : (settings ? settings.game_directory : ''));
         

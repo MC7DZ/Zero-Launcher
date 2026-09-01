@@ -26,6 +26,14 @@ pub fn run() {
     // start of run().
     #[cfg(target_os = "linux")]
     {
+        // ── Aggressive glibc RAM Optimization & Heap Trimming ──
+        // By default glibc malloc creates 8 arenas per CPU core (e.g. 128 arenas on a 16-core CPU),
+        // causing severe memory fragmentation and hundreds of MBs in ghost resident memory (RSS).
+        // Capping arenas to 2 and setting aggressive trim thresholds frees unused RAM back to Linux immediately.
+        std::env::set_var("MALLOC_ARENA_MAX", "2");
+        std::env::set_var("MALLOC_TRIM_THRESHOLD_", "131072");
+        std::env::set_var("MALLOC_MMAP_THRESHOLD_", "131072");
+
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
             std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "0");
@@ -256,6 +264,7 @@ pub fn run() {
             commands::cancel_generic_download,
             commands::open_launcher_folder,
             commands::get_launcher_version,
+            commands::get_system_info,
             commands::load_global_stats,
             commands::save_global_stats,
             commands::updater::check_for_update,
@@ -290,6 +299,7 @@ pub fn run() {
             // Modpack import (.mrpack / CurseForge zip drag-and-drop)
             commands::modpack::preview_modpack,
             commands::modpack::import_modpack,
+            commands::modpack::get_modpack_info,
             // Java
             commands::java::list_java_installations,
             commands::java::install_managed_java,
@@ -344,6 +354,8 @@ pub fn run() {
             commands::discover::discover_get_game_versions,
             commands::discover::discover_get_categories,
             commands::discover::discover_get_resolutions,
+            commands::discover::discover_get_performance_impacts,
+            commands::discover::discover_get_features,
             commands::discover::discover_get_licenses,
             commands::discover::cache_mod_icon,
             commands::discover::identify_mods_by_hash,
@@ -378,6 +390,7 @@ pub fn run() {
             commands::window_center,
             commands::window_toggle_fullscreen,
             commands::window_toggle_always_on_top,
+            commands::trim_memory,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

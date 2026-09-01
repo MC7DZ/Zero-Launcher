@@ -138,22 +138,37 @@ const SETUP_HTML: &str = r#"<!DOCTYPE html>
 const CLEANUP_SOURCE_FLAG: &str = "--zl-cleanup-source";
 
 /// If this process was just relaunched by `perform_install` after being
-/// copied into place, finish the job: delete the original exe it was
-/// copied from. Safe to call unconditionally - it's a no-op unless the
-/// special flag is present, and it never removes anything other than the
-/// exact path that was passed to it.
+/// copied into place, finish the job: rename the original download to
+/// "you can delete me now" (with its original extension).
 fn cleanup_previous_source_if_requested() {
     let mut args = std::env::args_os();
     while let Some(arg) = args.next() {
         if arg == CLEANUP_SOURCE_FLAG {
             if let Some(old_path) = args.next() {
                 let old_path = PathBuf::from(old_path);
-                // Best-effort: the old file may already be gone, or briefly
-                // still locked right after the previous process exited -
-                // a few short retries covers that without noticeably
-                // delaying startup.
+                let ext = old_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                let new_name = if ext.is_empty() {
+                    "you can delete me now".to_string()
+                } else {
+                    format!("you can delete me now.{ext}")
+                };
+                let new_path = if let Some(parent) = old_path.parent() {
+                    parent.join(new_name)
+                } else {
+                    PathBuf::from(new_name)
+                };
+
+                // Best-effort: the old file may briefly still be locked right after
+                // the previous process exited — a few short retries covers that
+                // without noticeably delaying startup.
                 for _ in 0..10 {
-                    if !old_path.exists() || fs::remove_file(&old_path).is_ok() {
+                    if !old_path.exists() {
+                        break;
+                    }
+                    if new_path.exists() {
+                        let _ = fs::remove_file(&new_path);
+                    }
+                    if fs::rename(&old_path, &new_path).is_ok() {
                         break;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(150));

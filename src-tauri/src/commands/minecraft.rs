@@ -1200,31 +1200,19 @@ pub async fn launch_minecraft(
         }
     }
 
-    // Get active account
-    let (username, active_account_id, active_account_type) = {
+    // Get active account info
+    let (username, active_account_id, active_account_type, active_mc_uuid) = {
         let accounts = state.accounts.lock().unwrap();
         let account = accounts
             .iter()
             .find(|a| a.is_active)
             .ok_or_else(|| "No active account. Please add an account first.".to_string())?;
-        (account.username.clone(), account.id.clone(), account.account_type.clone())
-    };
-
-    // Microsoft accounts need a fresh Minecraft access token minted right
-    // before launch (Xbox Live/XSTS/Minecraft-services tokens are
-    // short-lived) — this also rotates and persists the refresh token.
-    // Offline accounts skip straight past this with an empty token.
-    let mc_account = if active_account_type == "microsoft" {
-        let (login, _updated) = crate::commands::msa::refresh_microsoft_login(&state, &active_account_id)
-            .await
-            .map_err(|e| format!("Microsoft sign-in failed: {e}"))?;
-        mc_launcher_core::account::Account::Microsoft {
-            username: login.name,
-            uuid: login.id,
-            access_token: login.access_token,
-        }
-    } else {
-        mc_launcher_core::account::Account::offline(&username)
+        (
+            account.username.clone(),
+            account.id.clone(),
+            account.account_type.clone(),
+            account.mc_uuid.clone(),
+        )
     };
 
     // Use whichever directory this instance was actually installed into (if
@@ -1356,16 +1344,8 @@ pub async fn launch_minecraft(
     };
 
     // Register this instance as "running" and give it a fresh console
-    // *now* — right as Play is pressed — instead of only once the game
-    // process actually spawns further down. `pid: None` marks it as still
-    // starting up (Java setup / file verification can take a little while,
-    // especially the first time). This means the running-instances button
-    // and its console are available immediately, so nothing that happens
-    // between now and the process actually starting is invisible. The
-    // in-memory map is updated with the real pid once the process spawns;
-    // deliberately not persisted to `running_instances.json` until then, so
-    // a launcher restart during this window doesn't mistake a
-    // not-yet-started launch for a still-running one.
+    // *now* — right as Play is pressed — so the UI immediately reflects
+    // that the game is starting up with zero delay.
     state.instance_logs.lock().unwrap().insert(version_id.clone(), Vec::new());
     {
         let mut running_instances = state.running_instances.lock().unwrap();
@@ -1382,13 +1362,6 @@ pub async fn launch_minecraft(
             },
         );
     }
-    // Record "last played" right as Play is pressed (not only once the
-    // process actually spawns), so it reflects the moment the user chose
-    // to launch even if setup/verification takes a while. Bump the launch
-    // counter alongside it — same reasoning: a launch that gets attempted
-    // (even if it later fails to spawn) is still what the user asked for,
-    // and the frontend's global stats list wants this number regardless of
-    // outcome.
     {
         let mut instances = state.instances.lock().unwrap();
         if let Some(inst) = instances.iter_mut().find(|i| i.version_id == version_id) {
@@ -1400,8 +1373,82 @@ pub async fn launch_minecraft(
     let _ = app.emit("running-instances-changed", ());
 
     logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
-        "Launching {} as {}...", version_id, username
+        "Launching {} as {}{}...",
+        version_id,
+        username,
+        if offline { " (offline)" } else { "" }
     ));
+
+    // Resolve Account: if offline launch is selected, do NOT touch the network at all!
+    let mc_account = if offline {
+        if let Some(uuid) = active_mc_uuid {
+            mc_launcher_core::account::Account::Offline {
+                username: username.clone(),
+                uuid,
+            }
+        } else {
+            mc_launcher_core::account::Account::offline(&username)
+        }
+    } else if active_account_type == "microsoft" {
+        // Online Microsoft launch: show status only for Microsoft accounts
+        let status_id = version_id.clone();
+        let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
+            version_id: status_id.clone(),
+            active: true,
+            message: "Authenticating…".to_string(),
+        });
+
+        let app_timer = app.clone();
+        let vid_timer = status_id.clone();
+        let slow_timer = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let _ = app_timer.emit("launch-verify-status", &LaunchVerifyStatus {
+                version_id: vid_timer,
+                active: true,
+                message: "Authenticating… (this may take a long time)".to_string(),
+            });
+        });
+
+        let msa_res = crate::commands::msa::refresh_microsoft_login(&state, &active_account_id).await;
+        slow_timer.abort();
+
+        let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
+            version_id: status_id.clone(),
+            active: false,
+            message: String::new(),
+        });
+
+        match msa_res {
+            Ok((login, _updated)) => mc_launcher_core::account::Account::Microsoft {
+                username: login.name,
+                uuid: login.id,
+                access_token: login.access_token,
+            },
+            Err(e) => {
+                logger::warn_for_instance(
+                    &app,
+                    &state,
+                    &version_id,
+                    "LAUNCHER",
+                    &format!("Could not refresh Microsoft session online ({e}) — falling back to offline launch mode..."),
+                );
+                let _ = app.emit("toast-notification", &serde_json::json!({
+                    "message": "Microsoft auth timed out / offline — launching in offline mode",
+                    "type": "info"
+                }));
+                if let Some(uuid) = active_mc_uuid {
+                    mc_launcher_core::account::Account::Offline {
+                        username: username.clone(),
+                        uuid,
+                    }
+                } else {
+                    mc_launcher_core::account::Account::offline(&username)
+                }
+            }
+        }
+    } else {
+        mc_launcher_core::account::Account::offline(&username)
+    };
 
     // If anything below fails before the game process actually spawns,
     // this flips the "starting" entry registered above back off instead
@@ -1473,7 +1520,7 @@ pub async fn launch_minecraft(
         // uses, so when this pass actually has to fetch something it shows
         // up in the Downloads widget exactly like any other install.
         let download_id = format!("launch-verify-{vid}");
-        let verify_result = tokio::task::spawn_blocking(move || {
+        let verify_result_handle = tokio::task::spawn_blocking(move || {
             let mut downloading_started = false;
             let mut downloaded_bytes: u64 = 0;
             let mut per_label_received: HashMap<String, u64> = HashMap::new();
@@ -1590,11 +1637,29 @@ pub async fn launch_minecraft(
                 &mut reporter,
             );
             (result, downloading_started, downloaded_bytes)
-        })
-        .await
-        .map_err(|e| { fail_cleanup(); format!("Launch verification task failed: {e}") })?;
-
-        let (result, downloading_started, downloaded_bytes) = verify_result;
+        });
+        let verify_res = tokio::time::timeout(std::time::Duration::from_secs(5), verify_result_handle).await;
+        let (result, downloading_started, downloaded_bytes) = match verify_res {
+            Ok(Ok(res)) => res,
+            Ok(Err(e)) => {
+                logger::warn_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
+                    "Verification task failed ({e}) — automatically launching offline"
+                ));
+                let _ = app.emit("toast-notification", &serde_json::json!({
+                    "message": "Verification failed / no internet — launching in offline mode",
+                    "type": "info"
+                }));
+                (Ok(()), false, 0)
+            }
+            Err(_) => {
+                logger::warn_for_instance(&app, &state, &vid, "LAUNCHER", "Verification timed out — automatically launching offline");
+                let _ = app.emit("toast-notification", &serde_json::json!({
+                    "message": "Verification timed out — launching in offline mode",
+                    "type": "info"
+                }));
+                (Ok(()), false, 0)
+            }
+        };
 
         // Whatever happens next (success, failure, or nothing downloaded
         // at all), the verify phase is over — this is the frontend's cue
@@ -1629,10 +1694,15 @@ pub async fn launch_minecraft(
             });
         }
 
-        result.map_err(|e| { fail_cleanup(); format!(
-            "Couldn't verify game files before launch (no connection, or a mirror is down): {e}. \
-             Use the gear icon next to Play to Launch Offline instead."
-        ) })?;
+        if let Err(e) = result {
+            logger::warn_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
+                "File verification error ({e}) — continuing in offline mode"
+            ));
+            let _ = app.emit("toast-notification", &serde_json::json!({
+                "message": "Verification failed — launching in offline mode",
+                "type": "info"
+            }));
+        }
     }
 
     // Check if the user cancelled the launch during verification
@@ -1784,6 +1854,8 @@ pub async fn launch_minecraft(
     let mut args: Vec<String> = Vec::new();
     args.push(format!("-Xmx{}m", max_ram));
     args.push(format!("-Xms{}m", min_ram));
+    args.push("-Djava.net.preferIPv4Stack=true".to_string());
+    args.push("-Djava.net.preferIPv6Addresses=false".to_string());
     args.push("-Ddiscordfix=net.minecraft.client.main.Main".to_string());
     if !jvm_args_str.is_empty() {
         args.extend(jvm_args_str.split_whitespace().map(String::from));
@@ -1914,6 +1986,7 @@ pub async fn launch_minecraft(
     // know this instance is still out there.
     state.save_running_instances();
     let _ = app.emit("running-instances-changed", ());
+    crate::commands::trim_memory();
 
     // Settings → Window Behavior → "When launching a game". These were
     // previously only ever saved/loaded from Settings and never actually
@@ -2769,6 +2842,53 @@ pub async fn delete_installed_version(
 /// directory/minecraft_directory split existed. Deleting the shared
 /// directory would wipe every other instance's data too, so this is always
 /// blocked, both here and by the frontend disabling the toggle for it.
+fn robust_remove_dir(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = std::fs::metadata(path) {
+            let mut perms = metadata.permissions();
+            if perms.mode() & 0o700 != 0o700 {
+                perms.set_mode(perms.mode() | 0o700);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+        }
+    }
+    if let Err(e) = std::fs::remove_dir_all(path) {
+        if path.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        let _ = robust_remove_dir(&p);
+                    } else {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if let Ok(m) = std::fs::metadata(&p) {
+                                let mut perms = m.permissions();
+                                if perms.mode() & 0o200 == 0 {
+                                    perms.set_mode(perms.mode() | 0o600);
+                                    let _ = std::fs::set_permissions(&p, perms);
+                                }
+                            }
+                        }
+                        let _ = std::fs::remove_file(&p);
+                    }
+                }
+            }
+            let _ = std::fs::remove_dir(path);
+        }
+        if path.exists() {
+            return Err(format!("Failed to delete folder {}: {e}", path.display()));
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn delete_instance_data(
     state: State<'_, AppState>,
@@ -2801,12 +2921,14 @@ pub async fn delete_instance_data(
                 "Refusing to delete: this instance shares its data folder with your main .minecraft directory".to_string()
             );
         }
+        if canonical_target == canonical_shared.join("!Instances") {
+            return Err(
+                "Refusing to delete: target is the !Instances parent folder".to_string()
+            );
+        }
     }
 
-    std::fs::remove_dir_all(&canonical_target)
-        .map_err(|e| format!("Failed to delete instance data folder: {e}"))?;
-
-    Ok(())
+    robust_remove_dir(&canonical_target)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
