@@ -21,6 +21,7 @@ jobs:
           node-version: 20
 
       - name: Install frontend deps
+        working-directory: Tauri App
         run: npm install
 
       - name: Build Tauri app
@@ -28,10 +29,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          projectPath: Tauri App
           args: --no-bundle
 
       - name: Upload portable exe
         uses: actions/upload-artifact@v4
         with:
           name: ZeroLauncher-portable-exe
-          path: src-tauri/target/release/*.exe
+          path: Tauri App/src-tauri/target/release/*.exe

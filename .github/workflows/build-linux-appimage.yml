@@ -10,16 +10,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Make build script executable
-        run: chmod +x build.sh
+        run: chmod +x "Tauri App/build.sh"
       - name: Install system dependencies
+        working-directory: Tauri App
         run: ./build.sh --deps
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Build in release mode
+        working-directory: Tauri App
         run: ./build.sh --release
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: zerolauncher-linux-build
-          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          path: Tauri App/src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: warn
