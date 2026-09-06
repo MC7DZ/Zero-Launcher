@@ -276,6 +276,8 @@ pub struct LauncherSettings {
 
 
     // Performance
+    #[serde(default = "default_hardware_acceleration")]
+    pub enable_hardware_acceleration: bool,
     #[serde(default = "default_ram_gb")]
     pub default_ram_gb: u32,
     #[serde(default = "default_launcher_max_ram")]
@@ -440,6 +442,12 @@ fn default_skin_cape_key() -> String { "migrator".to_string() }
 fn default_skin_equip_type() -> String { "cape".to_string() }
 
 fn default_true() -> bool { true }
+fn default_hardware_acceleration() -> bool {
+    #[cfg(target_os = "linux")]
+    return false;
+    #[cfg(not(target_os = "linux"))]
+    return true;
+}
 fn default_on_game_close() -> String { "show".to_string() }
 fn default_on_launcher_close() -> String { "tray".to_string() }
 fn default_music_volume() -> u32 { 50 }
@@ -572,6 +580,7 @@ impl Default for LauncherSettings {
             auto_apply_instance_filters_in_discover: true,
             notify_on_auto_mod_updates: true,
 
+            enable_hardware_acceleration: default_hardware_acceleration(),
             default_ram_gb: 3,
             launcher_max_ram_mb: 500,
             enable_launcher_max_ram: true,

@@ -265,7 +265,7 @@ pub fn open_current_exe_folder() -> Result<(), String> {
         .parent()
         .ok_or_else(|| "Failed to locate the executable's folder.".to_string())?;
 
-    open::that(dir).map_err(|e| format!("Failed to open folder: {e}"))
+    crate::commands::open_folder_in_file_manager(dir)
 }
 
 /// Replace the currently-running executable/AppImage with the downloaded

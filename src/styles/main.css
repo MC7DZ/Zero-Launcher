@@ -4635,6 +4635,18 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   font-weight: 400;
 }
 
+.settings-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  margin-top: 3px;
+  margin-bottom: 6px;
+}
+
+.toggle-row + .settings-hint {
+  margin-left: 54px;
+}
+
 /* "Also delete instance data" toggle on the delete-instance confirm modal.
    Plain borders + flat color only — no backdrop-filter, no box-shadow blur,
    nothing that repaints per-frame, so it stays cheap on WebKitGTK same as
@@ -8349,14 +8361,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   --transition-fast: 0.05s ease;
 }
 
-/* Force hardware accelerated compositing on all cards, tiles, overlays, and windows */
-.is-webkit-gtk .instance-card,
-.is-webkit-gtk .discover-card,
-.is-webkit-gtk .mod-item,
-.is-webkit-gtk .mod-card,
-.is-webkit-gtk .preset-card,
-.is-webkit-gtk .preset-type-section,
-.is-webkit-gtk .overlay,
+/* WebKitGTK: Keep containment for isolated layout without spawning hundreds of GPU textures */
 .is-webkit-gtk .overlay-card,
 .is-webkit-gtk .settings-modal-window,
 .is-webkit-gtk .hypr-modal,
@@ -8372,17 +8377,16 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk #dl-files-panel,
 .is-webkit-gtk .dressing-room-skin-card,
 .is-webkit-gtk .settings-card,
-.is-webkit-gtk .java-row-item,
 .is-webkit-gtk .bento-tile,
-.is-webkit-gtk .bento-panel,
+.is-webkit-gtk .bento-panel {
+  contain: layout style;
+  transform: none;
+  -webkit-transform: none;
+}
+
 .is-webkit-gtk #bg-container,
-.is-webkit-gtk #bg-canvas,
 .is-webkit-gtk #custom-titlebar,
 .is-webkit-gtk #top-bar {
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
   contain: layout style paint;
 }
 
@@ -8785,9 +8789,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .mods-bottom-panel,
 .is-webkit-gtk .discover-content-island,
 .is-webkit-gtk .discover-filter-island {
-  contain: layout style paint;
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
+  contain: layout style;
   backface-visibility: hidden;
   will-change: auto;
 }

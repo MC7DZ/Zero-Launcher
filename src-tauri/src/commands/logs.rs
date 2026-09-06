@@ -90,8 +90,7 @@ pub async fn get_logs_folder_path(state: State<'_, AppState>) -> Result<String, 
 #[tauri::command]
 pub async fn open_logs_folder(state: State<'_, AppState>) -> Result<(), String> {
     let dir = crate::logger::logs_dir(&state.data_dir);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create logs folder: {e}"))?;
-    open::that(&dir).map_err(|e| format!("Failed to open logs folder: {e}"))
+    crate::commands::open_folder_in_file_manager(&dir)
 }
 
 /// Full contents of `logs/latest.log` for the current run — everything the

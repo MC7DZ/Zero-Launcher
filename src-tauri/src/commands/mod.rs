@@ -32,14 +32,107 @@ pub fn cancel_generic_download(download_id: String, state: State<'_, AppState>) 
     Ok(())
 }
 
+/// Reliably opens a directory in the operating system's native file manager.
+///
+/// On Linux:
+/// - Strips / restores AppImage library environment variables (`LD_LIBRARY_PATH`, `LD_PRELOAD`)
+///   so system file managers (Dolphin, Nautilus, Thunar, GIO) don't crash due to AppImage library conflicts.
+/// - Tries multiple fallback desktop launchers: `xdg-open`, `gio open`, `dolphin`, `nautilus`,
+///   `thunar`, `pcmanfm`, `pcmanfm-qt`, `nemo`, and falls back to `open::that_detached` / `open::that`.
+/// On Windows: invokes `explorer`.
+/// On macOS: invokes `open`.
+pub fn open_folder_in_file_manager(path: &std::path::Path) -> Result<(), String> {
+    let _ = std::fs::create_dir_all(path);
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&canonical)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder in Windows Explorer: {e}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&canonical)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder on macOS: {e}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let spawn_cmd = |prog: &str, args: &[&std::ffi::OsStr]| -> bool {
+            let mut cmd = std::process::Command::new(prog);
+            cmd.args(args);
+            if std::env::var_os("APPIMAGE").is_some() || std::env::var_os("APPDIR").is_some() {
+                if let Some(orig) = std::env::var_os("LD_LIBRARY_PATH_ORIG") {
+                    cmd.env("LD_LIBRARY_PATH", orig);
+                } else {
+                    cmd.env_remove("LD_LIBRARY_PATH");
+                }
+                cmd.env_remove("LD_PRELOAD");
+            }
+            cmd.stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            cmd.spawn().is_ok()
+        };
+
+        let path_os = canonical.as_os_str();
+
+        // 1. xdg-open
+        if spawn_cmd("xdg-open", &[path_os]) {
+            return Ok(());
+        }
+
+        // 2. gio open
+        let open_arg = std::ffi::OsStr::new("open");
+        if spawn_cmd("gio", &[open_arg, path_os]) {
+            return Ok(());
+        }
+
+        // 3. Desktop file managers directly
+        for fm in &["dolphin", "nautilus", "thunar", "pcmanfm", "pcmanfm-qt", "nemo"] {
+            if spawn_cmd(fm, &[path_os]) {
+                return Ok(());
+            }
+        }
+
+        // 4. Crate fallback
+        open::that_detached(&canonical)
+            .or_else(|_| open::that(&canonical))
+            .map_err(|e| format!("Failed to open folder: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        open::that(&canonical).map_err(|e| format!("Failed to open folder: {e}"))
+    }
+}
+
 /// Open the root "Zero Launcher" data folder (instances, accounts,
 /// settings, Java runtimes, etc.) in the system file manager.
 #[tauri::command]
 pub fn open_launcher_folder(state: State<'_, AppState>) -> Result<(), String> {
-    std::fs::create_dir_all(&state.data_dir)
-        .map_err(|e| format!("Failed to create Zero Launcher folder: {e}"))?;
-    open::that(&state.data_dir).map_err(|e| format!("Failed to open folder: {e}"))?;
-    Ok(())
+    open_folder_in_file_manager(&state.data_dir)
+}
+
+/// Open an instance's game directory in the system file manager.
+#[tauri::command]
+pub fn open_instance_folder(
+    state: State<'_, AppState>,
+    directory: Option<String>,
+) -> Result<(), String> {
+    let dir = directory
+        .filter(|s| !s.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+    open_folder_in_file_manager(&dir)
 }
 
 /// Current launcher version, read from the version in this crate's

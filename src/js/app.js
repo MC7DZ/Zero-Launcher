@@ -235,7 +235,15 @@ function loaderLabel(loader) {
   const key = (loader || 'vanilla').toLowerCase();
   if (key === 'neoforge') return 'NeoForge';
   if (key === 'vanilla') return 'Vanilla';
+  if (key === 'unknown') return 'Vanilla';
   return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function isLikelyMcVersion(v) {
+  if (!v || typeof v !== 'string') return false;
+  const s = v.trim();
+  if (!s) return false;
+  return /^[0-9]+(\.[0-9]+)*(-.+)?$/.test(s) || /^[0-9]{2}w[0-9]{2}[a-z]$/.test(s) || /^[abcr][0-9]/.test(s);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -359,6 +367,7 @@ const api = {
   getMusicDir: () => invoke('get_music_dir'),
   openMusicFolder: () => invoke('open_music_folder'),
   openLauncherFolder: () => invoke('open_launcher_folder'),
+  openInstanceFolder: (directory) => invoke('open_instance_folder', { directory: directory || null }),
   getLauncherVersion: () => invoke('get_launcher_version'),
   getSystemInfo: () => invoke('get_system_info'),
   checkForUpdate: () => invoke('check_for_update'),
@@ -381,10 +390,12 @@ const api = {
       }
     }),
   launchGame: (versionId, offline) => invoke('launch_minecraft', { versionId, offline: offline ?? null }),
-  updateInstance: (versionId, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs) =>
+  updateInstance: (versionId, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs, loader, minecraftVersion) =>
     invoke('update_instance', {
       versionId,
       name: name || null,
+      loader: loader || null,
+      minecraftVersion: minecraftVersion || null,
       loaderVersion: loaderVersion || null,
       javaPath: javaPath !== undefined ? (javaPath || null) : null,
       minRamMb: minRamMb ? Number(minRamMb) : null,
@@ -2533,8 +2544,8 @@ async function refreshInstances() {
     byVersionId.set(v.id, {
       name: v.id,
       version_id: v.id,
-      minecraft_version: v.minecraft_version || v.id,
-      loader: v.loader || 'vanilla',
+      minecraft_version: v.minecraft_version || (isLikelyMcVersion(v.id) ? v.id : 'unknown'),
+      loader: (v.loader && v.loader.toLowerCase() !== 'unknown') ? v.loader : 'vanilla',
       loader_version: '',
       directory: (settings && settings.game_directory) || '',
       installed_at: '',
@@ -4975,8 +4986,9 @@ function getModsTargetInstance() {
 
 function getModsTargetDirectory() {
   const inst = getModsTargetInstance();
-  if (inst && inst.directory) return inst.directory;
-  return settings ? settings.game_directory : '';
+  if (inst && inst.directory && inst.directory.trim()) return inst.directory.trim();
+  const dir = (settings && settings.game_directory) ? settings.game_directory.trim() : '';
+  return dir || null;
 }
 
 function selectOptionIfAvailable(select, value) {
@@ -5100,22 +5112,17 @@ async function troubleshootReinstallInstance(id) {
   const zlibOk = await confirmZlibIfConflict(inst.loader);
   if (!zlibOk) return;
   showToast(`Reinstalling ${inst.name || inst.version_id}…`, 'info');
-  if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, inst.minecraft_version, inst.loader);
+  const targetLoader = (inst.loader && inst.loader.toLowerCase() !== 'unknown') ? inst.loader : 'vanilla';
+  if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, inst.minecraft_version, targetLoader);
   try {
     const newInstance = await api.installVersion(
       inst.minecraft_version,
-      inst.loader || 'vanilla',
+      targetLoader,
       inst.loader_version || 'latest',
       inst.directory,
-      inst.name
+      inst.name,
+      inst.version_id
     );
-    if (newInstance.version_id !== inst.version_id) {
-      try {
-        await api.deleteInstalledVersion(inst.version_id, inst.directory);
-      } catch (e) {
-        console.warn('Could not clean up old instance version:', e);
-      }
-    }
     await refreshInstances();
     renderInstanceList();
     selectInstance(newInstance.version_id);
@@ -5534,14 +5541,28 @@ function initInstanceActions() {
   if (editLoaderImgQuilt) editLoaderImgQuilt.src = iconQuilt;
 
   function setEditLoader(loader) {
-    const norm = (loader || 'Vanilla').trim();
+    let norm = (loader || 'Vanilla').trim();
+    if (norm.toLowerCase() === 'unknown') {
+      norm = 'Vanilla';
+    }
     if (editLoaderInput) editLoaderInput.value = norm;
 
     const btns = document.querySelectorAll('#edit-inst-loader-buttons .hypr-loader-btn');
+    let anyMatched = false;
     btns.forEach(btn => {
       const match = btn.getAttribute('data-loader').toLowerCase() === norm.toLowerCase();
       btn.classList.toggle('active', match);
+      if (match) anyMatched = true;
     });
+    if (!anyMatched) {
+      btns.forEach(btn => {
+        if (btn.getAttribute('data-loader').toLowerCase() === 'vanilla') {
+          btn.classList.add('active');
+        }
+      });
+      if (editLoaderInput) editLoaderInput.value = 'Vanilla';
+      norm = 'Vanilla';
+    }
 
     const isVanilla = norm.toLowerCase() === 'vanilla';
     if (editLoaderVersionTile) {
@@ -5603,6 +5624,19 @@ function initInstanceActions() {
     });
   }
 
+  const btnOpenEditDir = document.getElementById('btn-open-edit-dir');
+  if (btnOpenEditDir) {
+    btnOpenEditDir.addEventListener('click', async () => {
+      const inst = getInstances().find(i => i.version_id === selectedInstanceId);
+      const dir = (inst && inst.directory) || (settings && settings.game_directory) || null;
+      try {
+        await api.openInstanceFolder(dir);
+      } catch (e) {
+        showToast('Failed to open folder: ' + e, 'error');
+      }
+    });
+  }
+
   document.getElementById('btn-edit-instance').addEventListener('click', async () => {
     if (!selectedInstanceId) return;
     const inst = getInstances().find(i => i.version_id === selectedInstanceId);
@@ -5635,7 +5669,8 @@ function initInstanceActions() {
     // manifest), and waiting on that before showing anything made "Edit"
     // feel slow. Populate the dropdown in the background instead.
     editOverlay.classList.remove('hidden');
-    loadMcVersions(editMcVersionSelect, inst.minecraft_version || inst.version_id).catch(e => {
+    const initialMcVer = (inst.minecraft_version && isLikelyMcVersion(inst.minecraft_version)) ? inst.minecraft_version : (isLikelyMcVersion(inst.version_id) ? inst.version_id : null);
+    loadMcVersions(editMcVersionSelect, initialMcVer).catch(e => {
       console.error('Failed to load MC versions for edit overlay:', e);
     });
   });
@@ -5648,8 +5683,15 @@ function initInstanceActions() {
     if (!inst) return;
 
     const name = document.getElementById('edit-inst-name').value.trim();
-    const newMcVersion = editMcVersionSelect.value;
-    let newLoader = ((editLoaderInput ? editLoaderInput.value : 'Vanilla') || 'Vanilla').toLowerCase();
+    const newMcVersion = editMcVersionSelect ? editMcVersionSelect.value : '';
+    if (!newMcVersion || newMcVersion === 'Loading…' || newMcVersion === 'Fetching versions…' || newMcVersion === 'No versions found' || !isLikelyMcVersion(newMcVersion)) {
+      showToast('Please wait for Minecraft versions to load or select a valid version', 'error');
+      return;
+    }
+
+    let rawLoader = (editLoaderInput ? editLoaderInput.value : 'Vanilla') || 'Vanilla';
+    let newLoader = rawLoader.trim().toLowerCase();
+    if (!newLoader || newLoader === 'unknown') newLoader = 'vanilla';
     const loaderVersion = document.getElementById('edit-inst-loader-version').value.trim() || 'latest';
     
     const javaPath = editJavaSelect ? editJavaSelect.value : '';
@@ -5657,9 +5699,13 @@ function initInstanceActions() {
     const maxRamMb = editMaxRamInput && editMaxRamInput.value ? parseInt(editMaxRamInput.value) : null;
     const jvmArgs = editJvmArgsInput ? editJvmArgsInput.value.trim() : '';
 
+    const currentMc = (inst.minecraft_version && isLikelyMcVersion(inst.minecraft_version)) ? inst.minecraft_version : (isLikelyMcVersion(inst.version_id) ? inst.version_id : null);
+    const currentLoader = (inst.loader && inst.loader.toLowerCase() !== 'unknown') ? inst.loader.toLowerCase() : null;
+
     const versionOrLoaderChanged =
-      newMcVersion !== (inst.minecraft_version || inst.version_id) ||
-      newLoader !== (inst.loader || 'vanilla').toLowerCase();
+      (currentMc !== null && newMcVersion !== currentMc) ||
+      (currentLoader !== null && newLoader !== currentLoader) ||
+      (currentLoader === null);
 
     const saveBtn = document.getElementById('btn-save-edit-instance');
     saveBtn.disabled = true;
@@ -5667,7 +5713,7 @@ function initInstanceActions() {
     try {
       if (!versionOrLoaderChanged) {
         // Nothing that requires a reinstall changed — update metadata & advanced settings
-        await api.updateInstance(selectedInstanceId, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs);
+        await api.updateInstance(selectedInstanceId, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs, newLoader, newMcVersion);
       } else {
         // Minecraft version and/or loader changed — reinstall with new version
         closeEditInstanceOverlay();
@@ -5676,17 +5722,10 @@ function initInstanceActions() {
         const newInstance = await api.installVersion(newMcVersion, newLoader, loaderVersion, inst.directory, name || inst.name, inst.version_id);
         // Persist advanced settings onto the newly created instance record
         try {
-          await api.updateInstance(newInstance.version_id, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs);
+          await api.updateInstance(newInstance.version_id, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs, newLoader, newMcVersion);
         } catch (_) {}
-        // Remove the old version's files/tracking now that the new one is in place,
-        // as long as it didn't just overwrite itself (same version_id/dir).
-        if (newInstance.version_id !== inst.version_id) {
-          try {
-            await api.deleteInstalledVersion(inst.version_id, inst.directory);
-          } catch (e) {
-            console.warn('Could not clean up old instance version:', e);
-          }
-        }
+        // DO NOT call deleteInstalledVersion: install_minecraft with old_version_id
+        // already safely replaced old_version_id and protected shared vanilla folders!
         await refreshInstances();
         renderInstanceList();
         selectInstance(newInstance.version_id);
@@ -5887,7 +5926,7 @@ async function loadMcVersions(selectEl, selectedValue) {
     // that isn't in the trimmed/release list (an old snapshot, for
     // example), add it so the select doesn't silently jump to a different
     // version than what's actually installed.
-    if (selectedValue && !listToRender.some(v => v.id === selectedValue) && !cachedSet.has(selectedValue)) {
+    if (selectedValue && isLikelyMcVersion(selectedValue) && !listToRender.some(v => v.id === selectedValue) && !cachedSet.has(selectedValue)) {
       listToRender.unshift({ id: selectedValue });
     }
 
@@ -6054,87 +6093,102 @@ function showXrandrWarningModal(onRetry) {
 }
 
 async function installInstance() {
-  const mcVersion = document.getElementById('inst-mc-version').value;
-  let loader = document.getElementById('inst-loader').value || 'vanilla';
-  let loaderVersion = document.getElementById('inst-loader-version').value.trim() || 'latest';
-  if (!mcVersion) { showToast('Version required', 'error'); return; }
-  if (loader.toLowerCase() === 'vanilla') loader = 'vanilla';
-
   const btn = document.getElementById('btn-start-install');
-  btn.disabled = true;
-
-  const zlibOk = await confirmZlibIfConflict(loader);
-  if (!zlibOk) {
-    btn.disabled = false;
-    return;
-  }
-
-  // No name typed — fall back to "{Loader} {Minecraft version}", e.g.
-  // "Fabric 1.21.1" or "Vanilla 1.20.4", instead of blocking install.
-  const typedName = document.getElementById('inst-name').value.trim();
-  const name = typedName || `${loaderLabel(loader)} ${mcVersion}`;
-
-  const useCustomDir = document.getElementById('inst-dir-custom').checked;
-  const useSeparatedDir = document.getElementById('inst-dir-separated').checked;
-  let directory = null; // null => backend uses the default/global Minecraft directory
-  if (useCustomDir) {
-    directory = document.getElementById('inst-dir-path').value.trim() || null;
-  } else if (useSeparatedDir) {
-    // Same mechanism as a custom directory, just auto-computed: puts this
-    // instance's mods/saves/config in their own folder under
-    // <default minecraft dir>/!Instances/<name>/ so a fresh instance can
-    // never inherit or collide with another instance's mods.
-    const baseDir = defaultMcDirCache || (settings && settings.game_directory) || '';
-    const safeName = name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Instance';
-    directory = baseDir ? `${baseDir}/!Instances/${safeName}` : null;
-  }
-
-  const javaPath = instJavaSelect ? instJavaSelect.value : '';
-  const minRamMb = instMinRamInput && instMinRamInput.value ? parseInt(instMinRamInput.value) : null;
-  const maxRamMb = instMaxRamInput && instMaxRamInput.value ? parseInt(instMaxRamInput.value) : null;
-  const jvmArgs = instJvmArgsInput ? instJvmArgsInput.value.trim() : '';
-
-  // Close the form right away — the floating download widget (bottom-left)
-  // tracks progress from here, so the user is free to keep using the app.
-  document.getElementById('new-instance-overlay').classList.add('hidden');
-  showToast(`Installing ${name}…`, 'info');
-  if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, mcVersion, loader);
+  if (btn) btn.disabled = true;
 
   try {
-    const result = await api.installVersion(mcVersion, loader, loaderVersion, directory, name);
+    const mcVersion = document.getElementById('inst-mc-version')?.value;
+    let loader = document.getElementById('inst-loader')?.value || 'vanilla';
+    let loaderVersion = document.getElementById('inst-loader-version')?.value?.trim() || 'latest';
+    if (!mcVersion) {
+      showToast('Version required', 'error');
+      if (btn) btn.disabled = false;
+      return;
+    }
+    if (loader.toLowerCase() === 'vanilla') loader = 'vanilla';
 
-    // A brand-new instance should never come up hidden — but its
-    // version_id can coincide with an entry that was previously hidden
-    // (e.g. a bare vanilla version auto-hidden because it only existed to
-    // satisfy a modded instance's dependency, or one the user hid earlier).
-    // Since this was just explicitly installed, make sure it's visible.
-    if (result && result.version_id) {
-      try { await api.unhideInstance(result.version_id); } catch (e) { /* not hidden — fine */ }
-      if (javaPath || minRamMb || maxRamMb || jvmArgs) {
-        try {
-          await api.updateInstance(result.version_id, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs);
-        } catch (e) {
-          console.warn('Could not set initial instance settings:', e);
+    const zlibOk = await confirmZlibIfConflict(loader);
+    if (!zlibOk) {
+      if (btn) btn.disabled = false;
+      return;
+    }
+
+    // No name typed — fall back to "{Loader} {Minecraft version}", e.g.
+    // "Fabric 1.21.1" or "Vanilla 1.20.4", instead of blocking install.
+    const typedName = document.getElementById('inst-name')?.value?.trim();
+    const name = typedName || `${loaderLabel(loader)} ${mcVersion}`;
+
+    const useCustomDir = !!document.getElementById('inst-dir-custom')?.checked;
+    const useSeparatedDir = !!document.getElementById('inst-dir-separated')?.checked;
+    let directory = null; // null => backend uses the default/global Minecraft directory
+    if (useCustomDir) {
+      directory = document.getElementById('inst-dir-path')?.value?.trim() || null;
+    } else if (useSeparatedDir) {
+      // Same mechanism as a custom directory, just auto-computed: puts this
+      // instance's mods/saves/config in their own folder under
+      // <default minecraft dir>/!Instances/<name>/ so a fresh instance can
+      // never inherit or collide with another instance's mods.
+      const baseDir = defaultMcDirCache || (settings && settings.game_directory) || '';
+      const safeName = name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Instance';
+      directory = baseDir ? `${baseDir}/!Instances/${safeName}` : null;
+    }
+
+    const javaPath = document.getElementById('inst-java-select')?.value || '';
+    const minRamVal = document.getElementById('inst-min-ram')?.value;
+    const minRamMb = minRamVal ? parseInt(minRamVal, 10) : null;
+    const maxRamVal = document.getElementById('inst-max-ram')?.value;
+    const maxRamMb = maxRamVal ? parseInt(maxRamVal, 10) : null;
+    const jvmArgs = document.getElementById('inst-jvm-args')?.value?.trim() || '';
+
+    // Close the form right away — the floating download widget (bottom-left)
+    // tracks progress from here, so the user is free to keep using the app.
+    document.getElementById('new-instance-overlay')?.classList.add('hidden');
+    showToast(`Installing ${name}…`, 'info');
+    if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, mcVersion, loader);
+
+    try {
+      const result = await api.installVersion(mcVersion, loader, loaderVersion, directory, name);
+
+      // A brand-new instance should never come up hidden — but its
+      // version_id can coincide with an entry that was previously hidden
+      // (e.g. a bare vanilla version auto-hidden because it only existed to
+      // satisfy a modded instance's dependency, or one the user hid earlier).
+      // Since this was just explicitly installed, make sure it's visible.
+      if (result && result.version_id) {
+        try { await api.unhideInstance(result.version_id); } catch (e) { /* not hidden — fine */ }
+        if (javaPath || minRamMb || maxRamMb || jvmArgs) {
+          try {
+            await api.updateInstance(result.version_id, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs);
+          } catch (e) {
+            console.warn('Could not set initial instance settings:', e);
+          }
         }
       }
-    }
 
-    await refreshInstances();
+      await refreshInstances();
 
-    showToast('Instance installed!', 'success');
-    renderInstanceList();
-    if (result && result.version_id) {
-      selectInstance(result.version_id);
+      showToast('Instance installed!', 'success');
+      renderInstanceList();
+      if (result && result.version_id) {
+        selectInstance(result.version_id);
+        // "Install & Play" — launch the instance now that install succeeded!
+        if (typeof window.launchSelectedInstance === 'function') {
+          window.launchSelectedInstance(false);
+        }
+      }
+    } catch (e) {
+      if (String(e).toLowerCase().includes('cancel')) {
+        showToast('Installation cancelled', 'info');
+      } else {
+        if (dlWidgetGeneric) dlWidgetGeneric.failInstanceInstall(INSTANCE_INSTALL_CARD_ID, String(e));
+        showToast('Install failed: ' + e, 'error');
+      }
     }
-  } catch (e) {
-    if (String(e).toLowerCase().includes('cancel')) {
-      showToast('Installation cancelled', 'info');
-    } else {
-      if (dlWidgetGeneric) dlWidgetGeneric.failInstanceInstall(INSTANCE_INSTALL_CARD_ID, String(e));
-      showToast('Install failed: ' + e, 'error');
-    }
+  } catch (err) {
+    console.error('Error in installInstance:', err);
+    showToast('Failed to start installation: ' + err, 'error');
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -6912,10 +6966,13 @@ function initMods() {
   const btnOpenMods = document.getElementById('btn-open-mods');
   if (btnOpenMods) {
     btnOpenMods.addEventListener('click', async () => {
-      if (!settings) return;
+      if (!settings) settings = await api.getSettings().catch(() => null);
       const directory = getModsTargetDirectory();
-      try { await api.openModsFolder(directory); }
-      catch (e) { showToast('Failed to open folder', 'error'); }
+      try {
+        await api.openModsFolder(directory);
+      } catch (e) {
+        showToast('Failed to open folder: ' + e, 'error');
+      }
     });
   }
 
@@ -10407,6 +10464,9 @@ function populateSettingsUI() {
   if (autoCheckLauncherUpdatesEl) autoCheckLauncherUpdatesEl.checked = settings.auto_check_launcher_updates === true;
 
   // Performance & Java
+  const elHwAccel = document.getElementById('setting-hardware-acceleration');
+  if (elHwAccel) elHwAccel.checked = settings.enable_hardware_acceleration !== false;
+
   const elGameDir = document.getElementById('setting-game-dir');
   if (elGameDir) {
     elGameDir.value = settings.game_directory || '';
@@ -10758,6 +10818,8 @@ function collectSettingsFromUI() {
   if (autoCheckLauncherUpdatesElCollect) settings.auto_check_launcher_updates = autoCheckLauncherUpdatesElCollect.checked;
 
   // Performance & Java
+  const elHwAccelCollect = document.getElementById('setting-hardware-acceleration');
+  if (elHwAccelCollect) settings.enable_hardware_acceleration = elHwAccelCollect.checked;
   const elGameDir = document.getElementById('setting-game-dir');
   if (elGameDir) settings.game_directory = elGameDir.value;
   const elMinRam = document.getElementById('setting-min-ram');
@@ -11149,11 +11211,19 @@ function initSettings() {
     'setting-debug-mode',
     'setting-crash-analysis',
     'setting-auto-open-console',
+    'setting-hardware-acceleration',
   ];
   immediateIds.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', saveSettingsNow);
   });
+
+  const hwAccelEl = document.getElementById('setting-hardware-acceleration');
+  if (hwAccelEl) {
+    hwAccelEl.addEventListener('change', () => {
+      showToast('Hardware acceleration updated. Please restart the launcher for changes to take effect.', 'info', 'Restart Required');
+    });
+  }
 
   // Notification style gets its own live preview: fire a toast in the new
   // style right away so the change is obvious without waiting for some
@@ -11273,10 +11343,26 @@ function initSettings() {
   }
 
   const btnOpenManagedDir = document.getElementById('btn-open-managed-java-dir');
-  if (btnOpenManagedDir) btnOpenManagedDir.addEventListener('click', () => api.openManagedJavaDir());
+  if (btnOpenManagedDir) {
+    btnOpenManagedDir.addEventListener('click', async () => {
+      try {
+        await api.openManagedJavaDir();
+      } catch (e) {
+        showToast('Failed to open folder: ' + e, 'error');
+      }
+    });
+  }
 
   const btnOpenJavaDirLink = document.getElementById('btn-open-java-dir-link');
-  if (btnOpenJavaDirLink) btnOpenJavaDirLink.addEventListener('click', () => api.openManagedJavaDir());
+  if (btnOpenJavaDirLink) {
+    btnOpenJavaDirLink.addEventListener('click', async () => {
+      try {
+        await api.openManagedJavaDir();
+      } catch (e) {
+        showToast('Failed to open folder: ' + e, 'error');
+      }
+    });
+  }
 
   const btnAddCustomJava = document.getElementById('btn-add-custom-java');
   if (btnAddCustomJava) {
@@ -11501,6 +11587,7 @@ function initSettings() {
         await api.openLauncherFolder();
       } catch (e) {
         console.error('Failed to open Zero Launcher folder:', e);
+        showToast('Failed to open folder: ' + e, 'error');
       }
     });
   }
@@ -12298,6 +12385,25 @@ async function refreshRunningInstances() {
     .then(() => { updateSelectedInstancePlaytimeDisplay(); renderPlaytimeChart(); })
     .catch((e) => console.error('Failed to refresh instances after running-instances change', e));
   updateSelectedInstancePlaytimeDisplay();
+
+  // High GPU & WebKitGTK Optimization:
+  // When a game is running, pause background canvas particles and 3D skin model rendering
+  // so the launcher consumes 0% GPU while the user plays.
+  const anyGameRunning = Array.isArray(runningInstancesCache) && runningInstancesCache.some(i => i.running);
+  if (anyGameRunning) {
+    if (typeof BG !== 'undefined' && BG.pause) BG.pause();
+    if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
+  } else {
+    const settingsOpen = document.body.classList.contains('settings-modal-active');
+    const skinModalOpen = !document.getElementById('skin-viewer-overlay')?.classList.contains('hidden');
+    const dressingOpen = !document.getElementById('dressing-room-overlay')?.classList.contains('hidden');
+    if (!document.hidden && !settingsOpen) {
+      if (typeof BG !== 'undefined' && BG.resume) BG.resume();
+    }
+    if (!document.hidden && !skinModalOpen && !dressingOpen && skinMiniPreviewInstance) {
+      skinMiniPreviewInstance.renderPaused = false;
+    }
+  }
 }
 
 async function openInstanceConsole(versionId, name) {
@@ -12417,6 +12523,22 @@ const BG = {
     // visibilitychange handler above resumes it right away), a window
     // that's been natively hidden needs a bit longer for the OS to finish
     // showing/compositing it before poking the renderer does any good.
+    window.addEventListener('blur', () => {
+      this.pause();
+      if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
+    });
+    window.addEventListener('focus', () => {
+      const anyRunning = Array.isArray(runningInstancesCache) && runningInstancesCache.some(i => i.running);
+      const settingsOpen = document.body.classList.contains('settings-modal-active');
+      const skinModalOpen = !document.getElementById('skin-viewer-overlay')?.classList.contains('hidden');
+      const dressingOpen = !document.getElementById('dressing-room-overlay')?.classList.contains('hidden');
+      if (!anyRunning && !settingsOpen && !document.hidden) {
+        this.resume();
+      }
+      if (!anyRunning && !skinModalOpen && !dressingOpen && !document.hidden && skinMiniPreviewInstance) {
+        skinMiniPreviewInstance.renderPaused = false;
+      }
+    });
     listen('launcher-shown', () => setTimeout(() => resumeSkinViewersAfterShow(), 2000));
     this.createParticles();
     this.createOrbs();
@@ -15037,6 +15159,17 @@ function initCustomContextMenu() {
           selectInstance(versionId);
           const modsTab = document.querySelector('.pill-tab[data-tab="mods"]');
           if (modsTab) modsTab.click();
+        });
+
+        addItem('Open Folder', async () => {
+          selectInstance(versionId);
+          const inst = getInstances().find(i => i.version_id === versionId);
+          const dir = (inst && inst.directory) || (settings && settings.game_directory) || null;
+          try {
+            await api.openInstanceFolder(dir);
+          } catch (e) {
+            showToast('Failed to open folder: ' + e, 'error');
+          }
         });
       }
     } else if (modCard) {

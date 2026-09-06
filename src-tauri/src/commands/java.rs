@@ -240,20 +240,7 @@ pub async fn get_managed_java_root_path() -> Result<String, String> {
 #[tauri::command]
 pub async fn open_managed_java_dir() -> Result<(), String> {
     let root = managed_java_root();
-    let _ = fs::create_dir_all(&root);
-    #[cfg(target_os = "windows")]
-    {
-        let _ = std::process::Command::new("explorer").arg(&root).spawn();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg(&root).spawn();
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = std::process::Command::new("xdg-open").arg(&root).spawn();
-    }
-    Ok(())
+    crate::commands::open_folder_in_file_manager(&root)
 }
 
 /// Validates and adds a custom Java installation path to launcher settings.

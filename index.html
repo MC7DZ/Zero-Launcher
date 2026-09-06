@@ -1123,6 +1123,7 @@
             <div class="hypr-path-box">
               <span id="edit-inst-dir" class="hypr-path-text">—</span>
               <button type="button" id="btn-copy-edit-dir" class="btn-secondary" style="padding: 3px 10px; font-size: 11px;" title="Copy Path">Copy</button>
+              <button type="button" id="btn-open-edit-dir" class="btn-secondary" style="padding: 3px 10px; font-size: 11px;" title="Open Instance Folder">Open Folder</button>
             </div>
           </div>
         </div>
@@ -1901,32 +1902,35 @@
 
               <!-- Accent Color Setting -->
               <div class="form-row" style="margin-bottom: 12px;">
-                <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
-                  <label style="margin-bottom: 0;">Accent Color</label>
-                  <div style="display:flex; align-items:center; gap:8px;">
-                    <input type="text" id="setting-accent-hex-input" class="input-field color-hex-box" maxlength="7" value="#B7B7B7" placeholder="#B7B7B7" style="width:85px; font-family:var(--font); font-size:12px; padding:5px 8px; text-transform:uppercase; text-align:center;" />
-                    <button type="button" id="btn-open-accent-picker" class="color-picker-trigger-btn" title="Open Color Palette & Custom Picker">
-                      <span id="setting-accent-preview" class="color-swatch-circle" style="background:var(--accent);"></span>
-                    </button>
-                    <button type="button" id="btn-reset-accent-color" class="btn-ghost btn-sm" title="Reset to default silver accent color" style="padding:4px 10px; font-size:12px;">Reset</button>
+                <div class="form-group" style="display: flex; flex-direction: column; gap: 4px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <label style="margin-bottom: 0;">Accent Color</label>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <input type="text" id="setting-accent-hex-input" class="input-field color-hex-box" maxlength="7" value="#B7B7B7" placeholder="#B7B7B7" style="width:85px; font-family:var(--font); font-size:12px; padding:5px 8px; text-transform:uppercase; text-align:center;" />
+                      <button type="button" id="btn-open-accent-picker" class="color-picker-trigger-btn" title="Open Color Palette & Custom Picker">
+                        <span id="setting-accent-preview" class="color-swatch-circle" style="background:var(--accent);"></span>
+                      </button>
+                      <button type="button" id="btn-reset-accent-color" class="btn-ghost btn-sm" title="Reset to default silver accent color" style="padding:4px 10px; font-size:12px;">Reset</button>
+                    </div>
                   </div>
+                  <p class="settings-hint">Primary highlight color for active buttons, badges, icons, and UI accents across the launcher.</p>
                 </div>
               </div>
 
               <!-- Background Base Color Setting -->
               <div class="form-row" style="margin-bottom: 14px;">
-                <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
-                  <div>
+                <div class="form-group" style="display: flex; flex-direction: column; gap: 4px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
                     <label style="margin-bottom: 0;">Background Base Color</label>
-                    <div class="field-help" style="font-size:11px; color:var(--text-muted); margin-top:2px;">Base dark shade used for background gradients & themes</div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <input type="text" id="setting-bg-hex-input" class="input-field color-hex-box" maxlength="7" value="#0A0A0F" placeholder="#0A0A0F" style="width:85px; font-family:var(--font); font-size:12px; padding:5px 8px; text-transform:uppercase; text-align:center;" />
+                      <button type="button" id="btn-open-bg-color-picker" class="color-picker-trigger-btn" title="Open Color Palette & Custom Picker">
+                        <span id="setting-bg-color-preview" class="color-swatch-circle" style="background:var(--bg, #0a0a0f);"></span>
+                      </button>
+                      <button type="button" id="btn-reset-bg-color" class="btn-ghost btn-sm" title="Reset to default dark background color" style="padding:4px 10px; font-size:12px;">Reset</button>
+                    </div>
                   </div>
-                  <div style="display:flex; align-items:center; gap:8px;">
-                    <input type="text" id="setting-bg-hex-input" class="input-field color-hex-box" maxlength="7" value="#0A0A0F" placeholder="#0A0A0F" style="width:85px; font-family:var(--font); font-size:12px; padding:5px 8px; text-transform:uppercase; text-align:center;" />
-                    <button type="button" id="btn-open-bg-color-picker" class="color-picker-trigger-btn" title="Open Color Palette & Custom Picker">
-                      <span id="setting-bg-color-preview" class="color-swatch-circle" style="background:var(--bg, #0a0a0f);"></span>
-                    </button>
-                    <button type="button" id="btn-reset-bg-color" class="btn-ghost btn-sm" title="Reset to default dark background color" style="padding:4px 10px; font-size:12px;">Reset</button>
-                  </div>
+                  <p class="settings-hint">Base dark shade used for background gradients, cards, and overall window theme.</p>
                 </div>
               </div>
 
@@ -1946,6 +1950,7 @@
                     <option value="Accent Glow">Accent Glow</option>
                     <option value="Nothing">Nothing (flat gray)</option>
                   </select>
+                  <p class="settings-hint">Select the atmospheric gradient styling displayed behind the launcher windows.</p>
                 </div>
                 <div class="form-group">
                   <label>Animation Style</label>
@@ -1953,9 +1958,9 @@
                     <option value="Waves">Waves</option>
                     <option value="Particles">Particles</option>
                     <option value="Fireflies">Fireflies</option>
-
                     <option value="Nothing">Nothing (no animation)</option>
                   </select>
+                  <p class="settings-hint">Animated visual canvas particle effects rendered in the background.</p>
                 </div>
               </div>
 
@@ -1963,42 +1968,52 @@
                 <div class="form-group">
                   <label>Animation Speed</label>
                   <input type="number" step="0.1" min="0.1" max="5.0" id="setting-bg-anim-speed" class="input-field" />
+                  <p class="settings-hint">Controls how fast background waves and floating particles move.</p>
                 </div>
                 <div class="form-group">
                   <label>Animation FPS</label>
                   <input type="number" min="10" max="120" id="setting-bg-anim-fps" class="input-field" />
+                  <p class="settings-hint">Target frame rate cap for background rendering (lower values save CPU/GPU cycles).</p>
                 </div>
               </div>
               <div class="form-row">
                 <div class="form-group">
                   <label>Animation Intensity</label>
                   <input type="range" min="0.5" max="3.0" step="0.1" id="setting-bg-anim-intensity" class="input-range" />
+                  <p class="settings-hint">Adjusts the visual size, density, and opacity of background particles.</p>
                 </div>
               </div>
 
               <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-bg-anim-enable" />
-                  <span class="toggle-slider"></span>
-                  <span>Background Animations</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-transparency" />
-                  <span class="toggle-slider"></span>
-                  <span>Transparent UI Cards (High Performance)</span>
-                </label>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-bg-anim-enable" />
+                    <span class="toggle-slider"></span>
+                    <span>Background Animations</span>
+                  </label>
+                  <p class="settings-hint">Turn off to completely freeze canvas animation loops and conserve computer resources.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-transparency" />
+                    <span class="toggle-slider"></span>
+                    <span>Transparent UI Cards (High Performance)</span>
+                  </label>
+                  <p class="settings-hint">Renders translucent glass cards using lightweight CSS layers without slow backdrop filters.</p>
+                </div>
               </div>
 
               <div class="dropdown-divider" style="margin: 16px 0;"></div>
 
               <!-- Background Image -->
-              <label class="toggle-row" style="margin-bottom:10px;">
+              <label class="toggle-row" style="margin-bottom:4px;">
                 <input type="checkbox" id="setting-use-bg-image" />
                 <span class="toggle-slider"></span>
                 <span>Use Background Image</span>
               </label>
+              <p class="settings-hint">Replaces canvas gradient animations with your own custom wallpaper or screenshot.</p>
 
-              <div class="form-group">
+              <div class="form-group" style="margin-top:12px;">
                 <label>Background Image</label>
                 <div style="display:flex; gap:8px; align-items:center;">
                   <input type="hidden" id="setting-bg-image-path" />
@@ -2024,34 +2039,44 @@
                     <option value="Center">Center</option>
                     <option value="Tile">Tile</option>
                   </select>
+                  <p class="settings-hint">Determines how your wallpaper scales or repeats across the launcher window.</p>
                 </div>
                 <div class="form-group">
                   <label>Dim Overlay (0-100)</label>
                   <input type="range" min="0" max="100" id="setting-bg-image-dim" class="input-range" />
+                  <p class="settings-hint">Darkens the wallpaper background so that text, icons, and menus remain easy to read.</p>
                 </div>
               </div>
               <div class="form-row">
                 <div class="form-group">
                   <label>Image Brightness</label>
                   <input type="range" min="50" max="150" id="setting-bg-image-brightness" class="input-range" />
+                  <p class="settings-hint">Fine-tunes the brightness of the loaded background wallpaper.</p>
                 </div>
                 <div class="form-group">
                   <label>Image Blur</label>
                   <input type="range" min="0" max="20" id="setting-bg-image-blur" class="input-range" />
+                  <p class="settings-hint">Applies a soft gaussian blur to keep visual focus on launcher cards and content.</p>
                 </div>
               </div>
 
               <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-bg-image-tint" />
-                  <span class="toggle-slider"></span>
-                  <span>Tint with Accent Color</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-bg-image-vignette" />
-                  <span class="toggle-slider"></span>
-                  <span>Vignette Effect</span>
-                </label>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-bg-image-tint" />
+                    <span class="toggle-slider"></span>
+                    <span>Tint with Accent Color</span>
+                  </label>
+                  <p class="settings-hint">Blends a slight wash of your chosen accent color onto the wallpaper.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-bg-image-vignette" />
+                    <span class="toggle-slider"></span>
+                    <span>Vignette Effect</span>
+                  </label>
+                  <p class="settings-hint">Darkens the window edges and corners for a clean framed presentation.</p>
+                </div>
               </div>
 
               <div class="dropdown-divider" style="margin: 16px 0;"></div>
@@ -2067,6 +2092,7 @@
                     <option value="Pill">Pill</option>
                     <option value="Minimal">Minimal</option>
                   </select>
+                  <p class="settings-hint">Styling used for toast notifications, download alerts, and status banners.</p>
                 </div>
                 <div class="form-group">
                   <label>Font Family</label>
@@ -2077,22 +2103,25 @@
                     <option value="system-ui">System Default</option>
                     <option value="monospace">Monospace</option>
                   </select>
+                  <p class="settings-hint">Primary typeface family applied across launcher menus, buttons, and headings.</p>
                 </div>
               </div>
 
               <div class="dropdown-divider" style="margin: 16px 0;"></div>
 
               <!-- Music -->
-              <label class="toggle-row" style="margin-bottom:14px;">
+              <label class="toggle-row" style="margin-bottom:4px;">
                 <input type="checkbox" id="setting-music-enabled" />
                 <span class="toggle-slider"></span>
                 <span>Background Music</span>
               </label>
+              <p class="settings-hint">Plays calm ambient music while browsing the launcher library and settings.</p>
 
-              <div class="form-row" style="margin-bottom: 14px;">
+              <div class="form-row" style="margin-bottom: 14px; margin-top: 10px;">
                 <div class="form-group">
                   <label>Music Volume</label>
                   <input type="range" min="0" max="100" step="1" id="setting-music-volume" class="input-range" />
+                  <p class="settings-hint">Master audio volume level for the background music player.</p>
                 </div>
               </div>
 
@@ -2103,12 +2132,14 @@
                   <option value="continue">Don't pause music</option>
                   <option value="lower">Don't pause music, but lower volume</option>
                 </select>
+                <p class="settings-hint">Controls music playback behavior whenever the launcher loses desktop window focus.</p>
               </div>
 
               <div class="form-row" id="setting-music-lower-row" style="margin-bottom: 14px;">
                 <div class="form-group">
                   <label>Volume while unfocused</label>
                   <input type="range" min="0" max="100" step="1" id="setting-music-lower-percent" class="input-range" />
+                  <p class="settings-hint">The lowered volume percentage applied when the launcher is not focused.</p>
                 </div>
               </div>
 
@@ -2132,36 +2163,54 @@
               <!-- Section 1: Launcher Interactions -->
               <div style="font-size:12px; opacity:0.85; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:var(--accent);">Launcher Interactions</div>
               <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px;">
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-mod-updates-startup" />
-                  <span class="toggle-slider"></span>
-                  <span>Check mod updates on startup</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-click-sounds" />
-                  <span class="toggle-slider"></span>
-                  <span>UI Click Sounds</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-confirm-destructive" />
-                  <span class="toggle-slider"></span>
-                  <span>Confirm before deleting items</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-auto-apply-instance-filters" />
-                  <span class="toggle-slider"></span>
-                  <span>Auto-select loader &amp; game version in Discover when picking an instance</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-notify-auto-mod-updates" />
-                  <span class="toggle-slider"></span>
-                  <span>Notify when the automatic mod update check finds updates</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-auto-check-launcher-updates" />
-                  <span class="toggle-slider"></span>
-                  <span>Auto Check For Launcher Updates (Recommended)</span>
-                </label>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-mod-updates-startup" />
+                    <span class="toggle-slider"></span>
+                    <span>Check mod updates on startup</span>
+                  </label>
+                  <p class="settings-hint">Automatically checks Modrinth and CurseForge on startup for newer versions of your installed mods.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-click-sounds" />
+                    <span class="toggle-slider"></span>
+                    <span>UI Click Sounds</span>
+                  </label>
+                  <p class="settings-hint">Plays subtle tactile audio cues when clicking tabs, buttons, and launcher controls.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-confirm-destructive" />
+                    <span class="toggle-slider"></span>
+                    <span>Confirm before deleting items</span>
+                  </label>
+                  <p class="settings-hint">Shows a confirmation popup before deleting instances, mods, or downloaded files.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-auto-apply-instance-filters" />
+                    <span class="toggle-slider"></span>
+                    <span>Auto-select loader &amp; game version in Discover when picking an instance</span>
+                  </label>
+                  <p class="settings-hint">Automatically restricts Discover search results to match the selected instance's Minecraft version and mod loader.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-notify-auto-mod-updates" />
+                    <span class="toggle-slider"></span>
+                    <span>Notify when the automatic mod update check finds updates</span>
+                  </label>
+                  <p class="settings-hint">Displays an on-screen toast alert whenever background checks find available mod updates.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-auto-check-launcher-updates" />
+                    <span class="toggle-slider"></span>
+                    <span>Auto Check For Launcher Updates (Recommended)</span>
+                  </label>
+                  <p class="settings-hint">Periodically inspects GitHub for newer versions of Zero Launcher and provides one-click updates.</p>
+                </div>
               </div>
 
               <div class="dropdown-divider" style="margin: 16px 0;"></div>
@@ -2171,21 +2220,30 @@
               
               <div style="font-size:11.5px; opacity:0.7; margin-bottom:8px; font-weight:600;">When launching a game</div>
               <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:18px;">
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-close-on-launch" />
-                  <span class="toggle-slider"></span>
-                  <span>Close launcher when game starts</span>
-                </label>
-                <label class="toggle-row toggle-row-sub" id="setting-smart-close-row" title="Waits until you've stepped away from the launcher (no clicks, typing, or mouse movement in it for a bit) before closing it, instead of closing the instant the game starts.">
-                  <input type="checkbox" id="setting-smart-close-on-launch" />
-                  <span class="toggle-slider"></span>
-                  <span>Make it smart <span class="settings-inline-hint">— wait until you're not doing anything in the launcher first</span></span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-minimize-on-launch" />
-                  <span class="toggle-slider"></span>
-                  <span>Minimize launcher while game is running</span>
-                </label>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-close-on-launch" />
+                    <span class="toggle-slider"></span>
+                    <span>Close launcher when game starts</span>
+                  </label>
+                  <p class="settings-hint">Exits the launcher process once Minecraft has finished booting up.</p>
+                </div>
+                <div id="setting-smart-close-row">
+                  <label class="toggle-row toggle-row-sub" title="Waits until you've stepped away from the launcher (no clicks, typing, or mouse movement in it for a bit) before closing it, instead of closing the instant the game starts.">
+                    <input type="checkbox" id="setting-smart-close-on-launch" />
+                    <span class="toggle-slider"></span>
+                    <span>Make it smart <span class="settings-inline-hint">— wait until you're not doing anything in the launcher first</span></span>
+                  </label>
+                  <p class="settings-hint" style="margin-left:84px;">Prevents abrupt closing while you are still reading logs or adjusting settings.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-minimize-on-launch" />
+                    <span class="toggle-slider"></span>
+                    <span>Minimize launcher while game is running</span>
+                  </label>
+                  <p class="settings-hint">Hides the launcher window to the taskbar while playing Minecraft.</p>
+                </div>
               </div>
 
               <div style="font-size:11.5px; opacity:0.7; margin-bottom:8px; font-weight:600;">When a Minecraft instance closes</div>
@@ -2195,26 +2253,34 @@
                   <option value="none">Don't show the launcher</option>
                   <option value="quit">Quit the launcher too</option>
                 </select>
+                <p class="settings-hint">Action to execute when your Minecraft window is closed or exits.</p>
               </div>
 
               <div style="font-size:11.5px; opacity:0.7; margin-bottom:8px; font-weight:600;">When you close the launcher window</div>
               <div style="display:flex; flex-direction:column; gap:10px;">
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-system-tray" />
-                  <span class="toggle-slider"></span>
-                  <span>Enable System Tray Icon</span>
-                </label>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-system-tray" />
+                    <span class="toggle-slider"></span>
+                    <span>Enable System Tray Icon</span>
+                  </label>
+                  <p class="settings-hint">Keeps an active status icon in your operating system notification tray area.</p>
+                </div>
                 <div class="form-group" id="setting-on-launcher-close-row">
                   <select id="setting-on-launcher-close" class="input-field">
                     <option value="tray">Hide to tray (while a game is running)</option>
                     <option value="close">Close everything</option>
                   </select>
+                  <p class="settings-hint">Choose whether closing the launcher window minimizes it to tray or terminates it.</p>
                 </div>
-                <label class="toggle-row" id="setting-always-hide-to-tray-row">
-                  <input type="checkbox" id="setting-always-hide-to-tray" />
-                  <span class="toggle-slider"></span>
-                  <span>Always hide to tray, even with nothing running</span>
-                </label>
+                <div id="setting-always-hide-to-tray-row">
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-always-hide-to-tray" />
+                    <span class="toggle-slider"></span>
+                    <span>Always hide to tray, even with nothing running</span>
+                  </label>
+                  <p class="settings-hint">Directs the close button to always minimize to system tray regardless of running games.</p>
+                </div>
               </div>
             </div>
 
@@ -2222,27 +2288,49 @@
             <div id="settings-panel-performance" class="settings-tab-panel">
               <div class="settings-panel-heading">
                 <h3>Performance &amp; Advanced</h3>
-                <p>Manage RAM allocation, JVM flags, game directory, and background instances.</p>
+                <p>Manage hardware acceleration, RAM allocation, JVM flags, game directory, and background instances.</p>
               </div>
+
+              <!-- Hardware Acceleration Setting -->
+              <div style="margin-bottom:18px;">
+                <label class="toggle-row">
+                  <input type="checkbox" id="setting-hardware-acceleration" />
+                  <span class="toggle-slider"></span>
+                  <span style="font-weight:600;">Hardware Acceleration (GPU)</span>
+                </label>
+                <p class="settings-hint">Uses your graphics card for UI rendering. Turn OFF if the launcher stutters under heavy GPU load (e.g. shaders on Linux WebKitGTK). Requires launcher restart.</p>
+              </div>
+
+              <div class="dropdown-divider" style="margin: 16px 0;"></div>
 
               <div class="form-group" style="margin-bottom:14px;">
                 <label>Minecraft Game Directory</label>
                 <input type="text" id="setting-game-dir" class="input-field" placeholder="Default (~/.minecraft)" autocomplete="off" />
+                <p class="settings-hint">The root folder where Minecraft stores global assets, libraries, game versions, and configs.</p>
               </div>
               <div class="form-row" style="margin-bottom:14px;">
-                <div class="form-group"><label>Min RAM (MB)</label><input type="number" id="setting-min-ram" class="input-field" /></div>
-                <div class="form-group"><label>Max RAM (MB)</label><input type="number" id="setting-max-ram" class="input-field" /></div>
+                <div class="form-group">
+                  <label>Min RAM (MB)</label>
+                  <input type="number" id="setting-min-ram" class="input-field" />
+                  <p class="settings-hint">Initial heap memory allocated to Java on startup (-Xms).</p>
+                </div>
+                <div class="form-group">
+                  <label>Max RAM (MB)</label>
+                  <input type="number" id="setting-max-ram" class="input-field" />
+                  <p class="settings-hint">Maximum heap memory limit (-Xmx). 4096 MB or more is recommended for modpacks.</p>
+                </div>
               </div>
               <div class="form-group" style="margin-bottom:14px;">
                 <label>Default Java Version</label>
                 <select id="setting-java-select" class="input-field">
                   <option value="">✦ Smart Java Detection (Recommended)</option>
                 </select>
-                <span id="java-select-hint" style="font-size:12px; opacity:0.7; display:block; margin-top:4px;">Automatically picks (or downloads) the right Java for each instance. Managed in Java Manager.</span>
+                <p id="java-select-hint" class="settings-hint">Automatically picks (or downloads) the right Java for each instance. Managed in Java Manager.</p>
               </div>
               <div class="form-group" style="margin-bottom:18px;">
                 <label>Global JVM Arguments</label>
                 <input type="text" id="setting-jvm-args" class="input-field" placeholder="-XX:+UseG1GC" />
+                <p class="settings-hint">Custom JVM arguments appended to every game launch (e.g. garbage collector flags or memory tweaks).</p>
               </div>
 
               <div class="dropdown-divider" style="margin: 16px 0;"></div>
@@ -2257,16 +2345,14 @@
                   <input type="range" id="setting-download-threads" min="1" max="16" step="1" style="flex:1;" />
                   <span id="download-threads-value" style="min-width:2.5em; text-align:right; font-size:13px; opacity:0.85;">3</span>
                 </div>
-                <span style="font-size:12px; opacity:0.7; display:block; margin-top:6px;">How many mod/file downloads run concurrently.</span>
+                <p class="settings-hint">The number of parallel file download streams when fetching Minecraft assets, libraries, and mods.</p>
               </div>
 
               <div class="dropdown-divider" style="margin: 16px 0;"></div>
 
               <div class="form-group">
                 <label>Hidden Instances</label>
-                <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
-                  <span id="hidden-instances-status" style="font-size:12px; opacity:0.7;">Instances you've hidden show up here. They remain fully installed on disk.</span>
-                </div>
+                <p id="hidden-instances-status" class="settings-hint" style="margin-bottom:10px;">Instances you have hidden from your library. They remain safely installed on disk.</p>
                 <div id="hidden-instances-list" class="instance-list hidden-instances-list">
                   <div class="empty-state"><span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 12C3 9 7 5 12 5s9 4 10.5 7c-1.5 3-5.5 7-10.5 7S3 15 1.5 12Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.6"/></svg></span><span>No hidden instances</span></div>
                 </div>
@@ -2343,42 +2429,60 @@
               </div>
 
               <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;">
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-enable-discord-rpc" />
-                  <span class="toggle-slider"></span>
-                  <span style="font-weight:700;">Enable Discord RPC</span>
-                </label>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-enable-discord-rpc" />
+                    <span class="toggle-slider"></span>
+                    <span style="font-weight:700;">Enable Discord RPC</span>
+                  </label>
+                  <p class="settings-hint">Shows your active Minecraft game, instance name, and launcher status on your Discord profile.</p>
+                </div>
               </div>
 
               <div class="dropdown-divider" style="margin: 14px 0;"></div>
 
               <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">General</h4>
-              <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-rpc-show-in-launcher" />
-                  <span class="toggle-slider"></span>
-                  <span>Show RPC when in Zero Launcher</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-rpc-show-instance" />
-                  <span class="toggle-slider"></span>
-                  <span>Show Modpack / Instance Name</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-rpc-show-version" />
-                  <span class="toggle-slider"></span>
-                  <span>Show Minecraft Version</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-rpc-show-server-ip" />
-                  <span class="toggle-slider"></span>
-                  <span>Show Multiplayer Server IP</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-rpc-show-game-state" />
-                  <span class="toggle-slider"></span>
-                  <span>Show Game State (e.g., 'In Main Menu')</span>
-                </label>
+              <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:14px;">
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-in-launcher" />
+                    <span class="toggle-slider"></span>
+                    <span>Show RPC when in Zero Launcher</span>
+                  </label>
+                  <p class="settings-hint">Displays your Discord presence even when you are just browsing inside the launcher.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-instance" />
+                    <span class="toggle-slider"></span>
+                    <span>Show Modpack / Instance Name</span>
+                  </label>
+                  <p class="settings-hint">Displays the title of the instance or modpack you are playing.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-version" />
+                    <span class="toggle-slider"></span>
+                    <span>Show Minecraft Version</span>
+                  </label>
+                  <p class="settings-hint">Displays the Minecraft version and mod loader type (e.g. 1.20.1 Fabric).</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-server-ip" />
+                    <span class="toggle-slider"></span>
+                    <span>Show Multiplayer Server IP</span>
+                  </label>
+                  <p class="settings-hint">Displays the server address or domain name when you join a multiplayer server.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-game-state" />
+                    <span class="toggle-slider"></span>
+                    <span>Show Game State (e.g., 'In Main Menu')</span>
+                  </label>
+                  <p class="settings-hint">Shares specific game context like Main Menu, Loading, or Playing in a world.</p>
+                </div>
               </div>
 
               <div class="form-group" style="margin-bottom:12px;">
@@ -2389,27 +2493,33 @@
                   <option value="1528907493265375382">Classic Icon</option>
                   <option value="custom">Custom</option>
                 </select>
+                <p class="settings-hint">Visual badge icon shown on Discord, or specify your own custom Discord Developer Application ID.</p>
               </div>
 
               <div id="rpc-custom-appid-wrap" class="form-group hidden" style="margin-bottom:12px;">
                 <label>Custom Discord Application ID</label>
                 <input type="text" id="setting-rpc-custom-appid" class="input-field" placeholder="1131048770109460500" />
+                <p class="settings-hint">Your Discord Application Client ID registered in the Discord Developer Portal.</p>
               </div>
 
               <div class="form-group" style="margin-bottom:16px;">
                 <label>Custom status text (shown when in the launcher)</label>
                 <input type="text" id="setting-rpc-custom-state" class="input-field" placeholder="In Zero Launcher" />
+                <p class="settings-hint">Custom text subtitle shown on Discord when idling in Zero Launcher.</p>
               </div>
 
               <div class="dropdown-divider" style="margin: 14px 0;"></div>
 
               <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">Launcher — Tab Activity on Discord</h4>
               <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-rpc-show-launcher-activity" />
-                  <span class="toggle-slider"></span>
-                  <span>Show which tab I'm browsing</span>
-                </label>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-rpc-show-launcher-activity" />
+                    <span class="toggle-slider"></span>
+                    <span>Show which tab I'm browsing</span>
+                  </label>
+                  <p class="settings-hint">Updates Discord presence as you navigate between different launcher views.</p>
+                </div>
                 <div style="display:flex; flex-direction:column; gap:8px; padding-left:16px;">
                   <label class="toggle-row">
                     <input type="checkbox" id="setting-rpc-tab-instances" />
@@ -2470,35 +2580,41 @@
 
               <div style="display:flex; flex-direction:column; gap:12px;">
 
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-redact-tokens" />
-                  <span class="toggle-slider"></span>
-                  <span>Redact Auth Tokens in Logs</span>
-                </label>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-redact-tokens" />
+                    <span class="toggle-slider"></span>
+                    <span>Redact Auth Tokens in Logs</span>
+                  </label>
+                  <p class="settings-hint">Masks authorization tokens, session keys, and Microsoft OAuth credentials in game and launcher logs.</p>
+                </div>
 
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-redact-paths" />
-                  <span class="toggle-slider"></span>
-                  <span>Redact Full File Paths in Logs</span>
-                </label>
-                <p class="settings-hint" style="margin:0 0 4px; opacity:0.7; font-size:12px; line-height:1.5;">
-                  Replaces your home directory paths in logs with generic placeholders.
-                </p>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-redact-paths" />
+                    <span class="toggle-slider"></span>
+                    <span>Redact Full File Paths in Logs</span>
+                  </label>
+                  <p class="settings-hint">Replaces your home directory and username paths in logs with generic placeholders.</p>
+                </div>
 
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-hide-launch-command" />
-                  <span class="toggle-slider"></span>
-                  <span>Hide Launch Command from Logs</span>
-                </label>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-hide-launch-command" />
+                    <span class="toggle-slider"></span>
+                    <span>Hide Launch Command from Logs</span>
+                  </label>
+                  <p class="settings-hint">Omits full Java launch command strings and JVM arguments from the console and log files.</p>
+                </div>
 
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-debug-mode" />
-                  <span class="toggle-slider"></span>
-                  <span>Debug Logging Mode</span>
-                </label>
-                <p class="settings-hint" style="margin:0; opacity:0.7; font-size:12px; line-height:1.5;">
-                  Adds verbose DEBUG-level entries to the log and console windows.
-                </p>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-debug-mode" />
+                    <span class="toggle-slider"></span>
+                    <span>Debug Logging Mode</span>
+                  </label>
+                  <p class="settings-hint">Adds verbose DEBUG-level entries to the log and console windows for detailed troubleshooting.</p>
+                </div>
               </div>
             </div>
 

@@ -97,15 +97,12 @@ pub async fn open_mods_folder(
     directory: Option<String>,
 ) -> Result<(), String> {
     let game_dir = directory
+        .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
 
     let mods_dir = game_dir.join("mods");
-    std::fs::create_dir_all(&mods_dir)
-        .map_err(|e| format!("Failed to create mods directory: {e}"))?;
-
-    open::that(&mods_dir).map_err(|e| format!("Failed to open folder: {e}"))?;
-    Ok(())
+    crate::commands::open_folder_in_file_manager(&mods_dir)
 }
 
 /// Result of trying to install a single dropped/browsed file as a mod.

@@ -35,8 +35,24 @@ pub fn run() {
         std::env::set_var("MALLOC_MMAP_THRESHOLD_", "131072");
 
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        // WebKitGTK's hardware accelerated compositing severely lags and freezes when the GPU
+        // is under heavy load (e.g. running Minecraft with shaders or high 3D utilization).
+        // Disabling compositing mode forces WebKitGTK to render 2D UI via Cairo/software,
+        // insulating the launcher from GPU contention and keeping it completely smooth.
         if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
-            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "0");
+            let mut settings_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+            settings_path.push("Zero Launcher");
+            settings_path.push("settings.json");
+            let hw_accel = if settings_path.exists() {
+                std::fs::read_to_string(&settings_path)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    .and_then(|v| v.get("enable_hardware_acceleration").and_then(|b| b.as_bool()))
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", if hw_accel { "0" } else { "1" });
         }
 
         // Wayland compositors (and GNOME/KDE's alt-tab/taskbar in
@@ -263,6 +279,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::cancel_generic_download,
             commands::open_launcher_folder,
+            commands::open_instance_folder,
             commands::get_launcher_version,
             commands::get_system_info,
             commands::load_global_stats,

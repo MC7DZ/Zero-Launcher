@@ -247,6 +247,133 @@ pub async fn get_available_versions() -> Result<Vec<VersionInfo>, String> {
     Ok(manifest.versions)
 }
 
+/// Check if a string looks like a real Minecraft version (e.g. 1.20.1, 24w40a, b1.7.3)
+/// rather than a custom instance name (e.g. "Survival", "My Modpack").
+pub fn is_likely_mc_version(s: &str) -> bool {
+    let s = s.trim();
+    if s.is_empty() {
+        return false;
+    }
+    let first = match s.chars().next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if first.is_ascii_digit() {
+        return true;
+    }
+    if (first == 'a' || first == 'b' || first == 'c' || first == 'r') && s.len() > 1 {
+        let second = s.chars().nth(1).unwrap();
+        if second.is_ascii_digit() || second == 'd' || second == '.' {
+            return true;
+        }
+    }
+    false
+}
+
+/// Robust detection of loader and real Minecraft version from a version's JSON structure.
+/// Inspects `mainClass`, `libraries`, `arguments`, raw contents, and `inheritsFrom`
+/// rather than relying solely on the instance's folder name.
+pub fn detect_version_info_from_json(
+    parsed: &serde_json::Value,
+    raw_contents: &str,
+    folder_id: &str,
+) -> (Option<String>, String) {
+    let main_class = parsed.get("mainClass").and_then(|v| v.as_str()).unwrap_or("");
+    let inherits_from = parsed.get("inheritsFrom").and_then(|v| v.as_str());
+    let id_field = parsed.get("id").and_then(|v| v.as_str()).unwrap_or(folder_id);
+
+    // 1. Detect loader
+    let mut loader: Option<&'static str> = None;
+
+    if main_class.contains("fabricmc") {
+        loader = Some("fabric");
+    } else if main_class.contains("quiltmc") {
+        loader = Some("quilt");
+    } else if main_class.contains("neoforged") {
+        loader = Some("neoforge");
+    } else if main_class.contains("minecraftforge") || main_class.contains("bootstraplauncher") {
+        loader = Some("forge");
+    }
+
+    if loader.is_none() {
+        if let Some(libs) = parsed.get("libraries").and_then(|v| v.as_array()) {
+            for lib in libs {
+                if let Some(name) = lib.get("name").and_then(|v| v.as_str()) {
+                    if name.contains("net.fabricmc") {
+                        loader = Some("fabric");
+                        break;
+                    } else if name.contains("org.quiltmc") {
+                        loader = Some("quilt");
+                        break;
+                    } else if name.contains("net.neoforged") {
+                        loader = Some("neoforge");
+                        break;
+                    } else if name.contains("net.minecraftforge") {
+                        loader = Some("forge");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if loader.is_none() {
+        let lower = raw_contents.to_lowercase();
+        if lower.contains("fabricmc") {
+            loader = Some("fabric");
+        } else if lower.contains("quiltmc") {
+            loader = Some("quilt");
+        } else if lower.contains("neoforged") {
+            loader = Some("neoforge");
+        } else if lower.contains("minecraftforge") || lower.contains("forge-") {
+            loader = Some("forge");
+        }
+    }
+
+    if loader.is_none() {
+        let lower_id = folder_id.to_lowercase();
+        let lower_id_field = id_field.to_lowercase();
+        let lower_inherits = inherits_from.map(|s| s.to_lowercase()).unwrap_or_default();
+        if lower_id.contains("fabric") || lower_id_field.contains("fabric") || lower_inherits.contains("fabric") {
+            loader = Some("fabric");
+        } else if lower_id.contains("quilt") || lower_id_field.contains("quilt") || lower_inherits.contains("quilt") {
+            loader = Some("quilt");
+        } else if lower_id.contains("neoforge") || lower_id_field.contains("neoforge") || lower_inherits.contains("neoforge") {
+            loader = Some("neoforge");
+        } else if lower_id.contains("forge") || lower_id_field.contains("forge") || lower_inherits.contains("forge") {
+            loader = Some("forge");
+        }
+    }
+
+    let final_loader = match loader {
+        Some(l) => l.to_string(),
+        None => {
+            if inherits_from.is_none() {
+                "vanilla".to_string()
+            } else {
+                "unknown".to_string()
+            }
+        }
+    };
+
+    // 2. Extract Minecraft Version
+    let mc_version = if let Some(cv) = parsed.get("clientVersion").and_then(|v| v.as_str()).filter(|s| is_likely_mc_version(s)) {
+        Some(cv.to_string())
+    } else if let Some(inherits) = inherits_from.filter(|s| is_likely_mc_version(s)) {
+        Some(inherits.to_string())
+    } else if is_likely_mc_version(id_field) {
+        Some(id_field.to_string())
+    } else if let Some(assets) = parsed.get("assets").and_then(|v| v.as_str()).filter(|a| is_likely_mc_version(a)) {
+        Some(assets.to_string())
+    } else if is_likely_mc_version(folder_id) {
+        Some(folder_id.to_string())
+    } else {
+        None
+    };
+
+    (mc_version, final_loader)
+}
+
 /// Scan a `.minecraft`-style game directory's `versions/` folder and report
 /// what's actually installed on disk. Works for any launcher's directory
 /// layout (vanilla, or this launcher's own installs) since it just reads
@@ -287,32 +414,33 @@ pub async fn scan_minecraft_versions(
         }
 
         // Try to pull out the actual Minecraft version this entry targets,
-        // and use `inheritsFrom` (present on modded/loader versions) to spot
-        // that this isn't a bare vanilla entry. Loader versions (Forge,
-        // Fabric, Quilt, NeoForge, ...) almost never ship their own
-        // `<id>.jar` — they inherit the jar from the vanilla version they're
-        // built on top of, referenced either via the top-level `jar` field
-        // or, absent that, via `inheritsFrom` itself. Checking only for
-        // `<id>.jar` therefore incorrectly flagged every loader install as
-        // "incomplete" even when it installed cleanly.
-        let (minecraft_version, inherits_from, jar_target) = match std::fs::read_to_string(&json_path) {
+        // and use JSON inspection to detect loader instead of relying on folder name.
+        let (minecraft_version, _inherits_from, jar_target, loader) = match std::fs::read_to_string(&json_path) {
             Ok(contents) => {
                 let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap_or_default();
                 let inherits = parsed.get("inheritsFrom").and_then(|v| v.as_str()).map(String::from);
-                let mc_ver = parsed
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .filter(|_| inherits.is_none())
-                    .map(String::from)
-                    .or_else(|| inherits.clone());
-                // The `jar` field (when present) names the version whose jar
-                // should actually be used; fall back to `inheritsFrom`, then
-                // finally to this version's own id (the vanilla/no-loader case).
+                let (mc_ver, detected_loader) = detect_version_info_from_json(&parsed, &contents, &id);
                 let jar_field = parsed.get("jar").and_then(|v| v.as_str()).map(String::from);
                 let jar_target = jar_field.or_else(|| inherits.clone()).unwrap_or_else(|| id.clone());
-                (mc_ver, inherits, jar_target)
+                (mc_ver, inherits, jar_target, detected_loader)
             }
-            Err(_) => (None, None, id.clone()),
+            Err(_) => {
+                let lower = id.to_lowercase();
+                let fallback_loader = if lower.contains("fabric") {
+                    "fabric"
+                } else if lower.contains("quilt") {
+                    "quilt"
+                } else if lower.contains("neoforge") {
+                    "neoforge"
+                } else if lower.contains("forge") {
+                    "forge"
+                } else if is_likely_mc_version(&id) {
+                    "vanilla"
+                } else {
+                    "unknown"
+                };
+                (if is_likely_mc_version(&id) { Some(id.clone()) } else { None }, None, id.clone(), fallback_loader.to_string())
+            }
         };
 
         // The jar can live either in this version's own folder or in the
@@ -322,24 +450,6 @@ pub async fn scan_minecraft_versions(
                 .join(&jar_target)
                 .join(format!("{jar_target}.jar"))
                 .is_file();
-
-        let lower_id = id.to_lowercase();
-        let loader = if inherits_from.is_some() {
-            if lower_id.contains("fabric") {
-                "fabric"
-            } else if lower_id.contains("quilt") {
-                "quilt"
-            } else if lower_id.contains("neoforge") {
-                "neoforge"
-            } else if lower_id.contains("forge") {
-                "forge"
-            } else {
-                "unknown"
-            }
-        } else {
-            "vanilla"
-        }
-        .to_string();
 
         found.push(LocalVersionInfo {
             id,
@@ -437,12 +547,16 @@ pub async fn install_minecraft(
             instances
                 .iter()
                 .find(|i| i.version_id == old_id)
-                .map(|i| !(i.loader.trim().is_empty() || i.loader.eq_ignore_ascii_case("vanilla")))
+                .map(|i| {
+                    let l = i.loader.trim().to_lowercase();
+                    !l.is_empty() && l != "vanilla" && l != "unknown"
+                })
         };
         // Vanilla folders are shared infrastructure other instances may
         // depend on (see the comment above `reuse_source_id` below) —
         // never delete those, only an old *loader* instance's own folder.
-        if old_is_loader == Some(true) {
+        // Also guard against deleting pure MC version folder names.
+        if old_is_loader == Some(true) && !is_likely_mc_version(&old_id) {
             let old_dir = minecraft_dir.join("versions").join(&old_id);
             if old_dir.is_dir() {
                 let _ = std::fs::remove_dir_all(&old_dir);
@@ -1250,34 +1364,24 @@ pub async fn launch_minecraft(
         let (minecraft_version, loader) = match std::fs::read_to_string(&version_json_path) {
             Ok(contents) => {
                 let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap_or_default();
-                let inherits = parsed.get("inheritsFrom").and_then(|v| v.as_str()).map(String::from);
-                let mc_ver = parsed
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .filter(|_| inherits.is_none())
-                    .map(String::from)
-                    .or_else(|| inherits.clone())
-                    .unwrap_or_else(|| version_id.clone());
-                let lower_id = version_id.to_lowercase();
-                let loader = if inherits.is_some() {
-                    if lower_id.contains("fabric") {
-                        "fabric"
-                    } else if lower_id.contains("quilt") {
-                        "quilt"
-                    } else if lower_id.contains("neoforge") {
-                        "neoforge"
-                    } else if lower_id.contains("forge") {
-                        "forge"
+                let (mc_ver, det_loader) = detect_version_info_from_json(&parsed, &contents, &version_id);
+                let final_mc = mc_ver.unwrap_or_else(|| {
+                    if is_likely_mc_version(&version_id) {
+                        version_id.clone()
                     } else {
-                        "unknown"
+                        "unknown".to_string()
                     }
-                } else {
-                    "vanilla"
-                }
-                .to_string();
-                (mc_ver, loader)
+                });
+                (final_mc, det_loader)
             }
-            Err(_) => (version_id.clone(), "unknown".to_string()),
+            Err(_) => {
+                let final_mc = if is_likely_mc_version(&version_id) {
+                    version_id.clone()
+                } else {
+                    "unknown".to_string()
+                };
+                (final_mc, "unknown".to_string())
+            }
         };
 
         let new_instance = InstalledInstance {
@@ -2544,12 +2648,43 @@ pub async fn cancel_download(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// Get list of installed instances.
+/// Get list of installed instances, self-healing any instance records whose
+/// loader or minecraft_version was previously misidentified or saved as "unknown".
 #[tauri::command]
 pub async fn get_installed_instances(
     state: State<'_, AppState>,
 ) -> Result<Vec<InstalledInstance>, String> {
-    let instances = state.instances.lock().unwrap().clone();
+    let mut modified = false;
+    let mut instances = state.instances.lock().unwrap().clone();
+    for inst in &mut instances {
+        let is_unknown_loader = inst.loader.trim().is_empty() || inst.loader.eq_ignore_ascii_case("unknown");
+        let is_corrupted_mc = !is_likely_mc_version(&inst.minecraft_version);
+        if is_unknown_loader || is_corrupted_mc {
+            let json_path = PathBuf::from(inst.minecraft_dir())
+                .join("versions")
+                .join(&inst.version_id)
+                .join(format!("{}.json", inst.version_id));
+            if let Ok(contents) = std::fs::read_to_string(&json_path) {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&contents) {
+                    let (detected_mc, detected_loader) = detect_version_info_from_json(&parsed, &contents, &inst.version_id);
+                    if is_unknown_loader && detected_loader != "unknown" {
+                        inst.loader = detected_loader;
+                        modified = true;
+                    }
+                    if is_corrupted_mc {
+                        if let Some(real_mc) = detected_mc {
+                            inst.minecraft_version = real_mc;
+                            modified = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if modified {
+        *state.instances.lock().unwrap() = instances.clone();
+        state.save_instances();
+    }
     Ok(instances)
 }
 
@@ -2643,6 +2778,8 @@ pub async fn update_instance(
     state: State<'_, AppState>,
     version_id: String,
     name: Option<String>,
+    loader: Option<String>,
+    minecraft_version: Option<String>,
     loader_version: Option<String>,
     java_path: Option<String>,
     min_ram_mb: Option<u32>,
@@ -2711,6 +2848,18 @@ pub async fn update_instance(
             let trimmed = n.trim();
             if !trimmed.is_empty() {
                 inst.name = trimmed.to_string();
+            }
+        }
+        if let Some(l) = loader {
+            let trimmed = l.trim();
+            if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("unknown") {
+                inst.loader = trimmed.to_lowercase();
+            }
+        }
+        if let Some(mv) = minecraft_version {
+            let trimmed = mv.trim();
+            if !trimmed.is_empty() && is_likely_mc_version(trimmed) {
+                inst.minecraft_version = trimmed.to_string();
             }
         }
         if let Some(lv) = loader_version {

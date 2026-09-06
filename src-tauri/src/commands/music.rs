@@ -30,9 +30,7 @@ pub fn get_music_dir(state: State<'_, AppState>) -> Result<String, String> {
 #[tauri::command]
 pub fn open_music_folder(state: State<'_, AppState>) -> Result<(), String> {
     let dir = music_dir(&state);
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create music directory: {e}"))?;
-    open::that(&dir).map_err(|e| format!("Failed to open folder: {e}"))?;
-    Ok(())
+    crate::commands::open_folder_in_file_manager(&dir)
 }
 
 /// Lists every audio file in `Zero Launcher/music/`, marking which ones the
