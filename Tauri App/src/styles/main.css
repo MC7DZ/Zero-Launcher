@@ -34,11 +34,8 @@
   text-rendering: optimizeLegibility;
 }
 
-/* Scrollbar styling (standard + WebKitGTK) */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--overlay-rgb), 0.12) transparent;
-}
+/* Native scrollbars are fully replaced by CustomScrollbars — see the
+   rules further down where the layer/track/thumb are defined. */
 
 /* Force instant scrolling — smooth-scroll is too laggy on WebKitGTK. */
 * {
@@ -188,12 +185,60 @@ input, textarea, select, [contenteditable="true"] {
   --splash-glow: rgba(255, 255, 255, 0.08);
 }
 
-/* ─── Scrollbar (WebKitGTK) ─── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ─── Scrollbar (WebKitGTK) ───
+   Native scrollbars (including WebKitGTK's own overlay indicator,
+   which mostly ignores ::-webkit-scrollbar styling) are hidden
+   everywhere; a lightweight custom scrollbar (see CustomScrollbars
+   in app.js) is drawn on top instead so every platform looks and
+   behaves the same. */
+* {
+  scrollbar-width: none;
+}
+::-webkit-scrollbar { width: 0; height: 0; background: transparent; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(var(--overlay-rgb), 0.12); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(var(--overlay-rgb), 0.22); }
+::-webkit-scrollbar-thumb { background: transparent; }
 ::-webkit-scrollbar-corner { background: transparent; }
+
+/* ═══ Custom Scrollbars ═══
+   One fixed-position layer holds every track/thumb pair; each pair
+   is positioned over its real container via getBoundingClientRect
+   so it works regardless of the container's own positioning. */
+#custom-scrollbars-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  pointer-events: none;
+}
+
+.custom-scrollbar-track {
+  position: fixed;
+  width: 8px;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 999999;
+}
+
+.custom-scrollbar-track.visible { pointer-events: auto; opacity: 1; }
+
+.custom-scrollbar-thumb {
+  position: absolute;
+  left: 1.5px;
+  width: 5px;
+  border-radius: 999px;
+  background: var(--accent, #B7B7B7);
+  opacity: 0.35;
+  cursor: pointer;
+  transition: opacity 0.15s ease, width 0.15s ease, left 0.15s ease;
+}
+
+.custom-scrollbar-track:hover .custom-scrollbar-thumb,
+.custom-scrollbar-thumb.dragging {
+  opacity: 0.75;
+  width: 7px;
+  left: 0.5px;
+}
 
 /* ═══ Custom Window Title Bar ═══ */
 #custom-titlebar {
@@ -7770,7 +7815,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
   position: relative;
 }
 
@@ -7855,7 +7899,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   max-height: 280px;
   overflow-y: auto;
   padding: 5px;
-  scrollbar-width: thin;
 }
 
 .settings-search-results.hidden { display: none; }
@@ -7969,7 +8012,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--panel, #1b1b1b);
-  scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
   transform: translateZ(0);
   contain: content;

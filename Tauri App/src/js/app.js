@@ -12537,9 +12537,162 @@ function initRunningInstancesWidget() {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// CUSTOM SCROLLBARS — thin, auto-hiding overlay scrollbars for every
+// scrollable panel. Native scrollbars are hidden globally in CSS
+// (WebKitGTK's own overlay indicator largely ignores ::-webkit-scrollbar
+// styling, so hiding it and drawing our own is the only way to get a
+// consistent, good-looking bar on every platform). Track/thumb pairs
+// live in one fixed overlay layer and are positioned via
+// getBoundingClientRect, so no container needs `position: relative`.
+// ══════════════════════════════════════════════════════════════════
+const CustomScrollbars = {
+  // Curated list of scrollable panels across the app. Anything new
+  // that needs a scrollbar just needs the `custom-scroll` class.
+  SELECTOR: [
+    '.tab-page', '.instance-list', '.hidden-instances-list', '.ri-overflow-menu',
+    '.full-palettes-grid', '.overlay-card', '.bento-modal', '.bento-tile-preset-mods',
+    '.hypr-modal', '.mods-scroll-container', '.discover-scroll-area',
+    '.discover-filter-body', '.discover-categories-box', '.log-viewer', '.dl-cards',
+    '.hw-list', '.dl-files-list', '.apply-preset-mod-list', '.crash-body',
+    '.crash-signature', '.crash-fix-mod-list', '.skin-viewer-sidebar',
+    '.dressing-room-section', '.settings-modal-sidebar', '.settings-search-results',
+    '.settings-modal-content', '.dropdown-list', '.custom-scroll',
+  ].join(','),
+
+  layer: null,
+  entries: new Map(), // el -> { track, thumb, ro, hideTimer, dragging }
+
+  init() {
+    if (this.layer) return;
+    this.layer = document.createElement('div');
+    this.layer.id = 'custom-scrollbars-layer';
+    document.body.appendChild(this.layer);
+
+    this.scan();
+
+    let scanQueued = false;
+    this._observer = new MutationObserver(() => {
+      if (scanQueued) return;
+      scanQueued = true;
+      requestAnimationFrame(() => { scanQueued = false; this.scan(); });
+    });
+    this._observer.observe(document.body, { childList: true, subtree: true });
+
+    window.addEventListener('resize', () => this.updateAll());
+  },
+
+  scan() {
+    // Drop entries whose element left the DOM.
+    this.entries.forEach((entry, el) => {
+      if (!el.isConnected) this.detach(el, entry);
+    });
+    document.querySelectorAll(this.SELECTOR).forEach(el => {
+      if (el.id === 'custom-scrollbars-layer' || this.entries.has(el)) return;
+      this.attach(el);
+    });
+  },
+
+  attach(el) {
+    const track = document.createElement('div');
+    track.className = 'custom-scrollbar-track';
+    const thumb = document.createElement('div');
+    thumb.className = 'custom-scrollbar-thumb';
+    track.appendChild(thumb);
+    this.layer.appendChild(track);
+
+    const entry = { track, thumb, hideTimer: null, dragging: false };
+    this.entries.set(el, entry);
+
+    const reveal = () => {
+      track.classList.add('visible');
+      if (entry.hideTimer) clearTimeout(entry.hideTimer);
+      if (!entry.dragging) {
+        entry.hideTimer = setTimeout(() => track.classList.remove('visible'), 900);
+      }
+    };
+
+    el.addEventListener('scroll', () => { this.update(el); reveal(); }, { passive: true });
+    el.addEventListener('mouseenter', reveal);
+    track.addEventListener('mouseenter', reveal);
+
+    thumb.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      entry.dragging = true;
+      thumb.classList.add('dragging');
+      if (entry.hideTimer) clearTimeout(entry.hideTimer);
+      const startY = e.clientY;
+      const startScrollTop = el.scrollTop;
+      const trackH = track.getBoundingClientRect().height;
+      const thumbH = thumb.getBoundingClientRect().height;
+      const range = Math.max(1, el.scrollHeight - el.clientHeight);
+      const move = (ev) => {
+        const deltaY = ev.clientY - startY;
+        const scrollRange = Math.max(1, trackH - thumbH);
+        el.scrollTop = startScrollTop + (deltaY / scrollRange) * range;
+      };
+      const up = () => {
+        entry.dragging = false;
+        thumb.classList.remove('dragging');
+        entry.hideTimer = setTimeout(() => track.classList.remove('visible'), 500);
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+
+    // Click on the track itself (not the thumb) jumps a page at a time.
+    track.addEventListener('pointerdown', (e) => {
+      if (e.target === thumb) return;
+      const rect = track.getBoundingClientRect();
+      const clickFrac = (e.clientY - rect.top) / Math.max(1, rect.height);
+      el.scrollTop = clickFrac * (el.scrollHeight - el.clientHeight);
+    });
+
+    const ro = new ResizeObserver(() => this.update(el));
+    ro.observe(el);
+    entry.ro = ro;
+
+    this.update(el);
+  },
+
+  detach(el, entry) {
+    if (entry.ro) entry.ro.disconnect();
+    entry.track.remove();
+    this.entries.delete(el);
+  },
+
+  update(el) {
+    const entry = this.entries.get(el);
+    if (!entry) return;
+    const { track, thumb } = entry;
+    const rect = el.getBoundingClientRect();
+    const scrollable = el.scrollHeight - el.clientHeight > 2;
+    if (!scrollable || rect.width === 0 || rect.height === 0) {
+      track.style.display = 'none';
+      return;
+    }
+    track.style.display = '';
+    track.style.top = `${rect.top + 3}px`;
+    track.style.left = `${rect.right - 10}px`;
+    track.style.height = `${rect.height - 6}px`;
+
+    const trackH = rect.height - 6;
+    const thumbH = Math.max(24, (el.clientHeight / el.scrollHeight) * trackH);
+    const maxThumbTop = trackH - thumbH;
+    const scrollFrac = el.scrollTop / Math.max(1, el.scrollHeight - el.clientHeight);
+    thumb.style.height = `${thumbH}px`;
+    thumb.style.top = `${scrollFrac * maxThumbTop}px`;
+  },
+
+  updateAll() {
+    this.entries.forEach((_, el) => this.update(el));
+  },
+};
+
+// ══════════════════════════════════════════════════════════════════
 // BACKGROUND ENGINE — Complete rewrite
 // ══════════════════════════════════════════════════════════════════
-
 const BG = {
   canvas: null,
   ctx: null,
@@ -13034,9 +13187,9 @@ const BG = {
           const starCount = this.stars.length;
           for (let i = 0; i < starCount; i++) {
             const st = this.stars[i];
-            st.y -= st.vy * speed;
-            if (st.y < -20) {
-              st.y = H + 20;
+            st.y += st.vy * speed;
+            if (st.y > H + 20) {
+              st.y = -20;
               st.x = Math.random() * W;
             }
 
@@ -14110,6 +14263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Phase 5: Starfield Engine & Instance Rendering
   setStartupSplashProgress(76, 'Starting background Starfield engine…');
   BG.init();
+  CustomScrollbars.init();
   populateSettingsUI();
   BG.applyBackgroundImage();
   renderInstanceList();
