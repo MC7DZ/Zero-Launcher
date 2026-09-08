@@ -183,6 +183,11 @@ input, textarea, select, [contenteditable="true"] {
   box-shadow: none !important;
 }
 
+#startup-splash-screen {
+  --splash-accent: #e4e4e7;
+  --splash-glow: rgba(255, 255, 255, 0.08);
+}
+
 /* ─── Scrollbar (WebKitGTK) ─── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -649,6 +654,18 @@ input, textarea, select, [contenteditable="true"] {
 }
 .tab-page.active { display: block; }
 .tab-page.mods-two-pane-page.active { display: flex; overflow: hidden; padding: 20px; }
+
+/* ── Tab switching animation ───────────────────────────────────────────── */
+/* .tab-entering is added by JS AFTER a forced reflow (void page.offsetWidth)
+   so the browser has already committed display:block before the animation
+   starts — this is the only reliable way to animate display:none→block. */
+@keyframes tab-fade-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.tab-page.tab-entering {
+  animation: tab-fade-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
 
 /* ═══ Glass Card ═══ */
 .glass-card,
@@ -2936,24 +2953,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 #btn-check-for-updates-icon.is-spinning { animation: updateSpin 1s linear infinite; }
 
-.music-library-card { width: 520px; }
-.music-library-list {
-  max-height: 360px;
-  overflow-y: auto;
-}
-.music-library-list .empty-state { padding: 18px 0; }
-.music-track-row {
-  cursor: default;
-}
-.music-track-row .inst-icon svg {
-  width: 18px;
-  height: 18px;
-  stroke: var(--text-muted);
-}
-.music-track-row .toggle-row {
-  margin-left: auto;
-  margin-bottom: 0;
-}
 
 /* ═══ Bento-style modals (New Instance / Apply Preset) ═══
    No single enclosing card — the whole overlay content IS the bento grid,
@@ -3498,6 +3497,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .modpack-subpanel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.5px;
@@ -3508,6 +3510,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: 999px;
   text-transform: uppercase;
 }
+
+.modpack-subpanel-badge svg { flex-shrink: 0; }
 
 .modpack-subpanel-name {
   font-size: 13px;
@@ -3576,11 +3580,21 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .modpack-subpanel-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   color: #a855f7;
   font-weight: 500;
   opacity: 0.9;
 }
+
+.modpack-subpanel-hint .hint-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.modpack-subpanel-hint .hint-icon svg { width: 12px; height: 12px; }
 
 /* ── Bottom Panel (Content Island) ──
    No longer the scrolling element itself — see .mods-scroll-container
@@ -4753,7 +4767,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 0 !important;
   overflow: hidden;
   border-radius: var(--radius);
-  background: var(--panel, rgba(22, 22, 30, 0.85));
+  background: var(--panel, #1b1b1b);
   border: 1px solid var(--panel-border, rgba(var(--overlay-rgb), 0.08));
   transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
 }
@@ -7703,9 +7717,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   max-height: 880px;
   display: flex;
   flex-direction: column;
-  background: #17171c;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
+  background: var(--panel, #1b1b1b);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius, 14px);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
   transform: translateZ(0);
   backface-visibility: hidden;
@@ -7718,9 +7732,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
   flex-shrink: 0;
-  background: #131317;
+  background: var(--panel-solid, #161616);
 }
 
 .settings-modal-title {
@@ -7742,15 +7756,15 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: #17171c;
+  background: var(--panel, #1b1b1b);
 }
 
 /* ── Left Sidebar ── */
 .settings-modal-sidebar {
   width: 255px;
   flex-shrink: 0;
-  background: #141418;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: #141414;
+  border-right: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
   padding: 14px 12px;
   display: flex;
   flex-direction: column;
@@ -7774,8 +7788,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #202026;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   padding: 0 10px;
   height: 36px;
@@ -7784,7 +7798,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 
 .settings-search-bar-inner:focus-within {
   border-color: var(--accent, #b7b7b7);
-  background: #262630;
+  background: #222222;
 }
 
 .settings-search-icon {
@@ -7833,8 +7847,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   right: 0;
   width: 100%;
   box-sizing: border-box;
-  background: #1e1e24;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #1c1c1c;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
   z-index: 10500;
@@ -7954,7 +7968,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 24px 36px;
   overflow-y: auto;
   overflow-x: hidden;
-  background: #17171c;
+  background: var(--panel, #1b1b1b);
   scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
   transform: translateZ(0);
@@ -7973,7 +7987,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .settings-panel-heading {
   margin-bottom: 20px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
 }
 
 .settings-panel-heading h3 {
@@ -8016,9 +8030,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .about-card {
-  background: #1c1c22;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  background: var(--panel-solid, #181818);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius, 12px);
   padding: 16px 20px;
 }
 
@@ -8162,7 +8176,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .about-check-now-btn {
-  background: #23232a;
+  background: #222222;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   color: #fff;
@@ -8178,7 +8192,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .about-check-now-btn:hover {
-  background: #2b2b34;
+  background: #2a2a2a;
   border-color: rgba(255, 255, 255, 0.2);
 }
 
@@ -8197,7 +8211,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .about-action-btn {
-  background: #23232a;
+  background: #222222;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   color: #e4e4e7;
@@ -8213,9 +8227,18 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .about-action-btn:hover {
-  background: #2b2b34;
+  background: #2a2a2a;
   color: #fff;
   border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* ── Settings modal open animation ────────────────────────────────────── */
+@keyframes settings-modal-in {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+#settings-modal-overlay:not(.hidden) .settings-modal-window {
+  animation: settings-modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .header-icon-btn {
@@ -8362,8 +8385,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 /* WebKitGTK: Keep containment for isolated layout without spawning hundreds of GPU textures */
+/* Note: .settings-modal-window is intentionally excluded here so its open animation can use transforms */
 .is-webkit-gtk .overlay-card,
-.is-webkit-gtk .settings-modal-window,
 .is-webkit-gtk .hypr-modal,
 .is-webkit-gtk .hypr-island,
 .is-webkit-gtk .edit-instance-modal,
@@ -8382,6 +8405,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   contain: layout style;
   transform: none;
   -webkit-transform: none;
+}
+/* Settings modal gets containment but keeps transform free for its open animation */
+.is-webkit-gtk .settings-modal-window {
+  contain: layout style;
 }
 
 .is-webkit-gtk #bg-container,

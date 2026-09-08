@@ -12,20 +12,61 @@
     html,body{background:transparent;overflow:hidden;height:100%;width:100%;border-radius:12px}
     #startup-splash-screen{
       position:fixed;inset:0;z-index:999999;
-      background:#17171c radial-gradient(circle at 50% 42%, rgba(255,255,255,0.04) 0%, #17171c 65%);
+      background:#0c0c11 radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.05) 0%, #09090e 70%);
       display:flex;flex-direction:column;align-items:center;justify-content:center;
       user-select:none;-webkit-user-select:none;
-      transition:opacity .3s cubic-bezier(0.16, 1, 0.3, 1);
+      transition:opacity .35s cubic-bezier(0.16, 1, 0.3, 1);
       font-family:'JetBrains Mono','Fira Code',Consolas,Monaco,monospace;
       border-radius:12px;
       overflow:hidden;
-      box-shadow:inset 0 0 0 1px rgba(255,255,255,0.09), 0 0 0 1px rgba(0,0,0,0.7);
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.7);
       isolation:isolate;
       transform:translateZ(0);
       contain:strict;
     }
     #startup-splash-screen.splash-hidden{opacity:0;pointer-events:none}
     .sl-drag{position:absolute;top:0;left:0;right:0;height:38px;-webkit-app-region:drag;cursor:default}
+    
+    /* Pure CSS high-performance starry background (0% CPU, no canvas/JS loop) */
+    .sl-stars-layer{
+      position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden;
+    }
+    .sl-stars-1, .sl-stars-2{
+      position:absolute;inset:0;
+      background-repeat:repeat;
+    }
+    .sl-stars-1{
+      background-image:
+        radial-gradient(1.2px 1.2px at 30px 45px, rgba(255,255,255,0.75), transparent),
+        radial-gradient(1px 1px at 120px 80px, rgba(255,255,255,0.6), transparent),
+        radial-gradient(1.5px 1.5px at 240px 140px, rgba(255,255,255,0.8), transparent),
+        radial-gradient(1px 1px at 380px 60px, rgba(255,255,255,0.5), transparent),
+        radial-gradient(1.2px 1.2px at 520px 210px, rgba(255,255,255,0.7), transparent),
+        radial-gradient(1.6px 1.6px at 640px 100px, rgba(255,255,255,0.85), transparent),
+        radial-gradient(1px 1px at 780px 170px, rgba(255,255,255,0.55), transparent),
+        radial-gradient(1.3px 1.3px at 910px 85px, rgba(255,255,255,0.65), transparent),
+        radial-gradient(1.5px 1.5px at 1040px 230px, rgba(255,255,255,0.8), transparent),
+        radial-gradient(1px 1px at 1160px 120px, rgba(255,255,255,0.5), transparent);
+      background-size:1200px 320px;
+      opacity:0.85;
+      animation:sl-stars-drift 40s linear infinite;
+    }
+    .sl-stars-2{
+      background-image:
+        radial-gradient(1.5px 1.5px at 70px 190px, rgba(255,255,255,0.75), transparent),
+        radial-gradient(1.2px 1.2px at 190px 260px, rgba(255,255,255,0.7), transparent),
+        radial-gradient(1px 1px at 310px 160px, rgba(255,255,255,0.45), transparent),
+        radial-gradient(1.8px 1.8px at 450px 280px, rgba(255,255,255,0.85), transparent),
+        radial-gradient(1px 1px at 600px 190px, rgba(255,255,255,0.5), transparent),
+        radial-gradient(1.3px 1.3px at 730px 250px, rgba(255,255,255,0.65), transparent),
+        radial-gradient(1px 1px at 860px 180px, rgba(255,255,255,0.4), transparent),
+        radial-gradient(1.5px 1.5px at 990px 290px, rgba(255,255,255,0.75), transparent),
+        radial-gradient(1.2px 1.2px at 1120px 200px, rgba(255,255,255,0.7), transparent);
+      background-size:1200px 360px;
+      opacity:0.6;
+      animation:sl-stars-twinkle 4s ease-in-out infinite alternate;
+    }
+
     .sl-wrap{display:flex;flex-direction:column;align-items:center;gap:18px;position:relative;z-index:1}
     
     .sl-ring-container{
@@ -33,8 +74,8 @@
       display:flex;align-items:center;justify-content:center;
     }
     .sl-glow-bg{
-      position:absolute;width:96px;height:96px;border-radius:50%;
-      background:radial-gradient(circle, rgba(183,183,183,0.12) 0%, transparent 70%);
+      position:absolute;width:104px;height:104px;border-radius:50%;
+      background:radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
       animation:sl-pulse 3s ease-in-out infinite;
       pointer-events:none;
     }
@@ -52,34 +93,70 @@
     }
     
     .sl-brand{display:flex;align-items:center;gap:7px;color:#fff;font-weight:800;font-size:17px;letter-spacing:2.5px}
-    .sl-brand-sub{font-weight:600;color:rgba(255,255,255,.6);font-size:14px;letter-spacing:1.5px}
+    .sl-brand-sub{font-weight:600;color:rgba(255,255,255,.75);font-size:14px;letter-spacing:1.5px}
     .sl-badge{
-      font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;
-      background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);
-      color:rgba(255,255,255,.6);letter-spacing:1px;
+      font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;
+      background:rgba(255,255,255,.07);
+      border:1px solid rgba(255,255,255,.18);
+      color:#e4e4e7;letter-spacing:1px;
     }
     
     .sl-status-container{display:flex;flex-direction:column;align-items:center;gap:6px}
-    .sl-status{font-size:11.5px;color:rgba(255,255,255,.6);letter-spacing:.3px;min-height:16px;text-align:center}
+    .sl-status{font-size:11.5px;color:rgba(255,255,255,.65);letter-spacing:.3px;min-height:16px;text-align:center}
     
     .sl-dots{display:flex;gap:4px;align-items:center;justify-content:center}
     .sl-dots span{
       width:4px;height:4px;border-radius:50%;
-      background:rgba(255,255,255,0.4);
+      background:rgba(255,255,255,0.6);
       animation:sl-dot-pulse 1.4s ease-in-out infinite;
     }
     .sl-dots span:nth-child(2){animation-delay:.2s}
     .sl-dots span:nth-child(3){animation-delay:.4s}
     
-    .sl-footer{position:absolute;bottom:18px;font-size:10px;color:rgba(255,255,255,.2);letter-spacing:.8px}
+    .sl-footer{position:absolute;bottom:16px;display:flex;align-items:center;gap:12px;font-size:10px;color:rgba(255,255,255,.2);letter-spacing:.8px;z-index:2}
+    .sl-footer-text{user-select:none;-webkit-user-select:none}
+    .sl-skip-btn{
+      background:none;
+      border:none;
+      padding:2px 4px;
+      color:rgba(255,255,255,0.45);
+      font-size:11px;
+      font-weight:500;
+      font-family:inherit;
+      letter-spacing:.8px;
+      cursor:pointer;
+      text-decoration:underline;
+      text-underline-offset:3px;
+      text-decoration-color:rgba(255,255,255,0.3);
+      transition:color .18s ease, text-decoration-color .18s ease;
+      outline:none;
+      -webkit-app-region:no-drag;
+    }
+    .sl-skip-btn:hover{
+      color:#ffffff;
+      text-decoration-color:#ffffff;
+    }
+    .sl-skip-btn:active{
+      color:rgba(255,255,255,0.8);
+      text-decoration-color:rgba(255,255,255,0.8);
+    }
 
+    @keyframes sl-stars-drift{
+      from{background-position:0 0}
+      to{background-position:-1200px 0}
+    }
+    @keyframes sl-stars-twinkle{
+      0%{opacity:0.35}
+      50%{opacity:0.8}
+      100%{opacity:0.45}
+    }
     @keyframes sl-breathe{
       0%,100%{transform:scale(1)}
       50%{transform:scale(1.035)}
     }
     @keyframes sl-pulse{
       0%,100%{transform:scale(0.95);opacity:0.4}
-      50%{transform:scale(1.15);opacity:0.85}
+      50%{transform:scale(1.18);opacity:0.9}
     }
     @keyframes sl-dot-pulse{
       0%,80%,100%{transform:scale(0.7);opacity:0.3}
@@ -99,6 +176,10 @@
   <!-- ═══ Startup Splash (renders instantly — styles are inline above) ═══ -->
   <div id="startup-splash-screen" data-tauri-drag-region>
     <div class="sl-drag" data-tauri-drag-region></div>
+    <div class="sl-stars-layer" aria-hidden="true" data-tauri-drag-region>
+      <div class="sl-stars-1"></div>
+      <div class="sl-stars-2"></div>
+    </div>
     <div class="sl-wrap" data-tauri-drag-region>
       <div class="sl-ring-container" data-tauri-drag-region>
         <div class="sl-glow-bg" data-tauri-drag-region></div>
@@ -127,7 +208,10 @@
         </div>
       </div>
     </div>
-    <div class="sl-footer" data-tauri-drag-region>Zero Launcher</div>
+    <div class="sl-footer" data-tauri-drag-region>
+      <button type="button" id="splash-skip-btn" class="sl-skip-btn" title="Skip loading screen">Skip</button>
+      <span class="sl-footer-text">Zero Launcher</span>
+    </div>
   </div>
 
   <!-- Unified Background System -->
@@ -1548,7 +1632,7 @@
                 <button id="fix-disable-incompatible" class="btn-ghost" title="Disable mods built for a different mod loader than this instance">Disable Incompatible</button>
               </div>
             </div>
-            <button id="btn-delete-selected-mods" class="btn-pill btn-sm hidden" title="Delete the checked mods">🗑 Delete Selected</button>
+            <button id="btn-delete-selected-mods" class="btn-pill btn-sm hidden" title="Delete the checked mods"><svg viewBox="0 0 24 24" fill="none" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><path d="M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9.5 7V5.2c0-.66.54-1.2 1.2-1.2h2.6c.66 0 1.2.54 1.2 1.2V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 7 7.3 19a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5L17.5 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.2 11v6M13.8 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Delete Selected</button>
             <button id="btn-export-mods" class="btn-pill btn-sm btn-pill-export" title="Export the selected instance's mods to a JSON list"><svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 7.5 12 3l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Export</button>
             <button id="btn-import-mods" class="btn-pill btn-sm btn-pill-import" title="Import a mod list JSON into the selected instance"><svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 10.5 12 15l4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Import</button>
             <button id="btn-open-mods" class="btn-pill btn-sm" title="Open this instance's mods folder">⌗ Folder</button>
@@ -1558,7 +1642,7 @@
         <!-- SUBPANEL: Modpack Mods Switcher (Visible only for Modpack instances) -->
         <div id="modpack-mods-subpanel" class="modpack-mods-subpanel hidden">
           <div class="modpack-subpanel-left">
-            <span class="modpack-subpanel-badge">📦 MODPACK</span>
+            <span class="modpack-subpanel-badge"><svg viewBox="0 0 24 24" fill="none" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 8.3 12 4l8.5 4.3V16L12 20.3 3.5 16V8.3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3.9 8.1 12 12.4l8.1-4.3M12 12.4V20.3" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.7 6.1 16.1 10.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg> MODPACK</span>
             <span id="modpack-subpanel-name" class="modpack-subpanel-name">Modpack</span>
           </div>
           <div class="modpack-subpanel-center">
@@ -1955,6 +2039,7 @@
                 <div class="form-group">
                   <label>Animation Style</label>
                   <select id="setting-bg-anim-style" class="input-field">
+                    <option value="Starfield" selected>Starfield</option>
                     <option value="Waves">Waves</option>
                     <option value="Particles">Particles</option>
                     <option value="Fireflies">Fireflies</option>
@@ -2107,50 +2192,6 @@
                 </div>
               </div>
 
-              <div class="dropdown-divider" style="margin: 16px 0;"></div>
-
-              <!-- Music -->
-              <label class="toggle-row" style="margin-bottom:4px;">
-                <input type="checkbox" id="setting-music-enabled" />
-                <span class="toggle-slider"></span>
-                <span>Background Music</span>
-              </label>
-              <p class="settings-hint">Plays calm ambient music while browsing the launcher library and settings.</p>
-
-              <div class="form-row" style="margin-bottom: 14px; margin-top: 10px;">
-                <div class="form-group">
-                  <label>Music Volume</label>
-                  <input type="range" min="0" max="100" step="1" id="setting-music-volume" class="input-range" />
-                  <p class="settings-hint">Master audio volume level for the background music player.</p>
-                </div>
-              </div>
-
-              <div class="form-group" style="margin-bottom: 14px;">
-                <label>When switching to another window</label>
-                <select id="setting-music-switch-behavior" class="input-field">
-                  <option value="pause">Pause music</option>
-                  <option value="continue">Don't pause music</option>
-                  <option value="lower">Don't pause music, but lower volume</option>
-                </select>
-                <p class="settings-hint">Controls music playback behavior whenever the launcher loses desktop window focus.</p>
-              </div>
-
-              <div class="form-row" id="setting-music-lower-row" style="margin-bottom: 14px;">
-                <div class="form-group">
-                  <label>Volume while unfocused</label>
-                  <input type="range" min="0" max="100" step="1" id="setting-music-lower-percent" class="input-range" />
-                  <p class="settings-hint">The lowered volume percentage applied when the launcher is not focused.</p>
-                </div>
-              </div>
-
-              <button type="button" id="btn-open-music-library" class="btn-secondary">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">
-                  <path d="M9 18V5l12-2v13"></path>
-                  <circle cx="6" cy="18" r="3"></circle>
-                  <circle cx="18" cy="16" r="3"></circle>
-                </svg>
-                Manage Music Library
-              </button>
             </div>
 
             <!-- Combined Behavior & Window Panel -->
@@ -2865,10 +2906,10 @@
                   <div class="form-group">
                     <label>Animation Style</label>
                     <select id="setup-bg-anim-style" class="input-field">
-                      <option value="Waves" selected>Waves</option>
+                      <option value="Starfield" selected>Starfield</option>
+                      <option value="Waves">Waves</option>
                       <option value="Particles">Particles</option>
                       <option value="Fireflies">Fireflies</option>
-
                       <option value="Nothing">Nothing (no animation)</option>
                     </select>
                   </div>

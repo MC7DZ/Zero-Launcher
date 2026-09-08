@@ -36,6 +36,13 @@ pub struct ModpackImportPayload {
     pub use_custom_directory: bool,
     #[serde(default)]
     pub custom_directory: Option<String>,
+    /// Optional overrides for generic zips or manual adjustments
+    #[serde(default)]
+    pub minecraft_version_override: Option<String>,
+    #[serde(default)]
+    pub loader_override: Option<String>,
+    #[serde(default)]
+    pub loader_version_override: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -278,14 +285,29 @@ struct CurseForgeManifest {
     overrides: String,
 }
 
+/// Compares two directory paths for equality the way a user would mean it —
+/// trailing slashes and (on Windows) letter case shouldn't make two paths
+/// that point at the same folder look "different" to callers deciding
+/// whether a modpack's instance directory has collapsed onto the shared
+/// Minecraft directory.
+fn paths_equal(a: &Path, b: &Path) -> bool {
+    fn normalize(p: &Path) -> String {
+        let s = p.to_string_lossy().replace('\\', "/");
+        let s = s.trim_end_matches('/');
+        if cfg!(target_os = "windows") { s.to_lowercase() } else { s.to_string() }
+    }
+    normalize(a) == normalize(b)
+}
+
 fn default_overrides_folder() -> String {
     "overrides".to_string()
 }
 
 #[derive(Debug, Deserialize)]
 struct CurseForgeMinecraft {
+    #[serde(alias = "minecraftVersion", alias = "gameVersion")]
     version: String,
-    #[serde(rename = "modLoaders", default)]
+    #[serde(rename = "modLoaders", alias = "modloaders", alias = "modLoadersList", default)]
     mod_loaders: Vec<CurseForgeModLoader>,
 }
 
@@ -321,18 +343,43 @@ struct CurseForgeResolvedFile {
 
 fn split_curseforge_loader(id: &str) -> (String, String) {
     let lower = id.trim().to_lowercase();
-    if let Some((name, ver)) = lower.split_once('-') {
-        let loader = match name {
+    let (loader, rest) = if lower.starts_with("fabric-loader-") {
+        ("fabric", &lower["fabric-loader-".len()..])
+    } else if lower.starts_with("fabric-") {
+        ("fabric", &lower["fabric-".len()..])
+    } else if lower.starts_with("quilt-loader-") {
+        ("quilt", &lower["quilt-loader-".len()..])
+    } else if lower.starts_with("quilt-") {
+        ("quilt", &lower["quilt-".len()..])
+    } else if lower.starts_with("neoforge-") {
+        ("neoforge", &lower["neoforge-".len()..])
+    } else if lower.starts_with("neo-forge-") {
+        ("neoforge", &lower["neo-forge-".len()..])
+    } else if lower.starts_with("forge-") {
+        ("forge", &lower["forge-".len()..])
+    } else if lower == "fabric" || lower == "quilt" || lower == "neoforge" || lower == "forge" {
+        (lower.as_str(), "latest")
+    } else if let Some((name, ver)) = lower.split_once('-') {
+        let l = match name {
             "forge" => "forge",
             "fabric" => "fabric",
             "quilt" => "quilt",
             "neoforge" => "neoforge",
             other => other,
         };
-        (loader.to_string(), ver.to_string())
+        (l, ver)
     } else {
-        (lower, "latest".to_string())
-    }
+        (lower.as_str(), "latest")
+    };
+
+    // If version contains Minecraft version prefix like "1.20.1-47.2.0" or "neoforge-20.4.80-beta"
+    // Keep the loader specific part if possible
+    let clean_ver = if rest.is_empty() {
+        "latest".to_string()
+    } else {
+        rest.to_string()
+    };
+    (loader.to_string(), clean_ver)
 }
 
 fn urlencode_file_name(s: &str) -> String {
@@ -699,12 +746,8 @@ fn extract_zip_folder(
 ) -> Result<u32, String> {
     let mut copied = 0u32;
     let clean_prefix = src_prefix.replace('\\', "/").trim_matches('/').to_string();
-    let prefix = if clean_prefix.is_empty() {
-        String::new()
-    } else {
-        format!("{clean_prefix}/")
-    };
-    let prefix_lower = prefix.to_lowercase();
+    let target_segment = format!("/{}/", clean_prefix.to_lowercase());
+    let prefix_at_root = format!("{}/", clean_prefix.to_lowercase());
 
     for i in 0..archive.len() {
         let mut entry = match archive.by_index(i) {
@@ -715,21 +758,28 @@ fn extract_zip_folder(
         let name = raw_name.trim_start_matches("./");
         let name_lower = name.to_lowercase();
 
-        if !prefix_lower.is_empty() {
-            if !name_lower.starts_with(&prefix_lower) || name_lower == prefix_lower {
-                continue;
-            }
-        }
-
-        let rel = if prefix.is_empty() {
-            name
-        } else {
-            let cut_len = prefix.len();
-            if name.len() >= cut_len {
-                &name[cut_len..]
+        let cut_len = if clean_prefix.is_empty() {
+            0
+        } else if name_lower.starts_with(&prefix_at_root) {
+            prefix_at_root.len()
+        } else if let Some(idx) = name_lower.find(&target_segment) {
+            // Check if wrapper is just 1 level deep e.g. "PackName/overrides/config/foo.json"
+            let before = &name_lower[..idx];
+            if !before.contains('/') {
+                idx + target_segment.len()
             } else {
                 continue;
             }
+        } else {
+            continue;
+        };
+
+        let rel = if cut_len == 0 {
+            name
+        } else if name.len() >= cut_len {
+            &name[cut_len..]
+        } else {
+            continue;
         };
 
         let clean_rel = rel.trim_start_matches('/');
@@ -778,16 +828,22 @@ fn read_zip_entry_string(archive: &mut ZipArchive<std::fs::File>, name: &str) ->
             return Some(s);
         }
     }
-    // Case-insensitive fallback
+    // Case-insensitive fallback at root or within any top-level folder (e.g. "PackName/manifest.json")
     let name_lower = name.to_lowercase();
+    let slash_suffix = format!("/{}", name_lower);
+
     for i in 0..archive.len() {
         if let Ok(mut entry) = archive.by_index(i) {
             let raw_name = entry.name().replace('\\', "/");
             let clean = raw_name.trim_start_matches("./").to_lowercase();
-            if clean == name_lower {
-                let mut s = String::new();
-                if entry.read_to_string(&mut s).is_ok() {
-                    return Some(s);
+            if clean == name_lower || clean.ends_with(&slash_suffix) {
+                // Ensure it's directly at root or inside 1 directory level
+                let parts: Vec<&str> = clean.split('/').filter(|p| !p.is_empty()).collect();
+                if parts.len() <= 2 {
+                    let mut s = String::new();
+                    if entry.read_to_string(&mut s).is_ok() {
+                        return Some(s);
+                    }
                 }
             }
         }
@@ -896,7 +952,7 @@ pub async fn import_modpack(
     };
 
     // ── Resolve minecraft version / loader / loader version ────────────
-    let (mc_version, loader, loader_version, pack_name) = if let Some(idx) = &mrpack_index {
+    let (mut mc_version, mut loader, mut loader_version, pack_name) = if let Some(idx) = &mrpack_index {
         let mc_version = mrpack_minecraft_version(&idx.dependencies)
             .ok_or("Modpack is missing a Minecraft version")?;
         let (loader, loader_version) =
@@ -920,6 +976,16 @@ pub async fn import_modpack(
         );
     };
 
+    if let Some(mc_ov) = payload.minecraft_version_override.filter(|s| !s.trim().is_empty()) {
+        mc_version = mc_ov.trim().to_string();
+    }
+    if let Some(ld_ov) = payload.loader_override.filter(|s| !s.trim().is_empty()) {
+        loader = ld_ov.trim().to_lowercase();
+    }
+    if let Some(lv_ov) = payload.loader_version_override.filter(|s| !s.trim().is_empty()) {
+        loader_version = lv_ov.trim().to_string();
+    }
+
     logger::info(
         &app,
         &state,
@@ -929,13 +995,13 @@ pub async fn import_modpack(
 
     // ── Where this instance's mods/config/saves/resourcepacks will live ─
     let default_dir = state.settings.lock().unwrap().resolved_game_directory();
-    let game_dir = if payload.use_custom_directory {
+    let mut game_dir = if payload.use_custom_directory {
         let dir = payload
             .custom_directory
             .as_ref()
             .filter(|d| !d.trim().is_empty())
             .ok_or("A custom directory is required")?;
-        PathBuf::from(dir)
+        PathBuf::from(crate::models::sanitize_user_path(dir))
     } else {
         let safe_name: String = instance_name
             .chars()
@@ -943,6 +1009,26 @@ pub async fn import_modpack(
             .collect();
         default_dir.join("!Instances").join(safe_name.trim())
     };
+    // Never let a modpack's mods/config/saves land directly in the shared
+    // Minecraft directory — that's where `versions/`, `libraries/`, and
+    // `assets/` live, and every other instance (plus a vanilla install)
+    // shares that same folder. If a custom directory was pointed straight
+    // at it (or it otherwise resolves to the exact same path), nest this
+    // pack under its own `!Instances/<name>` folder instead, so its mods
+    // never mix with anything else and "Game Directory" in the UI always
+    // shows this instance's own folder, not the shared one.
+    if paths_equal(&game_dir, &default_dir) {
+        let safe_name: String = instance_name
+            .chars()
+            .map(|c| if "\\/:*?\"<>|".contains(c) { ' ' } else { c })
+            .collect();
+        game_dir = default_dir.join("!Instances").join(safe_name.trim());
+        logger::warn(&app, &state, "MODPACK", &format!(
+            "Requested game directory matched the shared Minecraft directory — using {} instead so this instance's mods stay isolated",
+            game_dir.display()
+        ));
+    }
+    let game_dir = game_dir;
     let dir_pre_existed = game_dir.is_dir();
     std::fs::create_dir_all(&game_dir).map_err(|e| format!("Failed to create instance folder: {e}"))?;
     logger::info(&app, &state, "MODPACK", &format!("Instance directory: {}", game_dir.display()));

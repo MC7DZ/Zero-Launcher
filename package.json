@@ -1,0 +1,12 @@
+{
+  "name": "zero-launcher-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "npm --prefix \"Tauri App\" run dev",
+    "build": "npm --prefix \"Tauri App\" run build",
+    "preview": "npm --prefix \"Tauri App\" run preview",
+    "tauri": "npm --prefix \"Tauri App\" run tauri",
+    "tauri:build": "npm --prefix \"Tauri App\" run tauri:build"
+  }
+}

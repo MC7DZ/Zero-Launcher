@@ -259,10 +259,14 @@ const ICON_UNKNOWN_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www
 const ICON_EMPTY_BOX_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 8.3 12 4l8.5 4.3V16L12 20.3 3.5 16V8.3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3.9 8.1 12 12.4l8.1-4.3" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 12.4V20.3" stroke="currentColor" stroke-width="1.6"/></svg>';
 // No search/filter results found.
 const ICON_SEARCH_EMPTY_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10.3" cy="10.3" r="6.3" stroke="currentColor" stroke-width="1.8"/><path d="m19.3 19.3-4.2-4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+// Read-only / locked content (modpack-managed mods).
+const ICON_LOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="10.5" width="14" height="9" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="14.8" r="1.3" fill="currentColor"/></svg>';
+// A packaged bundle (modpack badge).
+const ICON_PACKAGE_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 8.3 12 4l8.5 4.3V16L12 20.3 3.5 16V8.3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3.9 8.1 12 12.4l8.1-4.3M12 12.4V20.3" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.7 6.1 16.1 10.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+// Delete / trash.
+const ICON_TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9.5 7V5.2c0-.66.54-1.2 1.2-1.2h2.6c.66 0 1.2.54 1.2 1.2V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 7 7.3 19a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5L17.5 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.2 11v6M13.8 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
 // Nothing hidden / nothing to show that's "off" by choice.
 const ICON_EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 12C3 9 7 5 12 5s9 4 10.5 7c-1.5 3-5.5 7-10.5 7S3 15 1.5 12Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.6"/></svg>';
-// No music files found in the music folder.
-const ICON_MUSIC_EMPTY_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 18V5.5L20 4v12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.5" stroke="currentColor" stroke-width="1.6"/><circle cx="17.5" cy="16.5" r="2.5" stroke="currentColor" stroke-width="1.6"/></svg>';
 // Something failed to load.
 const ICON_WARNING_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3.5 22 20H2L12 3.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 10v4.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1" fill="currentColor"/></svg>';
 
@@ -339,6 +343,27 @@ function refreshCardCullingIn(root) {
   });
 }
 
+// Cleans up whatever a native folder-picker dialog hands back before it's
+// used as a directory. On some Linux desktop environments (GTK/KDE via the
+// `xdg-desktop-portal` file-chooser backend), `dialog.open()` can return a
+// `file://`-prefixed URI instead of a plain filesystem path — and if that
+// URI reaches the backend unsanitized it gets baked permanently into every
+// future modpack/instance directory built from it. The backend now
+// defends against this too (see `sanitize_user_path` in models.rs), but
+// stripping it here as well means the folder-path text field the user
+// sees is already correct, not a `file://…` string.
+function sanitizePickedPath(p) {
+  if (typeof p !== 'string') return p;
+  let s = p.trim();
+  if (s.startsWith('file://')) {
+    s = '/' + s.slice('file://'.length).replace(/^\/+/, '');
+  } else if (s.startsWith('file:')) {
+    s = '/' + s.slice('file:'.length).replace(/^\/+/, '');
+  }
+  try { s = decodeURIComponent(s); } catch (e) { /* leave as-is if malformed */ }
+  return s;
+}
+
 const api = {
   playClickSound: () => invoke('play_click_sound'),
   reportActivity: () => invoke('report_activity'),
@@ -364,8 +389,6 @@ const api = {
   syncPresets: () => invoke('sync_presets'),
   getSettings: () => invoke('get_settings'),
   updateSettings: (settings) => invoke('save_settings', { settings }),
-  getMusicDir: () => invoke('get_music_dir'),
-  openMusicFolder: () => invoke('open_music_folder'),
   openLauncherFolder: () => invoke('open_launcher_folder'),
   openInstanceFolder: (directory) => invoke('open_instance_folder', { directory: directory || null }),
   getLauncherVersion: () => invoke('get_launcher_version'),
@@ -374,8 +397,6 @@ const api = {
   downloadUpdate: (url) => invoke('download_update', { url }),
   installUpdate: (downloadedPath, relaunch) => invoke('install_update', { downloadedPath, relaunch }),
   openCurrentExeFolder: () => invoke('open_current_exe_folder'),
-  listMusicFiles: () => invoke('list_music_files'),
-  readMusicFile: (fileName) => invoke('read_music_file', { fileName }),
   getAvailableVersions: () => invoke('get_available_versions'),
   getCachedVersions: () => invoke('get_cached_versions'),
   installVersion: (minecraftVersion, loader, loaderVersion, directory, name, oldVersionId) =>
@@ -405,6 +426,7 @@ const api = {
   deleteInstalledVersion: (versionId, directory) => invoke('delete_installed_version', { versionId, directory: directory || null }),
   deleteInstanceData: (directory, minecraftDirectory) => invoke('delete_instance_data', { directory, minecraftDirectory: minecraftDirectory || null }),
   scanMinecraftVersions: (directory) => invoke('scan_minecraft_versions', { directory: directory || null }),
+  getInstalledInstances: () => invoke('get_installed_instances'),
   getHiddenInstances: () => invoke('get_hidden_instances'),
   hideInstance: (versionId) => invoke('hide_instance', { versionId }),
   unhideInstance: (versionId) => invoke('unhide_instance', { versionId }),
@@ -509,6 +531,7 @@ const api = {
     invoke('apply_preset_config', { presetId, directory }),
   onInstanceLog: (cb) => listen('instance-log', cb),
   onRunningInstancesChanged: (cb) => listen('running-instances-changed', cb),
+  onInstancesChanged: (cb) => listen('instances-changed', cb),
   onGameAdvancement: (cb) => listen('game-advancement', cb),
   openInstanceConsoleWindow: async (versionId, name) => {
     const { WebviewWindow } = window.__TAURI__.webviewWindow;
@@ -766,10 +789,18 @@ function initTabs() {
 
       document.querySelectorAll('.pill-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-page').forEach(p => {
+        p.classList.remove('active');
+        p.classList.remove('tab-entering');
+      });
       const page = document.getElementById('tab-' + tabId);
       if (page) {
         page.classList.add('active');
+        // Force a reflow so display:block is committed before we add the
+        // animation class — without this the browser collapses both into one
+        // frame and the @keyframes animation never actually fires.
+        void page.offsetWidth;
+        page.classList.add('tab-entering');
         refreshCardCullingIn(page);
       }
       // Lazy-load data when switching
@@ -850,10 +881,7 @@ function initTabs() {
 // actual value used to launch the game or anything sent to the backend.
 // Keeps the first character so multiple accounts stay distinguishable.
 function maskUsernameForDisplay(name) {
-  if (!name) return name;
-  if (!settings || !settings.hide_username) return name;
-  const visible = name.charAt(0);
-  return visible + '•'.repeat(Math.max(3, name.length - 1));
+  return name;
 }
 
 function escapeHtml(str) {
@@ -2538,9 +2566,15 @@ async function refreshInstances() {
   }
 
   const byVersionId = new Map();
-  tracked.forEach(inst => byVersionId.set(inst.version_id, inst));
+  const byVersionIdLower = new Map();
+  tracked.forEach(inst => {
+    byVersionId.set(inst.version_id, inst);
+    if (inst.version_id) byVersionIdLower.set(inst.version_id.toLowerCase(), inst);
+    if (inst.name) byVersionIdLower.set(inst.name.toLowerCase(), inst);
+  });
   scanned.forEach(v => {
-    if (byVersionId.has(v.id)) return; // already have a tracked entry with a real name
+    const existing = byVersionId.get(v.id) || (v.id ? byVersionIdLower.get(v.id.toLowerCase()) : null);
+    if (existing) return; // already have a tracked entry
     byVersionId.set(v.id, {
       name: v.id,
       version_id: v.id,
@@ -2550,11 +2584,15 @@ async function refreshInstances() {
       directory: (settings && settings.game_directory) || '',
       installed_at: '',
       missing_jar: !v.has_jar,
+      total_playtime_seconds: 0,
+      playtime_history: {},
+      last_played_at: null,
+      launch_count: 0,
     });
   });
 
   instancesCache = Array.from(byVersionId.values());
-  if (selectedInstanceId && !instancesCache.some(i => i.version_id === selectedInstanceId)) {
+  if (selectedInstanceId && !instancesCache.some(i => i.version_id === selectedInstanceId || (i.version_id && i.version_id.toLowerCase() === selectedInstanceId.toLowerCase()))) {
     selectedInstanceId = null;
   }
   return instancesCache;
@@ -3967,63 +4005,31 @@ async function initSkinMiniPreview() {
 function showSkinMiniPreview() {
   if (skinMiniPreviewInstance) {
     skinMiniPreviewInstance.renderPaused = false;
+    try { skinMiniPreviewInstance.render(); } catch (e) {}
+  } else {
+    initSkinMiniPreview();
   }
 }
 
 // Called when the Rust side tells us the main window was just restored
 // from the system tray (or re-focused after single-instance re-launch).
-// Hiding the window natively — not a browser tab switch — is where the 3D
-// player model was going blank: the WebGL context can get lost while the
-// window is off-screen, and `isContextLost()` doesn't reliably report that
-// on every GPU/driver (WebKitGTK on Linux in particular), so we can't fully
-// trust it to decide whether a rebuild is needed. The modal viewer only
-// exists while its overlay is open, so it's fine to keep using the lighter
-// resume/wait-then-reinit path — but the standee preview (the one on the
-// main screen, which is what was actually going blank) is unconditionally
-// unloaded and reloaded from scratch: `reinitSkinMiniPreview(true)` throws
-// away the old <canvas> element and Render instance entirely and builds a
-// brand new one, which is more certain to come back clean than trying to
-// resuscitate whatever WebGL context the window came back with.
 function resumeSkinViewersAfterShow() {
-  const tryResume = (getInstance, reinit) => {
-    const inst = getInstance();
-    if (!inst) return;
-    try {
-      inst.renderPaused = false;
-      const ctx = inst.renderer?.getContext?.();
-      if (ctx && ctx.isContextLost && ctx.isContextLost()) {
-        setTimeout(() => {
-          const stillLost = ctx.isContextLost && ctx.isContextLost();
-          if (stillLost) reinit();
-        }, 1500);
-      } else {
-        try { inst.render(); } catch (e) {}
-      }
-    } catch (e) {}
-  };
-
-  // NOTE: this used to be wrapped in nested requestAnimationFrame() calls
-  // to wait for the window to finish compositing before touching WebGL.
-  // That was the actual bug: rAF callbacks are frozen by the browser
-  // whenever the page is (or still briefly reads as) not visible, which a
-  // just-restored tray window often still does for a tick — so the whole
-  // resume chain sat there never firing until something *else* (an actual
-  // OS-level visibility flip, like alt-tabbing) unblocked the rAF queue and
-  // let the plain `visibilitychange` handler's simpler `renderPaused =
-  // false` get a chance to run instead. setTimeout isn't gated by page
-  // visibility the same way, so it actually runs when this function is
-  // called instead of silently waiting on a frame that isn't coming.
   setTimeout(() => {
     resizeSkinViewer();
-    tryResume(() => skinViewerInstance, () => { /* modal viewer: user will reopen it */ });
-
-    // Standee preview: unload it (dispose the old Render instance + swap
-    // in a brand-new <canvas>) and load it back in, every time the window
-    // comes back from the tray — rather than betting on `isContextLost()`,
-    // which is exactly the kind of detection that's unreliable on
-    // WebKitGTK. It's a small, cheap model, so doing this unconditionally
-    // is fine.
-    reinitSkinMiniPreview(true);
+    if (skinViewerInstance) {
+      skinViewerInstance.renderPaused = false;
+      try { skinViewerInstance.render(); } catch (e) {}
+    }
+    if (skinMiniPreviewInstance) {
+      const ctx = skinMiniPreviewInstance.renderer?.getContext?.();
+      if (ctx && ctx.isContextLost && ctx.isContextLost()) {
+        reinitSkinMiniPreview(true);
+      } else {
+        showSkinMiniPreview();
+      }
+    } else {
+      initSkinMiniPreview();
+    }
     BG.requestRedraw();
   }, 60);
 }
@@ -4410,7 +4416,7 @@ function renderInstanceList() {
             </button>
           </div>
         </div>
-        <div class="inst-version">${inst.version_id}  •  ${loaderStr}</div>
+        <div class="inst-version">${inst.minecraft_version || inst.version_id}  •  ${loaderStr}</div>
       </div>
     `;
     fragment.appendChild(card);
@@ -4478,10 +4484,17 @@ function formatLastPlayed(iso) {
 function updateSelectedInstancePlaytimeDisplay() {
   const playtimeEl = document.getElementById('info-playtime');
   if (!playtimeEl || !selectedInstanceId) return;
-  const inst = getInstances().find(i => i.version_id === selectedInstanceId);
+  const selLower = (selectedInstanceId || '').toLowerCase();
+  const inst = getInstances().find(i => 
+    i.version_id === selectedInstanceId || 
+    (i.version_id && i.version_id.toLowerCase() === selLower) ||
+    (i.name && i.name.toLowerCase() === selLower)
+  );
   if (!inst) return;
   let seconds = inst.total_playtime_seconds || 0;
-  const running = (runningInstancesCache || []).find(r => r.version_id === selectedInstanceId && r.running);
+  const running = (runningInstancesCache || []).find(r => 
+    (r.version_id === selectedInstanceId || (r.version_id && r.version_id.toLowerCase() === selLower)) && r.running
+  );
   if (running && running.started_at) {
     // started_at is "YYYY-MM-DD HH:MM:SS" in the launcher's local time.
     const startedMs = new Date(running.started_at.replace(' ', 'T')).getTime();
@@ -4633,7 +4646,9 @@ function persistGlobalStats() {
   const mods = parseCount('playtime-stat-mods');
   const advancements = parseCount('playtime-stat-advancements');
   if (launches === null && mods === null && advancements === null) return;
-  const totalSeconds = getInstances().reduce((s, i) => s + (i.total_playtime_seconds || 0), 0);
+  const instances = getInstances();
+  if (!instances || instances.length === 0) return;
+  const totalSeconds = instances.reduce((s, i) => s + (i.total_playtime_seconds || 0), 0);
   api.saveGlobalStats({
     total_launches: launches ?? 0,
     total_playtime_seconds: totalSeconds,
@@ -4942,7 +4957,7 @@ function selectInstance(id) {
 
   const loaderStr = (inst.loader && inst.loader !== 'vanilla') ? loaderLabel(inst.loader) : null;
   nameEl.textContent = (inst.name || inst.version_id) + (inst.missing_jar ? ' (incomplete)' : '');
-  verEl.textContent = inst.version_id + (loaderStr ? '  •  ' + loaderStr : '');
+  verEl.textContent = (inst.minecraft_version || inst.version_id) + (loaderStr ? '  •  ' + loaderStr : '');
   if (gameVerEl) gameVerEl.textContent = inst.minecraft_version || inst.version_id || '—';
   loaderEl.textContent = loaderStr || 'Vanilla';
   dirEl.textContent = inst.directory || (settings ? settings.game_directory : '—');
@@ -5775,7 +5790,7 @@ function initInstanceActions() {
       try {
         const picked = await window.__TAURI__.dialog.open({ directory: true, multiple: false });
         if (picked) {
-          dirPathInput.value = Array.isArray(picked) ? picked[0] : picked;
+          dirPathInput.value = sanitizePickedPath(Array.isArray(picked) ? picked[0] : picked);
           dirCustomRadio.checked = true;
           syncDirRowVisibility();
         }
@@ -6763,11 +6778,27 @@ function filterMods() {
   const searchInput = document.getElementById('mods-search');
   if (!grid || !searchInput) return;
   const query = searchInput.value.trim().toLowerCase();
-  grid.querySelectorAll('.mod-card').forEach(card => {
+  const cards = grid.querySelectorAll('.mod-card');
+  cards.forEach(card => {
     const matches = !query || (card.dataset.name || '').includes(query);
     card.classList.toggle('search-hidden', !matches);
     card.style.display = matches ? '' : 'none';
   });
+
+  let noResultsEl = grid.querySelector('.mods-no-results');
+  const visibleCount = grid.querySelectorAll('.mod-card:not(.search-hidden)').length;
+  const showNoResults = !!query && cards.length > 0 && visibleCount === 0;
+  if (showNoResults) {
+    if (!noResultsEl) {
+      noResultsEl = document.createElement('div');
+      noResultsEl.className = 'empty-state mods-no-results';
+      noResultsEl.innerHTML = `<span class="empty-icon">${ICON_SEARCH_EMPTY_SVG}</span><span>No results found</span>`;
+      grid.appendChild(noResultsEl);
+    }
+  } else if (noResultsEl) {
+    noResultsEl.remove();
+  }
+
   updateModsCount();
 }
 
@@ -6844,8 +6875,8 @@ async function loadMods() {
 
   const hintEl = document.getElementById('modpack-subpanel-hint');
   if (hintEl) {
-    hintEl.textContent = isModpackView
-      ? '🔒 Modpack Managed (Read-only for Updates)'
+    hintEl.innerHTML = isModpackView
+      ? `<span class="hint-icon" aria-hidden="true">${ICON_LOCK_SVG}</span>Modpack Managed (Read-only for Updates)`
       : 'Showing user installed mods';
   }
 
@@ -6939,23 +6970,19 @@ function initMods() {
 
   const normalTabBtn = document.getElementById('btn-mods-view-normal');
   const modpackTabBtn = document.getElementById('btn-mods-view-modpack');
+  const switchModsView = (view) => {
+    activeModsView = view;
+    showModsTabLoading();
+    Promise.resolve(loadMods()).catch(() => {}).finally(() => hideModsTabLoading());
+  };
   if (normalTabBtn) {
     normalTabBtn.addEventListener('click', () => {
-      if (activeModsView !== 'normal') {
-        activeModsView = 'normal';
-        loadMods();
-      }
+      if (activeModsView !== 'normal') switchModsView('normal');
     });
   }
   if (modpackTabBtn) {
     modpackTabBtn.addEventListener('click', () => {
-      if (activeModsView !== 'modpack') {
-        activeModsView = 'modpack';
-        loadMods();
-      } else {
-        activeModsView = 'normal';
-        loadMods();
-      }
+      switchModsView(activeModsView !== 'modpack' ? 'modpack' : 'normal');
     });
   }
 
@@ -7177,7 +7204,10 @@ async function openModpackImportOverlay(filePath) {
     const preview = await api.previewModpack(filePath);
     modpackImportState.preview = preview;
     const fileName = filePath.split(/[\\/]/).pop();
-    const guessedName = preview.name || fileName.replace(/\.(mrpack|zip)$/i, '');
+    let guessedName = (preview.name || fileName.replace(/\.(mrpack|zip)$/i, ''))
+      .replace(/^\s*\[[^\]]+\]\s*/, '')
+      .trim();
+    if (!guessedName) guessedName = preview.name || fileName.replace(/\.(mrpack|zip)$/i, '');
     nameInput.value = guessedName;
 
     if (preview.format === 'generic') {
@@ -7308,6 +7338,9 @@ async function confirmModpackImport() {
     closeModpackImportOverlay();
     await refreshInstances();
     renderInstanceList();
+    if (result && result.instance && result.instance.version_id) {
+      selectInstance(result.instance.version_id);
+    }
     let msg = `Imported "${name}"`;
     if (result.failed_files && result.failed_files.length > 0) {
       msg += ` — ${result.failed_files.length} file(s) failed to download`;
@@ -7358,7 +7391,7 @@ function initModpackImportOverlay() {
     try {
       const picked = await window.__TAURI__.dialog.open({ directory: true, multiple: false });
       if (picked) {
-        dirPathInput.value = Array.isArray(picked) ? picked[0] : picked;
+        dirPathInput.value = sanitizePickedPath(Array.isArray(picked) ? picked[0] : picked);
         dirCustomRadio.checked = true;
         syncDirRowVisibility();
       }
@@ -7442,7 +7475,7 @@ function initDiscoverModpackDirOverlay() {
     try {
       const picked = await window.__TAURI__.dialog.open({ directory: true, multiple: false });
       if (picked) {
-        document.getElementById('discover-modpack-dir-path').value = Array.isArray(picked) ? picked[0] : picked;
+        document.getElementById('discover-modpack-dir-path').value = sanitizePickedPath(Array.isArray(picked) ? picked[0] : picked);
       }
     } catch (e) {
       showToast('Could not open folder picker: ' + e, 'error');
@@ -9256,19 +9289,47 @@ async function populateVersionSelect(hit, versionSelect, downloadBtn) {
     const target = currentDiscoverTargetInstance();
     versionSelect.innerHTML = '';
 
+    const isPack = hit.project_type === 'modpack' || discoverState.type === 'modpack';
+    const filterMc = (discoverState.gameVersion || '').trim();
+    const filterLoader = (discoverState.loader || '').trim().toLowerCase();
+
     versions.forEach(v => {
       const primaryFile = (v.files && v.files.find(f => f.primary)) || (v.files && v.files[0]);
       if (!primaryFile) return;
       const opt = document.createElement('option');
       opt.value = v.id;
       const latestGameVersion = (v.game_versions && v.game_versions[v.game_versions.length - 1]) || '';
-      const compatible = isDiscoverVersionCompatible(v, hit, target);
-      opt.textContent = compatible
-        ? `${v.version_number} (${latestGameVersion})`
-        : `${v.version_number} (${latestGameVersion}) — Incompatible`;
-      if (!compatible) {
+      const loadersList = (v.loaders || []).map(l => loaderLabel(l) || l).join(', ');
+      
+      let compatible = isDiscoverVersionCompatible(v, hit, target);
+      // For modpacks, additionally filter by active search filters if set,
+      // but never mark them red/incompatible — just deprioritize in the list.
+      let packFiltered = false;
+      if (isPack) {
+        if (filterMc && v.game_versions && !v.game_versions.includes(filterMc)) {
+          packFiltered = true;
+        }
+        if (filterLoader && v.loaders && !v.loaders.some(l => l.toLowerCase() === filterLoader)) {
+          packFiltered = true;
+        }
+      }
+
+      const labelPrefix = v.name && v.name !== v.version_number ? `${v.name}` : `${v.version_number}`;
+      const loaderPart = loadersList ? ` · ${loadersList}` : '';
+      const mcPart = latestGameVersion ? ` (MC ${latestGameVersion}${loaderPart})` : '';
+
+      // Modpacks: never show "Incompatible" — they always work regardless of game/loader filter
+      if (!isPack && !compatible) {
+        opt.textContent = `${labelPrefix}${mcPart} — Incompatible`;
         opt.style.color = 'var(--danger)';
         opt.dataset.incompatible = '1';
+      } else {
+        opt.textContent = `${labelPrefix}${mcPart}`;
+        // Slightly dim pack versions that don't match current filters (but still selectable)
+        if (isPack && packFiltered) {
+          opt.style.opacity = '0.55';
+          opt.dataset.packFiltered = '1';
+        }
       }
       opt.dataset.fileUrl = primaryFile.url;
       opt.dataset.fileName = primaryFile.filename;
@@ -9276,7 +9337,11 @@ async function populateVersionSelect(hit, versionSelect, downloadBtn) {
     });
 
     const firstCompatible = Array.from(versionSelect.options).find(o => !o.dataset.incompatible);
-    if (firstCompatible) versionSelect.value = firstCompatible.value;
+    if (firstCompatible) {
+      versionSelect.value = firstCompatible.value;
+    } else if (versionSelect.options.length > 0) {
+      versionSelect.value = versionSelect.options[0].value;
+    }
     if (downloadBtn) downloadBtn.disabled = false;
   } catch (e) {
     versionSelect.innerHTML = '<option value="">Failed to load versions</option>';
@@ -9585,13 +9650,20 @@ async function installDiscoverModpack(hit, opt, downloadBtn, customDirectory) {
       }
     });
 
-    const name = (preview && preview.name) || hit.title;
-    const result = await api.importModpack(tempPath, name, !!customDirectory, customDirectory || null);
+    // Prioritize clean modpack title over raw release label (e.g. "[26.2] Performium v2.0.0-Release+1")
+    let rawName = hit.title || (preview && preview.name) || 'Modpack';
+    let cleanName = rawName.replace(/^\s*\[[^\]]+\]\s*/, '').trim();
+    if (!cleanName) cleanName = hit.title || 'Modpack';
+
+    const result = await api.importModpack(tempPath, cleanName, !!customDirectory, customDirectory || null);
 
     await refreshInstances();
     renderInstanceList();
+    if (result && result.instance && result.instance.version_id) {
+      selectInstance(result.instance.version_id);
+    }
 
-    let msg = `Installed "${name}"`;
+    let msg = `Installed "${cleanName}"`;
     if (result.failed_files && result.failed_files.length > 0) {
       msg += ` — ${result.failed_files.length} file(s) failed to download`;
     }
@@ -10422,7 +10494,7 @@ function populateSettingsUI() {
 
   // Background & Animation
   document.getElementById('setting-bg-style').value = settings.background_style || 'Default';
-  document.getElementById('setting-bg-anim-style').value = settings.background_animation_style || 'Waves';
+  document.getElementById('setting-bg-anim-style').value = settings.background_animation_style || 'Starfield';
   document.getElementById('setting-bg-anim-speed').value = settings.background_animation_speed || 1.0;
   document.getElementById('setting-bg-anim-fps').value = settings.background_animation_fps || 60;
   document.getElementById('setting-bg-anim-enable').checked = settings.enable_background_animation !== false;
@@ -10534,8 +10606,6 @@ function populateSettingsUI() {
   document.getElementById('setting-rpc-state-multiplayer').checked = settings.rpc_state_multiplayer !== false;
 
   // Privacy & Developer
-  const hideUsernameEl = document.getElementById('setting-hide-username');
-  if (hideUsernameEl) hideUsernameEl.checked = !!settings.hide_username;
   document.getElementById('setting-redact-tokens').checked = settings.redact_tokens !== false;
   const redactPathsChk = document.getElementById('setting-redact-paths');
   if (redactPathsChk) redactPathsChk.checked = settings.redact_paths !== false;
@@ -10785,15 +10855,6 @@ function collectSettingsFromUI() {
   // Appearance: Font
   settings.font_family = document.getElementById('setting-font-family').value;
 
-  // Appearance: Music
-  const musicEnabledEl = document.getElementById('setting-music-enabled');
-  if (musicEnabledEl) settings.music_enabled = musicEnabledEl.checked;
-  const musicVolumeEl = document.getElementById('setting-music-volume');
-  if (musicVolumeEl) settings.music_volume = parseInt(musicVolumeEl.value) || 0;
-  const musicBehaviorEl = document.getElementById('setting-music-switch-behavior');
-  if (musicBehaviorEl) settings.music_switch_behavior = musicBehaviorEl.value;
-  const musicLowerEl = document.getElementById('setting-music-lower-percent');
-  if (musicLowerEl) settings.music_lower_percent = parseInt(musicLowerEl.value) || 0;
 
   // Behavior
   settings.close_after_launch = document.getElementById('setting-close-on-launch').checked;
@@ -10866,8 +10927,6 @@ function collectSettingsFromUI() {
   settings.rpc_state_multiplayer = document.getElementById('setting-rpc-state-multiplayer').checked;
 
   // Privacy & Developer
-  const hideUsernameEl2 = document.getElementById('setting-hide-username');
-  if (hideUsernameEl2) settings.hide_username = hideUsernameEl2.checked;
   settings.redact_tokens = document.getElementById('setting-redact-tokens').checked;
   const redactPathsChk2 = document.getElementById('setting-redact-paths');
   if (redactPathsChk2) settings.redact_paths = redactPathsChk2.checked;
@@ -11619,7 +11678,7 @@ function initSettings() {
           accent_color: ACCENT_DEFAULT,
           font_family: 'JetBrains Mono, Fira Code, Consolas, Monaco, monospace',
           background_style: 'Default',
-          background_animation_style: 'Waves',
+          background_animation_style: 'Starfield',
           background_animation_speed: 1.0,
           background_animation_intensity: 1.0,
           background_animation_fps: 60,
@@ -11666,7 +11725,6 @@ function initSettings() {
           rpc_state_main_menu: false,
           rpc_state_singleplayer: false,
           rpc_state_multiplayer: false,
-          hide_username: false,
           redact_tokens: true,
           debug_mode: false,
           enable_crash_analysis: false,
@@ -11773,7 +11831,7 @@ function closeSettingsModal() {
   if (typeof BG !== 'undefined' && BG.resume) BG.resume();
 
   // Fully resume and refresh the 3D player skin preview immediately
-  resumeSkinViewersAfterShow();
+  showSkinMiniPreview();
 }
 
 function switchSettingsSection(sectionName) {
@@ -11814,7 +11872,7 @@ const SETTINGS_SEARCH_CATALOG = [
   { label: 'Accent Color', keywords: 'accent color hex tint primary silver custom color picker', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-accent-hex-input' },
   { label: 'Background Base Color', keywords: 'background base color dark shade hex palette', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-hex-input' },
   { label: 'Background Style', keywords: 'background gradient theme midnight sunset forest ocean monochrome glow', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-style' },
-  { label: 'Animation Style', keywords: 'animation style waves particles fireflies canvas background', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-style' },
+  { label: 'Animation Style', keywords: 'animation style waves particles fireflies starfield stars space galaxy canvas background', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-style' },
   { label: 'Animation Speed', keywords: 'animation speed velocity fast slow rate', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-speed' },
   { label: 'Animation FPS', keywords: 'animation fps framerate 60 120 30 performance hz', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-fps' },
   { label: 'Animation Intensity', keywords: 'animation intensity brightness glow opacity', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-intensity' },
@@ -11828,9 +11886,6 @@ const SETTINGS_SEARCH_CATALOG = [
   { label: 'Background Image Blur', keywords: 'image blur radius gaussian wallpaper frosted glass', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-blur' },
   { label: 'UI Font Family', keywords: 'font typography text typeface font-family geist inter system', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-font-family' },
   { label: 'Notification Style', keywords: 'notification toast alert style modern classic minimal pill', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-notif-style' },
-  { label: 'Background Music Volume', keywords: 'music volume audio sound bgm sound track level slider', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-music-volume' },
-  { label: 'Music Unfocused Behavior', keywords: 'music unfocused switch behavior pause continue lower volume', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-music-switch-behavior' },
-  { label: 'Manage Music Library', keywords: 'music library audio files bgm mp3 ogg tracks song folder', section: 'appearance', sectionLabel: 'Appearance', targetId: 'btn-open-music-library' },
 
   // Behavior & Window
   { label: 'Check Mod Updates on Startup', keywords: 'mod updates check startup launch automatically notify', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-mod-updates-startup' },
@@ -12381,10 +12436,17 @@ async function refreshRunningInstances() {
   }
   renderRunningInstancesPanel();
   updatePlayButtonRunningState();
-  refreshInstances()
-    .then(() => { updateSelectedInstancePlaytimeDisplay(); renderPlaytimeChart(); })
-    .catch((e) => console.error('Failed to refresh instances after running-instances change', e));
+  try {
+    await refreshInstances();
+  } catch (e) {
+    console.error('Failed to refresh instances after running-instances change', e);
+  }
+  const currentInst = getInstances().find(i => i.version_id === selectedInstanceId);
+  const lastPlayedEl = document.getElementById('info-last-played');
+  if (lastPlayedEl && currentInst) lastPlayedEl.textContent = formatLastPlayed(currentInst.last_played_at);
   updateSelectedInstancePlaytimeDisplay();
+  renderPlaytimeChart();
+  renderGlobalPlaytimeStats();
 
   // High GPU & WebKitGTK Optimization:
   // When a game is running, pause background canvas particles and 3D skin model rendering
@@ -12430,14 +12492,25 @@ function initRunningInstancesWidget() {
 
   // Live updates: the backend fires this whenever an instance starts or
   // stops, so the buttons/Play button stay in sync without polling.
-  api.onRunningInstancesChanged(() => {
-    refreshRunningInstances();
-    // A running instance just started or (more importantly here) finished
-    // a session — advancements may have changed, so force the Game
-    // Advancements stat to recount next render rather than trusting its
-    // shape-based cache.
+  api.onRunningInstancesChanged(async () => {
+    await refreshRunningInstances();
     playtimeAdvancementsGeneration++;
     renderGlobalPlaytimeStats();
+  });
+
+  // Live updates: instances list changed (playtime saved, launch counts, timestamps)
+  api.onInstancesChanged(async () => {
+    try {
+      await refreshInstances();
+      const currentInst = getInstances().find(i => i.version_id === selectedInstanceId);
+      const lastPlayedEl = document.getElementById('info-last-played');
+      if (lastPlayedEl && currentInst) lastPlayedEl.textContent = formatLastPlayed(currentInst.last_played_at);
+      updateSelectedInstancePlaytimeDisplay();
+      renderPlaytimeChart();
+      renderGlobalPlaytimeStats();
+    } catch (e) {
+      console.error('Failed to refresh on instances-changed', e);
+    }
   });
 
   // Live updates: the backend watches each running instance's game log and
@@ -12475,6 +12548,11 @@ const BG = {
   lastTime: 0,
   particles: [],
   orbs: [],
+  stars: [],
+  shootingStars: [],
+  stardustSparks: [],
+  nebulae: [],
+  lastShootingStarTime: 0,
 
   // Set while a frame is scheduled via requestAnimationFrame, so callers
   // (resize, settings changes, visibility) know whether they need to kick
@@ -12509,20 +12587,6 @@ const BG = {
         }
       }
     });
-    // `document.hidden`/`visibilitychange` is what drives the pause above,
-    // but it's unreliable for a *natively* hidden window (tray hide isn't a
-    // tab switch): on some platforms/GPU drivers the WebGL context is
-    // actually torn down while the window is off-screen, and by the time
-    // `visibilitychange` fires again the context may not have finished
-    // coming back yet, so just flipping `renderPaused` off can be a no-op.
-    // The Rust side emits this explicit event on every tray/dock restore
-    // (see `launcher-shown` in lib.rs) as a second, more reliable signal to
-    // hard-resume the 3D preview(s) — see `resumeSkinViewersAfterShow`.
-    // Tray/dock restores get an extra beat before we touch WebGL: unlike a
-    // plain tab switch (where the context is usually still warm and the
-    // visibilitychange handler above resumes it right away), a window
-    // that's been natively hidden needs a bit longer for the OS to finish
-    // showing/compositing it before poking the renderer does any good.
     window.addEventListener('blur', () => {
       this.pause();
       if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
@@ -12542,6 +12606,8 @@ const BG = {
     listen('launcher-shown', () => setTimeout(() => resumeSkinViewersAfterShow(), 2000));
     this.createParticles();
     this.createOrbs();
+    this.createNebulae();
+    this.createStars();
     this.loop(0);
   },
 
@@ -12584,7 +12650,87 @@ const BG = {
         p.baseX = (p.baseX / oldW) * newW;
         p.y = (p.y / oldH) * newH;
       });
+      if (this.stars) {
+        this.stars.forEach(st => {
+          st.x = (st.x / oldW) * newW;
+          st.y = (st.y / oldH) * newH;
+        });
+      }
     }
+  },
+
+  createNebulae() {
+    this.nebulae = [
+      { xFrac: 0.20, yFrac: 0.28, radFrac: 0.45, phase: 0.0, speed: 0.0003 },
+      { xFrac: 0.82, yFrac: 0.60, radFrac: 0.50, phase: 2.2, speed: 0.00025 },
+      { xFrac: 0.48, yFrac: 0.88, radFrac: 0.38, phase: 4.4, speed: 0.00035 },
+    ];
+  },
+
+  createStars() {
+    this.stars = [];
+    const count = 165;
+    const w = window.innerWidth || 1200;
+    const h = window.innerHeight || 800;
+    for (let i = 0; i < count; i++) {
+      // 4 distinct depth layers:
+      // 0: Distant micro stars (cool ice-blue/lavender, slow drift)
+      // 1: Midfield stars (soft diamond/warm white)
+      // 2: Near stars (soft radiant halo)
+      // 3: Hero stars (intense blooming glow + 4-point diffraction cross glints)
+      const rVal = Math.random();
+      const layer = rVal < 0.46 ? 0 : (rVal < 0.76 ? 1 : (rVal < 0.93 ? 2 : 3));
+      let size, vy, baseAlpha;
+      if (layer === 0) {
+        size = 0.6 + Math.random() * 0.5;
+        vy = 0.025 + Math.random() * 0.035;
+        baseAlpha = 0.25 + Math.random() * 0.25;
+      } else if (layer === 1) {
+        size = 1.2 + Math.random() * 0.7;
+        vy = 0.06 + Math.random() * 0.07;
+        baseAlpha = 0.4 + Math.random() * 0.3;
+      } else if (layer === 2) {
+        size = 2.0 + Math.random() * 0.9;
+        vy = 0.12 + Math.random() * 0.11;
+        baseAlpha = 0.6 + Math.random() * 0.3;
+      } else {
+        // Hero stars
+        size = 3.2 + Math.random() * 1.2;
+        vy = 0.16 + Math.random() * 0.12;
+        baseAlpha = 0.8 + Math.random() * 0.2;
+      }
+      this.stars.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        size,
+        vy,
+        baseAlpha,
+        alpha: baseAlpha,
+        twinklePhase: Math.random() * Math.PI * 2,
+        twinkleSpeed: 0.01 + Math.random() * 0.026,
+        layer,
+      });
+    }
+  },
+
+  spawnShootingStar(timestamp, w, h) {
+    if (timestamp - this.lastShootingStarTime < 3200 + Math.random() * 3200) return;
+    this.lastShootingStarTime = timestamp;
+    const startX = Math.random() * (w * 0.8) + (w * 0.1);
+    const startY = Math.random() * (h * 0.35);
+    const angle = (Math.PI / 4) + (Math.random() - 0.5) * 0.3; // 35-55 deg downward streak
+    const speed = 8 + Math.random() * 5.5;
+    const length = 110 + Math.random() * 80;
+    this.shootingStars.push({
+      x: startX,
+      y: startY,
+      dx: Math.cos(angle) * speed,
+      dy: Math.sin(angle) * speed,
+      length,
+      alpha: 1.0,
+      decay: 0.018 + Math.random() * 0.01,
+      thickness: 1.4 + Math.random() * 1.3,
+    });
   },
 
   createParticles() {
@@ -12705,7 +12851,7 @@ const BG = {
     // decide whether it draws anything. requestRedraw() wakes the loop back
     // up the moment anything relevant changes (resize, theme/settings, tab
     // regaining focus).
-    const isStaticFrame = !enabled || (s.background_animation_style || 'Waves') === 'Nothing';
+    const isStaticFrame = !enabled || (s.background_animation_style || 'Starfield') === 'Nothing';
 
     const W = canvas.width;
     const H = canvas.height;
@@ -12726,7 +12872,7 @@ const BG = {
     }
 
     const bgStyle = s.background_style || 'Default';
-    const animStyle = s.background_animation_style || 'Waves';
+    const animStyle = s.background_animation_style || 'Starfield';
     const speed = s.background_animation_speed || 1.0;
     // "Nothing" is a flat, single-color background — no gradient — dark
     // gray. It only applies when there's no custom image background (that
@@ -12857,6 +13003,178 @@ const BG = {
         });
         ctx.restore();
 
+      } else if (animStyle === 'Starfield') {
+        // Starfield: Deep space cosmic nebulae, 4 depth layers,
+        // breathing stellar twinkling, 4-point cross diffraction glints, and shooting stars with stardust sparks
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        // 1. Cosmic Nebulae Clouds (Deep space atmosphere)
+        if (this.nebulae) {
+          for (let i = 0; i < this.nebulae.length; i++) {
+            const n = this.nebulae[i];
+            n.phase += n.speed * speed;
+            const cx = W * n.xFrac + Math.sin(n.phase) * (W * 0.06);
+            const cy = H * n.yFrac + Math.cos(n.phase * 0.8) * (H * 0.06);
+            const rad = Math.max(W, H) * n.radFrac * (0.92 + 0.08 * Math.sin(n.phase * 1.5));
+            const nGrd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+            nGrd.addColorStop(0, `rgba(${r},${g},${b},${Math.min(0.09, 0.045 * aBoost)})`);
+            nGrd.addColorStop(0.45, `rgba(${Math.round(r * 0.4 + 30)},${Math.round(g * 0.4 + 10)},${Math.round(b * 0.5 + 80)},${Math.min(0.05, 0.022 * aBoost)})`);
+            nGrd.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = nGrd;
+            ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+          }
+        }
+
+        // 2. Spawn occasional shooting stars
+        this.spawnShootingStar(timestamp, W, H);
+
+        // 3. Update & Draw Stars with Cross Glints
+        if (this.stars) {
+          const starCount = this.stars.length;
+          for (let i = 0; i < starCount; i++) {
+            const st = this.stars[i];
+            st.y -= st.vy * speed;
+            if (st.y < -20) {
+              st.y = H + 20;
+              st.x = Math.random() * W;
+            }
+
+            st.twinklePhase += st.twinkleSpeed * speed;
+            // Smooth breathing twinkle
+            const twinkle = 0.5 + 0.5 * Math.sin(st.twinklePhase);
+            const a = Math.min(1, Math.max(0.08, st.baseAlpha * twinkle * aBoost));
+
+            const sx = st.x;
+            const sy = st.y;
+
+            // Halo for near stars (layer 2) and hero stars (layer 3)
+            if (st.layer === 2) {
+              const glowR = st.size * 3.2;
+              const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
+              grd.addColorStop(0, `rgba(${r},${g},${b},${Math.min(1, a * 0.38)})`);
+              grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+              ctx.fillStyle = grd;
+              ctx.fillRect(sx - glowR, sy - glowR, glowR * 2, glowR * 2);
+            } else if (st.layer === 3) {
+              const glowR = st.size * 4.8;
+              const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
+              grd.addColorStop(0, `rgba(255,255,255,${Math.min(1, a * 0.7)})`);
+              grd.addColorStop(0.35, `rgba(${r},${g},${b},${Math.min(1, a * 0.55)})`);
+              grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+              ctx.fillStyle = grd;
+              ctx.fillRect(sx - glowR, sy - glowR, glowR * 2, glowR * 2);
+
+              // Cinematic 4-point cross diffraction spikes (lens flare) on peak twinkle
+              if (twinkle > 0.65) {
+                const glintLen = st.size * 3.2 * (twinkle - 0.65) * 2.8;
+                ctx.beginPath();
+                ctx.moveTo(sx - glintLen, sy);
+                ctx.lineTo(sx + glintLen, sy);
+                ctx.moveTo(sx, sy - glintLen);
+                ctx.lineTo(sx, sy + glintLen);
+                ctx.strokeStyle = `rgba(255,255,255,${Math.min(1, a * 0.75)})`;
+                ctx.lineWidth = 0.8;
+                ctx.stroke();
+              }
+            }
+
+            // Core dot
+            ctx.beginPath();
+            ctx.arc(sx, sy, st.size * 0.58, 0, Math.PI * 2);
+            if (st.layer === 3) {
+              ctx.fillStyle = `rgba(255,255,255,${a})`;
+            } else if (st.layer === 2) {
+              ctx.fillStyle = `rgba(${Math.round(240 + r * 0.06)},${Math.round(240 + g * 0.06)},${Math.round(250 + b * 0.02)},${a})`;
+            } else if (st.layer === 1) {
+              ctx.fillStyle = `rgba(255,248,235,${a * 0.9})`;
+            } else {
+              // Distant micro stars with cool ice-blue hue
+              ctx.fillStyle = `rgba(185,215,255,${a * 0.85})`;
+            }
+            ctx.fill();
+          }
+        }
+
+        // 4. Update & Draw Shooting Stars with Stardust Sparks
+        if (this.shootingStars) {
+          for (let i = this.shootingStars.length - 1; i >= 0; i--) {
+            const meteor = this.shootingStars[i];
+            meteor.x += meteor.dx * speed;
+            meteor.y += meteor.dy * speed;
+            meteor.alpha -= meteor.decay * speed;
+
+            // Spawn stardust spark trail
+            if (Math.random() < 0.45 && this.stardustSparks) {
+              this.stardustSparks.push({
+                x: meteor.x - (Math.random() - 0.5) * 6,
+                y: meteor.y - (Math.random() - 0.5) * 6,
+                dx: (Math.random() - 0.5) * 0.8,
+                dy: (Math.random() - 0.5) * 0.8,
+                alpha: meteor.alpha * 0.8,
+                decay: 0.035 + Math.random() * 0.025,
+                size: 0.8 + Math.random() * 1.2,
+              });
+            }
+
+            if (meteor.alpha <= 0 || meteor.x > W + 150 || meteor.y > H + 150) {
+              this.shootingStars.splice(i, 1);
+              continue;
+            }
+
+            const dist = Math.hypot(meteor.dx, meteor.dy) || 1;
+            const tailX = meteor.x - (meteor.dx / dist) * meteor.length;
+            const tailY = meteor.y - (meteor.dy / dist) * meteor.length;
+
+            const mGrd = ctx.createLinearGradient(tailX, tailY, meteor.x, meteor.y);
+            mGrd.addColorStop(0, `rgba(${r},${g},${b},0)`);
+            mGrd.addColorStop(0.65, `rgba(${r},${g},${b},${Math.min(1, meteor.alpha * 0.5 * aBoost)})`);
+            mGrd.addColorStop(1, `rgba(255,255,255,${Math.min(1, meteor.alpha * aBoost)})`);
+
+            ctx.beginPath();
+            ctx.moveTo(tailX, tailY);
+            ctx.lineTo(meteor.x, meteor.y);
+            ctx.strokeStyle = mGrd;
+            ctx.lineWidth = meteor.thickness;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+
+            // Radiant head bloom
+            const headR = meteor.thickness * 3.0;
+            const hGrd = ctx.createRadialGradient(meteor.x, meteor.y, 0, meteor.x, meteor.y, headR);
+            hGrd.addColorStop(0, `rgba(255,255,255,${Math.min(1, meteor.alpha * aBoost)})`);
+            hGrd.addColorStop(0.4, `rgba(${r},${g},${b},${Math.min(1, meteor.alpha * 0.6 * aBoost)})`);
+            hGrd.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = hGrd;
+            ctx.fillRect(meteor.x - headR, meteor.y - headR, headR * 2, headR * 2);
+
+            // Bright pinpoint head spark
+            ctx.beginPath();
+            ctx.arc(meteor.x, meteor.y, meteor.thickness * 1.4, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,255,255,${Math.min(1, meteor.alpha * aBoost)})`;
+            ctx.fill();
+          }
+        }
+
+        // 5. Update & Draw Stardust Sparks
+        if (this.stardustSparks) {
+          for (let i = this.stardustSparks.length - 1; i >= 0; i--) {
+            const sp = this.stardustSparks[i];
+            sp.x += sp.dx * speed;
+            sp.y += sp.dy * speed;
+            sp.alpha -= sp.decay * speed;
+            if (sp.alpha <= 0) {
+              this.stardustSparks.splice(i, 1);
+              continue;
+            }
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,255,255,${Math.min(1, sp.alpha * aBoost)})`;
+            ctx.fill();
+          }
+        }
+
+        ctx.restore();
 
       } else {
         // Particles (float up) with glow and constellation lines
@@ -12976,385 +13294,6 @@ const BG = {
   },
 };
 
-// ══════════════════════════════════════════════════════════════════
-// BACKGROUND MUSIC
-// ══════════════════════════════════════════════════════════════════
-// Plays whatever's enabled in Zero Launcher/music/ one track after another
-// while the launcher is in the foreground. What happens when the launcher
-// loses focus (e.g. the user alt-tabs to another launcher) is controlled by
-// settings.music_switch_behavior: "pause" fades out and pauses, "continue"
-// keeps playing untouched, and "lower" fades down to music_lower_percent%
-// of the normal volume instead of stopping.
-const MUSIC = {
-  audioEl: null,
-  tracks: [],           // enabled MusicTrackInfo[] making up the current playlist
-  currentIndex: -1,
-  currentObjectUrl: null,  // Blob URL for the currently-loaded track, revoked on the next track/stop
-  windowFocused: true,
-  fadeTimer: null,
-  consecutiveFailures: 0,
-
-  init() {
-    this.audioEl = document.getElementById('bg-music-player');
-    if (!this.audioEl) return;
-    this.audioEl.addEventListener('ended', () => this.playNext());
-
-    window.addEventListener('blur', () => this.onWindowBlur());
-    window.addEventListener('focus', () => this.onWindowFocus());
-
-    // Some webviews refuse audio.play() until the page has seen a real user
-    // gesture, even for a desktop app — if that happens, the very first
-    // click/keypress anywhere in the launcher retries starting the music.
-    const retryOnGesture = () => {
-      if (settings && settings.music_enabled && this.audioEl && this.audioEl.paused && this.tracks.length > 0) {
-        this.play();
-      }
-    };
-    ['pointerdown', 'keydown'].forEach(evt => {
-      document.addEventListener(evt, retryOnGesture, { passive: true });
-    });
-
-    this.refreshPlaylist().then(() => {
-      if (settings && settings.music_enabled) this.play();
-    });
-  },
-
-  // Re-reads the track list from disk/settings (enabled ones only) and
-  // keeps the currently-playing track going if it's still in the list.
-  async refreshPlaylist() {
-    let files = [];
-    try {
-      files = await api.listMusicFiles();
-    } catch (e) {
-      console.error('Failed to list music files:', e);
-    }
-    const currentPath = this.tracks[this.currentIndex] ? this.tracks[this.currentIndex].path : null;
-    this.tracks = files.filter(t => t.enabled);
-    if (currentPath) {
-      const idx = this.tracks.findIndex(t => t.path === currentPath);
-      this.currentIndex = idx;
-    }
-  },
-
-  targetVolume() {
-    if (!settings) return 0.5;
-    return Math.max(0, Math.min(100, settings.music_volume ?? 50)) / 100;
-  },
-
-  loweredVolume() {
-    const pct = Math.max(0, Math.min(100, settings ? (settings.music_lower_percent ?? 30) : 30));
-    return this.targetVolume() * (pct / 100);
-  },
-
-  fadeTo(volume, durationMs) {
-    if (!this.audioEl) return;
-    clearInterval(this.fadeTimer);
-    const steps = 16;
-    const stepMs = Math.max(16, durationMs / steps);
-    const start = this.audioEl.volume;
-    const delta = volume - start;
-    let i = 0;
-    this.fadeTimer = setInterval(() => {
-      i++;
-      const v = start + delta * (i / steps);
-      this.audioEl.volume = Math.max(0, Math.min(1, v));
-      if (i >= steps) {
-        clearInterval(this.fadeTimer);
-        this.audioEl.volume = Math.max(0, Math.min(1, volume));
-      }
-    }, stepMs);
-  },
-
-  // Maps file extension -> MIME type for the Blob we hand to <audio>.
-  _mimeFor(fileName) {
-    const ext = (fileName.split('.').pop() || '').toLowerCase();
-    return {
-      mp3: 'audio/mpeg',
-      wav: 'audio/wav',
-      ogg: 'audio/ogg',
-      flac: 'audio/flac',
-      m4a: 'audio/mp4',
-      mp4: 'audio/mp4',
-      aac: 'audio/aac',
-    }[ext] || 'application/octet-stream';
-  },
-
-  async play() {
-    if (!this.audioEl || !settings || !settings.music_enabled || this.tracks.length === 0) return;
-    if (this.currentIndex < 0 || this.currentIndex >= this.tracks.length) this.currentIndex = 0;
-    const track = this.tracks[this.currentIndex];
-    if (!track) return;
-
-    // NOTE: we deliberately do NOT use window.__TAURI__.core.convertFileSrc
-    // here. On Linux, WebKitGTK's media backend frequently fails to stream
-    // audio through Tauri's custom asset:// protocol — <audio>.play() rejects
-    // with NotSupportedError for every track regardless of format/codec,
-    // even though the same files play fine in VLC. Reading the file's raw
-    // bytes ourselves and handing the <audio> element a Blob URL sidesteps
-    // that protocol entirely and is reliable across platforms.
-    let bytes;
-    try {
-      bytes = await api.readMusicFile(track.file_name);
-    } catch (e) {
-      console.warn(`Music: couldn't read "${track.file_name}" (${e}), skipping to the next track.`);
-      this.consecutiveFailures++;
-      if (this.consecutiveFailures >= this.tracks.length) {
-        console.error('Music: none of the enabled tracks could be played — check that they\'re valid audio files.');
-        showToast('None of your music files could be played — check they\'re valid audio files', 'error');
-        this.consecutiveFailures = 0;
-        return;
-      }
-      this.playNext();
-      return;
-    }
-
-    if (this.currentObjectUrl) {
-      URL.revokeObjectURL(this.currentObjectUrl);
-      this.currentObjectUrl = null;
-    }
-    const blob = new Blob([new Uint8Array(bytes)], { type: this._mimeFor(track.file_name) });
-    const src = URL.createObjectURL(blob);
-    this.currentObjectUrl = src;
-
-    this.audioEl.src = src;
-    this.audioEl.dataset.playingPath = track.path;
-    const behavior = settings.music_switch_behavior || 'pause';
-    this.audioEl.volume = (!this.windowFocused && behavior === 'lower') ? this.loweredVolume() : this.targetVolume();
-    this.audioEl.play().then(() => {
-      this.consecutiveFailures = 0;
-    }).catch(e => {
-      if (e.name === 'NotAllowedError') {
-        // Autoplay blocked by the webview until a real user gesture happens
-        // — leave it paused here; the pointerdown/keydown listener below
-        // will retry once that gesture occurs, no need to skip tracks.
-        console.warn('Music: autoplay blocked, will retry on first click/keypress.');
-        return;
-      }
-      console.warn(`Music: couldn't play "${track.file_name}" (${e.name}: ${e.message}), skipping to the next track.`);
-      this.consecutiveFailures++;
-      if (this.consecutiveFailures >= this.tracks.length) {
-        console.error('Music: none of the enabled tracks could be played — check that they\'re valid audio files.');
-        showToast('None of your music files could be played — check they\'re valid audio files', 'error');
-        this.consecutiveFailures = 0;
-        return;
-      }
-      this.playNext();
-    });
-  },
-
-  playNext() {
-    if (this.tracks.length === 0) return;
-    this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
-    this.play();
-  },
-
-  pause() {
-    if (this.audioEl) this.audioEl.pause();
-  },
-
-  // Master on/off toggle (Settings → Appearance → Background Music).
-  setEnabled(enabled) {
-    if (!settings) return;
-    settings.music_enabled = enabled;
-    if (enabled) {
-      this.play();
-    } else {
-      this.fadeTo(0, 350);
-      setTimeout(() => this.pause(), 380);
-    }
-  },
-
-  // Live volume update while dragging the slider.
-  applyVolume() {
-    if (!this.audioEl || !settings) return;
-    const behavior = settings.music_switch_behavior || 'pause';
-    const v = (!this.windowFocused && behavior === 'lower') ? this.loweredVolume() : this.targetVolume();
-    this.audioEl.volume = v;
-  },
-
-  onWindowBlur() {
-    this.windowFocused = false;
-    if (!settings || !settings.music_enabled || !this.audioEl || this.audioEl.paused) return;
-    const behavior = settings.music_switch_behavior || 'pause';
-    if (behavior === 'pause') {
-      this.fadeTo(0, 500);
-      setTimeout(() => { if (!this.windowFocused) this.pause(); }, 520);
-    } else if (behavior === 'lower') {
-      this.fadeTo(this.loweredVolume(), 500);
-    }
-    // "continue" — do nothing, keep playing at full volume.
-  },
-
-  onWindowFocus() {
-    this.windowFocused = true;
-    if (!settings || !settings.music_enabled) return;
-    const behavior = settings.music_switch_behavior || 'pause';
-    if (behavior === 'pause') {
-      if (this.audioEl && this.audioEl.paused) {
-        this.audioEl.volume = 0;
-        this.audioEl.play().catch(() => { });
-      }
-      this.fadeTo(this.targetVolume(), 500);
-    } else if (behavior === 'lower') {
-      this.fadeTo(this.targetVolume(), 500);
-    }
-  },
-};
-
-// Renders the toggleable track list inside the "Manage Music Library"
-// overlay, matching the Instances list's row style.
-async function renderMusicLibraryList() {
-  const listEl = document.getElementById('music-library-list');
-  if (!listEl) return;
-  listEl.innerHTML = `<div class="empty-state"><span class="empty-icon">${ICON_MUSIC_EMPTY_SVG}</span><span>Loading…</span></div>`;
-
-  let files = [];
-  try {
-    files = await api.listMusicFiles();
-  } catch (e) {
-    listEl.innerHTML = `<div class="empty-state"><span class="empty-icon">${ICON_WARNING_SVG}</span><span>Failed to load music folder</span></div>`;
-    return;
-  }
-
-  if (files.length === 0) {
-    listEl.innerHTML = `<div class="empty-state"><span class="empty-icon">${ICON_MUSIC_EMPTY_SVG}</span><span>No music files yet — drop some into Zero Launcher/music/</span></div>`;
-    return;
-  }
-
-  listEl.innerHTML = '';
-  files.forEach(track => {
-    const row = document.createElement('div');
-    row.className = 'instance-card music-track-row';
-    row.innerHTML = `
-      <div class="inst-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 18V5l12-2v13"></path>
-          <circle cx="6" cy="18" r="3"></circle>
-          <circle cx="18" cy="16" r="3"></circle>
-        </svg>
-      </div>
-      <div class="inst-text">
-        <div class="inst-name">${track.file_name}</div>
-      </div>
-      <label class="toggle-row">
-        <input type="checkbox" class="music-track-toggle" ${track.enabled ? 'checked' : ''} />
-        <span class="toggle-slider"></span>
-      </label>
-    `;
-    row.querySelector('.music-track-toggle').addEventListener('change', async (ev) => {
-      if (!settings) return;
-      const disabled = new Set(settings.music_disabled_tracks || []);
-      if (ev.target.checked) disabled.delete(track.file_name);
-      else disabled.add(track.file_name);
-      settings.music_disabled_tracks = Array.from(disabled);
-      try {
-        await api.updateSettings(settings);
-        await MUSIC.refreshPlaylist();
-        if (!MUSIC.audioEl || MUSIC.audioEl.paused) MUSIC.play();
-      } catch (e) {
-        showToast('Failed to update music library: ' + e, 'error');
-      }
-    });
-    listEl.appendChild(row);
-  });
-}
-
-function initMusicSettings() {
-  const enabledEl = document.getElementById('setting-music-enabled');
-  const volumeEl = document.getElementById('setting-music-volume');
-  const behaviorEl = document.getElementById('setting-music-switch-behavior');
-  const lowerRow = document.getElementById('setting-music-lower-row');
-  const lowerEl = document.getElementById('setting-music-lower-percent');
-
-  function syncLowerRowVisibility() {
-    if (lowerRow) lowerRow.classList.toggle('hidden', !behaviorEl || behaviorEl.value !== 'lower');
-  }
-
-  if (enabledEl) {
-    enabledEl.addEventListener('change', () => {
-      MUSIC.setEnabled(enabledEl.checked);
-      saveSettingsNow();
-    });
-  }
-  if (volumeEl) {
-    volumeEl.addEventListener('input', () => {
-      if (settings) settings.music_volume = parseInt(volumeEl.value) || 0;
-      MUSIC.applyVolume();
-      saveSettingsDebounced();
-    });
-  }
-  if (behaviorEl) {
-    behaviorEl.addEventListener('change', () => {
-      if (settings) settings.music_switch_behavior = behaviorEl.value;
-      syncLowerRowVisibility();
-      saveSettingsNow();
-    });
-  }
-  if (lowerEl) {
-    lowerEl.addEventListener('input', () => {
-      if (settings) settings.music_lower_percent = parseInt(lowerEl.value) || 0;
-      saveSettingsDebounced();
-    });
-  }
-  syncLowerRowVisibility();
-
-  const overlay = document.getElementById('music-library-overlay');
-  const openBtn = document.getElementById('btn-open-music-library');
-  const closeBtn = document.getElementById('btn-close-music-library');
-  const closeBtn2 = document.getElementById('btn-close-music-library-2');
-  const openFolderBtn = document.getElementById('btn-open-music-folder');
-  const refreshBtn = document.getElementById('btn-refresh-music-library');
-
-  if (openBtn && overlay) {
-    openBtn.addEventListener('click', () => {
-      overlay.classList.remove('hidden');
-      renderMusicLibraryList();
-    });
-  }
-  const closeMusicLibrary = () => overlay && overlay.classList.add('hidden');
-  if (closeBtn) closeBtn.addEventListener('click', closeMusicLibrary);
-  if (closeBtn2) closeBtn2.addEventListener('click', closeMusicLibrary);
-  if (openFolderBtn) {
-    openFolderBtn.addEventListener('click', async () => {
-      try {
-        await api.openMusicFolder();
-      } catch (e) {
-        showToast('Failed to open music folder: ' + e, 'error');
-      }
-    });
-  }
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', async () => {
-      refreshBtn.disabled = true;
-      try {
-        await renderMusicLibraryList();
-        await MUSIC.refreshPlaylist();
-        if (settings && settings.music_enabled && (!MUSIC.audioEl || MUSIC.audioEl.paused)) {
-          MUSIC.play();
-        }
-        showToast('Music library refreshed', 'success');
-      } catch (e) {
-        showToast('Failed to refresh music library: ' + e, 'error');
-      } finally {
-        refreshBtn.disabled = false;
-      }
-    });
-  }
-}
-
-function populateMusicSettingsUI() {
-  if (!settings) return;
-  const enabledEl = document.getElementById('setting-music-enabled');
-  if (enabledEl) enabledEl.checked = !!settings.music_enabled;
-  const volumeEl = document.getElementById('setting-music-volume');
-  if (volumeEl) volumeEl.value = settings.music_volume ?? 50;
-  const behaviorEl = document.getElementById('setting-music-switch-behavior');
-  if (behaviorEl) behaviorEl.value = settings.music_switch_behavior || 'pause';
-  const lowerEl = document.getElementById('setting-music-lower-percent');
-  if (lowerEl) lowerEl.value = settings.music_lower_percent ?? 30;
-  const lowerRow = document.getElementById('setting-music-lower-row');
-  if (lowerRow) lowerRow.classList.toggle('hidden', (settings.music_switch_behavior || 'pause') !== 'lower');
-}
 
 // ══════════════════════════════════════════════════════════════════
 // WINDOW BEHAVIOR SETTINGS
@@ -13723,12 +13662,14 @@ async function openSetupWizard(force = false) {
   if (settings) {
     const notifSel = document.getElementById('setup-notif-style');
     if (notifSel) notifSel.value = settings.notification_style || 'Minimal Outline';
-    const accentCol = document.getElementById('setup-accent');
-    if (accentCol) accentCol.value = settings.accent_color || ACCENT_DEFAULT;
+    const accentCol = document.getElementById('setup-accent-hex-input');
+    if (accentCol) accentCol.value = (settings.accent_color || ACCENT_DEFAULT).toUpperCase();
+    const accentPrev = document.getElementById('setup-accent-preview');
+    if (accentPrev) accentPrev.style.backgroundColor = settings.accent_color || ACCENT_DEFAULT;
     const bgStyleSel = document.getElementById('setup-bg-style');
     if (bgStyleSel) bgStyleSel.value = settings.background_style || 'Default';
     const bgAnimSel = document.getElementById('setup-bg-anim-style');
-    if (bgAnimSel) bgAnimSel.value = settings.background_animation_style || 'Waves';
+    if (bgAnimSel) bgAnimSel.value = settings.background_animation_style || 'Starfield';
   }
 
   // Reset step 2 to the choice screen and refresh its "already set up" message
@@ -14082,7 +14023,10 @@ function initCustomTitlebar() {
 // ══════════════════════════════════════════════════════════════════
 const SPLASH_CIRCUMFERENCE = 2 * Math.PI * 52; // r=52 matches SVG
 
+let splashSkipRequested = false;
+
 function setStartupSplashProgress(percent, message) {
+  if (splashSkipRequested) return;
   const arc  = document.getElementById('splash-ring-arc');
   const text = document.getElementById('splash-status-text');
   if (arc) {
@@ -14092,20 +14036,43 @@ function setStartupSplashProgress(percent, message) {
   if (text && message) text.textContent = message;
 }
 
-function hideStartupSplashScreen() {
+function hideStartupSplashScreen(immediate = false) {
   const splash = document.getElementById('startup-splash-screen');
   if (!splash) return;
-  setStartupSplashProgress(100, 'Ready');
+  if (immediate) {
+    splash.classList.add('splash-hidden');
+    setTimeout(() => {
+      try { splash.remove(); } catch (_) { splash.style.display = 'none'; }
+    }, 200);
+    return;
+  }
+  setStartupSplashProgress(100, 'Welcome to Zero Launcher');
   setTimeout(() => {
     splash.classList.add('splash-hidden');
     setTimeout(() => {
       try { splash.remove(); } catch (_) { splash.style.display = 'none'; }
-    }, 380);
-  }, 140);
+    }, 450);
+  }, 350);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  setStartupSplashProgress(20, 'Initializing interface…');
+  const skipBtn = document.getElementById('splash-skip-btn');
+  if (skipBtn) {
+    skipBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      splashSkipRequested = true;
+      hideStartupSplashScreen(true);
+    });
+  }
+
+  const delay = (ms) => {
+    if (splashSkipRequested) return Promise.resolve();
+    return new Promise(res => setTimeout(res, ms));
+  };
+
+  // Phase 1: Core Subsystems & Window Chrome
+  setStartupSplashProgress(12, 'Initializing window & core subsystems…');
   initCustomTitlebar();
   initClickSoundListener();
   initTabs();
@@ -14115,75 +14082,83 @@ document.addEventListener('DOMContentLoaded', async () => {
   initInstanceActions();
   initRunningInstancesWidget();
   initCustomContextMenu();
+  await delay(260);
 
-  setStartupSplashProgress(50, 'Loading configuration & data…');
-  // Parallel asynchronous fetching: Settings, Accounts, Instances concurrently
-  const [loadedSettings] = await Promise.all([
-    api.getSettings().catch(e => {
-      console.error('Settings load failed', e);
-      return { game_directory: '' };
-    }),
-    refreshAccountUI().catch(e => console.error('Accounts load failed', e)),
-    refreshInstances().catch(e => console.error('Instances load failed', e))
-  ]);
-
+  // Phase 2: Configuration & Settings
+  setStartupSplashProgress(28, 'Loading settings & system preferences…');
+  const loadedSettings = await api.getSettings().catch(e => {
+    console.error('Settings load failed', e);
+    return { game_directory: '' };
+  });
   settings = loadedSettings || { game_directory: '' };
+  initSettings();
+  initWindowBehaviorSettings();
+  await delay(280);
 
+  // Phase 3: Player Profiles & Accounts
+  setStartupSplashProgress(45, 'Connecting accounts & user profiles…');
+  await refreshAccountUI().catch(e => console.error('Accounts load failed', e));
+  initSkinViewerUI();
+  initDressingRoomUI();
+  await delay(320);
+
+  // Phase 4: Minecraft Instances & Scanning
+  setStartupSplashProgress(62, 'Scanning Minecraft versions & instances…');
+  await refreshInstances().catch(e => console.error('Instances load failed', e));
+  await delay(340);
+
+  // Phase 5: Starfield Engine & Instance Rendering
+  setStartupSplashProgress(76, 'Starting background Starfield engine…');
   BG.init();
   populateSettingsUI();
-  populateMusicSettingsUI();
   BG.applyBackgroundImage();
-  MUSIC.init();
-
-  setStartupSplashProgress(85, 'Rendering instances…');
   renderInstanceList();
   if (getInstances().length > 0) {
-    // Prefer the favorited instance on startup, if one is set and still
-    // exists — falls back to the first instance otherwise.
     const favId = getFavoriteInstance();
     const favInstance = favId ? getInstances().find(inst => inst.version_id === favId) : null;
     selectInstance(favInstance ? favInstance.version_id : getInstances()[0].version_id);
   }
+  await delay(300);
 
-  // Check setup wizard
+  // Phase 6: 3D Standee & Diagnostic Windows
+  setStartupSplashProgress(88, 'Pre-warming 3D player standee & shaders…');
+  await initSkinMiniPreview().catch(() => {});
+  initCrashTroubleshootWindow();
+  initInstanceTroubleshootWindow();
+  initCrashDialog();
+  initLaunchVerifyStatus();
+  await delay(280);
+
+  // Phase 7: Mod Manager, Discover & Presets
+  setStartupSplashProgress(96, 'Preparing mod catalog & discover cache…');
+  initMods();
+  initModpackImportOverlay();
+  initDiscoverModpackDirOverlay();
+  initDiscover();
+  initApplyPresetOverlayEvents();
+  initExportModsOverlayEvents();
+  initImportModsOverlayEvents();
+  initAutoUpdate();
+  initUpdateChecker();
+  initUpdateConsentPrompt();
+
+  // Setup wizard check
   const isFinished = settings && (settings.Finished_setup === true || settings.setup_finished === true || settings.finished_setup_upper === true);
   if (!isFinished) {
     initSetupWizard();
     openSetupWizard(false);
+  } else {
+    initSetupWizard();
   }
+  await delay(350);
 
-  // Dismiss splash screen instantly
-  setStartupSplashProgress(100, 'Ready');
+  // Phase 8: Finalized
+  setStartupSplashProgress(100, 'Welcome to Zero Launcher');
+  await delay(450);
   hideStartupSplashScreen();
 
-  // Lazy-load / defer all non-immediate background overlays and modules
-  const scheduleIdle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1));
-  scheduleIdle(() => {
-    initSettings();
-    initMusicSettings();
-    initWindowBehaviorSettings();
-    initSkinViewerUI();
-    initDressingRoomUI();
-    initSkinMiniPreview();
-    initMods();
-    initModpackImportOverlay();
-    initDiscoverModpackDirOverlay();
-    initDiscover();
-    initApplyPresetOverlayEvents();
-    initExportModsOverlayEvents();
-    initImportModsOverlayEvents();
-    if (isFinished) initSetupWizard();
-    initCrashTroubleshootWindow();
-    initInstanceTroubleshootWindow();
-    initCrashDialog();
-    initLaunchVerifyStatus();
-    initAutoUpdate();
-    initUpdateChecker();
-    initUpdateConsentPrompt();
-
-    // Check the currently selected instance for mod updates in the background
-    checkSelectedInstanceForUpdates().catch(e => console.error('Startup update check failed', e));
-  });
+  // Background update checks after splash is dismissed
+  checkSelectedInstanceForUpdates().catch(e => console.error('Startup update check failed', e));
 });
 
 // ═══════════════════════════════════════════════════════════════════════

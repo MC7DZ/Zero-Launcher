@@ -513,7 +513,7 @@ pub async fn install_minecraft(
     // was given (in which case it's the same directory as `minecraft_dir`
     // above).
     let game_dir = if let Some(ref dir) = payload.directory {
-        PathBuf::from(dir)
+        PathBuf::from(crate::models::sanitize_user_path(dir))
     } else {
         minecraft_dir.clone()
     };
@@ -836,7 +836,6 @@ pub async fn install_minecraft(
         let mut current_stage = InstallStage::ResolveVersion;
         let mut current_stage_label = String::from("Preparing");
         let mut current_file = String::new();
-        let mut current_task_received: u64 = 0;
         let mut current_task_total: Option<u64> = None;
         let mut per_label_last_received: HashMap<String, u64> = HashMap::new();
         // Every file actively downloading right now (started, not yet
@@ -939,7 +938,6 @@ pub async fn install_minecraft(
                     // an ever-growing global denominator.
                     tasks_started = 0;
                     tasks_done = 0;
-                    current_task_received = 0;
                     current_task_total = None;
                 }
                 PE::TaskStarted { label, path } => {
@@ -953,7 +951,6 @@ pub async fn install_minecraft(
                     if !active_labels.contains(&label) {
                         active_labels.push(label.clone());
                     }
-                    current_task_received = 0;
                     current_task_total = None;
                 }
                 PE::TaskSkipped { .. } => {
@@ -964,7 +961,6 @@ pub async fn install_minecraft(
                     active_labels.retain(|l| l != &label);
                     label_display.remove(&label);
                     per_label_total.remove(&label);
-                    current_task_received = 0;
                     current_task_total = None;
                 }
                 PE::BytesReceived { label, received, total } => {
@@ -975,7 +971,6 @@ pub async fn install_minecraft(
                     if let Some(t) = total {
                         per_label_total.insert(label.clone(), t);
                     }
-                    current_task_received = received;
                     current_task_total = total;
                 }
                 // Live output from the Forge/NeoForge installer jar — this
@@ -1474,6 +1469,7 @@ pub async fn launch_minecraft(
         }
     }
     state.save_instances();
+    let _ = app.emit("instances-changed", ());
     let _ = app.emit("running-instances-changed", ());
 
     logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
@@ -2059,6 +2055,9 @@ pub async fn launch_minecraft(
         .spawn()
         .map_err(|e| { fail_cleanup(); format!("Failed to start game: {e}") })?;
 
+    // Trim launcher heap memory immediately so Minecraft gets maximum free RAM
+    crate::commands::trim_memory();
+
     // Mark this instance as running (kept in the map after exit too, with
     // `running: false`, so its console history stays reachable this
     // session).
@@ -2252,6 +2251,7 @@ pub async fn launch_minecraft(
         // Drop it from the persisted file too — it's no longer something a
         // future launch needs to rediscover.
         state_done.save_running_instances();
+        let _ = app_done.emit("instances-changed", ());
         let _ = app_done.emit("running-instances-changed", ());
         let _ = app_done.emit("game-exited", &msg);
 
@@ -2396,15 +2396,49 @@ fn accumulate_playtime(state: &AppState, version_id: &str, started_at: &str) {
         .num_seconds()
         .max(0) as u64;
     let mut instances = state.instances.lock().unwrap();
-    if let Some(inst) = instances.iter_mut().find(|i| i.version_id == version_id) {
-        inst.total_playtime_seconds = inst.total_playtime_seconds.saturating_add(elapsed_secs);
-        // Credit the elapsed time to the calendar day the session *started*
-        // on, so a short session just after midnight doesn't get split
-        // across two bars in the chart — good enough for analytics purposes.
-        let day_key = started.format("%Y-%m-%d").to_string();
-        let entry = inst.playtime_history.entry(day_key).or_insert(0);
-        *entry = entry.saturating_add(elapsed_secs);
+    let day_key = started.format("%Y-%m-%d").to_string();
+    let mut found = false;
+
+    for inst in instances.iter_mut() {
+        if inst.version_id == version_id
+            || inst.version_id.trim().eq_ignore_ascii_case(version_id.trim())
+            || inst.name.trim().eq_ignore_ascii_case(version_id.trim())
+        {
+            inst.total_playtime_seconds = inst.total_playtime_seconds.saturating_add(elapsed_secs);
+            let entry = inst.playtime_history.entry(day_key.clone()).or_insert(0);
+            *entry = entry.saturating_add(elapsed_secs);
+            found = true;
+            break;
+        }
     }
+
+    if !found {
+        let game_dir = state.settings.lock().unwrap().resolved_game_directory();
+        let new_inst = InstalledInstance {
+            name: version_id.to_string(),
+            version_id: version_id.to_string(),
+            minecraft_version: version_id.to_string(),
+            loader: "vanilla".to_string(),
+            loader_version: String::new(),
+            directory: game_dir.to_string_lossy().to_string(),
+            minecraft_directory: game_dir.to_string_lossy().to_string(),
+            installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            total_playtime_seconds: elapsed_secs,
+            playtime_history: {
+                let mut h = std::collections::HashMap::new();
+                h.insert(day_key, elapsed_secs);
+                h
+            },
+            last_played_at: Some(chrono::Local::now().to_rfc3339()),
+            launch_count: 1,
+            java_path: None,
+            min_ram_mb: None,
+            max_ram_mb: None,
+            jvm_args: None,
+        };
+        instances.push(new_inst);
+    }
+
     drop(instances);
     state.save_instances();
 }
@@ -2501,6 +2535,7 @@ pub fn spawn_external_pid_watcher(app: tauri::AppHandle, version_id: String, pid
             accumulate_playtime(&state, &version_id, &started_at);
         }
         state.save_running_instances();
+        let _ = app.emit("instances-changed", ());
         let _ = app.emit("running-instances-changed", ());
         // No crash-report machinery here (this instance's console history
         // isn't available to this launcher process — it was launched by a

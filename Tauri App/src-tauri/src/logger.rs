@@ -207,6 +207,7 @@ pub fn warn_for_instance(app: &tauri::AppHandle, state: &AppState, version_id: &
 }
 
 /// [`log_for_instance`] at ERROR level.
+#[allow(dead_code)]
 pub fn error_for_instance(app: &tauri::AppHandle, state: &AppState, version_id: &str, source: &str, msg: &str) {
     log_for_instance(app, state, version_id, "ERROR", source, msg);
 }

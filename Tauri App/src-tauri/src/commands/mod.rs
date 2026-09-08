@@ -7,7 +7,6 @@ pub mod minecraft;
 pub mod modpack;
 pub mod mods;
 pub mod msa;
-pub mod music;
 pub mod presets;
 pub mod settings;
 pub mod skins;

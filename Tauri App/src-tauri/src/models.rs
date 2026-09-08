@@ -1,5 +1,44 @@
 use serde::{Deserialize, Serialize};
 
+/// Cleans up a directory/file path string that came from the frontend
+/// (typed by hand, pasted, or handed back by a native file/folder picker).
+///
+/// On some Linux desktop environments (notably GTK/KDE using the
+/// `xdg-desktop-portal` file-chooser backend), the picker can hand back a
+/// `file://`-prefixed URI instead of a plain filesystem path — and, if the
+/// portal misbehaves, that URI can even end up glued onto a completely
+/// unrelated path that was concatenated with it downstream (e.g. a stray
+/// `file:///home/user/Downloads/SomeModpack.zip` landing in the middle of
+/// what should have been the game directory). None of `PathBuf`'s own
+/// methods notice or fix this — `Path::new("file:///home/x").is_absolute()`
+/// is `false` on Unix, but on Windows the analogous UNC-looking string can
+/// slip through, and either way anything that blindly does
+/// `format!("{a}{b}")` with an un-sanitized picker result will bake the
+/// `file://` scheme (and worse) permanently into a saved path. Strip it
+/// here, once, right where paths first enter the backend from the UI.
+pub fn sanitize_user_path(raw: &str) -> String {
+    let mut s = raw.trim().to_string();
+
+    // Strip a `file://` (or `file:`) URI scheme, however many slashes
+    // follow it, down to a normal absolute path.
+    if let Some(rest) = s.strip_prefix("file://") {
+        s = format!("/{}", rest.trim_start_matches('/'));
+    } else if let Some(rest) = s.strip_prefix("file:") {
+        s = format!("/{}", rest.trim_start_matches('/'));
+    }
+
+    // Undo basic percent-encoding portals commonly apply to spaces and a
+    // handful of other characters in returned URIs.
+    s = s
+        .replace("%20", " ")
+        .replace("%28", "(")
+        .replace("%29", ")")
+        .replace("%5B", "[")
+        .replace("%5D", "]");
+
+    s.trim().to_string()
+}
+
 // ── Account ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -309,9 +348,6 @@ pub struct LauncherSettings {
     #[serde(default)]
     pub default_minecraft_dir: String,
 
-    // Privacy & Security
-    #[serde(default)]
-    pub hide_username: bool,
     #[serde(default = "default_true")]
     pub redact_paths: bool,
     #[serde(default = "default_true")]
@@ -377,26 +413,6 @@ pub struct LauncherSettings {
     #[serde(default)]
     pub private_servers_ips: String,
 
-    // Music
-    /// Master on/off toggle for the background music player.
-    #[serde(default)]
-    pub music_enabled: bool,
-    /// 0-100.
-    #[serde(default = "default_music_volume")]
-    pub music_volume: u32,
-    /// "pause" | "continue" | "lower" — what happens to playback when the
-    /// launcher window loses focus (e.g. switching to another launcher).
-    #[serde(default = "default_music_switch_behavior")]
-    pub music_switch_behavior: String,
-    /// 0-100. Only used when `music_switch_behavior` is "lower" — how much
-    /// quieter the music gets while the window is unfocused.
-    #[serde(default = "default_music_lower_percent")]
-    pub music_lower_percent: u32,
-    /// File names (relative to `Zero Launcher/music/`) the user has
-    /// unchecked in the music library — everything else found in that
-    /// folder is treated as enabled.
-    #[serde(default)]
-    pub music_disabled_tracks: Vec<String>,
 
     // Experimental
     /// The "we looked through your log and here's a likely cause" popup
@@ -443,16 +459,10 @@ fn default_skin_equip_type() -> String { "cape".to_string() }
 
 fn default_true() -> bool { true }
 fn default_hardware_acceleration() -> bool {
-    #[cfg(target_os = "linux")]
-    return false;
-    #[cfg(not(target_os = "linux"))]
-    return true;
+    true
 }
 fn default_on_game_close() -> String { "show".to_string() }
 fn default_on_launcher_close() -> String { "tray".to_string() }
-fn default_music_volume() -> u32 { 50 }
-fn default_music_switch_behavior() -> String { "pause".to_string() }
-fn default_music_lower_percent() -> u32 { 30 }
 fn default_accent_color() -> String { "#B7B7B7".to_string() }
 fn default_bg_color() -> String { "#0a0a0f".to_string() }
 fn default_panel_bg_color() -> String { "#13131a".to_string() }
@@ -460,7 +470,7 @@ fn default_text_color() -> String { "#e2e2ea".to_string() }
 fn default_log_bg_color() -> String { "#060608".to_string() }
 fn default_font_family() -> String { "JetBrains Mono, Fira Code, Consolas, Monaco, monospace".to_string() }
 fn default_background_style() -> String { "Default".to_string() }
-fn default_bg_anim_style() -> String { "Waves".to_string() }
+fn default_bg_anim_style() -> String { "Starfield".to_string() }
 fn default_speed() -> f64 { 1.0 }
 fn default_fps() -> u32 { 60 }
 fn default_header_bg() -> String { "#111116".to_string() }
@@ -506,11 +516,11 @@ impl LauncherSettings {
     /// disk until the user explicitly picks a folder — this is only ever
     /// used to resolve where to actually read/write files.
     pub fn resolved_game_directory(&self) -> std::path::PathBuf {
-        let trimmed = self.game_directory.trim();
-        if trimmed.is_empty() || !std::path::Path::new(trimmed).is_absolute() {
+        let cleaned = sanitize_user_path(&self.game_directory);
+        if cleaned.is_empty() || !std::path::Path::new(&cleaned).is_absolute() {
             default_game_directory()
         } else {
-            std::path::PathBuf::from(trimmed)
+            std::path::PathBuf::from(cleaned)
         }
     }
 }
@@ -592,8 +602,6 @@ impl Default for LauncherSettings {
             launcher_height: 800,
             start_maximized: true,
             default_minecraft_dir: String::new(),
-
-            hide_username: false,
             redact_paths: true,
             redact_tokens: true,
             clear_session_on_exit: false,
@@ -623,11 +631,6 @@ impl Default for LauncherSettings {
             debug_mode: false,
             private_servers_ips: String::new(),
 
-            music_enabled: false,
-            music_volume: default_music_volume(),
-            music_switch_behavior: default_music_switch_behavior(),
-            music_lower_percent: default_music_lower_percent(),
-            music_disabled_tracks: Vec::new(),
 
             enable_crash_analysis: false,
             auto_open_console_on_launch: false,
@@ -857,6 +860,7 @@ pub struct InstallRequestPayload {
 // ── Install Progress ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct InstallProgress {
     pub stage: String,
     pub message: String,

@@ -377,7 +377,19 @@ impl AppState {
     /// of appearing to reset while Mods Installed / Game Advancements are
     /// rescanned from disk.
     pub fn save_global_stats(&self, stats: &crate::models::GlobalStats) {
-        Self::save_json(&self.data_dir, "stats.json", stats);
+        let mut to_save = stats.clone();
+        if let Some(existing) = self.load_global_stats() {
+            if to_save.total_playtime_seconds == 0 && existing.total_playtime_seconds > 0 {
+                to_save.total_playtime_seconds = existing.total_playtime_seconds;
+            }
+            if to_save.total_launches == 0 && existing.total_launches > 0 {
+                to_save.total_launches = existing.total_launches;
+            }
+            if to_save.game_advancements == 0 && existing.game_advancements > 0 {
+                to_save.game_advancements = existing.game_advancements;
+            }
+        }
+        Self::save_json(&self.data_dir, "stats.json", &to_save);
     }
 
     /// Loads the last-persisted Global Stats snapshot, if any (e.g. first

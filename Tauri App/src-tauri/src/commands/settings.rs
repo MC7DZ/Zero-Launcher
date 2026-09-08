@@ -26,6 +26,14 @@ pub async fn save_settings(
     // from it downstream resolves relative to the process's current
     // working directory (the exe's own folder when launched by double
     // click) instead of the real Minecraft folder.
+    // Clean up whatever the frontend handed back (typed text, or a native
+    // folder picker result) before validating/storing it — Linux portal
+    // file choosers in particular can return a `file://` URI instead of a
+    // plain path, and if that ever slips through unsanitized it gets
+    // permanently baked into every future modpack/instance directory this
+    // setting is used to build. See `sanitize_user_path`.
+    settings.game_directory = crate::models::sanitize_user_path(&settings.game_directory);
+
     if !settings.game_directory.trim().is_empty()
         && !std::path::Path::new(settings.game_directory.trim()).is_absolute()
     {

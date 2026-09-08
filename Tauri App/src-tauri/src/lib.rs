@@ -27,32 +27,41 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     {
         // ── Aggressive glibc RAM Optimization & Heap Trimming ──
-        // By default glibc malloc creates 8 arenas per CPU core (e.g. 128 arenas on a 16-core CPU),
-        // causing severe memory fragmentation and hundreds of MBs in ghost resident memory (RSS).
-        // Capping arenas to 2 and setting aggressive trim thresholds frees unused RAM back to Linux immediately.
+        // Capping arenas to 2 and setting tight 64KB trim thresholds ensures unused RAM
+        // is immediately released back to the Linux kernel.
         std::env::set_var("MALLOC_ARENA_MAX", "2");
-        std::env::set_var("MALLOC_TRIM_THRESHOLD_", "131072");
-        std::env::set_var("MALLOC_MMAP_THRESHOLD_", "131072");
+        std::env::set_var("MALLOC_TRIM_THRESHOLD_", "65536");
+        std::env::set_var("MALLOC_MMAP_THRESHOLD_", "65536");
 
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        // WebKitGTK's hardware accelerated compositing severely lags and freezes when the GPU
-        // is under heavy load (e.g. running Minecraft with shaders or high 3D utilization).
-        // Disabling compositing mode forces WebKitGTK to render 2D UI via Cairo/software,
-        // insulating the launcher from GPU contention and keeping it completely smooth.
-        if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
-            let mut settings_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-            settings_path.push("Zero Launcher");
-            settings_path.push("settings.json");
-            let hw_accel = if settings_path.exists() {
-                std::fs::read_to_string(&settings_path)
-                    .ok()
-                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                    .and_then(|v| v.get("enable_hardware_acceleration").and_then(|b| b.as_bool()))
-                    .unwrap_or(false)
-            } else {
-                false
-            };
-            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", if hw_accel { "0" } else { "1" });
+        // ── WebKitGTK RAM Optimizations ──
+        // Sharing a single web process prevents spawning separate ~150-250MB WebProcess instances.
+        std::env::set_var("WEBKIT_USE_SINGLE_WEB_PROCESS", "1");
+        // Instructs WebKit to proactively respond to memory pressure and release caches.
+        std::env::set_var("WEBKIT_MEMORY_PRESSURE_RELIEF", "1");
+
+        // ── Hardware Acceleration (GPU) — Enabled by Default ──
+        let mut settings_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        settings_path.push("Zero Launcher");
+        settings_path.push("settings.json");
+        let hw_accel = if settings_path.exists() {
+            std::fs::read_to_string(&settings_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .and_then(|v| v.get("enable_hardware_acceleration").and_then(|b| b.as_bool()))
+                .unwrap_or(true)
+        } else {
+            true
+        };
+
+        if hw_accel {
+            // Force hardware accelerated compositing and zero-copy DMA-BUF GPU rendering
+            std::env::set_var("WEBKIT_FORCE_COMPOSITING_MODE", "1");
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "0");
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "0");
+        } else {
+            // Software rendering fallback if user opts out in Settings
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
 
         // Wayland compositors (and GNOME/KDE's alt-tab/taskbar in
@@ -260,6 +269,7 @@ pub fn run() {
                         if should_hide {
                             api.prevent_close();
                             let _ = window_clone.hide();
+                            commands::trim_memory();
                             if notify_tray {
                                 state.save_settings_to_disk();
                                 use tauri_plugin_notification::NotificationExt;
@@ -270,6 +280,8 @@ pub fn run() {
                                     .show();
                             }
                         }
+                    } else if let WindowEvent::Focused(false) = event {
+                        commands::trim_memory();
                     }
                 });
             }
@@ -383,11 +395,6 @@ pub fn run() {
             commands::settings::update_discord_presence,
             commands::settings::get_default_minecraft_dir,
             commands::settings::report_activity,
-            // Music
-            commands::music::get_music_dir,
-            commands::music::open_music_folder,
-            commands::music::list_music_files,
-            commands::music::read_music_file,
             commands::mods::delete_instance_subpath,
             // Sound & Effects
             commands::play_click_sound,
