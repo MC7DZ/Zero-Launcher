@@ -19,7 +19,7 @@
   --radius:     12px;
   --radius-sm:  8px;
   --radius-pill: 999px;
-  --font:       'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  --font:       'Noto Sans', sans-serif;
   --transition: 0.1s ease;
   --overlay-rgb: 255, 255, 255;
   --field-bg:   #141414;
@@ -1439,9 +1439,17 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: var(--accent);
 }
 .hidden-instances-list {
+  /* Previously a fixed-height (max-height: 260px) box with its own
+     overflow-y: auto, nested inside the settings panel's own scroll
+     container (.settings-modal-content). Two nested scroll regions this
+     close together meant the outer panel scroll and this list's mouse-wheel
+     scroll competed for the same wheel events — on some WebKit builds the
+     inner list never actually received them, so with more than a
+     one-item's-worth of hidden instances the rest were unreachable: visible
+     in the DOM, but nothing scrolled them into view. Instead of trying to
+     scroll internally, let the list grow to its full height and scroll as
+     part of the settings page itself, same as every other settings section. */
   flex: none;
-  max-height: 260px;
-  overflow-y: auto;
 }
 .hidden-instances-list .empty-state {
   padding: 10px 0;
@@ -7161,11 +7169,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 /* ═══ Minecraft Pixel Font ═══ */
 @font-face {
   font-family: 'Minecraft';
-  src: url('../assets/fonts/minecraft.ttf') format('truetype'),
-       url('file:///home/monib/Downloads/minecraft.ttf') format('truetype');
+  src: url('../assets/fonts/minecraft.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
-  font-display: block;
+  font-display: swap;
 }
 
 /* ═══ Player Island (Instance Details) ═══

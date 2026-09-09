@@ -1755,9 +1755,15 @@
               <!-- Right: Pagination Controls -->
               <div class="discover-header-right">
                 <div class="discover-pagination">
-                  <button id="discover-prev-page" class="btn-pill btn-sm" disabled title="Previous page of results">‹ Prev</button>
+                  <button id="discover-prev-page" class="btn-secondary btn-sm setup-btn-animate" disabled title="Previous page of results">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                    Prev
+                  </button>
                   <span id="discover-page-info" class="discover-page-info">Page 1</span>
-                  <button id="discover-next-page" class="btn-pill btn-sm" disabled title="Next page of results">Next ›</button>
+                  <button id="discover-next-page" class="btn-accent btn-sm setup-btn-animate" disabled title="Next page of results">
+                    Next
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -2182,13 +2188,11 @@
                 <div class="form-group">
                   <label>Font Family</label>
                   <select id="setting-font-family" class="input-field">
-                    <option value="Inter">Inter</option>
-                    <option value="Roboto">Roboto</option>
-                    <option value="Outfit">Outfit</option>
-                    <option value="system-ui">System Default</option>
-                    <option value="monospace">Monospace</option>
+                    <option value="Noto Sans" selected>Noto Sans (Default)</option>
+                    <option value="System Default">System Default</option>
+                    <option value="Minecraft">Minecraft</option>
                   </select>
-                  <p class="settings-hint">Primary typeface family applied across launcher menus, buttons, and headings.</p>
+                  <p class="settings-hint">Primary typeface family applied across launcher menus, buttons, and headings. "System Default" uses your OS's native UI font instead of a bundled one.</p>
                 </div>
               </div>
 
@@ -2907,7 +2911,7 @@
                     <label>Animation Style</label>
                     <select id="setup-bg-anim-style" class="input-field">
                       <option value="Starfield" selected>Starfield</option>
-                      <option value="Waves">Waves</option>
+                        <option value="Waves">Waves</option>
                       <option value="Particles">Particles</option>
                       <option value="Fireflies">Fireflies</option>
                       <option value="Nothing">Nothing (no animation)</option>

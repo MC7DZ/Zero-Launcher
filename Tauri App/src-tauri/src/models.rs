@@ -468,7 +468,7 @@ fn default_bg_color() -> String { "#0a0a0f".to_string() }
 fn default_panel_bg_color() -> String { "#13131a".to_string() }
 fn default_text_color() -> String { "#e2e2ea".to_string() }
 fn default_log_bg_color() -> String { "#060608".to_string() }
-fn default_font_family() -> String { "JetBrains Mono, Fira Code, Consolas, Monaco, monospace".to_string() }
+fn default_font_family() -> String { "Noto Sans".to_string() }
 fn default_background_style() -> String { "Default".to_string() }
 fn default_bg_anim_style() -> String { "Starfield".to_string() }
 fn default_speed() -> f64 { 1.0 }

@@ -811,38 +811,62 @@ pub async fn discover_download(
 /// exactly like a drag-and-dropped `.mrpack`/`.zip` — so this is the
 /// Discover-side counterpart of the file picker the Modpack Extractor
 /// normally reads from.
+///
+/// `download_id`, when provided, is the frontend-assigned id for this
+/// download's card in the downloads menu -- checked before the transfer and
+/// between chunks (mirroring `discover_download`) so a Cancel click actually
+/// aborts the transfer instead of letting it keep running in the background.
+/// Without this, `discoverModpackInstallRunning` on the frontend stayed true
+/// until the ignored download eventually finished on its own, which is why
+/// a second modpack install right after cancelling reported "another
+/// modpack install is already in progress".
 #[tauri::command]
 pub async fn discover_download_to_temp(
     file_url: String,
     file_name: String,
+    download_id: Option<String>,
     state: tauri::State<'_, crate::state::AppState>,
 ) -> Result<String, String> {
     let temp_dir = state.data_dir.join("cache").join("discover_modpacks");
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {e}"))?;
 
-    let resp = send_download_with_retry(|client| client.get(&file_url))
+    let cancel_flag = download_id
+        .as_ref()
+        .map(|id| state.generic_cancel_flag(id));
+
+    let is_cancelled = || {
+        cancel_flag
+            .as_ref()
+            .map(|f| f.load(std::sync::atomic::Ordering::Relaxed))
+            .unwrap_or(false)
+    };
+
+    let cleanup = |state: &crate::state::AppState| {
+        if let Some(id) = &download_id {
+            state.finish_generic_download(id);
+        }
+    };
+
+    if is_cancelled() {
+        cleanup(&state);
+        return Err("Download cancelled".to_string());
+    }
+
+    let mut resp = send_download_with_retry(|client| client.get(&file_url))
         .await
-        .map_err(|e| format!("Download failed: {e} (source: {:?})", e.source()))?;
+        .map_err(|e| {
+            cleanup(&state);
+            format!("Download failed: {e} (source: {:?})", e.source())
+        })?;
 
     if !resp.status().is_success() {
-        return Err(format!("Download failed: HTTP {}", resp.status()));
+        let status = resp.status();
+        cleanup(&state);
+        return Err(format!("Download failed: HTTP {}", status));
     }
 
     let expected_len = resp.content_length();
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read download: {e}"))?;
-
-    if let Some(expected) = expected_len {
-        if bytes.len() as u64 != expected {
-            return Err(format!(
-                "Download incomplete: got {} of {expected} bytes for {file_name}",
-                bytes.len()
-            ));
-        }
-    }
 
     let safe_name: String = file_name
         .chars()
@@ -854,11 +878,56 @@ pub async fn discover_download_to_temp(
     // up eagerly.
     let dest = temp_dir.join(format!("{}_{}", std::process::id(), safe_name));
 
-    std::fs::write(&dest, &bytes).map_err(|e| format!("Failed to save file: {e}"))?;
+    let mut file = std::fs::File::create(&dest).map_err(|e| {
+        cleanup(&state);
+        format!("Failed to create file: {e}")
+    })?;
 
+    let fail = |state: &crate::state::AppState, dest: &std::path::PathBuf, msg: String| {
+        let _ = std::fs::remove_file(dest);
+        cleanup(state);
+        msg
+    };
+
+    use std::io::Write;
+    let mut received: u64 = 0;
+    loop {
+        if is_cancelled() {
+            drop(file);
+            return Err(fail(&state, &dest, "Download cancelled".to_string()));
+        }
+        match resp.chunk().await {
+            Ok(Some(chunk)) => {
+                received += chunk.len() as u64;
+                if let Err(e) = file.write_all(&chunk) {
+                    drop(file);
+                    return Err(fail(&state, &dest, format!("Failed to save file: {e}")));
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                drop(file);
+                return Err(fail(&state, &dest, format!("Failed to read download: {e}")));
+            }
+        }
+    }
+    drop(file);
+
+    if let Some(expected) = expected_len {
+        if received != expected {
+            return Err(fail(
+                &state,
+                &dest,
+                format!(
+                    "Download incomplete: got {received} of {expected} bytes for {file_name}"
+                ),
+            ));
+        }
+    }
+
+    cleanup(&state);
     Ok(dest.to_string_lossy().to_string())
 }
-
 // ── Persistent icon cache ────────────────────────────────────────────────
 // Mirrors the Java client's ModIconCache: icon bytes are saved to disk once
 // (keyed by a hash of the source URL) and served straight from disk on every

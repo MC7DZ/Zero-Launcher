@@ -7,10 +7,11 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
 // ── Linux / WebKitGTK Performance Optimization Engine ──
-if (
+const IS_WEBKIT_GTK = (
   /Linux|X11/i.test(navigator.userAgent) ||
   (/WebKit/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent))
-) {
+);
+if (IS_WEBKIT_GTK) {
   document.documentElement.classList.add('is-webkit-gtk', 'is-linux');
   if (document.body) {
     document.body.classList.add('is-webkit-gtk', 'is-linux');
@@ -505,8 +506,8 @@ const api = {
   // Modpacks aren't dropped into a folder like a mod/resourcepack — the
   // file is fetched to a scratch path first, then handed to
   // previewModpack/importModpack exactly like a dragged-in .mrpack/.zip.
-  discoverDownloadToTemp: (fileUrl, fileName) =>
-    invoke('discover_download_to_temp', { fileUrl, fileName }),
+  discoverDownloadToTemp: (fileUrl, fileName, downloadId) =>
+    invoke('discover_download_to_temp', { fileUrl, fileName, downloadId: downloadId || null }),
   discoverGetGameVersions: () => invoke('discover_get_game_versions'),
   discoverGetCategories: (projectType) => invoke('discover_get_categories', { projectType }),
   discoverGetResolutions: (projectType) => invoke('discover_get_resolutions', { projectType }),
@@ -2693,6 +2694,25 @@ function setFavoriteInstance(versionId) {
   } catch (e) { /* ignore */ }
 }
 
+// Picks whichever instance should become selected when there's no longer a
+// deliberate choice in place (on startup, or after the previously-selected
+// instance gets hidden/deleted out from under it). Always prefers the
+// pinned/favorited instance — as long as it's actually visible — falling
+// back to the first entry of the visible (non-hidden) list, and finally to
+// null if nothing is left to select. Never picks a hidden instance: a
+// favorite that's since been hidden is skipped in favor of the first
+// visible one, since a hidden instance should never end up selected.
+function pickFallbackInstance() {
+  const visible = getVisibleInstances();
+  if (!visible.length) return null;
+  const favId = getFavoriteInstance();
+  if (favId) {
+    const favInstance = visible.find(i => i.version_id === favId);
+    if (favInstance) return favInstance.version_id;
+  }
+  return visible[0].version_id;
+}
+
 // Manual drag-and-drop order for the Instances list. Stored as an array of
 // version_ids, most-preferred-position first. The favorited instance always
 // gets pulled to the top on render regardless of what's saved here.
@@ -4285,8 +4305,7 @@ function initInstanceListDelegation() {
           if (getFavoriteInstance() === versionId) setFavoriteInstance(null);
           await refreshInstances();
           if (selectedInstanceId === versionId) {
-            selectedInstanceId = null;
-            selectInstance(null);
+            selectInstance(pickFallbackInstance());
           }
           renderInstanceList();
           renderHiddenInstancesSettings();
@@ -5069,8 +5088,7 @@ async function performInstanceDelete(versionId, inst, deleteData) {
     await api.deleteInstalledVersion(versionId, inst && inst.directory);
     await refreshInstances();
     if (selectedInstanceId === versionId) {
-      selectedInstanceId = null;
-      selectInstance(null);
+      selectInstance(pickFallbackInstance());
     }
     renderInstanceList();
     showToast('Instance deleted', 'success');
@@ -5415,8 +5433,7 @@ function initInstanceActions() {
       await api.hideInstance(id);
       await refreshInstances();
       if (selectedInstanceId === id) {
-        selectedInstanceId = null;
-        selectInstance(null);
+        selectInstance(pickFallbackInstance());
       }
       renderInstanceList();
       renderHiddenInstancesSettings();
@@ -6186,10 +6203,6 @@ async function installInstance() {
       renderInstanceList();
       if (result && result.version_id) {
         selectInstance(result.version_id);
-        // "Install & Play" — launch the instance now that install succeeded!
-        if (typeof window.launchSelectedInstance === 'function') {
-          window.launchSelectedInstance(false);
-        }
       }
     } catch (e) {
       if (String(e).toLowerCase().includes('cancel')) {
@@ -9616,7 +9629,7 @@ async function installDiscoverModpack(hit, opt, downloadBtn, customDirectory) {
 
   let unlisten = null;
   try {
-    const tempPath = await api.discoverDownloadToTemp(opt.dataset.fileUrl, opt.dataset.fileName);
+    const tempPath = await api.discoverDownloadToTemp(opt.dataset.fileUrl, opt.dataset.fileName, dlId);
 
     if (downloadBtn) downloadBtn.textContent = 'Installing…';
     if (dlWidgetGeneric) dlWidgetGeneric.update(dlId, `Modpack: ${hit.title}`, 'Reading modpack…', 0, {});
@@ -9680,8 +9693,14 @@ async function installDiscoverModpack(hit, opt, downloadBtn, customDirectory) {
       }
     }, 1500);
   } catch (e) {
-    showToast('Failed to install modpack: ' + e, 'error');
-    if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, false, `Failed: ${e}`);
+    const cancelled = dlWidgetGeneric && dlWidgetGeneric.isCancelled(dlId);
+    if (cancelled) {
+      showToast('Modpack installation cancelled', 'info');
+      if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, false, 'Cancelled');
+    } else {
+      showToast('Failed to install modpack: ' + e, 'error');
+      if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, false, `Failed: ${e}`);
+    }
     if (downloadBtn) {
       downloadBtn.textContent = originalText;
       downloadBtn.disabled = false;
@@ -10512,7 +10531,7 @@ function populateSettingsUI() {
   updateBackgroundImagePreview(settings.background_image_path || '');
 
   // Font
-  document.getElementById('setting-font-family').value = settings.font_family || 'JetBrains Mono, Fira Code, Consolas, Monaco, monospace';
+  document.getElementById('setting-font-family').value = settings.font_family || 'Noto Sans';
 
   // Behavior
   document.getElementById('setting-close-on-launch').checked = !!settings.close_after_launch;
@@ -10694,8 +10713,12 @@ function applyThemeFromSettings() {
   root.style.setProperty('--accent-glow', hexToRgba(accent, 0.35));
 
   // Font
-  const font = settings.font_family || 'JetBrains Mono, Fira Code, Consolas, Monaco, monospace';
-  root.style.setProperty('--font', `'${font}', monospace`);
+  const font = settings.font_family || 'Noto Sans';
+  const SYSTEM_FONT_STACK = `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", sans-serif`;
+  const fontValue = font === 'System Default'
+    ? SYSTEM_FONT_STACK
+    : `'${font}', 'Noto Sans', ${SYSTEM_FONT_STACK}`;
+  root.style.setProperty('--font', fontValue);
 
   // Blur
   if (settings.enable_blur_effect) {
@@ -11676,7 +11699,7 @@ function initSettings() {
         // the UI (they're still on disk, just no longer pointed at).
         const defaultSettings = {
           accent_color: ACCENT_DEFAULT,
-          font_family: 'JetBrains Mono, Fira Code, Consolas, Monaco, monospace',
+          font_family: 'Noto Sans',
           background_style: 'Default',
           background_animation_style: 'Starfield',
           background_animation_speed: 1.0,
@@ -11884,7 +11907,7 @@ const SETTINGS_SEARCH_CATALOG = [
   { label: 'Background Image Dim Overlay', keywords: 'dim overlay dark brightness opacity wallpaper', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-dim' },
   { label: 'Background Image Brightness', keywords: 'image brightness contrast light dark wallpaper', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-brightness' },
   { label: 'Background Image Blur', keywords: 'image blur radius gaussian wallpaper frosted glass', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-blur' },
-  { label: 'UI Font Family', keywords: 'font typography text typeface font-family geist inter system', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-font-family' },
+  { label: 'UI Font Family', keywords: 'font typography text typeface font-family noto sans system default minecraft', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-font-family' },
   { label: 'Notification Style', keywords: 'notification toast alert style modern classic minimal pill', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-notif-style' },
 
   // Behavior & Window
@@ -12812,6 +12835,32 @@ const BG = {
     }
   },
 
+  // Pre-rendered radial-gradient glow sprites, keyed by a cheap string of
+  // their inputs. Building a canvas gradient object is one of the more
+  // expensive things Canvas2D does — the old Starfield code built one from
+  // scratch for every glowing star, every frame (up to ~40+ stars at
+  // layer 2/3, 60x/sec). Sprites are drawn once here and then just
+  // blitted with drawImage() + globalAlpha, which is dramatically cheaper
+  // and is what keeps the "smoother/lighter" Starfield light on CPU/GPU.
+  _glowSpriteCache: null,
+  getGlowSprite(key, radius, colorStops) {
+    if (!this._glowSpriteCache) this._glowSpriteCache = new Map();
+    const cacheKey = `${key}|${radius}`;
+    let sprite = this._glowSpriteCache.get(cacheKey);
+    if (sprite) return sprite;
+    const size = Math.ceil(radius * 2);
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const cctx = c.getContext('2d');
+    const grd = cctx.createRadialGradient(radius, radius, 0, radius, radius, radius);
+    colorStops.forEach(([stop, color]) => grd.addColorStop(stop, color));
+    cctx.fillStyle = grd;
+    cctx.fillRect(0, 0, size, size);
+    this._glowSpriteCache.set(cacheKey, c);
+    return sprite = c;
+  },
+
   createNebulae() {
     this.nebulae = [
       { xFrac: 0.20, yFrac: 0.28, radFrac: 0.45, phase: 0.0, speed: 0.0003 },
@@ -12822,7 +12871,10 @@ const BG = {
 
   createStars() {
     this.stars = [];
-    const count = 165;
+    // WebKitGTK (the Linux Tauri webview) has no real GPU-accelerated
+    // canvas path, so every extra star is a real per-frame cost. Fewer
+    // stars there keeps the animation smooth instead of dropping frames.
+    const count = IS_WEBKIT_GTK ? 100 : 165;
     const w = window.innerWidth || 1200;
     const h = window.innerHeight || 800;
     for (let i = 0; i < count; i++) {
@@ -12860,8 +12912,19 @@ const BG = {
         baseAlpha,
         alpha: baseAlpha,
         twinklePhase: Math.random() * Math.PI * 2,
-        twinkleSpeed: 0.01 + Math.random() * 0.026,
+        // Slower than before so each star lingers noticeably longer at its
+        // bright and dim extremes instead of cycling through visibility
+        // quickly — a longer, calmer "showing and hiding" breath.
+        twinkleSpeed: 0.0035 + Math.random() * 0.007,
         layer,
+        // Appear/disappear lifecycle: stars fade smoothly into existence
+        // and fade out again before respawning, instead of instantly
+        // popping at the top edge / vanishing at the bottom edge.
+        // Existing stars start fully visible ('steady') so the sky isn't
+        // empty on first paint — only respawns play the fade.
+        fadeState: 'steady',
+        fadeAlpha: 1,
+        fadeSpeed: 0.006 + Math.random() * 0.006,
       });
     }
   },
@@ -13025,7 +13088,10 @@ const BG = {
     }
 
     const bgStyle = s.background_style || 'Default';
-    const animStyle = s.background_animation_style || 'Starfield';
+    // "Starfield Drift (Lightweight)" was removed as a distinct style; any
+    // settings saved with the old value fall back to the main "Starfield".
+    const rawAnimStyle = s.background_animation_style || 'Starfield';
+    const animStyle = rawAnimStyle === 'Starfield Drift' ? 'Starfield' : rawAnimStyle;
     const speed = s.background_animation_speed || 1.0;
     // "Nothing" is a flat, single-color background — no gradient — dark
     // gray. It only applies when there's no custom image background (that
@@ -13162,21 +13228,30 @@ const BG = {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
 
-        // 1. Cosmic Nebulae Clouds (Deep space atmosphere)
+        // 1. Cosmic Nebulae Clouds (Deep space atmosphere) — drawn from a
+        // cached gradient sprite instead of building a fresh
+        // createRadialGradient() for every nebula on every frame. Gradient
+        // construction is one of the costliest Canvas2D calls, and it's
+        // especially slow on WebKitGTK; blitting a pre-rendered sprite with
+        // drawImage() is dramatically cheaper for a shape that only ever
+        // scales and moves.
         if (this.nebulae) {
+          const qr = Math.round(r / 16) * 16, qg = Math.round(g / 16) * 16, qb = Math.round(b / 16) * 16;
+          const nebulaSprite = this.getGlowSprite(`nebula|${qr},${qg},${qb}`, 256, [
+            [0, `rgba(${qr},${qg},${qb},0.09)`],
+            [0.45, `rgba(${Math.round(qr * 0.4 + 30)},${Math.round(qg * 0.4 + 10)},${Math.round(qb * 0.5 + 80)},0.05)`],
+            [1, 'rgba(0,0,0,0)'],
+          ]);
+          ctx.globalAlpha = Math.min(1, aBoost);
           for (let i = 0; i < this.nebulae.length; i++) {
             const n = this.nebulae[i];
             n.phase += n.speed * speed;
             const cx = W * n.xFrac + Math.sin(n.phase) * (W * 0.06);
             const cy = H * n.yFrac + Math.cos(n.phase * 0.8) * (H * 0.06);
             const rad = Math.max(W, H) * n.radFrac * (0.92 + 0.08 * Math.sin(n.phase * 1.5));
-            const nGrd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-            nGrd.addColorStop(0, `rgba(${r},${g},${b},${Math.min(0.09, 0.045 * aBoost)})`);
-            nGrd.addColorStop(0.45, `rgba(${Math.round(r * 0.4 + 30)},${Math.round(g * 0.4 + 10)},${Math.round(b * 0.5 + 80)},${Math.min(0.05, 0.022 * aBoost)})`);
-            nGrd.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = nGrd;
-            ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+            ctx.drawImage(nebulaSprite, cx - rad, cy - rad, rad * 2, rad * 2);
           }
+          ctx.globalAlpha = 1;
         }
 
         // 2. Spawn occasional shooting stars
@@ -13188,38 +13263,74 @@ const BG = {
           for (let i = 0; i < starCount; i++) {
             const st = this.stars[i];
             st.y += st.vy * speed;
-            if (st.y > H + 20) {
-              st.y = -20;
-              st.x = Math.random() * W;
+
+            // Appear/disappear lifecycle. Instead of teleporting from the
+            // bottom edge back to the top the instant it crosses H+20 (which
+            // reads as the star just popping into existence from nowhere),
+            // a star starts fading OUT a little before it reaches the
+            // bottom, and fades IN again after it's repositioned at the top.
+            if (st.fadeState === 'steady') {
+              if (st.y > H - 60) st.fadeState = 'out';
+            } else if (st.fadeState === 'out') {
+              st.fadeAlpha = Math.max(0, st.fadeAlpha - st.fadeSpeed * speed);
+              if (st.fadeAlpha <= 0 || st.y > H + 20) {
+                st.y = -20;
+                st.x = Math.random() * W;
+                st.fadeState = 'in';
+                st.fadeAlpha = 0;
+              }
+            } else if (st.fadeState === 'in') {
+              st.fadeAlpha = Math.min(1, st.fadeAlpha + st.fadeSpeed * speed);
+              if (st.fadeAlpha >= 1) st.fadeState = 'steady';
             }
 
             st.twinklePhase += st.twinkleSpeed * speed;
-            // Smooth breathing twinkle
-            const twinkle = 0.5 + 0.5 * Math.sin(st.twinklePhase);
-            const a = Math.min(1, Math.max(0.08, st.baseAlpha * twinkle * aBoost));
+            // Breathing twinkle, eased so the star dwells near fully-shown
+            // and fully-hidden longer instead of sweeping straight through
+            // the middle brightness (a plain sine spends most of its time
+            // near the midpoint, which reads as flicker rather than a
+            // deliberate show/hide breath).
+            const rawSin = Math.sin(st.twinklePhase);
+            const eased = Math.sign(rawSin) * Math.pow(Math.abs(rawSin), 0.45);
+            const twinkle = 0.5 + 0.5 * eased;
+            const a = Math.min(1, Math.max(0.08, st.baseAlpha * twinkle * aBoost)) * st.fadeAlpha;
+            if (a <= 0.004) continue;
 
             const sx = st.x;
             const sy = st.y;
 
-            // Halo for near stars (layer 2) and hero stars (layer 3)
+            // Halo for near stars (layer 2) and hero stars (layer 3) — drawn
+            // from a pre-rendered gradient sprite (see getGlowSprite) instead
+            // of allocating a fresh canvas gradient per star per frame.
             if (st.layer === 2) {
-              const glowR = st.size * 3.2;
-              const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
-              grd.addColorStop(0, `rgba(${r},${g},${b},${Math.min(1, a * 0.38)})`);
-              grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
-              ctx.fillStyle = grd;
-              ctx.fillRect(sx - glowR, sy - glowR, glowR * 2, glowR * 2);
+              // Round radius + color so nearby stars/frames reuse the same
+              // cached sprite instead of minting a new one constantly.
+              const glowR = Math.round(st.size * 3.2 * 4) / 4;
+              const qr = Math.round(r / 16) * 16, qg = Math.round(g / 16) * 16, qb = Math.round(b / 16) * 16;
+              const sprite = this.getGlowSprite(`l2|${qr},${qg},${qb}`, glowR, [
+                [0, `rgba(${qr},${qg},${qb},0.38)`],
+                [1, `rgba(${qr},${qg},${qb},0)`],
+              ]);
+              ctx.globalAlpha = Math.min(1, a);
+              ctx.drawImage(sprite, sx - glowR, sy - glowR);
+              ctx.globalAlpha = 1;
             } else if (st.layer === 3) {
-              const glowR = st.size * 4.8;
-              const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
-              grd.addColorStop(0, `rgba(255,255,255,${Math.min(1, a * 0.7)})`);
-              grd.addColorStop(0.35, `rgba(${r},${g},${b},${Math.min(1, a * 0.55)})`);
-              grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
-              ctx.fillStyle = grd;
-              ctx.fillRect(sx - glowR, sy - glowR, glowR * 2, glowR * 2);
+              const glowR = Math.round(st.size * 4.8 * 4) / 4;
+              const qr = Math.round(r / 16) * 16, qg = Math.round(g / 16) * 16, qb = Math.round(b / 16) * 16;
+              const sprite = this.getGlowSprite(`l3|${qr},${qg},${qb}`, glowR, [
+                [0, `rgba(255,255,255,0.7)`],
+                [0.35, `rgba(${qr},${qg},${qb},0.55)`],
+                [1, `rgba(${qr},${qg},${qb},0)`],
+              ]);
+              ctx.globalAlpha = Math.min(1, a);
+              ctx.drawImage(sprite, sx - glowR, sy - glowR);
+              ctx.globalAlpha = 1;
 
-              // Cinematic 4-point cross diffraction spikes (lens flare) on peak twinkle
-              if (twinkle > 0.65) {
+              // Cinematic 4-point cross diffraction spikes (lens flare) on peak
+              // twinkle. Skipped on WebKitGTK, where extra stroke() calls are
+              // disproportionately expensive compared to the drawImage blits
+              // above.
+              if (!IS_WEBKIT_GTK && twinkle > 0.65) {
                 const glintLen = st.size * 3.2 * (twinkle - 0.65) * 2.8;
                 ctx.beginPath();
                 ctx.moveTo(sx - glintLen, sy);
@@ -14267,10 +14378,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   populateSettingsUI();
   BG.applyBackgroundImage();
   renderInstanceList();
-  if (getInstances().length > 0) {
-    const favId = getFavoriteInstance();
-    const favInstance = favId ? getInstances().find(inst => inst.version_id === favId) : null;
-    selectInstance(favInstance ? favInstance.version_id : getInstances()[0].version_id);
+  {
+    const fallbackId = pickFallbackInstance();
+    if (fallbackId) selectInstance(fallbackId);
   }
   await delay(300);
 

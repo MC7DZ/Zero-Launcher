@@ -3155,7 +3155,21 @@ pub fn check_linux_zlib_conflict() -> LinuxZlibCheckResult {
         .iter()
         .any(|p| std::path::Path::new(p).exists());
 
-        // 3. Inspect symlink or ELF bytes of libz.so.1
+        // 3. Resolve the libz.so.1 symlink chain and check whether the
+        // *real* file it points to is named like zlib-ng-compat's build
+        // output, e.g. `libz.so.1.3.1.zlib-ng` — that trailing `.zlib-ng`
+        // on the resolved filename is the actual, reliable signal the
+        // zlib-ng-compat package uses.
+        //
+        // This used to scan the raw bytes of the whole file for the
+        // substring "zlib-ng" anywhere in it, which false-positived on a
+        // plain, ABI-compatible system zlib: several distros now backport
+        // zlib-ng's SIMD routines into their regular `zlib` package, and
+        // the resulting binary's build/attribution strings can mention
+        // "zlib-ng" even though it's not the incompatible drop-in that
+        // actually breaks Forge's checksum check. Matching on the resolved
+        // filename's suffix instead avoids flagging those newer, unrelated
+        // zlib builds.
         let has_zlib_ng_in_libz = [
             "/usr/lib/libz.so.1",
             "/usr/lib64/libz.so.1",
@@ -3164,14 +3178,17 @@ pub fn check_linux_zlib_conflict() -> LinuxZlibCheckResult {
         ]
         .iter()
         .any(|p| {
-            if let Ok(target) = std::fs::read_link(p) {
+            let path = std::path::Path::new(p);
+            if let Ok(target) = std::fs::read_link(path) {
                 if target.to_string_lossy().contains("zlib-ng") {
                     return true;
                 }
             }
-            if let Ok(bytes) = std::fs::read(p) {
-                if bytes.windows(7).any(|w| w == b"zlib-ng") {
-                    return true;
+            if let Ok(resolved) = std::fs::canonicalize(path) {
+                if let Some(name) = resolved.file_name().and_then(|n| n.to_str()) {
+                    if name.ends_with(".zlib-ng") {
+                        return true;
+                    }
                 }
             }
             false
@@ -3189,7 +3206,18 @@ pub fn check_linux_zlib_conflict() -> LinuxZlibCheckResult {
             })
             .unwrap_or_else(|| "linux".to_string());
 
-        let has_conflict = has_pacman_zlib_ng || has_libz_ng_file || has_zlib_ng_in_libz;
+        // Only the actual resolved target of libz.so.1 — the file the JVM
+        // really loads — determines whether the incompatible zlib-ng
+        // drop-in is in effect. Package-manager listings and the mere
+        // presence of a libz-ng.so file are not reliable on their own:
+        // plenty of systems have zlib-ng-compat installed (or its files
+        // sitting on disk) for some other app while libz.so.1 itself still
+        // resolves to stock zlib, or have since switched back/updated to a
+        // newer, unaffected zlib. Trusting those alone kept telling users
+        // with a perfectly fine, newer zlib to "download" a fix they didn't
+        // need. Base the verdict solely on has_zlib_ng_in_libz.
+        let has_conflict = has_zlib_ng_in_libz;
+        let _ = (has_pacman_zlib_ng, has_libz_ng_file); // kept for future diagnostics/logging
         LinuxZlibCheckResult {
             has_conflict,
             distro,
