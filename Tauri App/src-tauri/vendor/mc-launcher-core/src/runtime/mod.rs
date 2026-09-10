@@ -46,10 +46,9 @@ fn get_jvm_platform_string() -> String {
 
 pub fn get_jvm_runtimes() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::builder()
-        // Binds to an IPv4-only local address so a broken/absent IPv6
-        // route (common on some home/mobile networks) can't stall this
-        // call waiting on a dead address before falling back to IPv4.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // No address family pinned: reqwest/hyper's built-in Happy
+        // Eyeballs races IPv4/IPv6 and uses whichever connects, so this
+        // works whether the machine is IPv4-only, IPv6-only, or dual-stack.
         .build()
         .unwrap_or_default();
     let response = client
@@ -82,10 +81,9 @@ pub fn install_jvm_runtime(
     callback: &CallbackDict,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::builder()
-        // Binds to an IPv4-only local address so a broken/absent IPv6
-        // route (common on some home/mobile networks) can't stall this
-        // call waiting on a dead address before falling back to IPv4.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // No address family pinned: reqwest/hyper's built-in Happy
+        // Eyeballs races IPv4/IPv6 and uses whichever connects, so this
+        // works whether the machine is IPv4-only, IPv6-only, or dual-stack.
         .build()
         .unwrap_or_default();
     let manifest_data: RuntimeListJson = client
@@ -282,10 +280,9 @@ pub fn get_jvm_runtime_information(
     jvm_version: &str,
 ) -> Result<JvmRuntimeInformation, Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::builder()
-        // Binds to an IPv4-only local address so a broken/absent IPv6
-        // route (common on some home/mobile networks) can't stall this
-        // call waiting on a dead address before falling back to IPv4.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // No address family pinned: reqwest/hyper's built-in Happy
+        // Eyeballs races IPv4/IPv6 and uses whichever connects, so this
+        // works whether the machine is IPv4-only, IPv6-only, or dual-stack.
         .build()
         .unwrap_or_default();
     let manifest_data: RuntimeListJson = client

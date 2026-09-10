@@ -42,19 +42,18 @@ pub fn client() -> Result<Client> {
         .connect_timeout(Duration::from_secs(10))
         .pool_max_idle_per_host(32)
         .pool_idle_timeout(Duration::from_secs(30))
-        // Force outbound connections to bind from an IPv4 local address.
-        // On a machine where IPv6 is "up" but not actually routable (no
-        // working default route, blackholed by a router/VPN, etc.), a
-        // plain client tries the IPv6 address(es) a host resolves to
-        // first and, depending on OS/network stack behavior, that attempt
-        // can take a long time to fail instead of erroring out instantly
-        // — stalling every download/verify call on it before falling
-        // back to IPv4. Binding the local address to IPv4 makes any IPv6
-        // candidate address fail immediately (address-family mismatch,
-        // not a timeout), so the client moves straight to the working
-        // IPv4 address with no delay. Harmless on machines with working
-        // IPv6, since IPv4 connectivity is required either way.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // Deliberately *not* pinning `local_address` to IPv4 here anymore.
+        // reqwest/hyper (0.12+) already implements Happy Eyeballs (RFC
+        // 8305): when a host resolves to both IPv4 and IPv6 addresses it
+        // races connection attempts across both families and uses
+        // whichever answers first, with a short delay before it even
+        // starts the second race — so a dead/blackholed IPv6 route no
+        // longer stalls the request. Forcing IPv4 here used to *break*
+        // IPv6-only networks outright (some mobile carriers, some ISPs,
+        // CGNAT-only setups with no usable public IPv4 route at all), so
+        // it did more harm than the stall it was meant to avoid. Letting
+        // the client pick whichever family actually works is what makes
+        // this function work on any network.
         .build()?)
 }
 

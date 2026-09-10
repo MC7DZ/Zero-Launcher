@@ -42,9 +42,95 @@
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::logger;
 use crate::state::AppState;
+
+/// Source tag used for every log line this module writes, so the log
+/// viewer/`latest.log` can be filtered down to just update activity.
+const LOG_SOURCE: &str = "Updater";
+
+/// Number of attempts made for a manifest fetch or download start before
+/// giving up — absorbs a single transient DNS/connect hiccup instead of
+/// failing the whole check/download on the first blip.
+const MAX_ATTEMPTS: u32 = 3;
+
+/// Builds the reqwest client used for all updater HTTP calls.
+///
+/// Deliberately does **not** pin `local_address` to IPv4 (an earlier
+/// version of this file did, to work around broken IPv6 routes stalling
+/// requests). That approach traded one problem for a worse one: it made
+/// the updater completely unreachable on IPv6-only networks (increasingly
+/// common on mobile carriers, some ISPs, and CGNAT-only setups with no
+/// usable public IPv4 route). reqwest/hyper 0.12+ already implements
+/// Happy Eyeballs (RFC 8305): when a host resolves to both address
+/// families, it races connection attempts across both and uses whichever
+/// answers first, so a dead/blackholed route in one family no longer
+/// stalls the request — no manual pinning needed, and it works regardless
+/// of whether the machine is IPv4-only, IPv6-only, or dual-stack.
+fn updater_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
+/// Runs a request-building closure with a couple of short retries on
+/// connect/timeout errors — the flakiest part of a request — logging each
+/// attempt and its outcome so a failed update check/download is
+/// diagnosable from `latest.log` alone.
+async fn send_with_retry(
+    app: &AppHandle,
+    state: &AppState,
+    what: &str,
+    build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let client = updater_client();
+    let mut attempt = 1;
+    loop {
+        logger::debug(
+            app,
+            state,
+            LOG_SOURCE,
+            &format!("{what}: attempt {attempt}/{MAX_ATTEMPTS}"),
+        );
+        match build(&client).send().await {
+            Ok(resp) => {
+                logger::debug(
+                    app,
+                    state,
+                    LOG_SOURCE,
+                    &format!("{what}: connected on attempt {attempt} (HTTP {})", resp.status()),
+                );
+                return Ok(resp);
+            }
+            Err(e) if attempt < MAX_ATTEMPTS && (e.is_connect() || e.is_timeout()) => {
+                logger::warn(
+                    app,
+                    state,
+                    LOG_SOURCE,
+                    &format!(
+                        "{what}: attempt {attempt}/{MAX_ATTEMPTS} failed ({}), retrying — {e}",
+                        if e.is_timeout() { "timed out" } else { "connect error" },
+                    ),
+                );
+                attempt += 1;
+                tokio::time::sleep(Duration::from_millis(400 * attempt as u64)).await;
+            }
+            Err(e) => {
+                logger::error(
+                    app,
+                    state,
+                    LOG_SOURCE,
+                    &format!("{what}: giving up after {attempt} attempt(s) — {e}"),
+                );
+                return Err(e);
+            }
+        }
+    }
+}
 
 /// ── EDIT ME ──────────────────────────────────────────────────────────────
 /// Raw URL of the JSON manifest described above. Use the "raw" GitHub URL
@@ -130,38 +216,70 @@ fn current_os_key() -> &'static str {
 /// in that case. Network/parse failures ARE returned as `Err` so callers
 /// can choose to ignore them quietly on a background startup check.
 #[tauri::command]
-pub async fn check_for_update() -> Result<Option<UpdateAvailable>, String> {
-    let client = reqwest::Client::builder()
-        // Same IPv4-first fix as the other clients: without this, a
-        // broken/absent IPv6 route can stall this call — which runs
-        // automatically at launcher startup — for a long time before
-        // falling back, instead of failing over instantly.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
-    let resp = client
-        .get(MANIFEST_URL)
-        .header("User-Agent", "ZeroLauncher-Updater")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to reach update server: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("Update server returned an error: {e}"))?;
+pub async fn check_for_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<UpdateAvailable>, String> {
+    let current_version = env!("CARGO_PKG_VERSION");
+    let os_key = current_os_key();
+    logger::info(
+        &app,
+        &state,
+        LOG_SOURCE,
+        &format!("Checking for updates (running {current_version}, os={os_key})"),
+    );
 
-    let manifest: UpdateManifest = resp
-        .json()
-        .await
-        .map_err(|e| format!("Update manifest was not valid JSON: {e}"))?;
+    let resp = send_with_retry(&app, &state, "manifest fetch", |client| {
+        client
+            .get(MANIFEST_URL)
+            .header("User-Agent", "ZeroLauncher-Updater")
+    })
+    .await
+    .map_err(|e| {
+        let msg = format!("Failed to reach update server: {e}");
+        logger::error(&app, &state, LOG_SOURCE, &msg);
+        msg
+    })?;
 
-    let entry = match current_os_key() {
+    let status = resp.status();
+    let resp = resp.error_for_status().map_err(|e| {
+        let msg = format!("Update server returned an error: {e}");
+        logger::error(
+            &app,
+            &state,
+            LOG_SOURCE,
+            &format!("Manifest fetch returned HTTP {status}: {e}"),
+        );
+        msg
+    })?;
+
+    let manifest: UpdateManifest = resp.json().await.map_err(|e| {
+        let msg = format!("Update manifest was not valid JSON: {e}");
+        logger::error(&app, &state, LOG_SOURCE, &msg);
+        msg
+    })?;
+
+    let entry = match os_key {
         "windows" => manifest.windows,
         _ => manifest.linux,
     };
-    let Some(entry) = entry else { return Ok(None) };
+    let Some(entry) = entry else {
+        logger::info(
+            &app,
+            &state,
+            LOG_SOURCE,
+            &format!("Manifest has no entry for os={os_key}; nothing to update"),
+        );
+        return Ok(None);
+    };
 
-    let current_version = env!("CARGO_PKG_VERSION");
     if version_is_newer(&entry.version, current_version) {
+        logger::info(
+            &app,
+            &state,
+            LOG_SOURCE,
+            &format!("Update available: {current_version} -> {}", entry.version),
+        );
         Ok(Some(UpdateAvailable {
             version: entry.version,
             url: entry.url,
@@ -169,6 +287,15 @@ pub async fn check_for_update() -> Result<Option<UpdateAvailable>, String> {
             changelog: entry.changelog,
         }))
     } else {
+        logger::info(
+            &app,
+            &state,
+            LOG_SOURCE,
+            &format!(
+                "Already up to date (running {current_version}, manifest has {})",
+                entry.version
+            ),
+        );
         Ok(None)
     }
 }
@@ -183,8 +310,11 @@ pub async fn download_update(
     url: String,
 ) -> Result<String, String> {
     let updates_dir = state.data_dir.join("updates");
-    std::fs::create_dir_all(&updates_dir)
-        .map_err(|e| format!("Failed to create updates folder: {e}"))?;
+    std::fs::create_dir_all(&updates_dir).map_err(|e| {
+        let msg = format!("Failed to create updates folder: {e}");
+        logger::error(&app, &state, LOG_SOURCE, &msg);
+        msg
+    })?;
 
     let file_name = url
         .rsplit('/')
@@ -197,35 +327,100 @@ pub async fn download_update(
         });
     let dest_path = updates_dir.join(file_name);
 
-    let client = reqwest::Client::builder()
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
-    let response = client
-        .get(&url)
-        .header("User-Agent", "ZeroLauncher-Updater")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to start download: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("Download server returned an error: {e}"))?;
+    logger::info(
+        &app,
+        &state,
+        LOG_SOURCE,
+        &format!("Starting download: {url} -> {}", dest_path.display()),
+    );
+
+    let response = send_with_retry(&app, &state, "download start", |client| {
+        client.get(&url).header("User-Agent", "ZeroLauncher-Updater")
+    })
+    .await
+    .map_err(|e| {
+        let msg = format!("Failed to start download: {e}");
+        logger::error(&app, &state, LOG_SOURCE, &msg);
+        msg
+    })?;
+
+    let status = response.status();
+    let response = response.error_for_status().map_err(|e| {
+        let msg = format!("Download server returned an error: {e}");
+        logger::error(
+            &app,
+            &state,
+            LOG_SOURCE,
+            &format!("Download start returned HTTP {status}: {e}"),
+        );
+        msg
+    })?;
 
     let total_bytes = response.content_length();
+    logger::info(
+        &app,
+        &state,
+        LOG_SOURCE,
+        &match total_bytes {
+            Some(t) => format!("Download size: {:.1} MB", t as f64 / 1_048_576.0),
+            None => "Download size: unknown (no Content-Length header)".to_string(),
+        },
+    );
     let mut downloaded_bytes: u64 = 0;
+    // Logged at 10% increments (in addition to the UI's continuous
+    // `update-download-progress` events) so a stalled/slow download shows
+    // up clearly in latest.log without flooding it every chunk.
+    let mut last_logged_decile: u64 = 0;
 
-    let mut file = std::fs::File::create(&dest_path)
-        .map_err(|e| format!("Failed to create update file: {e}"))?;
+    let mut file = std::fs::File::create(&dest_path).map_err(|e| {
+        let msg = format!("Failed to create update file: {e}");
+        logger::error(&app, &state, LOG_SOURCE, &msg);
+        msg
+    })?;
 
     let mut response = response;
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|e| format!("Download interrupted: {e}"))?
-    {
-        file.write_all(&chunk)
-            .map_err(|e| format!("Failed to write update file: {e}"))?;
+    loop {
+        let chunk = match response.chunk().await {
+            Ok(Some(c)) => c,
+            Ok(None) => break,
+            Err(e) => {
+                logger::error(
+                    &app,
+                    &state,
+                    LOG_SOURCE,
+                    &format!(
+                        "Download interrupted after {:.1} MB: {e}",
+                        downloaded_bytes as f64 / 1_048_576.0
+                    ),
+                );
+                return Err(format!("Download interrupted: {e}"));
+            }
+        };
+        file.write_all(&chunk).map_err(|e| {
+            let msg = format!("Failed to write update file: {e}");
+            logger::error(&app, &state, LOG_SOURCE, &msg);
+            msg
+        })?;
         downloaded_bytes += chunk.len() as u64;
+
+        if let Some(total) = total_bytes.filter(|t| *t > 0) {
+            let decile = (downloaded_bytes * 10 / total).min(10);
+            if decile > last_logged_decile {
+                last_logged_decile = decile;
+                logger::debug(
+                    &app,
+                    &state,
+                    LOG_SOURCE,
+                    &format!(
+                        "Downloaded {:.1}/{:.1} MB ({}%)",
+                        downloaded_bytes as f64 / 1_048_576.0,
+                        total as f64 / 1_048_576.0,
+                        decile * 10,
+                    ),
+                );
+            }
+        }
+
         let _ = app.emit(
             "update-download-progress",
             UpdateProgress {
@@ -235,15 +430,34 @@ pub async fn download_update(
         );
     }
 
+    logger::info(
+        &app,
+        &state,
+        LOG_SOURCE,
+        &format!(
+            "Download complete: {:.1} MB written to {}",
+            downloaded_bytes as f64 / 1_048_576.0,
+            dest_path.display()
+        ),
+    );
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(&dest_path)
-            .map_err(|e| format!("Failed to read update file: {e}"))?
+            .map_err(|e| {
+                let msg = format!("Failed to read update file: {e}");
+                logger::error(&app, &state, LOG_SOURCE, &msg);
+                msg
+            })?
             .permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(&dest_path, perms)
-            .map_err(|e| format!("Failed to make update file executable: {e}"))?;
+        std::fs::set_permissions(&dest_path, perms).map_err(|e| {
+            let msg = format!("Failed to make update file executable: {e}");
+            logger::error(&app, &state, LOG_SOURCE, &msg);
+            msg
+        })?;
+        logger::debug(&app, &state, LOG_SOURCE, "Marked downloaded update file executable");
     }
 
     Ok(dest_path.to_string_lossy().to_string())
@@ -255,7 +469,7 @@ pub async fn download_update(
 /// who don't trust the launcher can find the actual file to run through
 /// VirusTotal themselves.
 #[tauri::command]
-pub fn open_current_exe_folder() -> Result<(), String> {
+pub fn open_current_exe_folder(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let current_exe = std::env::var_os("APPIMAGE")
         .map(PathBuf::from)
         .or_else(|| std::env::current_exe().ok())
@@ -265,6 +479,12 @@ pub fn open_current_exe_folder() -> Result<(), String> {
         .parent()
         .ok_or_else(|| "Failed to locate the executable's folder.".to_string())?;
 
+    logger::debug(
+        &app,
+        &state,
+        LOG_SOURCE,
+        &format!("Opening file manager at {}", dir.display()),
+    );
     crate::commands::open_folder_in_file_manager(dir)
 }
 
@@ -279,20 +499,37 @@ pub fn open_current_exe_folder() -> Result<(), String> {
 /// keeps running on the old code in memory and returns normally; the new
 /// version takes effect next time it's launched.
 #[tauri::command]
-pub fn install_update(downloaded_path: String, relaunch: bool) -> Result<(), String> {
+pub fn install_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    downloaded_path: String,
+    relaunch: bool,
+) -> Result<(), String> {
     let downloaded_path = PathBuf::from(downloaded_path);
+    logger::info(
+        &app,
+        &state,
+        LOG_SOURCE,
+        &format!(
+            "Installing update from {} (relaunch={relaunch})",
+            downloaded_path.display()
+        ),
+    );
     if !downloaded_path.is_file() {
-        return Err("Downloaded update file is missing.".to_string());
+        let msg = "Downloaded update file is missing.".to_string();
+        logger::error(&app, &state, LOG_SOURCE, &msg);
+        return Err(msg);
     }
 
     #[cfg(target_os = "windows")]
-    {
-        install_update_windows(&downloaded_path, relaunch)
-    }
+    let result = install_update_windows(&app, &state, &downloaded_path, relaunch);
     #[cfg(not(target_os = "windows"))]
-    {
-        install_update_linux(&downloaded_path, relaunch)
+    let result = install_update_linux(&app, &state, &downloaded_path, relaunch);
+
+    if let Err(ref e) = result {
+        logger::error(&app, &state, LOG_SOURCE, &format!("Install failed: {e}"));
     }
+    result
 }
 
 /// Windows can't overwrite a running .exe, so a tiny helper batch script is
@@ -301,7 +538,12 @@ pub fn install_update(downloaded_path: String, relaunch: bool) -> Result<(), Str
 /// relaunches it, then deletes itself. We exit right after spawning it
 /// either way, since the move can't happen until we're gone.
 #[cfg(target_os = "windows")]
-fn install_update_windows(downloaded_path: &std::path::Path, relaunch: bool) -> Result<(), String> {
+fn install_update_windows(
+    app: &AppHandle,
+    state: &AppState,
+    downloaded_path: &std::path::Path,
+    relaunch: bool,
+) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
 
     let current_exe =
@@ -333,6 +575,16 @@ fn install_update_windows(downloaded_path: &std::path::Path, relaunch: bool) -> 
         .spawn()
         .map_err(|e| format!("Failed to launch updater: {e}"))?;
 
+    logger::info(
+        app,
+        state,
+        LOG_SOURCE,
+        &format!(
+            "Handoff script spawned (script={}); exiting so it can swap the exe{}",
+            script_path.display(),
+            if relaunch { " and relaunch" } else { "" },
+        ),
+    );
     std::process::exit(0);
 }
 
@@ -342,7 +594,12 @@ fn install_update_windows(downloaded_path: &std::path::Path, relaunch: bool) -> 
 /// swap the file directly with no helper script, and don't have to exit
 /// unless the caller actually asked to relaunch.
 #[cfg(not(target_os = "windows"))]
-fn install_update_linux(downloaded_path: &std::path::Path, relaunch: bool) -> Result<(), String> {
+fn install_update_linux(
+    app: &AppHandle,
+    state: &AppState,
+    downloaded_path: &std::path::Path,
+    relaunch: bool,
+) -> Result<(), String> {
     // Prefer $APPIMAGE (the real AppImage path) when running as an
     // AppImage — `current_exe()` there resolves into the temporary
     // squashfs mount, not the actual file on disk.
@@ -355,10 +612,22 @@ fn install_update_linux(downloaded_path: &std::path::Path, relaunch: bool) -> Re
     // only within the same filesystem — fall back to copy+remove for the
     // (rarer) case where the update was downloaded to a different device.
     if std::fs::rename(downloaded_path, &current_exe).is_err() {
+        logger::debug(
+            app,
+            state,
+            LOG_SOURCE,
+            "Rename failed (likely cross-device); falling back to copy+remove",
+        );
         std::fs::copy(downloaded_path, &current_exe)
             .map_err(|e| format!("Failed to replace current executable: {e}"))?;
         let _ = std::fs::remove_file(downloaded_path);
     }
+    logger::info(
+        app,
+        state,
+        LOG_SOURCE,
+        &format!("Executable replaced in place: {}", current_exe.display()),
+    );
 
     use std::os::unix::fs::PermissionsExt;
     if let Ok(metadata) = std::fs::metadata(&current_exe) {
@@ -370,6 +639,12 @@ fn install_update_linux(downloaded_path: &std::path::Path, relaunch: bool) -> Re
     if !relaunch {
         // File is swapped; the currently-running process just keeps going
         // on the old code until the user quits and starts it again.
+        logger::info(
+            app,
+            state,
+            LOG_SOURCE,
+            "Update installed; continuing on old code in memory until next launch (relaunch not requested)",
+        );
         return Ok(());
     }
 
@@ -385,5 +660,6 @@ fn install_update_linux(downloaded_path: &std::path::Path, relaunch: bool) -> Re
         .spawn()
         .map_err(|e| format!("Failed to relaunch after update: {e}"))?;
 
+    logger::info(app, state, LOG_SOURCE, "Relaunched with updated executable; exiting old process");
     std::process::exit(0);
 }

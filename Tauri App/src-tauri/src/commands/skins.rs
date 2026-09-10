@@ -166,7 +166,6 @@ pub async fn cache_skin_texture(
     std::fs::create_dir_all(&skins_dir).map_err(|e| format!("Failed to create skins directory: {e}"))?;
 
     let texture_client = reqwest::Client::builder()
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .connect_timeout(std::time::Duration::from_secs(10))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
@@ -276,9 +275,8 @@ pub async fn upload_skin_to_mojang(
 
     // 5. Send multipart/form-data request to Mojang API
     let client = reqwest::Client::builder()
-        // See vendor/mc-launcher-core's http.rs client() for why: forces
-        // IPv4 so a broken/non-routable IPv6 setup can't stall requests.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // Dual-stack client (no address family pinned) so this works on
+        // IPv4-only, IPv6-only, and dual-stack networks alike.
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
@@ -354,9 +352,8 @@ pub async fn reset_mojang_skin(
         .map_err(|e| format!("Authentication failed: {e}"))?;
 
     let client = reqwest::Client::builder()
-        // See vendor/mc-launcher-core's http.rs client() for why: forces
-        // IPv4 so a broken/non-routable IPv6 setup can't stall requests.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // Dual-stack client (no address family pinned) so this works on
+        // IPv4-only, IPv6-only, and dual-stack networks alike.
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
@@ -432,9 +429,8 @@ pub async fn get_account_capes(
         .map_err(|e| format!("Authentication failed: {e}"))?;
 
     let client = reqwest::Client::builder()
-        // See vendor/mc-launcher-core's http.rs client() for why: forces
-        // IPv4 so a broken/non-routable IPv6 setup can't stall requests.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // Dual-stack client (no address family pinned) so this works on
+        // IPv4-only, IPv6-only, and dual-stack networks alike.
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -506,9 +502,8 @@ pub async fn equip_mojang_cape(
         .map_err(|e| format!("Authentication failed: {e}"))?;
 
     let client = reqwest::Client::builder()
-        // See vendor/mc-launcher-core's http.rs client() for why: forces
-        // IPv4 so a broken/non-routable IPv6 setup can't stall requests.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // Dual-stack client (no address family pinned) so this works on
+        // IPv4-only, IPv6-only, and dual-stack networks alike.
         .build()
         .map_err(|e| e.to_string())?;
 

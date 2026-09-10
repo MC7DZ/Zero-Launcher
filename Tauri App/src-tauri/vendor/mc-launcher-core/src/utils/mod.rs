@@ -217,10 +217,9 @@ pub fn is_version_valid(version: &str, minecraft_directory: impl AsRef<Path>) ->
 
 pub fn get_minecraft_news(options: MinecraftNewsOptions) -> Result<Articles, reqwest::Error> {
     let client = reqwest::blocking::Client::builder()
-        // Binds to an IPv4-only local address so a broken/absent IPv6
-        // route (common on some home/mobile networks) can't stall this
-        // call waiting on a dead address before falling back to IPv4.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // No address family pinned — reqwest's built-in Happy Eyeballs
+        // races IPv4/IPv6 and uses whichever connects, working on any
+        // network instead of only ones with usable IPv4.
         .build()
         .unwrap_or_default();
     let url = format!(

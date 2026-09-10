@@ -56,19 +56,16 @@ fn describe_send_error(e: reqwest::Error) -> Box<dyn std::error::Error> {
 }
 
 /// Builds the blocking HTTP client used for every Microsoft/Xbox/Minecraft
-/// services call in this module. Binds to an IPv4-only local address so
-/// that machines with a broken/absent IPv6 route (common on some home and
-/// mobile networks) don't waste the connection attempt on an unreachable
-/// IPv6 address before falling back — some environments' IPv6-then-IPv4
-/// fallback handling is less reliable than tools like `curl`, and forcing
-/// IPv4 here sidesteps that class of failure entirely. Falls back to a
-/// plain default client if, for whatever reason, building the IPv4-bound
-/// one fails.
+/// services call in this module. No address family is pinned — reqwest's
+/// built-in Happy Eyeballs races IPv4/IPv6 connection attempts and uses
+/// whichever succeeds first, so sign-in works whether the machine is
+/// IPv4-only, IPv6-only, or dual-stack, without the login flow stalling on
+/// a dead route in the meantime. Falls back to a plain default client if,
+/// for whatever reason, building this one fails.
 fn http_client() -> Client {
     Client::builder()
         .connect_timeout(std::time::Duration::from_secs(3))
         .timeout(std::time::Duration::from_secs(6))
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .build()
         .unwrap_or_else(|_| {
             Client::builder()

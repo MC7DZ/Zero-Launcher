@@ -231,7 +231,6 @@ fn overall_percent(
 #[tauri::command]
 pub async fn get_available_versions() -> Result<Vec<VersionInfo>, String> {
     let client = reqwest::Client::builder()
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .connect_timeout(std::time::Duration::from_secs(10))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
@@ -1954,8 +1953,12 @@ pub async fn launch_minecraft(
     let mut args: Vec<String> = Vec::new();
     args.push(format!("-Xmx{}m", max_ram));
     args.push(format!("-Xms{}m", min_ram));
-    args.push("-Djava.net.preferIPv4Stack=true".to_string());
-    args.push("-Djava.net.preferIPv6Addresses=false".to_string());
+    // Deliberately NOT forcing java.net.preferIPv4Stack/preferIPv6Addresses
+    // here: that would make the game itself unable to reach IPv4-only or
+    // IPv6-only multiplayer servers depending on which way it was pinned.
+    // Leave Java's default dual-stack behavior (tries both, uses whichever
+    // resolves/connects) so the game works regardless of which protocol the
+    // player's network or the server they're joining actually uses.
     args.push("-Ddiscordfix=net.minecraft.client.main.Main".to_string());
     if !jvm_args_str.is_empty() {
         args.extend(jvm_args_str.split_whitespace().map(String::from));

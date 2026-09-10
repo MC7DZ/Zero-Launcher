@@ -475,10 +475,9 @@ async fn download_java_via_azul(app: &AppHandle, major: i32) -> Result<JavaInsta
     );
 
     let client = reqwest::Client::builder()
-        // See vendor/mc-launcher-core's http.rs client() for why: forces
-        // IPv4 so a broken/non-routable IPv6 setup can't stall the Java
-        // lookup/download waiting on a dead address before falling back.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // Dual-stack client (no address family pinned) so the Java
+        // lookup/download works on IPv4-only, IPv6-only, and dual-stack
+        // networks alike.
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
     let query_url = format!(
