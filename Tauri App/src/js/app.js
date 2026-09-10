@@ -10042,6 +10042,11 @@ function initDiscoverProjectModal() {
     openExternalLink(`https://modrinth.com/${discoverProjectModalCurrentType}/${discoverProjectModalCurrentSlug}`);
   });
   overlay.addEventListener('click', (e) => {
+    // While resizing, the cursor can end up past the panel's edge (over
+    // the overlay itself) when the mouse is released — that fires a
+    // click on the overlay right after mouseup, which would otherwise
+    // be read as "clicked outside" and close the panel. Ignore it.
+    if (discoverProjectModalResizing || discoverProjectModalJustResized) return;
     if (e.target === overlay) closeDiscoverProjectModal();
   });
   document.addEventListener('keydown', (e) => {
@@ -10056,6 +10061,76 @@ function initDiscoverProjectModal() {
     const card = e.target.closest('.discover-card');
     if (!card || !card._hit) return;
     openDiscoverProjectModal(card._hit);
+  });
+
+  initDiscoverProjectModalResize(overlay);
+}
+
+// ── Project Details panel — resizable width, persisted across restarts ──
+const DISCOVER_PROJECT_WIDTH_KEY = 'discoverProjectModalWidth';
+const DISCOVER_PROJECT_MIN_WIDTH = 360;
+const DISCOVER_PROJECT_MAX_WIDTH = 1000;
+
+function clampDiscoverProjectWidth(width) {
+  const maxAllowed = Math.min(DISCOVER_PROJECT_MAX_WIDTH, window.innerWidth * 0.92);
+  return Math.max(DISCOVER_PROJECT_MIN_WIDTH, Math.min(maxAllowed, width));
+}
+
+function applyDiscoverProjectWidth(modal, width) {
+  modal.style.setProperty('--discover-project-width', clampDiscoverProjectWidth(width) + 'px');
+}
+
+// Tracked outside the function (rather than as a local closure var) so
+// the overlay's own click-outside-to-close handler, set up earlier in
+// initDiscoverProjectModal, can see it too.
+let discoverProjectModalResizing = false;
+let discoverProjectModalJustResized = false;
+
+function initDiscoverProjectModalResize(overlay) {
+  const modal = overlay.querySelector('.discover-project-modal');
+  const handle = document.getElementById('discover-project-resize-handle');
+  if (!modal || !handle) return;
+
+  // Restore the last width the user left it at, if any.
+  const saved = parseFloat(localStorage.getItem(DISCOVER_PROJECT_WIDTH_KEY));
+  if (!Number.isNaN(saved) && saved > 0) {
+    applyDiscoverProjectWidth(modal, saved);
+  }
+
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    discoverProjectModalResizing = true;
+    startX = e.clientX;
+    startWidth = modal.getBoundingClientRect().width;
+    modal.classList.add('is-resizing');
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!discoverProjectModalResizing) return;
+    // Panel is anchored to the right edge, so dragging the left edge left
+    // (negative delta) grows it and dragging right shrinks it.
+    const newWidth = startWidth - (e.clientX - startX);
+    applyDiscoverProjectWidth(modal, newWidth);
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!discoverProjectModalResizing) return;
+    discoverProjectModalResizing = false;
+    modal.classList.remove('is-resizing');
+    document.body.style.userSelect = '';
+    const finalWidth = parseFloat(getComputedStyle(modal).width);
+    if (!Number.isNaN(finalWidth)) {
+      localStorage.setItem(DISCOVER_PROJECT_WIDTH_KEY, String(Math.round(finalWidth)));
+    }
+    // Swallow the click event that immediately follows this mouseup
+    // (see the overlay click handler) so releasing the drag outside the
+    // panel's edge can't be misread as "clicked outside, close it".
+    discoverProjectModalJustResized = true;
+    setTimeout(() => { discoverProjectModalJustResized = false; }, 0);
   });
 }
 

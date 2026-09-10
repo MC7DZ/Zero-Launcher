@@ -4633,8 +4633,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .discover-project-modal {
-  width: 560px;
-  max-width: 92vw;
+  --discover-project-width: 560px;
+  width: var(--discover-project-width);
+  min-width: 360px;
+  max-width: min(1000px, 92vw);
   height: 100vh;
   max-height: none;
   margin: 0;
@@ -4650,6 +4652,39 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   position: relative;
   overflow: hidden;
   animation: dressing-room-in 0.24s cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+/* Drag handle on the panel's left edge — lets the width be resized by
+   hand. Widened hit target beyond the visible line so it's easy to grab. */
+.discover-project-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 9px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 5;
+}
+
+.discover-project-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 4px;
+  width: 1px;
+  height: 100%;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.discover-project-resize-handle:hover::after,
+.discover-project-modal.is-resizing .discover-project-resize-handle::after {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.discover-project-modal.is-resizing {
+  animation: none;
+  transition: none;
 }
 
 .discover-project-header-row {
