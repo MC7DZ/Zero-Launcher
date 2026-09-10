@@ -134,6 +134,112 @@ pub fn open_instance_folder(
     open_folder_in_file_manager(&dir)
 }
 
+/// Opens a URL in the user's default web browser.
+///
+/// This intentionally does NOT rely on the Tauri shell plugin (`shell:open`,
+/// i.e. `window.__TAURI__.shell.open`) — that plugin/permission isn't
+/// wired up in this app, so calling it from the frontend silently falls
+/// through to `window.open()`, which most webviews (WebKitGTK on Linux in
+/// particular) don't hand off to an external browser. Instead this shells
+/// out directly, the same way `open_folder_in_file_manager` above does for
+/// folders, with the same AppImage-safe env handling and multi-launcher
+/// fallbacks on Linux.
+#[tauri::command]
+pub fn open_url_in_browser(url: String) -> Result<(), String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err("No URL provided".into());
+    }
+    // Only allow http(s) links — this is only ever used to open external
+    // web pages, never local files or other schemes.
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("Refusing to open non-http(s) URL".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW (0x08000000) stops the console window that
+        // `cmd /C start` would otherwise briefly flash on screen.
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let spawn_cmd = |prog: &str, args: &[&str]| -> bool {
+            let mut cmd = std::process::Command::new(prog);
+            cmd.args(args);
+            // Same AppImage LD_LIBRARY_PATH/LD_PRELOAD sanitation as
+            // open_folder_in_file_manager, so xdg-open et al don't crash
+            // when launched from inside an AppImage.
+            if std::env::var_os("APPIMAGE").is_some() || std::env::var_os("APPDIR").is_some() {
+                if let Some(orig) = std::env::var_os("LD_LIBRARY_PATH_ORIG") {
+                    cmd.env("LD_LIBRARY_PATH", orig);
+                } else {
+                    cmd.env_remove("LD_LIBRARY_PATH");
+                }
+                cmd.env_remove("LD_PRELOAD");
+            }
+            cmd.stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            cmd.spawn().is_ok()
+        };
+
+        // 1. xdg-open — the standard freedesktop way, respects the user's
+        //    configured default browser.
+        if spawn_cmd("xdg-open", &[url]) {
+            return Ok(());
+        }
+
+        // 2. gio open — GNOME's replacement for xdg-open, present on most
+        //    modern distros even when xdg-utils isn't.
+        if spawn_cmd("gio", &["open", url]) {
+            return Ok(());
+        }
+
+        // 3. Common browsers directly, in case neither opener is installed.
+        for browser in &[
+            "x-www-browser",
+            "firefox",
+            "google-chrome",
+            "chromium",
+            "chromium-browser",
+            "brave-browser",
+        ] {
+            if spawn_cmd(browser, &[url]) {
+                return Ok(());
+            }
+        }
+
+        // 4. Crate fallback (also tries xdg-open/gio internally on Linux).
+        open::that_detached(url)
+            .or_else(|_| open::that(url))
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        open::that(url).map_err(|e| format!("Failed to open URL: {e}"))
+    }
+}
+
 /// Current launcher version, read from the version in this crate's
 /// `Cargo.toml` (`package.version`) at build time. Shown in
 /// Settings → About & Initial Setup.

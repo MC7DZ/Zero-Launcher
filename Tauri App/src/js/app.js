@@ -501,6 +501,7 @@ const api = {
   discoverGetVersions: (projectId, loader, gameVersion) =>
     invoke('discover_get_versions', { projectId, loader: loader || null, gameVersion: gameVersion || null }),
   discoverGetProject: (projectId) => invoke('discover_get_project', { projectId }),
+  discoverGetProjectDetails: (projectId) => invoke('discover_get_project_details', { projectId }),
   discoverDownload: (directory, projectType, fileUrl, fileName, downloadId) =>
     invoke('discover_download', { directory, projectType, fileUrl, fileName, downloadId: downloadId || null }),
   // Modpacks aren't dropped into a folder like a mod/resourcepack — the
@@ -820,17 +821,24 @@ function initTabs() {
         }
       }
       if (tabId === 'mods') {
-        showModsTabLoading();
-        loadModInstances().then(() => {
-          // Bail if the user has already switched to another tab since
-          // this chain started — don't render mod data into a tab that
-          // isn't (or is no longer) the one being looked at.
-          if (myToken !== latestTabToken) return;
-          return loadMods();
-        }).catch(() => {}).finally(() => {
-          if (myToken !== latestTabToken) return;
-          hideModsTabLoading();
-        });
+        // Only the Mods content type actually loads from the backend — if
+        // the user had Resource Packs/Worlds selected, re-activating this
+        // tab should keep showing that, not silently jump back to Mods.
+        if (activeContentType === 'mod') {
+          showModsTabLoading();
+          loadModInstances().then(() => {
+            // Bail if the user has already switched to another tab since
+            // this chain started — don't render mod data into a tab that
+            // isn't (or is no longer) the one being looked at.
+            if (myToken !== latestTabToken) return;
+            return loadMods();
+          }).catch(() => {}).finally(() => {
+            if (myToken !== latestTabToken) return;
+            hideModsTabLoading();
+          });
+        } else {
+          setContentType(activeContentType);
+        }
       }
       if (tabId === 'discover') {
         initDiscoverTabIfNeeded();
@@ -5034,7 +5042,7 @@ function selectOptionIfAvailable(select, value) {
 async function syncInstanceSelectionAcrossTabs() {
   await loadModInstances();
   populateDiscoverInstanceSelect();
-  if (getActiveTabId() === 'mods') {
+  if (getActiveTabId() === 'mods' && activeContentType === 'mod') {
     await loadMods();
   }
   if (getActiveTabId() === 'discover' && discoverState.loaded) {
@@ -6834,6 +6842,57 @@ function hideModsTabLoading() {
   }, 120);
 }
 
+// ── Content type switcher (Resource Packs / Mods / Worlds) ──
+// Only 'mod' is fully wired up to the backend today; the other two show a
+// placeholder so the toggle is honest about what it currently does.
+let activeContentType = 'mod';
+const CONTENT_TYPE_LABELS = {
+  mod: 'Mods',
+  resourcepack: 'Resource Packs',
+  shaderpack: 'Shader Packs',
+  world: 'Worlds',
+  server: 'Servers',
+  screenshot: 'Screenshots',
+};
+
+function setContentType(type) {
+  activeContentType = type;
+  const label = CONTENT_TYPE_LABELS[type] || 'Content';
+  const searchInput = document.getElementById('mods-search');
+  const grid = document.getElementById('mods-grid');
+  const countEl = document.getElementById('mods-count');
+  const rightPanel = document.querySelector('.mods-top-panel-right');
+  const subpanel = document.getElementById('modpack-mods-subpanel');
+
+  // The panel title stays a static "Manage" — the segmented toggle above it
+  // already shows which content type is selected, so echoing it here too
+  // would just be redundant.
+  if (searchInput) searchInput.placeholder = `⌕ Search ${label.toLowerCase()}…`;
+
+  if (type === 'mod') {
+    if (rightPanel) rightPanel.style.display = '';
+    if (countEl) countEl.style.display = '';
+    loadMods();
+  } else {
+    hideModsTabLoading();
+    if (rightPanel) rightPanel.style.display = 'none';
+    if (countEl) { countEl.textContent = ''; countEl.style.display = 'none'; }
+    if (subpanel) subpanel.classList.add('hidden');
+    if (grid) {
+      grid.innerHTML = `<div class="empty-state"><span>${label} management is coming soon</span></div>`;
+    }
+  }
+}
+
+document.querySelectorAll('.content-type-segment').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.classList.contains('active')) return;
+    document.querySelectorAll('.content-type-segment').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    setContentType(btn.dataset.contentType);
+  });
+});
+
 let currentModpackInfo = null;
 let activeModsView = 'normal'; // 'normal' | 'modpack'
 
@@ -6846,7 +6905,7 @@ async function loadMods() {
   const tabMods = document.getElementById('tab-mods');
 
   const isFirstLoad = grid.children.length === 0;
-  if (isFirstLoad) grid.innerHTML = '<div class="empty-state"><span>Loading mods…</span></div>';
+  if (isFirstLoad) grid.innerHTML = '<div class="empty-state"><span>Loading content…</span></div>';
 
   const targetInstance = getModsTargetInstance();
   const directory = targetInstance ? (targetInstance.directory || settings.game_directory) : settings.game_directory;
@@ -7049,7 +7108,7 @@ function initMods() {
   // Replaces the old manual Refresh button — the mods list now keeps
   // itself up to date on its own while the Mods tab is open.
   setInterval(() => {
-    if (getActiveTabId() === 'mods') loadMods();
+    if (getActiveTabId() === 'mods' && activeContentType === 'mod') loadMods();
   }, MODS_AUTO_REFRESH_MS);
 
   initModsDragDrop();
@@ -8070,7 +8129,7 @@ const discoverPrefs = loadDiscoverPrefs();
 
 let discoverState = {
   query: '',
-  type: 'mod',       // 'modpack' | 'mod' | 'resourcepack' | 'shader'
+  type: 'resourcepack',       // 'modpack' | 'mod' | 'resourcepack' | 'shader'
   loader: 'any',
   shaderLoader: 'any',
   gameVersion: '',        // '' = any
@@ -9409,30 +9468,56 @@ function renderCardContent(card) {
   const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
   const tagsHtml = allTags.map(c => `<span class="discover-card-tag ${discoverTagVariant(c)}">${discoverEscape(capitalize(c))}</span>`).join('');
 
+  // Banner: use the project's actual designated banner image — Modrinth's
+  // search index exposes this separately as `featured_gallery` (the one
+  // image the developer picked to represent the project), which is not
+  // the same as `gallery[0]` (all gallery images, in no particular
+  // order — using that showed a random screenshot instead of the real
+  // banner). Falls back to a gradient built from the accent color, and
+  // finally to a plain neutral gradient — this sits BEHIND the icon,
+  // title, author and description (with a dark scrim so text stays
+  // legible). The stats/tags row and the version/download footer below it
+  // stay on the card's normal flat background, unchanged.
+  const galleryImage = hit.featured_gallery || null;
+  let bannerStyle = '';
+  if (galleryImage) {
+    bannerStyle = `style="background-image:url('${discoverEscape(galleryImage)}')"`;
+  } else if (typeof hit.color === 'number') {
+    const hex = '#' + (hit.color >>> 0).toString(16).padStart(6, '0').slice(-6);
+    bannerStyle = `style="background:linear-gradient(135deg, ${hex}, #16161a)"`;
+  }
+
   const isModpack = hit.project_type === 'modpack';
   card.innerHTML = `
-    <div class="discover-card-top">
-      <div class="discover-card-icon">${iconHtml}</div>
-      <div class="discover-card-info">
-        <span class="discover-card-title" title="${discoverEscape(hit.title)}">${discoverEscape(hit.title)}</span>
-        <div class="discover-card-author">by ${discoverEscape(hit.author)}</div>
+    <div class="discover-card-banner-area${galleryImage ? ' has-image' : ''}" ${bannerStyle}>
+      <div class="discover-card-banner-overlay"></div>
+      <div class="discover-card-banner-content">
+        <div class="discover-card-top">
+          <div class="discover-card-icon">${iconHtml}</div>
+          <div class="discover-card-info">
+            <span class="discover-card-title" title="${discoverEscape(hit.title)}">${discoverEscape(hit.title)}</span>
+            <div class="discover-card-author">by ${discoverEscape(hit.author)}</div>
+          </div>
+        </div>
+        <div class="discover-card-desc">${discoverEscape(hit.description || '')}</div>
       </div>
     </div>
-    <div class="discover-card-desc">${discoverEscape(hit.description || '')}</div>
-    <div class="discover-card-meta">
-      <div class="discover-card-stats">
-        <span>⬇ ${formatDiscoverCount(hit.downloads)}</span>
-        <span>♥ ${formatDiscoverCount(hit.follows)}</span>
-        ${updatedLabel ? `<span>↻ ${discoverEscape(updatedLabel)}</span>` : ''}
+    <div class="discover-card-body">
+      <div class="discover-card-meta">
+        <div class="discover-card-stats">
+          <span>⬇ ${formatDiscoverCount(hit.downloads)}</span>
+          <span>♥ ${formatDiscoverCount(hit.follows)}</span>
+          ${updatedLabel ? `<span>↻ ${discoverEscape(updatedLabel)}</span>` : ''}
+        </div>
+        ${tagsHtml ? `<div class="discover-card-tags">${tagsHtml}</div>` : ''}
       </div>
-      ${tagsHtml ? `<div class="discover-card-tags">${tagsHtml}</div>` : ''}
-    </div>
-    <div class="discover-card-footer">
-      <select class="input-field discover-version-select" data-project-id="${discoverEscape(hit.project_id)}">
-        <option value="__latest__">✦ Latest Compatible Version</option>
-      </select>
-      ${isModpack ? `<button class="discover-card-menu-btn" type="button" title="More options" aria-label="More options">⋯</button>` : ''}
-      <button class="btn-accent btn-sm discover-download-btn" data-project-id="${discoverEscape(hit.project_id)}">${isModpack ? 'Install' : 'Download'}</button>
+      <div class="discover-card-footer">
+        <select class="input-field discover-version-select" data-project-id="${discoverEscape(hit.project_id)}">
+          <option value="__latest__">✦ Latest Compatible Version</option>
+        </select>
+        ${isModpack ? `<button class="discover-card-menu-btn" type="button" title="More options" aria-label="More options">⋯</button>` : ''}
+        <button class="btn-accent btn-sm discover-download-btn" data-project-id="${discoverEscape(hit.project_id)}">${isModpack ? 'Install' : 'Download'}</button>
+      </div>
     </div>
   `;
 
@@ -9481,6 +9566,532 @@ function createVirtualDiscoverCard(hit) {
 
 function buildDiscoverCard(hit) {
   return createVirtualDiscoverCard(hit);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DISCOVER PROJECT PAGE MODAL — a lightweight "everything about this
+// mod/modpack/resourcepack" view, opened by clicking a Discover card.
+// Mirrors what Modrinth's own project page shows (icon, description,
+// gallery, links, versions/changelog) without pulling in a full markdown
+// library or extra network round-trips beyond the two calls it needs.
+// ══════════════════════════════════════════════════════════════════
+
+const discoverProjectDetailsCache = new Map();
+let discoverProjectModalCurrentId = null;
+let discoverProjectModalCurrentType = null;
+let discoverProjectModalCurrentSlug = null;
+
+// Small, dependency-free Markdown → HTML converter. Modrinth project bodies
+// are plain GitHub-flavoured Markdown; this covers the subset that actually
+// shows up in the wild (headings, bold/italic, links, images, inline code,
+// fenced code blocks, blockquotes, lists, hr, line breaks) while always
+// escaping raw text first so nothing untrusted can inject markup.
+// Tags/attributes we let Modrinth project bodies use as raw HTML instead
+// of escaping to plain text. Project descriptions commonly mix Markdown
+// with hand-written HTML (banners wrapped in <center>, collapsible
+// <details>/<summary> changelists, etc.) — escaping all of it made those
+// sections show up as literal "<center>" text instead of rendering.
+const DISCOVER_HTML_ALLOWED_TAGS = new Set([
+  'center', 'details', 'summary', 'div', 'span', 'p', 'br', 'hr',
+  'sub', 'sup', 'small', 'mark', 'kbd', 'img', 'a',
+  'b', 'i', 'em', 'strong', 'u', 's', 'strike', 'del',
+  'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'td', 'th',
+  'blockquote', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+]);
+const DISCOVER_HTML_ALLOWED_ATTRS = {
+  img: ['src', 'alt', 'width', 'height', 'title'],
+  a: ['href', 'title'],
+  td: ['colspan', 'rowspan'],
+  th: ['colspan', 'rowspan'],
+};
+
+// Sanitizes one raw HTML tag match (e.g. `<img src="..." onerror="...">`
+// or `</center>`) down to just the safe tag + safe attributes, or drops
+// it entirely if the tag itself isn't in the allowlist. `<a>` hrefs are
+// rewritten to go through the same external-link opener as Markdown
+// links rather than navigating in-place.
+function discoverSanitizeRawHtmlTag(tagHtml) {
+  const closeMatch = tagHtml.match(/^<\/\s*([a-zA-Z][a-zA-Z0-9]*)\s*>$/);
+  if (closeMatch) {
+    const tag = closeMatch[1].toLowerCase();
+    return DISCOVER_HTML_ALLOWED_TAGS.has(tag) ? `</${tag}>` : '';
+  }
+  const openMatch = tagHtml.match(/^<\s*([a-zA-Z][a-zA-Z0-9]*)((?:\s+[^<>]*)?)(\/?)\s*>$/);
+  if (!openMatch) return '';
+  const tag = openMatch[1].toLowerCase();
+  if (!DISCOVER_HTML_ALLOWED_TAGS.has(tag)) return '';
+  const selfClose = openMatch[3] ? ' /' : '';
+  const allowedAttrs = DISCOVER_HTML_ALLOWED_ATTRS[tag] || [];
+  let attrs = '';
+  const attrRe = /([a-zA-Z0-9-]+)\s*=\s*"([^"]*)"|([a-zA-Z0-9-]+)\s*=\s*'([^']*)'/g;
+  let m;
+  while ((m = attrRe.exec(openMatch[2] || ''))) {
+    const name = (m[1] || m[3] || '').toLowerCase();
+    if (!allowedAttrs.includes(name)) continue;
+    let value = m[2] !== undefined ? m[2] : m[4];
+    if ((name === 'src' || name === 'href') && !/^https?:\/\//i.test(value)) continue;
+    value = value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    attrs += name === 'href' ? ` href="#" class="discover-md-link" data-external-url="${value}"` : ` ${name}="${value}"`;
+  }
+  if (tag === 'a' && !attrs.includes('data-external-url')) return '';
+  return `<${tag}${attrs}${selfClose}>`;
+}
+
+// True when a line (after markdown link/image processing, but before
+// stashed placeholders are restored) is nothing but a single inline
+// element — a linked icon image, a bare image, or a raw-HTML passthrough
+// tag. Modrinth project bodies often put a row of badge/icon links each
+// on its own source line purely for readability; treating every line
+// break as a forced <br /> made that row stack vertically instead of
+// flowing as the inline row it's meant to be. Consecutive pure-inline
+// lines are joined with a space instead of a line break so they wrap
+// naturally like any other run of inline elements.
+function discoverIsPureInlineLine(line) {
+  const t = line.trim();
+  return /^(\u0000HTMLTAG\d+\u0000|<a\b[^>]*>\s*\u0000HTMLTAG\d+\u0000\s*<\/a>|<img\b[^>]*\/?>)$/.test(t);
+}
+
+function discoverJoinParagraphLines(block) {
+  const lines = block.split('\n');
+  let out = lines[0] || '';
+  for (let i = 1; i < lines.length; i++) {
+    const joiner = (discoverIsPureInlineLine(lines[i - 1]) && discoverIsPureInlineLine(lines[i])) ? ' ' : '<br />';
+    out += joiner + lines[i];
+  }
+  return out;
+}
+
+function discoverMiniMarkdown(src) {
+  if (!src) return '';
+  const codeBlocks = [];
+  let text = String(src).replace(/\r\n/g, '\n');
+
+  // Stash fenced code blocks first so nothing inside them gets touched.
+  text = text.replace(/```[ \t]*\w*\n?([\s\S]*?)```/g, (_, code) => {
+    const idx = codeBlocks.push(discoverEscape(code.replace(/\n$/, ''))) - 1;
+    return `\u0000CODEBLOCK${idx}\u0000`;
+  });
+
+  // Stash sanitized raw HTML tags next (still outside the escape step)
+  // so allowlisted tags like <center>/<details>/<img> survive as real
+  // markup instead of being turned into visible "&lt;center&gt;" text.
+  const htmlTags = [];
+  text = text.replace(/<\/?[a-zA-Z][a-zA-Z0-9]*(?:\s[^<>]*)?\/?>/g, (m) => {
+    const idx = htmlTags.push(discoverSanitizeRawHtmlTag(m)) - 1;
+    return `\u0000HTMLTAG${idx}\u0000`;
+  });
+
+  text = discoverEscape(text);
+
+  // Inline code
+  text = text.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  // Images (before links, since the syntax overlaps)
+  text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+    (_, alt, url) => `<img src="${url}" alt="${alt}" loading="lazy" decoding="async" />`);
+  // Links
+  text = text.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+    (_, label, url) => `<a href="#" class="discover-md-link" data-external-url="${url}">${label}</a>`);
+  // Bold / italic
+  text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  // Headings
+  text = text.replace(/^######\s?(.+)$/gm, '<h6>$1</h6>');
+  text = text.replace(/^#####\s?(.+)$/gm, '<h5>$1</h5>');
+  text = text.replace(/^####\s?(.+)$/gm, '<h4>$1</h4>');
+  text = text.replace(/^###\s?(.+)$/gm, '<h3>$1</h3>');
+  text = text.replace(/^##\s?(.+)$/gm, '<h2>$1</h2>');
+  text = text.replace(/^#\s?(.+)$/gm, '<h1>$1</h1>');
+  // Horizontal rules
+  text = text.replace(/^\s*(---|\*\*\*|___)\s*$/gm, '<hr />');
+  // Blockquotes
+  text = text.replace(/^>\s?(.+)$/gm, '<blockquote>$1</blockquote>');
+  text = text.replace(/(<\/blockquote>)\n(<blockquote>)/g, '$1$2');
+  // Lists (unordered + ordered), line by line
+  const lines = text.split('\n');
+  const out = [];
+  let listType = null;
+  for (const line of lines) {
+    const ul = line.match(/^\s*[-*+]\s+(.+)$/);
+    const ol = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (ul) {
+      if (listType !== 'ul') { if (listType) out.push(`</${listType}>`); out.push('<ul>'); listType = 'ul'; }
+      out.push(`<li>${ul[1]}</li>`);
+    } else if (ol) {
+      if (listType !== 'ol') { if (listType) out.push(`</${listType}>`); out.push('<ol>'); listType = 'ol'; }
+      out.push(`<li>${ol[1]}</li>`);
+    } else {
+      if (listType) { out.push(`</${listType}>`); listType = null; }
+      out.push(line);
+    }
+  }
+  if (listType) out.push(`</${listType}>`);
+  text = out.join('\n');
+
+  // Paragraphs: wrap remaining bare lines/blank-line-separated chunks
+  text = text
+    .split(/\n{2,}/)
+    .map(block => {
+      const trimmed = block.trim();
+      if (!trimmed) return '';
+      if (/^<(h[1-6]|ul|ol|li|blockquote|hr|img|pre)/i.test(trimmed)) return trimmed;
+      // A block that's entirely (whitespace around) our HTML-tag
+      // placeholders — e.g. a <center>/<details> wrapper — shouldn't be
+      // stuffed into a <p>; let it render as the raw block it stands in for.
+      if (/^(\u0000HTMLTAG\d+\u0000\s*)+$/.test(trimmed)) return trimmed;
+      return `<p>${discoverJoinParagraphLines(trimmed)}</p>`;
+    })
+    .join('\n');
+
+  // Restore stashed raw HTML tags, then fenced code blocks.
+  text = text.replace(/\u0000HTMLTAG(\d+)\u0000/g, (_, i) => htmlTags[Number(i)]);
+  text = text.replace(/\u0000CODEBLOCK(\d+)\u0000/g, (_, i) => `<pre><code>${codeBlocks[Number(i)]}</code></pre>`);
+
+  return text;
+}
+
+function openExternalLink(url) {
+  if (!url) return;
+  // Goes through the `open_url_in_browser` Rust command (spawns xdg-open /
+  // gio / a browser binary directly, with AppImage-safe env handling) —
+  // not window.__TAURI__.shell.open, since the shell plugin/permission
+  // isn't set up in this app and window.open() doesn't hand off to an
+  // external browser from most webviews (notably WebKitGTK on Linux).
+  invoke('open_url_in_browser', { url }).catch((e) => {
+    console.error('Failed to open URL in browser:', e);
+    // Last-resort fallback in case the command itself is unavailable
+    // (e.g. running in a plain browser tab during development).
+    window.open(url, '_blank');
+  });
+}
+
+// Small line-icon set for the Discover project modal (matches the existing
+// ICON_*_SVG style: 24x24 viewBox, currentColor strokes, no filled emoji).
+const DISCOVER_ICONS = {
+  download: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="m7.5 11 4.5 4.5L16.5 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 19h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  heart: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 20s-7.2-4.4-9.5-9A5 5 0 0 1 12 6.5 5 5 0 0 1 21.5 11c-2.3 4.6-9.5 9-9.5 9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4.5 12a7.5 7.5 0 0 1 12.6-5.5M19.5 12a7.5 7.5 0 0 1-12.6 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M17 3.8V7h3.2M7 20.2V17H3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  globe: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.6"/><path d="M3.8 12h16.4M12 3.8c2 2.2 3.1 5 3.1 8.2s-1.1 6-3.1 8.2c-2-2.2-3.1-5-3.1-8.2s1.1-6 3.1-8.2Z" stroke="currentColor" stroke-width="1.6"/></svg>',
+  bug: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="8.5" width="8" height="9.5" rx="4" stroke="currentColor" stroke-width="1.6"/><path d="M9 8.5 7.3 6.2M15 8.5l1.7-2.3M4.5 12h3M16.5 12h3M5 17l3-1.3M19 17l-3-1.3M12 8.5V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  book: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5.5c2.2-1 5-1 8 .3v13c-3-1.3-5.8-1.3-8-.3v-13Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M20 5.5c-2.2-1-5-1-8 .3v13c3-1.3 5.8-1.3 8-.3v-13Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4.5 6.5h15v9.5h-8.2L7.5 19v-3H4.5v-9.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+  discord: '<svg viewBox="0 -28.5 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M216.856339,16.5966031 C200.285002,8.84328665 182.566144,3.2084988 164.041564,0 C161.766523,4.11318106 159.108624,9.64549908 157.276099,14.0464379 C137.583995,11.0849896 118.072967,11.0849896 98.7430163,14.0464379 C96.9108417,9.64549908 94.1925838,4.11318106 91.8971895,0 C73.3526068,3.2084988 55.6133949,8.86399117 39.0420583,16.6376612 C5.61752293,67.146514 -3.4433191,116.400813 1.08711069,164.955721 C23.2560196,181.510915 44.7403634,191.567697 65.8621325,198.148576 C71.0772151,190.971126 75.7283628,183.341335 79.7352139,175.300261 C72.104019,172.400575 64.7949724,168.822202 57.8887866,164.667963 C59.7209612,163.310589 61.5131304,161.891452 63.2445898,160.431257 C105.36741,180.133187 151.134928,180.133187 192.754523,160.431257 C194.506336,161.891452 196.298154,163.310589 198.110326,164.667963 C191.183787,168.842556 183.854737,172.420929 176.223542,175.320965 C180.230393,183.341335 184.861538,190.991831 190.096624,198.16893 C211.238746,191.588051 232.743023,181.531619 254.911949,164.955721 C260.227747,108.668201 245.831087,59.8662432 216.856339,16.5966031 Z M85.4738752,135.09489 C72.8290281,135.09489 62.4592217,123.290155 62.4592217,108.914901 C62.4592217,94.5396472 72.607595,82.7145587 85.4738752,82.7145587 C98.3405064,82.7145587 108.709962,94.5189427 108.488529,108.914901 C108.508531,123.290155 98.3405064,135.09489 85.4738752,135.09489 Z M170.525237,135.09489 C157.88039,135.09489 147.510584,123.290155 147.510584,108.914901 C147.510584,94.5396472 157.658606,82.7145587 170.525237,82.7145587 C183.391518,82.7145587 193.761324,94.5189427 193.539891,108.914901 C193.539891,123.290155 183.391518,135.09489 170.525237,135.09489 Z"/></svg>',
+  scale: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v16M8 20h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12 6.5 5 8.5l3.3 6.2a3.4 3.4 0 0 0 3.4 0L15 8.5 12 6.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="m5 8.5 14-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  star: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="m12 4.5 2.2 4.9 5.3.6-4 3.7 1.1 5.3L12 16.4l-4.6 2.6 1.1-5.3-4-3.7 5.3-.6L12 4.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="m4.5 12.5 5 5 10-11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 3.5h7l4 4v13H7v-17Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3.5V8h4" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+};
+
+function discoverProjectModalEls() {
+  return {
+    overlay: document.getElementById('discover-project-overlay'),
+    banner: document.getElementById('discover-project-banner'),
+    icon: document.getElementById('discover-project-icon'),
+    title: document.getElementById('discover-project-title'),
+    author: document.getElementById('discover-project-author'),
+    typeBadge: document.getElementById('discover-project-type-badge'),
+    stats: document.getElementById('discover-project-stats'),
+    tags: document.getElementById('discover-project-tags'),
+    downloadBtn: document.getElementById('discover-project-download-btn'),
+    versionSelect: document.getElementById('discover-project-version-select'),
+    body: document.getElementById('discover-project-body'),
+    gallery: document.getElementById('discover-project-gallery-section'),
+    galleryGrid: document.getElementById('discover-project-gallery'),
+    versions: document.getElementById('discover-project-versions-section'),
+    versionsList: document.getElementById('discover-project-versions'),
+    links: document.getElementById('discover-project-links'),
+    skeleton: document.getElementById('discover-project-skeleton'),
+    content: document.getElementById('discover-project-content'),
+  };
+}
+
+function closeDiscoverProjectModal() {
+  const { overlay } = discoverProjectModalEls();
+  if (!overlay) return;
+  overlay.classList.add('hidden');
+  discoverProjectModalCurrentId = null;
+}
+
+// Opens the "project page" panel for a Discover card — a single simple
+// scrolling page (icon/title/stats, download row, description, gallery,
+// versions/changelog) rather than a tabbed dialog, so it reads like a
+// plain project page instead of an app-within-an-app.
+async function openDiscoverProjectModal(hit) {
+  const els = discoverProjectModalEls();
+  if (!els.overlay) return;
+  discoverProjectModalCurrentId = hit.project_id;
+  discoverProjectModalCurrentType = hit.project_type;
+  discoverProjectModalCurrentSlug = hit.slug || hit.project_id;
+
+  els.overlay.classList.remove('hidden');
+  els.skeleton?.classList.remove('hidden');
+  els.content?.classList.add('hidden');
+  if (els.content) els.content.scrollTop = 0;
+
+  // Fill in what we already know from the card immediately so the panel
+  // never looks empty, then replace with the fuller fetched detail.
+  populateDiscoverProjectHeader(hit);
+
+  try {
+    let details = discoverProjectDetailsCache.get(hit.project_id);
+    if (!details) {
+      details = await api.discoverGetProjectDetails(hit.project_id);
+      discoverProjectDetailsCache.set(hit.project_id, details);
+    }
+    // The panel may have been closed (or reopened for a different
+    // project) while this was in flight — don't clobber it.
+    if (discoverProjectModalCurrentId !== hit.project_id) return;
+    populateDiscoverProjectModal(hit, details);
+    renderDiscoverProjectVersions(hit.project_id);
+  } catch (e) {
+    if (discoverProjectModalCurrentId !== hit.project_id) return;
+    if (els.body) els.body.innerHTML = `<div class="discover-empty">Couldn't load this project: ${discoverEscape(String(e))}</div>`;
+  } finally {
+    if (discoverProjectModalCurrentId === hit.project_id) {
+      els.skeleton?.classList.add('hidden');
+      els.content?.classList.remove('hidden');
+      // WebKitGTK doesn't reliably keep a scrollTop=0 assignment made
+      // while the element was display:none (no layout box to scroll
+      // yet) — it can silently snap back to wherever the previous
+      // project's panel was scrolled to once this becomes visible
+      // again. Re-apply it now that .hidden is gone and the element
+      // actually has layout, on the next frame so it lands after the
+      // browser reflows the newly-unhidden content.
+      if (els.content) {
+        els.content.scrollTop = 0;
+        requestAnimationFrame(() => { els.content.scrollTop = 0; });
+      }
+    }
+  }
+}
+
+function populateDiscoverProjectHeader(hit) {
+  const els = discoverProjectModalEls();
+  // Banner background — the project's actual designated banner image.
+  // Before the full details load, `hit` is just the search hit, whose
+  // `featured_gallery` field is that designated image (not `gallery[0]`,
+  // which is every gallery image in no particular order). Once details
+  // load, `hit.gallery` becomes the fuller {url, featured, ...} array —
+  // pick the entry explicitly marked featured there, falling back to the
+  // search hit's featured image, then to a plain accent-color gradient.
+  if (els.banner) {
+    let galleryImage = null;
+    if (Array.isArray(hit.gallery) && hit.gallery.length) {
+      const featuredEntry = hit.gallery.find(g => g && typeof g === 'object' && g.featured);
+      if (featuredEntry) galleryImage = featuredEntry.url;
+    }
+    if (!galleryImage) galleryImage = hit.featured_gallery || null;
+    els.banner.classList.toggle('has-image', !!galleryImage);
+    if (galleryImage) {
+      els.banner.style.backgroundImage = `url('${galleryImage}')`;
+    } else if (typeof hit.color === 'number') {
+      const hex = '#' + (hit.color >>> 0).toString(16).padStart(6, '0').slice(-6);
+      els.banner.style.backgroundImage = `linear-gradient(135deg, ${hex}, #16161a)`;
+    } else {
+      els.banner.style.backgroundImage = '';
+    }
+  }
+  if (els.icon) {
+    els.icon.innerHTML = hit.icon_url
+      ? `<img src="${discoverEscape(hit.icon_url)}" alt="" draggable="false" />`
+      : ICON_UNKNOWN_SVG;
+  }
+  if (els.title) els.title.textContent = hit.title || '';
+  if (els.author) els.author.textContent = hit.author ? `by ${hit.author}` : '';
+  if (els.typeBadge) els.typeBadge.textContent = capitalizeDiscoverType(hit.project_type);
+  if (els.stats) {
+    const updatedLabel = formatDiscoverRelativeDate(hit.date_modified);
+    els.stats.innerHTML = `
+      <span>${DISCOVER_ICONS.download}${formatDiscoverCount(hit.downloads || 0)}</span>
+      <span>${DISCOVER_ICONS.heart}${formatDiscoverCount(hit.follows || 0)}</span>
+      ${updatedLabel ? `<span>${DISCOVER_ICONS.refresh}${discoverEscape(updatedLabel)}</span>` : ''}
+    `;
+  }
+}
+
+function capitalizeDiscoverType(t) {
+  if (!t) return '';
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function populateDiscoverProjectModal(hit, details) {
+  const els = discoverProjectModalEls();
+  const merged = { ...hit, ...details };
+  populateDiscoverProjectHeader(merged);
+
+  // Tags (all categories, not just the 3-tag preview shown on the card)
+  if (els.tags) {
+    const cats = details.categories || hit.categories || [];
+    els.tags.innerHTML = cats
+      .map(c => `<span class="discover-card-tag ${discoverTagVariant(c)}">${discoverEscape(capitalizeDiscoverType(c))}</span>`)
+      .join('');
+  }
+
+  // Description / body
+  if (els.body) {
+    const md = details.body && details.body.trim() ? details.body : (details.description || hit.description || '');
+    els.body.innerHTML = discoverMiniMarkdown(md) || '<div class="discover-empty">No description provided.</div>';
+    els.body.querySelectorAll('a.discover-md-link').forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        openExternalLink(a.dataset.externalUrl);
+      });
+    });
+  }
+
+  // Gallery — only shown at all when there's something to show
+  if (els.gallery && els.galleryGrid) {
+    const gallery = details.gallery || [];
+    if (!gallery.length) {
+      els.gallery.classList.add('hidden');
+      els.galleryGrid.innerHTML = '';
+    } else {
+      els.gallery.classList.remove('hidden');
+      els.galleryGrid.innerHTML = gallery.map(img => `
+        <button type="button" class="discover-gallery-item" data-full="${discoverEscape(img.url)}" title="${discoverEscape(img.title || '')}">
+          <img src="${discoverEscape(img.url)}" alt="${discoverEscape(img.title || '')}" loading="lazy" decoding="async" />
+        </button>
+      `).join('');
+      els.galleryGrid.querySelectorAll('.discover-gallery-item').forEach(btn => {
+        btn.addEventListener('click', () => openExternalLink(btn.dataset.full));
+      });
+    }
+  }
+
+  // Links (source / issues / wiki / discord / donate / license)
+  if (els.links) {
+    const linkDefs = [
+      ['source_url', 'Source', DISCOVER_ICONS.globe],
+      ['issues_url', 'Issues', DISCOVER_ICONS.bug],
+      ['wiki_url', 'Wiki', DISCOVER_ICONS.book],
+      ['discord_url', 'Discord', DISCOVER_ICONS.discord],
+    ];
+    let linksHtml = linkDefs
+      .filter(([key]) => details[key])
+      .map(([key, label, icon]) => `<a href="#" class="discover-project-link" data-external-url="${discoverEscape(details[key])}">${icon}<span>${label}</span></a>`)
+      .join('');
+    if (details.donation_urls && details.donation_urls.length) {
+      linksHtml += `<a href="#" class="discover-project-link" data-external-url="${discoverEscape(details.donation_urls[0])}">${DISCOVER_ICONS.heart}<span>Donate</span></a>`;
+    }
+    if (details.license) {
+      const licenseInner = `${DISCOVER_ICONS.scale}<span>${discoverEscape(details.license)}</span>`;
+      linksHtml += details.license_url
+        ? `<a href="#" class="discover-project-link" data-external-url="${discoverEscape(details.license_url)}">${licenseInner}</a>`
+        : `<span class="discover-project-link discover-project-link-static">${licenseInner}</span>`;
+    }
+    els.links.innerHTML = linksHtml || '';
+    els.links.querySelectorAll('a.discover-project-link[data-external-url]').forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        openExternalLink(a.dataset.externalUrl);
+      });
+    });
+  }
+
+  // Download row — reuses the exact same version-select + download flow
+  // as the card itself, so behaviour (compatibility checks, modpack install
+  // pipeline, progress widget…) all stays identical.
+  if (els.versionSelect && els.downloadBtn) {
+    els.versionSelect.dataset.projectId = hit.project_id;
+    els.versionSelect._loaded = false;
+    els.versionSelect.innerHTML = '<option value="__latest__">Latest compatible version</option>';
+    els.downloadBtn.innerHTML = `${DISCOVER_ICONS.download}<span>${hit.project_type === 'modpack' ? 'Install' : 'Download'}</span>`;
+    els.downloadBtn.disabled = false;
+    els.versionSelect.onfocus = () => populateVersionSelect(hit, els.versionSelect, els.downloadBtn);
+    els.versionSelect.onmousedown = () => populateVersionSelect(hit, els.versionSelect, els.downloadBtn);
+    els.downloadBtn.onclick = () => downloadDiscoverSelection(hit, els.versionSelect, els.downloadBtn);
+  }
+}
+
+async function renderDiscoverProjectVersions(projectId) {
+  const els = discoverProjectModalEls();
+  if (!els.versions || !els.versionsList) return;
+  els.versionsList.innerHTML = '<div class="discover-empty">Loading versions…</div>';
+  try {
+    const versions = await fetchProjectVersions(projectId);
+    if (discoverProjectModalCurrentId !== projectId) return;
+    if (!versions || !versions.length) {
+      els.versions.classList.add('hidden');
+      return;
+    }
+    els.versions.classList.remove('hidden');
+    els.versionsList.innerHTML = versions.slice(0, 25).map(v => {
+      const primaryFile = (v.files && v.files.find(f => f.primary)) || (v.files && v.files[0]);
+      const dateLabel = formatDiscoverRelativeDate(v.date_published);
+      const loadersList = (v.loaders || []).map(l => loaderLabel(l) || l).join(', ');
+      const mcList = (v.game_versions || []).slice(-4).join(', ');
+      const changelogHtml = v.changelog && v.changelog.trim()
+        ? `<div class="discover-version-changelog">${discoverMiniMarkdown(v.changelog)}</div>`
+        : '';
+      return `
+        <div class="discover-version-entry">
+          <div class="discover-version-entry-header">
+            <span class="discover-version-entry-name">${discoverEscape(v.name && v.name !== v.version_number ? v.name : v.version_number)}</span>
+            ${dateLabel ? `<span class="discover-version-entry-date">${discoverEscape(dateLabel)}</span>` : ''}
+          </div>
+          <div class="discover-version-entry-meta">
+            ${mcList ? `<span>${discoverEscape(mcList)}</span>` : ''}
+            ${loadersList ? `<span>${discoverEscape(loadersList)}</span>` : ''}
+          </div>
+          ${changelogHtml}
+          ${primaryFile ? `<button type="button" class="discover-version-entry-dl" data-file-url="${discoverEscape(primaryFile.url)}" data-file-name="${discoverEscape(primaryFile.filename)}">${DISCOVER_ICONS.file}<span>${discoverEscape(primaryFile.filename)}</span></button>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    els.versionsList.querySelectorAll('.discover-version-entry-dl').forEach(btn => {
+      const fileLabel = btn.querySelector('span').textContent;
+      btn.addEventListener('click', async () => {
+        const target = currentDiscoverTargetInstance();
+        if (!settings) settings = await api.getSettings();
+        const directory = target ? (target.directory || settings.game_directory) : settings.game_directory;
+        btn.disabled = true;
+        btn.querySelector('span').textContent = 'Downloading…';
+        const dlId = genDlId('discover-version-download');
+        try {
+          await trackedDiscoverDownload(directory, discoverProjectModalCurrentType || discoverState.type, btn.dataset.fileUrl, btn.dataset.fileName, dlId);
+          showToast(`${btn.dataset.fileName} downloaded`, 'success');
+          btn.innerHTML = `${DISCOVER_ICONS.check}<span>Downloaded</span>`;
+          setTimeout(() => { btn.innerHTML = `${DISCOVER_ICONS.file}<span>${fileLabel}</span>`; btn.disabled = false; }, 1500);
+        } catch (e) {
+          showToast('Download failed: ' + e, 'error');
+          btn.querySelector('span').textContent = fileLabel;
+          btn.disabled = false;
+        }
+      });
+    });
+  } catch (e) {
+    if (discoverProjectModalCurrentId !== projectId) return;
+    els.versions.classList.remove('hidden');
+    els.versionsList.innerHTML = `<div class="discover-empty">Couldn't load versions: ${discoverEscape(String(e))}</div>`;
+  }
+}
+
+function initDiscoverProjectModal() {
+  const overlay = document.getElementById('discover-project-overlay');
+  if (!overlay) return;
+
+  document.getElementById('btn-close-discover-project')?.addEventListener('click', closeDiscoverProjectModal);
+  document.getElementById('btn-open-discover-project-browser')?.addEventListener('click', () => {
+    if (!discoverProjectModalCurrentSlug || !discoverProjectModalCurrentType) return;
+    openExternalLink(`https://modrinth.com/${discoverProjectModalCurrentType}/${discoverProjectModalCurrentSlug}`);
+  });
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeDiscoverProjectModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !overlay.classList.contains('hidden')) closeDiscoverProjectModal();
+  });
+
+  // Event delegation: clicking anywhere on a Discover card (except its
+  // interactive controls, which already have their own handlers) opens
+  // the project page panel for that card's project.
+  document.getElementById('discover-results')?.addEventListener('click', (e) => {
+    if (e.target.closest('.discover-version-select, .discover-download-btn, .discover-card-menu-btn')) return;
+    const card = e.target.closest('.discover-card');
+    if (!card || !card._hit) return;
+    openDiscoverProjectModal(card._hit);
+  });
 }
 
 function isDiscoverVersionCompatible(version, hit, target) {
@@ -12874,7 +13485,9 @@ const BG = {
     // WebKitGTK (the Linux Tauri webview) has no real GPU-accelerated
     // canvas path, so every extra star is a real per-frame cost. Fewer
     // stars there keeps the animation smooth instead of dropping frames.
-    const count = IS_WEBKIT_GTK ? 100 : 165;
+    // Trimmed further across the board since performance is the priority
+    // here — still plenty dense for a night sky, just lighter per frame.
+    const count = IS_WEBKIT_GTK ? 80 : 135;
     const w = window.innerWidth || 1200;
     const h = window.innerHeight || 800;
     for (let i = 0; i < count; i++) {
@@ -12930,13 +13543,47 @@ const BG = {
   },
 
   spawnShootingStar(timestamp, w, h) {
-    if (timestamp - this.lastShootingStarTime < 3200 + Math.random() * 3200) return;
+    // Was 3.2–6.4s between meteors (and always exactly one at a time) —
+    // shortened so they streak across more often, while a hard concurrent
+    // cap keeps the worst-case per-frame draw cost (gradients + strokes)
+    // bounded no matter how bursty spawning gets. This keeps perf on par
+    // with before even though meteors now appear roughly 2x as often.
+    if (timestamp - this.lastShootingStarTime < 2200 + Math.random() * 2400) return;
+    if (this.shootingStars.length >= 3) return;
     this.lastShootingStarTime = timestamp;
-    const startX = Math.random() * (w * 0.8) + (w * 0.1);
-    const startY = Math.random() * (h * 0.35);
+    this.spawnOneShootingStar(w, h);
+    // Occasionally let a second one follow almost immediately for a brief
+    // "shower" moment — still capped by the concurrency check above.
+    if (Math.random() < 0.18 && this.shootingStars.length < 3) {
+      this.spawnOneShootingStar(w, h);
+    }
+  },
+
+  spawnOneShootingStar(w, h) {
+    // Spread spawn points across more of the sky instead of just the top
+    // band: pick a random origin edge (top, or high up the left/right
+    // sides) so streaks don't all start from the same strip. A fixed
+    // margin keeps them off the literal edge (x=0 / x=w) so the head glow
+    // and gradient tail never spawn already half-clipped off-canvas.
+    const margin = 40;
+    const edge = Math.random();
+    let startX, startY;
+    if (edge < 0.6) {
+      // Top edge — across nearly the full width.
+      startX = margin + Math.random() * (w - margin * 2);
+      startY = Math.random() * (h * 0.22);
+    } else if (edge < 0.8) {
+      // Upper-left area, streaking further rightward.
+      startX = margin + Math.random() * (w * 0.15);
+      startY = Math.random() * (h * 0.4);
+    } else {
+      // Upper-right area.
+      startX = w - margin - Math.random() * (w * 0.15);
+      startY = Math.random() * (h * 0.4);
+    }
     const angle = (Math.PI / 4) + (Math.random() - 0.5) * 0.3; // 35-55 deg downward streak
     const speed = 8 + Math.random() * 5.5;
-    const length = 110 + Math.random() * 80;
+    const length = 170 + Math.random() * 110;
     this.shootingStars.push({
       x: startX,
       y: startY,
@@ -12946,6 +13593,10 @@ const BG = {
       alpha: 1.0,
       decay: 0.018 + Math.random() * 0.01,
       thickness: 1.4 + Math.random() * 1.3,
+      // Ramps 0→1 over the first few frames so the tail grows out from the
+      // head instead of the full-length streak popping in instantly.
+      age: 0,
+      growRate: 0.16 + Math.random() * 0.08,
     });
   },
 
@@ -13367,9 +14018,13 @@ const BG = {
             meteor.x += meteor.dx * speed;
             meteor.y += meteor.dy * speed;
             meteor.alpha -= meteor.decay * speed;
+            if (meteor.age < 1) meteor.age = Math.min(1, meteor.age + meteor.growRate * speed);
 
-            // Spawn stardust spark trail
-            if (Math.random() < 0.45 && this.stardustSparks) {
+            // Spawn stardust spark trail. Chance lowered and total count
+            // capped — with up to 3 meteors active at once this is the
+            // biggest source of extra per-frame draw calls, so keep it
+            // modest instead of letting it grow unbounded.
+            if (Math.random() < 0.28 && this.stardustSparks && this.stardustSparks.length < 60) {
               this.stardustSparks.push({
                 x: meteor.x - (Math.random() - 0.5) * 6,
                 y: meteor.y - (Math.random() - 0.5) * 6,
@@ -13386,14 +14041,21 @@ const BG = {
               continue;
             }
 
+            // Tail grows out from the head in 3 distinct stages (1/3 → 2/3
+            // → full length) instead of one continuous smooth ramp, and
+            // instead of the full-length streak appearing instantly.
+            const stageAge = Math.ceil(meteor.age * 3) / 3;
+            const liveLength = meteor.length * stageAge;
+            const headAlpha = stageAge; // head/spark fade in with the same stages
+
             const dist = Math.hypot(meteor.dx, meteor.dy) || 1;
-            const tailX = meteor.x - (meteor.dx / dist) * meteor.length;
-            const tailY = meteor.y - (meteor.dy / dist) * meteor.length;
+            const tailX = meteor.x - (meteor.dx / dist) * liveLength;
+            const tailY = meteor.y - (meteor.dy / dist) * liveLength;
 
             const mGrd = ctx.createLinearGradient(tailX, tailY, meteor.x, meteor.y);
             mGrd.addColorStop(0, `rgba(${r},${g},${b},0)`);
-            mGrd.addColorStop(0.65, `rgba(${r},${g},${b},${Math.min(1, meteor.alpha * 0.5 * aBoost)})`);
-            mGrd.addColorStop(1, `rgba(255,255,255,${Math.min(1, meteor.alpha * aBoost)})`);
+            mGrd.addColorStop(0.65, `rgba(${r},${g},${b},${Math.min(1, meteor.alpha * 0.5 * aBoost * headAlpha)})`);
+            mGrd.addColorStop(1, `rgba(255,255,255,${Math.min(1, meteor.alpha * aBoost * headAlpha)})`);
 
             ctx.beginPath();
             ctx.moveTo(tailX, tailY);
@@ -13406,8 +14068,8 @@ const BG = {
             // Radiant head bloom
             const headR = meteor.thickness * 3.0;
             const hGrd = ctx.createRadialGradient(meteor.x, meteor.y, 0, meteor.x, meteor.y, headR);
-            hGrd.addColorStop(0, `rgba(255,255,255,${Math.min(1, meteor.alpha * aBoost)})`);
-            hGrd.addColorStop(0.4, `rgba(${r},${g},${b},${Math.min(1, meteor.alpha * 0.6 * aBoost)})`);
+            hGrd.addColorStop(0, `rgba(255,255,255,${Math.min(1, meteor.alpha * aBoost * headAlpha)})`);
+            hGrd.addColorStop(0.4, `rgba(${r},${g},${b},${Math.min(1, meteor.alpha * 0.6 * aBoost * headAlpha)})`);
             hGrd.addColorStop(1, 'rgba(0,0,0,0)');
             ctx.fillStyle = hGrd;
             ctx.fillRect(meteor.x - headR, meteor.y - headR, headR * 2, headR * 2);
@@ -13415,7 +14077,7 @@ const BG = {
             // Bright pinpoint head spark
             ctx.beginPath();
             ctx.arc(meteor.x, meteor.y, meteor.thickness * 1.4, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(255,255,255,${Math.min(1, meteor.alpha * aBoost)})`;
+            ctx.fillStyle = `rgba(255,255,255,${Math.min(1, meteor.alpha * aBoost * headAlpha)})`;
             ctx.fill();
           }
         }
@@ -14364,6 +15026,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await refreshAccountUI().catch(e => console.error('Accounts load failed', e));
   initSkinViewerUI();
   initDressingRoomUI();
+  initDiscoverProjectModal();
   await delay(320);
 
   // Phase 4: Minecraft Instances & Scanning

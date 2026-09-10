@@ -101,6 +101,14 @@ pub struct DiscoverHit {
     pub date_modified: Option<String>,
     pub latest_version: Option<String>,
     pub versions: Vec<String>,
+    #[serde(default)]
+    pub gallery: Vec<String>,
+    // The single image Modrinth's search index designates as this
+    // project's banner/featured image — unlike `gallery` (all images,
+    // arbitrary order), this is the one the developer actually chose to
+    // represent the project, so it's what card banners should show.
+    pub featured_gallery: Option<String>,
+    pub color: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -134,6 +142,10 @@ struct RawSearchHit {
     latest_version: Option<String>,
     #[serde(default)]
     versions: Vec<String>,
+    #[serde(default)]
+    gallery: Vec<String>,
+    featured_gallery: Option<String>,
+    color: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -234,6 +246,9 @@ pub async fn discover_search(
                 date_modified: h.date_modified,
                 latest_version: h.latest_version,
                 versions: h.versions,
+                gallery: h.gallery,
+                featured_gallery: h.featured_gallery,
+                color: h.color,
             })
             .collect(),
         total_hits: raw.total_hits,
@@ -255,6 +270,12 @@ pub struct DiscoverFile {
 pub struct DiscoverVersion {
     pub id: String,
     pub version_number: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub changelog: Option<String>,
+    #[serde(default)]
+    pub date_published: Option<String>,
     pub game_versions: Vec<String>,
     pub loaders: Vec<String>,
     pub files: Vec<DiscoverFile>,
@@ -287,6 +308,12 @@ struct RawDependency {
 struct RawVersion {
     id: String,
     version_number: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    changelog: Option<String>,
+    #[serde(default)]
+    date_published: Option<String>,
     game_versions: Vec<String>,
     loaders: Vec<String>,
     files: Vec<RawFile>,
@@ -336,6 +363,9 @@ pub async fn discover_get_versions(
         .map(|v| DiscoverVersion {
             id: v.id,
             version_number: v.version_number,
+            name: v.name,
+            changelog: v.changelog,
+            date_published: v.date_published,
             game_versions: v.game_versions,
             loaders: v.loaders,
             files: v
@@ -408,6 +438,152 @@ pub(crate) async fn modrinth_get_download_url(
     Ok(None)
 }
 
+// ── Full project detail (for the Discover "project page" modal) ────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoverGalleryImage {
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub featured: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoverProjectDetails {
+    pub project_id: String,
+    pub slug: String,
+    pub title: String,
+    pub description: String,
+    pub body: String,
+    pub author: String,
+    pub icon_url: Option<String>,
+    pub downloads: u64,
+    pub follows: u64,
+    pub project_type: String,
+    pub categories: Vec<String>,
+    pub license: Option<String>,
+    pub license_url: Option<String>,
+    pub client_side: Option<String>,
+    pub server_side: Option<String>,
+    pub date_created: Option<String>,
+    pub date_modified: Option<String>,
+    pub color: Option<i64>,
+    pub gallery: Vec<DiscoverGalleryImage>,
+    pub source_url: Option<String>,
+    pub issues_url: Option<String>,
+    pub wiki_url: Option<String>,
+    pub discord_url: Option<String>,
+    pub donation_urls: Vec<String>,
+}
+
+/// One-shot fetch of everything the Discover "project page" modal needs:
+/// full description body, gallery (with captions), and project links. Kept
+/// as a single lightweight request — the caller fetches the version list
+/// separately (already cached/used by the card's version picker) only if
+/// the user opens the Versions tab of the modal.
+#[tauri::command]
+pub async fn discover_get_project_details(project_id: String) -> Result<DiscoverProjectDetails, String> {
+    let url = format!("{MODRINTH_API}/project/{project_id}");
+    let resp = send_with_retry(|client| client.get(&url))
+        .await
+        .map_err(|e| format!("Failed to reach Modrinth: {e} (source: {:?})", e.source()))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to fetch project: HTTP {}", resp.status()));
+    }
+
+    #[derive(Deserialize)]
+    struct RawGalleryImage {
+        url: String,
+        title: Option<String>,
+        description: Option<String>,
+        #[serde(default)]
+        featured: bool,
+    }
+    #[derive(Deserialize)]
+    struct RawLicense {
+        id: Option<String>,
+        url: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct RawDetails {
+        id: String,
+        slug: String,
+        title: String,
+        description: String,
+        #[serde(default)]
+        body: String,
+        team: Option<String>,
+        icon_url: Option<String>,
+        downloads: Option<u64>,
+        followers: Option<u64>,
+        project_type: String,
+        #[serde(default)]
+        categories: Vec<String>,
+        license: Option<RawLicense>,
+        client_side: Option<String>,
+        server_side: Option<String>,
+        published: Option<String>,
+        updated: Option<String>,
+        color: Option<i64>,
+        #[serde(default)]
+        gallery: Vec<RawGalleryImage>,
+        source_url: Option<String>,
+        issues_url: Option<String>,
+        wiki_url: Option<String>,
+        discord_url: Option<String>,
+        #[serde(default)]
+        donation_urls: Vec<serde_json::Value>,
+    }
+
+    let raw: RawDetails = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse project: {e}"))?;
+
+    let donation_urls = raw
+        .donation_urls
+        .into_iter()
+        .filter_map(|v| v.get("url").and_then(|u| u.as_str()).map(|s| s.to_string()))
+        .collect();
+
+    Ok(DiscoverProjectDetails {
+        project_id: raw.id,
+        slug: raw.slug,
+        title: raw.title,
+        description: raw.description,
+        body: raw.body,
+        author: raw.team.unwrap_or_default(),
+        icon_url: raw.icon_url,
+        downloads: raw.downloads.unwrap_or(0),
+        follows: raw.followers.unwrap_or(0),
+        project_type: raw.project_type,
+        categories: raw.categories,
+        license: raw.license.as_ref().and_then(|l| l.id.clone()),
+        license_url: raw.license.and_then(|l| l.url),
+        client_side: raw.client_side,
+        server_side: raw.server_side,
+        date_created: raw.published,
+        date_modified: raw.updated,
+        color: raw.color,
+        gallery: raw
+            .gallery
+            .into_iter()
+            .map(|g| DiscoverGalleryImage {
+                url: g.url,
+                title: g.title,
+                description: g.description,
+                featured: g.featured,
+            })
+            .collect(),
+        source_url: raw.source_url,
+        issues_url: raw.issues_url,
+        wiki_url: raw.wiki_url,
+        discord_url: raw.discord_url,
+        donation_urls,
+    })
+}
+
 /// Fetch a single Modrinth project's basic info by id/slug — used to resolve
 /// a dependency's project_id into a name/title so it can be searched for
 /// and matched against already-installed mods.
@@ -469,6 +645,9 @@ pub async fn discover_get_project(project_id: String) -> Result<DiscoverHit, Str
         date_modified: None,
         latest_version: None,
         versions: raw.versions,
+        gallery: Vec::new(),
+        featured_gallery: None,
+        color: None,
     })
 }
 

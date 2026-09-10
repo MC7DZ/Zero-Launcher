@@ -3474,6 +3474,118 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   overflow: hidden;
 }
 
+/* ── Content Type Panel (Resource Packs / Mods / Worlds) — right sidebar,
+   styled to match the Discover filter island ── */
+.mods-two-pane-layout {
+  display: flex;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
+.mods-content-island {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.mods-type-island {
+  order: -1;
+  width: 190px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(33, 33, 33, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius, 12px);
+  overflow: hidden;
+  contain: layout style paint;
+  transform: translateZ(0);
+}
+
+.mods-type-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 14px;
+  background: rgba(20, 20, 20, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: center;
+}
+
+.mods-type-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+}
+
+.mods-type-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.content-type-segment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 10px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.content-type-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  transition: background 0.15s ease;
+}
+.content-type-segment.active .content-type-icon-wrap {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.content-type-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.content-type-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.content-type-segment:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.content-type-segment.active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
 /* ── Top Panel (Toolbar Island) ── */
 .mods-top-panel {
   flex-shrink: 0;
@@ -4206,22 +4318,98 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 14px;
+  padding: 0;
   border-radius: 10px;
   background: #212121;
   border: 1px solid rgba(255, 255, 255, 0.07);
-  gap: 10px;
+  overflow: hidden;
   contain: layout style paint;
   transform: translateZ(0);
   backface-visibility: hidden;
   transition: border-color 0.12s ease, background 0.12s ease;
-  min-height: 180px;
+  min-height: 220px;
 }
 
 .discover-card:hover {
   border-color: rgba(255, 255, 255, 0.15);
   background: #272727;
+}
+
+/* Banner area — the project's gallery image when Modrinth has one, else a
+   gradient from its accent color, else a plain neutral gradient. This is
+   the background for the icon/title/author/description block up top; a
+   scrim overlay keeps that text legible over any image. Everything below
+   (stats/tags row + version/download footer) stays on the card's normal
+   flat background, unchanged. */
+.discover-card-banner-area {
+  position: relative;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015));
+  background-size: cover;
+  background-position: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  /* Avoid webkitgtk repaint cost on background-attachment/backdrop-filter */
+  background-attachment: scroll;
+}
+
+.discover-card-banner-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(0,0,0,0.30) 0%, rgba(0,0,0,0.55) 65%, rgba(0,0,0,0.72) 100%);
+}
+
+.discover-card-banner-area:not(.has-image) .discover-card-banner-overlay {
+  /* No photo underneath — the gradient/neutral fill is already flat and
+     legible, so skip the extra darkening pass to save a paint layer. */
+  background: transparent;
+}
+
+.discover-card-banner-area.has-image {
+  /* The dark scrim overlay already reaches full darkness at the bottom
+     edge, so the plain hairline border here would poke out as a stray
+     unshaded strip beneath it — drop it in favor of the overlay's own
+     bottom edge for the seam. */
+  border-bottom: none;
+}
+
+.discover-card-banner-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  /* Fixed regardless of description length so every card's banner ends at
+     the same height — icon row + a always-reserved 2-line description. */
+  min-height: 116px;
+  box-sizing: border-box;
+}
+
+.discover-card-banner-area.has-image .discover-card-title,
+.discover-card-banner-area.has-image .discover-card-author {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.discover-card-banner-area.has-image .discover-card-desc {
+  color: rgba(255, 255, 255, 0.88);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.discover-card-banner-area.has-image .discover-card-icon {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.discover-card-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 14px 14px;
+  gap: 10px;
 }
 
 .discover-card-top {
@@ -4282,6 +4470,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   -webkit-box-orient: vertical;
   overflow: hidden;
   margin: 0;
+  /* Always reserve 2 lines of height, even when the description is short,
+     missing, or wraps to 1 line — keeps every banner the same height. */
+  min-height: calc(1.35em * 2);
 }
 
 .discover-card-meta {
@@ -4416,6 +4607,518 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .discover-skeleton-line.w-90 { width: 90%; }
 .discover-skeleton-line.w-75 { width: 75%; }
 .discover-skeleton-line.w-40 { width: 40%; }
+
+.discover-empty {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding: 20px 4px;
+  text-align: center;
+}
+
+/* ── Discover Project Page Panel ──────────────────────────────────────────
+   Opened by clicking a Discover card. Same slide-in drawer treatment as
+   the Dressing Room panel (fixed to the right edge, full height), just
+   with different content: icon/title, stats, download row, tags, links,
+   description, gallery and a version/changelog list — all in one simple
+   scrolling column instead of tabs. Icons are inline SVG (no emoji). */
+#discover-project-overlay {
+  align-items: stretch;
+  justify-content: flex-end;
+}
+
+.discover-project-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.discover-project-modal {
+  width: 560px;
+  max-width: 92vw;
+  height: 100vh;
+  max-height: none;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background: #1b1b1b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-right: none;
+  border-radius: var(--radius) 0 0 var(--radius);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.6);
+  transform: translateZ(0);
+  position: relative;
+  overflow: hidden;
+  animation: dressing-room-in 0.24s cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+.discover-project-header-row {
+  flex-shrink: 0;
+  padding: 20px 20px 0;
+  position: relative;
+}
+
+/* Center the "Project Details" title regardless of the action buttons'
+   width, instead of letting justify-content: space-between push it to
+   whichever side has less content. */
+.discover-project-header-row .dl-panel-heading-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.discover-project-skeleton {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 20px;
+}
+
+.discover-project-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 14px;
+  padding: 0 0 20px;
+  overflow-y: auto;
+}
+
+.discover-project-content.hidden { display: none; }
+
+/* Banner — mirrors the card's own banner-area treatment (gallery image
+   or accent-color gradient behind a dark scrim) so the panel opens on
+   something that reads as a continuation of the card you clicked, not a
+   different kind of thing. Holds icon/title/author and the project's
+   links (source/issues/wiki/discord/donate/license) only — no
+   description here, that lives in the scrolling body below. */
+/* Banner — literally the same banner as the card (shares
+   .discover-card-banner-area / .discover-card-banner-overlay, so any
+   future change to one automatically applies to both), just taller
+   since it also holds stats/download/tags/links, so the panel reads
+   like a continuation of the card you clicked rather than a different
+   kind of thing. No description here — that lives in the scrolling
+   body below. */
+.discover-project-banner {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 16px 20px 14px;
+  overflow: hidden;
+}
+
+.discover-project-banner-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The rest of the app disables text selection (global user-select: none
+   on html/body) so it doesn't feel like a webpage, but this panel is a
+   project *page* — its title, description, changelog etc. should behave
+   like ordinary selectable/copyable text. */
+.discover-project-content,
+.discover-project-content * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.discover-project-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.discover-project-icon {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  border-radius: 12px;
+  font-size: 20px;
+}
+
+.discover-project-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 2px;
+}
+
+.discover-project-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.discover-project-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.discover-project-author-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.discover-project-author {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.discover-project-type-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+.discover-project-stats {
+  display: flex;
+  gap: 14px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.discover-project-stats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.discover-project-stats svg {
+  width: 13px;
+  height: 13px;
+  opacity: 0.8;
+}
+
+.discover-project-footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Plain text control, not a boxed dropdown — same treatment as the
+   splash screen's "Skip" link (.sl-skip-btn): no background/border,
+   underlined text, brightens on hover. Still a real <select> under the
+   hood (version list, populated on focus/click) so it keeps working
+   exactly like the card's own dropdown, it just doesn't look like a
+   form control sitting next to the download button. */
+.discover-project-footer .discover-version-select-plain {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0 2px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: color 0.14s ease, text-decoration-color 0.14s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.discover-project-footer .discover-version-select-plain:hover,
+.discover-project-footer .discover-version-select-plain:focus {
+  color: var(--text);
+  text-decoration-color: rgba(255, 255, 255, 0.7);
+  outline: none;
+}
+.discover-project-footer .discover-version-select-plain option {
+  color: #000;
+}
+
+.discover-project-footer .discover-download-btn {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 11.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.discover-project-footer .discover-download-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.discover-project-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.discover-project-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.discover-project-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 4px 9px;
+  text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.discover-project-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.discover-project-link-static { cursor: default; }
+.discover-project-link-static:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.discover-project-link svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.discover-project-body-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 20px;
+}
+
+.discover-project-subsection.hidden { display: none; }
+
+.discover-project-subheading {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+/* Rendered Markdown body */
+.discover-project-markdown {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.discover-project-markdown h1,
+.discover-project-markdown h2,
+.discover-project-markdown h3,
+.discover-project-markdown h4,
+.discover-project-markdown h5,
+.discover-project-markdown h6 {
+  color: #fff;
+  font-weight: 700;
+  margin: 14px 0 6px;
+  line-height: 1.3;
+}
+.discover-project-markdown h1 { font-size: 15.5px; }
+.discover-project-markdown h2 { font-size: 14.5px; }
+.discover-project-markdown h3 { font-size: 13.5px; }
+.discover-project-markdown h4,
+.discover-project-markdown h5,
+.discover-project-markdown h6 { font-size: 12.5px; }
+
+.discover-project-markdown p { margin: 0 0 9px; }
+.discover-project-markdown ul,
+.discover-project-markdown ol { margin: 0 0 9px; padding-left: 20px; }
+.discover-project-markdown li { margin: 3px 0; }
+.discover-project-markdown img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 6px 4px 6px 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+.discover-project-markdown a { color: var(--accent); text-decoration: none; }
+.discover-project-markdown a:hover { text-decoration: underline; }
+.discover-project-markdown code {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+  font-family: monospace;
+}
+.discover-project-markdown pre {
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 0 0 9px;
+}
+.discover-project-markdown pre code { background: none; padding: 0; }
+.discover-project-markdown center { display: block; text-align: center; }
+.discover-project-markdown details {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 0 0 9px;
+}
+.discover-project-markdown summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--text);
+  font-size: 12px;
+}
+.discover-project-markdown details[open] summary { margin-bottom: 8px; }
+.discover-project-markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 9px;
+  font-size: 12px;
+}
+.discover-project-markdown th,
+.discover-project-markdown td {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 5px 8px;
+  text-align: left;
+}
+.discover-project-markdown blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 0 0 9px;
+  padding: 2px 12px;
+  color: var(--text-muted);
+}
+.discover-project-markdown hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 12px 0;
+}
+
+/* Gallery grid */
+.discover-project-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.discover-gallery-item {
+  position: relative;
+  border: none;
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #181818;
+  aspect-ratio: 16 / 10;
+}
+.discover-gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.18s ease;
+}
+.discover-gallery-item:hover img { transform: scale(1.05); }
+
+/* Versions / changelog list */
+.discover-project-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.discover-version-entry {
+  background: #1d1d1d;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.discover-version-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.discover-version-entry-name {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: #fff;
+}
+
+.discover-version-entry-date {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.discover-version-entry-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.discover-version-changelog {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+.discover-version-changelog p { margin: 0 0 6px; }
+
+.discover-version-entry-dl {
+  margin-top: 8px;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 5px 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.discover-version-entry-dl:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.discover-version-entry-dl svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
 
 /* ── Right Island: Filter & Search Sidebar ── */
 .discover-filter-island {
@@ -4644,6 +5347,22 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Match the size of the Mods/Resourcepacks/etc segment buttons in the same
+   header row, instead of the larger default .btn-sm sizing. */
+.discover-pagination .btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.discover-pagination .btn-sm svg {
+  width: 11px;
+  height: 11px;
 }
 
 .discover-page-info {
@@ -5629,18 +6348,46 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   justify-content: space-between;
   gap: 10px;
   flex-shrink: 0;
-  padding: 18px 24px;
+  padding: 12px 18px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(0, 0, 0, 0.25);
   touch-action: none;
 }
 .dl-panel-heading-row .dl-panel-heading {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
   text-transform: none;
   letter-spacing: normal;
   color: var(--text);
   padding: 0;
+}
+
+/* Dressing Room / Downloads / Files-breakdown headers: title centered in
+   the row (independent of the close button's width) while the button
+   itself stays put on the right, unlike the Discover project panel where
+   the whole action group moved to the left. */
+.dressing-room-header.dl-panel-heading-row,
+.dl-widget-panel .dl-panel-heading-row,
+.dl-files-heading-row {
+  position: relative;
+}
+.dl-widget-panel .dl-panel-heading-row,
+.dl-files-heading-row {
+  justify-content: flex-end;
+}
+.dressing-room-header.dl-panel-heading-row {
+  justify-content: flex-start;
+}
+.dressing-room-header.dl-panel-heading-row .dl-panel-heading-text,
+.dl-widget-panel .dl-panel-heading-row .dl-panel-heading-text,
+.dl-files-heading-row .dl-panel-heading-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  pointer-events: none;
 }
 
 /* #dl-cards is a shared class with the old flyout above; inside the
@@ -8828,7 +9575,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .is-webkit-gtk .dressing-room-modal,
 .is-webkit-gtk .apply-preset-mod-list,
 .is-webkit-gtk .discover-scroll-area,
-.is-webkit-gtk .presets-container {
+.is-webkit-gtk .presets-container,
+.is-webkit-gtk .discover-project-modal,
+.is-webkit-gtk .discover-project-content,
+.is-webkit-gtk .dl-files-list {
   will-change: scroll-position;
   -webkit-overflow-scrolling: touch;
   overflow-anchor: none;
