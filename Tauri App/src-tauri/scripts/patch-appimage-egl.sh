@@ -12,6 +12,12 @@
 # dynamic linker falls back to the host system's real Mesa stack, which is
 # guaranteed to match the host's actual kernel/GPU driver.
 #
+# While we're already extracting and repackaging the AppImage for the EGL
+# fix, this also switches squashfs compression from mksquashfs's default
+# (gzip) to xz, which is meaningfully smaller for a bundle this size (see
+# the appimagetool invocation below) — a real difference for anyone on a
+# slow connection downloading this thing.
+#
 # Run this after `tauri build` produces the AppImage.
 
 set -euo pipefail
@@ -57,7 +63,15 @@ else
   APPIMAGETOOL="appimagetool"
 fi
 
-$APPIMAGETOOL squashfs-root "patched.AppImage"
+# appimagetool passes any trailing args straight through to the mksquashfs
+# call it makes internally. Its own default (mksquashfs's plain default,
+# gzip) leaves real size on the table for an image this large — xz with a
+# full-size dictionary and the x86 BCJ filter (tuned for the Rust/WebKitGTK
+# machine code that makes up most of this bundle) typically comes in
+# 25-40% smaller than gzip for the same content. Slower to build (xz is
+# CPU-heavier than gzip), but decompression at launch is unaffected enough
+# to not matter, and this only costs build time, not user startup time.
+$APPIMAGETOOL squashfs-root "patched.AppImage" -comp xz -Xdict-size 100% -Xbcj x86
 
 popd > /dev/null
 

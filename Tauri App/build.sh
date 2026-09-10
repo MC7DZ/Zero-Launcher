@@ -121,7 +121,7 @@ build_app() {
         log "Building Zero Launcher (release)"
         npm run tauri build
         if [ -f "src-tauri/scripts/patch-appimage-egl.sh" ]; then
-            log "Patching AppImage to avoid bundled-EGL host mismatch (EGL_BAD_PARAMETER fix)"
+            log "Patching AppImage (EGL_BAD_PARAMETER fix + xz recompression for a smaller download)"
             chmod +x src-tauri/scripts/patch-appimage-egl.sh
             ./src-tauri/scripts/patch-appimage-egl.sh
         fi

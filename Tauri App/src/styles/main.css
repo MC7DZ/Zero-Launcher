@@ -8947,6 +8947,14 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .about-update-status-line.is-error {
   border-color: rgba(239, 68, 68, 0.3);
   color: #f87171;
+  /* Error text now includes the full underlying reason (DNS/connect/TLS
+     detail), which can run long — let it wrap and cap width instead of
+     overflowing the panel or getting silently clipped. */
+  width: auto;
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  align-items: flex-start;
 }
 
 .about-update-status-line.is-uptodate {

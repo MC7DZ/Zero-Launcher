@@ -3,6 +3,7 @@ mod discord_rpc;
 mod first_run_setup;
 mod logger;
 mod models;
+mod network;
 mod state;
 
 use state::AppState;
@@ -98,6 +99,12 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_notification::init())
+        // Powers every window.__TAURI__.dialog.open()/save() call in the
+        // frontend (skin import, mod install, background image, Java path,
+        // export/import saves, etc.). Without this registered, `dialog` is
+        // simply undefined on the frontend and every one of those pickers
+        // silently no-ops or falls back to a broken path-less <input type=file>.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Very first thing on every launch: make sure the launcher is
             // installed in its permanent home with a proper shortcut

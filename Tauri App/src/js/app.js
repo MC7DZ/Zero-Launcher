@@ -459,7 +459,7 @@ const api = {
   openDevtools: () => invoke('open_devtools'),
   updateDiscordPresence: (tab, playingInstance, mcVersion) =>
     invoke('update_discord_presence', { tab, playingInstance, mcVersion }),
-  onLog: (cb) => listen('log', cb),
+  onLog: (cb) => listen('log-entry', cb),
   onDownloadProgress: (cb) => listen('download-progress', cb),
   onLaunchVerifyStatus: (cb) => listen('launch-verify-status', cb),
   previewModpack: (filePath) => invoke('preview_modpack', { filePath }),
@@ -2836,23 +2836,8 @@ function createSkinAnimation(name) {
   return anim;
 }
 
-function updateSkinModelBadge() {
-  const badge = document.getElementById('skin-model-badge');
-  if (!badge || !skinViewerInstance) return;
-  const type = skinViewerInstance.playerObject?.skin?.modelType;
-  badge.textContent = type === 'slim' ? 'Slim (3px Arms)' : 'Classic (4px Arms)';
-}
-
 async function loadSkinIntoViewer(source, modelType = currentSkinModelType) {
-  if (skinViewerInstance) {
-    try {
-      currentSkinSource = source;
-      await skinViewerInstance.loadSkin(source, { model: modelType });
-      updateSkinModelBadge();
-    } catch (err) {
-      console.error('Failed to load skin in viewer:', err);
-    }
-  }
+  currentSkinSource = source;
   if (skinMiniPreviewInstance && source) {
     try {
       currentMiniPreviewSkinUrl = source;
@@ -2869,18 +2854,6 @@ async function loadSkinIntoViewer(source, modelType = currentSkinModelType) {
 
 async function loadCapeIntoViewer(capeKeyOrUrl) {
   const url = PRESET_CAPES[capeKeyOrUrl] !== undefined ? PRESET_CAPES[capeKeyOrUrl] : capeKeyOrUrl;
-  if (skinViewerInstance) {
-    try {
-      if (!url) {
-        skinViewerInstance.resetCape();
-        skinViewerInstance.playerObject.backEquipment = null;
-      } else {
-        await skinViewerInstance.loadCape(url, { backEquipment: currentSkinEquipType });
-      }
-    } catch (err) {
-      console.error('Failed to load cape in viewer:', err);
-    }
-  }
   if (skinMiniPreviewInstance) {
     try {
       if (!url) {
@@ -2895,29 +2868,6 @@ async function loadCapeIntoViewer(capeKeyOrUrl) {
   }
 }
 
-function resizeSkinViewer() {
-  if (!skinViewerInstance) return;
-  const container = document.getElementById('skin-viewer-canvas-container');
-  if (!container) return;
-  const w = container.clientWidth;
-  const h = container.clientHeight;
-  if (w > 0 && h > 0) {
-    skinViewerInstance.setSize(w, h);
-  }
-}
-
-function takeSkinScreenshot() {
-  if (!skinViewerInstance) return;
-  skinViewerInstance.render();
-  const dataUrl = skinViewerInstance.canvas.toDataURL('image/png');
-  const a = document.createElement('a');
-  a.href = dataUrl;
-  a.download = `minecraft-skin-${Date.now()}.png`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  showToast('Screenshot saved to downloads!', 'success');
-}
 
 function getAccountSkinSettingsKey(acc) {
   if (!acc) return 'zero_skin_acc_global';
@@ -3032,10 +2982,6 @@ async function openSkinViewerModal() {
   if (!overlay) return;
   overlay.classList.remove('hidden');
 
-  if (skinViewerInstance) {
-    skinViewerInstance.renderPaused = false;
-  }
-
   // The standee sits fully behind this modal — no point spending GPU time
   // rendering WebGL frames nobody can see while it's covered.
   if (skinMiniPreviewInstance) {
@@ -3137,9 +3083,6 @@ function closeSkinViewerModal() {
   const overlay = document.getElementById('skin-viewer-overlay');
   if (!overlay) return;
   overlay.classList.add('hidden');
-  if (skinViewerInstance) {
-    skinViewerInstance.renderPaused = true;
-  }
   if (skinMiniPreviewInstance) {
     skinMiniPreviewInstance.renderPaused = false;
   }
@@ -3293,6 +3236,33 @@ function closeDressingRoomModal() {
 
   // Resume main menu standee
   showSkinMiniPreview();
+}
+
+// Debounced & serialized sync of a locally-imported skin to Mojang's
+// servers for Microsoft accounts. Debounced so rapid re-imports/equips
+// don't fire overlapping uploads; serialized via a running-promise chain
+// so a slow upload can't race a newer one and clobber it out of order.
+let _syncSkinToMojangTimer = null;
+let _syncSkinToMojangChain = Promise.resolve();
+
+function syncSkinToMojangDebounced(skinPath, skinName, account, delayMs = 600) {
+  if (!account || account.account_type !== 'microsoft' || !account.mc_uuid) return;
+
+  if (_syncSkinToMojangTimer) clearTimeout(_syncSkinToMojangTimer);
+  _syncSkinToMojangTimer = setTimeout(() => {
+    _syncSkinToMojangTimer = null;
+    _syncSkinToMojangChain = _syncSkinToMojangChain
+      .catch(() => {}) // don't let a prior failure block the next sync
+      .then(async () => {
+        try {
+          await api.uploadSkinToMojang(skinPath, 'classic', account.id);
+          showToast(`Skin "${skinName}" synced to Mojang servers!`, 'success');
+        } catch (err) {
+          console.warn('Mojang skin sync failed:', err);
+          showToast(`Mojang rejected skin sync: ${err}`, 'error');
+        }
+      });
+  }, delayMs);
 }
 
 function setDressingRoomBusy(busy, message = 'Updating Mojang servers…') {
@@ -4043,11 +4013,6 @@ function showSkinMiniPreview() {
 // from the system tray (or re-focused after single-instance re-launch).
 function resumeSkinViewersAfterShow() {
   setTimeout(() => {
-    resizeSkinViewer();
-    if (skinViewerInstance) {
-      skinViewerInstance.renderPaused = false;
-      try { skinViewerInstance.render(); } catch (e) {}
-    }
     if (skinMiniPreviewInstance) {
       const ctx = skinMiniPreviewInstance.renderer?.getContext?.();
       if (ctx && ctx.isContextLost && ctx.isContextLost()) {
@@ -11247,6 +11212,10 @@ function populateSettingsUI() {
   const autoOpenConsoleChk = document.getElementById('setting-auto-open-console');
   if (autoOpenConsoleChk) autoOpenConsoleChk.checked = !!settings.auto_open_console_on_launch;
 
+  // Network
+  const networkModeSelect = document.getElementById('setting-network-mode');
+  if (networkModeSelect) networkModeSelect.value = settings.network_mode || 'automatic';
+
   applyThemeFromSettings();
   applyUsernamePrivacy();
 
@@ -11574,6 +11543,10 @@ function collectSettingsFromUI() {
   if (crashAnalysisChk) settings.enable_crash_analysis = crashAnalysisChk.checked;
   const autoOpenConsoleChk = document.getElementById('setting-auto-open-console');
   if (autoOpenConsoleChk) settings.auto_open_console_on_launch = autoOpenConsoleChk.checked;
+
+  // Network
+  const networkModeSelect2 = document.getElementById('setting-network-mode');
+  if (networkModeSelect2) settings.network_mode = networkModeSelect2.value;
 
   // Preserve Setup Wizard status
   if (prevFinishedSetup !== undefined) settings.Finished_setup = prevFinishedSetup;
@@ -11905,6 +11878,7 @@ function initSettings() {
     'setting-crash-analysis',
     'setting-auto-open-console',
     'setting-hardware-acceleration',
+    'setting-network-mode',
   ];
   immediateIds.forEach(id => {
     const el = document.getElementById(id);
@@ -12434,7 +12408,6 @@ function openSettingsModal(targetSection) {
   // to give 100% CPU and GPU priority to the Settings UI on WebKitGTK
   if (typeof BG !== 'undefined' && BG.pause) BG.pause();
   if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
-  if (skinViewerInstance) skinViewerInstance.renderPaused = true;
 
   // Reset search state on modal open
   const searchInput = document.getElementById('settings-search-input');
@@ -12570,6 +12543,7 @@ const SETTINGS_SEARCH_CATALOG = [
   // Experimental
   { label: 'Crash Diagnostics & Auto-Troubleshoot', keywords: 'crash diagnostics troubleshoot automatic analysis error scan fix', section: 'experimental', sectionLabel: 'Experimental', targetId: 'setting-crash-analysis' },
   { label: 'Auto Open Game Console on Launch', keywords: 'auto open console game log output window live terminal', section: 'experimental', sectionLabel: 'Experimental', targetId: 'setting-auto-open-console' },
+  { label: 'IP Protocol (Network)', keywords: 'network ipv4 ipv6 automatic protocol internet connection dual stack', section: 'network', sectionLabel: 'Network', targetId: 'setting-network-mode' },
 
   // About & Updates
   { label: 'Check for Launcher Updates', keywords: 'check launcher updates update zero launcher version github releases download new', section: 'about', sectionLabel: 'About & Updates', targetId: 'btn-check-launcher-updates' },
@@ -13362,13 +13336,11 @@ const BG = {
         this.animId = null;
         this._scheduled = false;
         if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
-        if (skinViewerInstance) skinViewerInstance.renderPaused = true;
         try { invoke('trim_memory'); } catch (_) {}
       } else {
         this.requestRedraw();
         const skinModalOpen = !document.getElementById('skin-viewer-overlay')?.classList.contains('hidden');
         const dressingOpen = !document.getElementById('dressing-room-overlay')?.classList.contains('hidden');
-        if (skinViewerInstance && skinModalOpen) skinViewerInstance.renderPaused = false;
         if (skinMiniPreviewInstance && !skinModalOpen && !dressingOpen) {
           skinMiniPreviewInstance.renderPaused = false;
         }
@@ -15365,7 +15337,10 @@ function initAutoUpdate() {
       showUpdateReady(relaunch);
     } catch (e) {
       console.error('Update download failed:', e);
-      progressLabel.textContent = `Update failed: ${e}`;
+      // The backend keeps whatever was already downloaded and resumes from
+      // there next time, so closing this and trying again (from the prompt
+      // or Settings → Check for updates) doesn't restart from 0.
+      progressLabel.textContent = `Update failed: ${e} — your progress was saved, try again and it'll resume.`;
       closeBtn.style.visibility = 'visible';
       if (unlistenProgress) { unlistenProgress(); unlistenProgress = null; }
     }
@@ -15418,7 +15393,11 @@ function initUpdateChecker() {
     api.checkForUpdate()
       .then((update) => {
         if (!update) return;
-        showUpdatePrompt(update);
+        if (typeof window.__ZL_showUpdatePrompt === 'function') {
+          window.__ZL_showUpdatePrompt(update);
+        } else {
+          console.error('showUpdatePrompt is not available (initAutoUpdate may not have run)');
+        }
       })
       .catch((e) => {
         console.warn('Update check failed:', e);
@@ -15466,7 +15445,11 @@ function initUpdateChecker() {
               </svg>
             `;
           }
-          showUpdatePrompt(update);
+          if (typeof window.__ZL_showUpdatePrompt === 'function') {
+            window.__ZL_showUpdatePrompt(update);
+          } else {
+            console.error('showUpdatePrompt is not available (initAutoUpdate may not have run)');
+          }
         } else {
           const current = await api.getLauncherVersion().catch(() => null);
           if (subtextEl) subtextEl.textContent = current ? `You're up to date (v${current})` : "You're up to date";
@@ -15483,8 +15466,9 @@ function initUpdateChecker() {
         if (lastCheckedEl) lastCheckedEl.textContent = formatLastCheckedTime();
       } catch (e) {
         console.error('Manual update check failed:', e);
-        if (subtextEl) subtextEl.textContent = 'Could not check for updates. Check connection.';
-        setStatusLine('is-error', 'Unable to reach update servers. Check your internet connection.');
+        const detail = (e && (e.message || e.toString())) || 'Unknown error';
+        if (subtextEl) subtextEl.textContent = 'Could not check for updates.';
+        setStatusLine('is-error', `Unable to reach update servers: ${detail}`);
         if (statusIconWrap) {
           statusIconWrap.style.background = 'rgba(239, 68, 68, 0.15)';
           statusIconWrap.innerHTML = `

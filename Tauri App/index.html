@@ -2066,6 +2066,10 @@
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3 4.5 5.6V11c0 5 3.2 8.4 7.5 10 4.3-1.6 7.5-5 7.5-10V5.6L12 3Z"/><path d="M9 12.2 11.2 14.3 15.3 9.8" stroke-linecap="round"/></svg>
               <span>Privacy &amp; Dev</span>
             </button>
+            <button class="settings-nav-btn" data-section="network">
+              <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.4 4 5.6 4 9s-1.5 6.6-4 9c-2.5-2.4-4-5.6-4-9s1.5-6.6 4-9Z"/></svg>
+              <span>Network</span>
+            </button>
             <button class="settings-nav-btn" data-section="experimental">
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M9.5 3h5" stroke-linecap="round"/><path d="M10.3 3.3v5.4L5.6 17a2 2 0 0 0 1.75 3h9.3a2 2 0 0 0 1.75-3l-4.7-8.3V3.3"/><path d="M7.6 14.5h8.8" stroke-linecap="round"/></svg>
               <span>Experimental</span>
@@ -2778,6 +2782,26 @@
                   </label>
                   <p class="settings-hint">Adds verbose DEBUG-level entries to the log and console windows for detailed troubleshooting.</p>
                 </div>
+              </div>
+            </div>
+
+            <!-- Network Panel -->
+            <div id="settings-panel-network" class="settings-tab-panel">
+              <div class="settings-panel-heading">
+                <h3>Network</h3>
+                <p>Controls which IP protocol the launcher's own network requests use (update checks/downloads, mod &amp; skin downloads, Java downloads, sign-in). Does not affect the Minecraft game process itself.</p>
+              </div>
+
+              <div class="form-group" style="margin-bottom:18px;">
+                <select id="setting-network-mode" class="input-field">
+                  <option value="automatic">Automatic (try IPv4 first, then IPv6)</option>
+                  <option value="ipv4">IPv4 only</option>
+                  <option value="ipv6">IPv6 only</option>
+                </select>
+                <p class="settings-hint">
+                  <strong>Automatic</strong> (default) tries IPv4 first and falls back to IPv6 if that doesn't connect — works on most networks with no changes needed.
+                  Pick <strong>IPv4 only</strong> or <strong>IPv6 only</strong> if you know your network only has one of the two, so requests don't waste time on an attempt that can't succeed.
+                </p>
               </div>
             </div>
 

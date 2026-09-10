@@ -42,95 +42,18 @@
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
-use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::logger;
+use crate::network;
 use crate::state::AppState;
 
 /// Source tag used for every log line this module writes, so the log
 /// viewer/`latest.log` can be filtered down to just update activity.
+/// (Network-layer detail — which protocol/attempt/error — is logged under
+/// the "Network" source by `network::send`; this tag covers the
+/// update-system-specific steps around it.)
 const LOG_SOURCE: &str = "Updater";
-
-/// Number of attempts made for a manifest fetch or download start before
-/// giving up — absorbs a single transient DNS/connect hiccup instead of
-/// failing the whole check/download on the first blip.
-const MAX_ATTEMPTS: u32 = 3;
-
-/// Builds the reqwest client used for all updater HTTP calls.
-///
-/// Deliberately does **not** pin `local_address` to IPv4 (an earlier
-/// version of this file did, to work around broken IPv6 routes stalling
-/// requests). That approach traded one problem for a worse one: it made
-/// the updater completely unreachable on IPv6-only networks (increasingly
-/// common on mobile carriers, some ISPs, and CGNAT-only setups with no
-/// usable public IPv4 route). reqwest/hyper 0.12+ already implements
-/// Happy Eyeballs (RFC 8305): when a host resolves to both address
-/// families, it races connection attempts across both and uses whichever
-/// answers first, so a dead/blackholed route in one family no longer
-/// stalls the request — no manual pinning needed, and it works regardless
-/// of whether the machine is IPv4-only, IPv6-only, or dual-stack.
-fn updater_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
-}
-
-/// Runs a request-building closure with a couple of short retries on
-/// connect/timeout errors — the flakiest part of a request — logging each
-/// attempt and its outcome so a failed update check/download is
-/// diagnosable from `latest.log` alone.
-async fn send_with_retry(
-    app: &AppHandle,
-    state: &AppState,
-    what: &str,
-    build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
-) -> Result<reqwest::Response, reqwest::Error> {
-    let client = updater_client();
-    let mut attempt = 1;
-    loop {
-        logger::debug(
-            app,
-            state,
-            LOG_SOURCE,
-            &format!("{what}: attempt {attempt}/{MAX_ATTEMPTS}"),
-        );
-        match build(&client).send().await {
-            Ok(resp) => {
-                logger::debug(
-                    app,
-                    state,
-                    LOG_SOURCE,
-                    &format!("{what}: connected on attempt {attempt} (HTTP {})", resp.status()),
-                );
-                return Ok(resp);
-            }
-            Err(e) if attempt < MAX_ATTEMPTS && (e.is_connect() || e.is_timeout()) => {
-                logger::warn(
-                    app,
-                    state,
-                    LOG_SOURCE,
-                    &format!(
-                        "{what}: attempt {attempt}/{MAX_ATTEMPTS} failed ({}), retrying — {e}",
-                        if e.is_timeout() { "timed out" } else { "connect error" },
-                    ),
-                );
-                attempt += 1;
-                tokio::time::sleep(Duration::from_millis(400 * attempt as u64)).await;
-            }
-            Err(e) => {
-                logger::error(
-                    app,
-                    state,
-                    LOG_SOURCE,
-                    &format!("{what}: giving up after {attempt} attempt(s) — {e}"),
-                );
-                return Err(e);
-            }
-        }
-    }
-}
 
 /// ── EDIT ME ──────────────────────────────────────────────────────────────
 /// Raw URL of the JSON manifest described above. Use the "raw" GitHub URL
@@ -229,34 +152,65 @@ pub async fn check_for_update(
         &format!("Checking for updates (running {current_version}, os={os_key})"),
     );
 
-    let resp = send_with_retry(&app, &state, "manifest fetch", |client| {
+    let resp = network::send(&app, &state, "Update manifest fetch", |client| {
         client
             .get(MANIFEST_URL)
             .header("User-Agent", "ZeroLauncher-Updater")
     })
     .await
-    .map_err(|e| {
-        let msg = format!("Failed to reach update server: {e}");
-        logger::error(&app, &state, LOG_SOURCE, &msg);
-        msg
-    })?;
+    .map_err(|e| format!("Unable to reach the update server. {e}"))?;
 
     let status = resp.status();
-    let resp = resp.error_for_status().map_err(|e| {
-        let msg = format!("Update server returned an error: {e}");
+    let headers = resp.headers().clone();
+    let body_text = resp.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        // Log everything we have about the failing response — status,
+        // relevant headers, and the raw body (truncated so a misbehaving
+        // server can't flood the log) — so a "server returned an error"
+        // failure is fully diagnosable from latest.log without having to
+        // reproduce it.
+        let content_type = headers
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("unknown");
+        let body_snippet: String = body_text.chars().take(2000).collect();
         logger::error(
             &app,
             &state,
             LOG_SOURCE,
-            &format!("Manifest fetch returned HTTP {status}: {e}"),
+            &format!(
+                "Manifest fetch returned HTTP {status} (content-type: {content_type}, body {} bytes): {}",
+                body_text.len(),
+                if body_snippet.is_empty() { "<empty body>" } else { &body_snippet },
+            ),
         );
-        msg
-    })?;
+        return Err(format!(
+            "Update server returned HTTP {status}. {}",
+            if body_snippet.is_empty() {
+                "No response body.".to_string()
+            } else {
+                format!("Response: {body_snippet}")
+            }
+        ));
+    }
 
-    let manifest: UpdateManifest = resp.json().await.map_err(|e| {
-        let msg = format!("Update manifest was not valid JSON: {e}");
+    logger::debug(
+        &app,
+        &state,
+        LOG_SOURCE,
+        &format!("Manifest body ({} bytes): {}", body_text.len(), body_text.chars().take(4000).collect::<String>()),
+    );
+
+    let manifest: UpdateManifest = serde_json::from_str(&body_text).map_err(|e| {
+        let body_snippet: String = body_text.chars().take(2000).collect();
+        let msg = format!(
+            "Update manifest was not valid JSON: {e}. Raw body ({} bytes): {}",
+            body_text.len(),
+            if body_snippet.is_empty() { "<empty body>" } else { &body_snippet },
+        );
         logger::error(&app, &state, LOG_SOURCE, &msg);
-        msg
+        format!("Update manifest was not valid JSON: {e}")
     })?;
 
     let entry = match os_key {
@@ -326,37 +280,93 @@ pub async fn download_update(
             "ZeroLauncher-Update.AppImage"
         });
     let dest_path = updates_dir.join(file_name);
+    // Downloaded into a `.part` sidecar and only renamed to the real name on
+    // success, so a half-downloaded file is never mistaken for a complete
+    // one (e.g. by `install_update`'s `is_file()` check after a crash mid-
+    // download). Also doubles as the resume checkpoint: if this file exists
+    // from a previous failed attempt, we pick up where it left off instead
+    // of re-downloading bytes we already have — the main thing that helps
+    // on slow/unstable connections, where restarting from zero on every
+    // interruption can mean the download never finishes.
+    let part_path = updates_dir.join(format!("{file_name}.part"));
+
+    let already_have: u64 = std::fs::metadata(&part_path).map(|m| m.len()).unwrap_or(0);
 
     logger::info(
         &app,
         &state,
         LOG_SOURCE,
-        &format!("Starting download: {url} -> {}", dest_path.display()),
+        &format!(
+            "Starting download: {url} -> {}{}",
+            dest_path.display(),
+            if already_have > 0 {
+                format!(" (resuming from {:.1} MB)", already_have as f64 / 1_048_576.0)
+            } else {
+                String::new()
+            }
+        ),
     );
 
-    let response = send_with_retry(&app, &state, "download start", |client| {
-        client.get(&url).header("User-Agent", "ZeroLauncher-Updater")
+    let response = network::send(&app, &state, "Update download", |client| {
+        let req = client.get(&url).header("User-Agent", "ZeroLauncher-Updater");
+        if already_have > 0 {
+            req.header("Range", format!("bytes={already_have}-"))
+        } else {
+            req
+        }
     })
     .await
-    .map_err(|e| {
-        let msg = format!("Failed to start download: {e}");
-        logger::error(&app, &state, LOG_SOURCE, &msg);
-        msg
-    })?;
+    .map_err(|e| format!("Unable to reach the download server. {e}"))?;
 
     let status = response.status();
-    let response = response.error_for_status().map_err(|e| {
-        let msg = format!("Download server returned an error: {e}");
+    // A server that doesn't support Range requests replies 200 (whole file)
+    // even though we asked for a range — in that case our partial bytes
+    // don't line up with what's coming, so start over instead of corrupting
+    // the file by appending mismatched data.
+    let resuming = already_have > 0 && status.as_u16() == 206;
+    if already_have > 0 && !resuming {
+        logger::debug(
+            &app,
+            &state,
+            LOG_SOURCE,
+            &format!("Server returned HTTP {status} for a range request; restarting download from 0"),
+        );
+        let _ = std::fs::remove_file(&part_path);
+    }
+    let already_have = if resuming { already_have } else { 0 };
+
+    if !status.is_success() && status.as_u16() != 206 {
+        let headers = response.headers().clone();
+        let body_text = response.text().await.unwrap_or_default();
+        let content_type = headers
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("unknown");
+        let body_snippet: String = body_text.chars().take(2000).collect();
         logger::error(
             &app,
             &state,
             LOG_SOURCE,
-            &format!("Download start returned HTTP {status}: {e}"),
+            &format!(
+                "Download start returned HTTP {status} for {url} (content-type: {content_type}, body {} bytes): {}",
+                body_text.len(),
+                if body_snippet.is_empty() { "<empty body>" } else { &body_snippet },
+            ),
         );
-        msg
-    })?;
+        return Err(format!(
+            "Download server returned HTTP {status}. {}",
+            if body_snippet.is_empty() {
+                "No response body.".to_string()
+            } else {
+                format!("Response: {body_snippet}")
+            }
+        ));
+    }
 
-    let total_bytes = response.content_length();
+    // On a 206 (partial content) response, Content-Length is only the size
+    // of the *remaining* bytes — add back what we already have on disk to
+    // get the true total for progress reporting.
+    let total_bytes = response.content_length().map(|remaining| remaining + already_have);
     logger::info(
         &app,
         &state,
@@ -366,17 +376,36 @@ pub async fn download_update(
             None => "Download size: unknown (no Content-Length header)".to_string(),
         },
     );
-    let mut downloaded_bytes: u64 = 0;
+    let mut downloaded_bytes: u64 = already_have;
     // Logged at 10% increments (in addition to the UI's continuous
     // `update-download-progress` events) so a stalled/slow download shows
     // up clearly in latest.log without flooding it every chunk.
-    let mut last_logged_decile: u64 = 0;
+    let mut last_logged_decile: u64 = if let Some(t) = total_bytes.filter(|t| *t > 0) {
+        downloaded_bytes * 10 / t
+    } else {
+        0
+    };
+    // The UI progress bar only needs updates a few times a second, not on
+    // every TCP chunk — on a fast connection that chunk loop can run
+    // thousands of times a second, and firing an IPC event every time just
+    // burns CPU on both sides for no visible benefit. Emit at most ~15/sec.
+    let mut last_progress_emit = std::time::Instant::now();
+    const PROGRESS_EMIT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(66);
 
-    let mut file = std::fs::File::create(&dest_path).map_err(|e| {
-        let msg = format!("Failed to create update file: {e}");
-        logger::error(&app, &state, LOG_SOURCE, &msg);
-        msg
-    })?;
+    // Buffered so each incoming chunk doesn't force its own write() syscall
+    // — chunks get batched into fewer, larger disk writes instead.
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(resuming)
+        .write(true)
+        .truncate(!resuming)
+        .open(&part_path)
+        .map_err(|e| {
+            let msg = format!("Failed to create update file: {e}");
+            logger::error(&app, &state, LOG_SOURCE, &msg);
+            msg
+        })?;
+    let mut file = std::io::BufWriter::with_capacity(256 * 1024, file);
 
     let mut response = response;
     loop {
@@ -384,13 +413,15 @@ pub async fn download_update(
             Ok(Some(c)) => c,
             Ok(None) => break,
             Err(e) => {
+                let _ = file.flush();
                 logger::error(
                     &app,
                     &state,
                     LOG_SOURCE,
                     &format!(
-                        "Download interrupted after {:.1} MB: {e}",
-                        downloaded_bytes as f64 / 1_048_576.0
+                        "Download interrupted after {:.1} MB: {e}. Partial file kept at {} for resume on retry.",
+                        downloaded_bytes as f64 / 1_048_576.0,
+                        part_path.display(),
                     ),
                 );
                 return Err(format!("Download interrupted: {e}"));
@@ -421,14 +452,40 @@ pub async fn download_update(
             }
         }
 
-        let _ = app.emit(
-            "update-download-progress",
-            UpdateProgress {
-                downloaded_bytes,
-                total_bytes,
-            },
-        );
+        if last_progress_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
+            last_progress_emit = std::time::Instant::now();
+            let _ = app.emit(
+                "update-download-progress",
+                UpdateProgress {
+                    downloaded_bytes,
+                    total_bytes,
+                },
+            );
+        }
     }
+
+    file.flush().map_err(|e| {
+        let msg = format!("Failed to flush update file: {e}");
+        logger::error(&app, &state, LOG_SOURCE, &msg);
+        msg
+    })?;
+    drop(file);
+
+    // Always emit one final, exact progress update — the throttling above
+    // can otherwise leave the UI stuck a few percent short of 100%.
+    let _ = app.emit(
+        "update-download-progress",
+        UpdateProgress {
+            downloaded_bytes,
+            total_bytes,
+        },
+    );
+
+    std::fs::rename(&part_path, &dest_path).map_err(|e| {
+        let msg = format!("Failed to finalize downloaded update file: {e}");
+        logger::error(&app, &state, LOG_SOURCE, &msg);
+        msg
+    })?;
 
     logger::info(
         &app,

@@ -405,6 +405,17 @@ pub struct LauncherSettings {
     #[serde(default = "default_true")]
     pub rpc_state_multiplayer: bool,
 
+    // Network
+    /// How the launcher's own network requests (update checks/downloads,
+    /// mod/Discover/skin downloads, Java downloads, Microsoft sign-in,
+    /// etc.) pick between IPv4 and IPv6:
+    /// - `"automatic"` (default): try IPv4 first; if that doesn't connect,
+    ///   fall back to IPv6.
+    /// - `"ipv4"`: only ever use IPv4.
+    /// - `"ipv6"`: only ever use IPv6.
+    #[serde(default = "default_network_mode")]
+    pub network_mode: String,
+
     // Developer
     #[serde(default)]
     pub unlock_dev_stuff: bool,
@@ -456,6 +467,7 @@ fn default_skin_speed() -> f64 { 0.5 }
 fn default_skin_facing() -> String { "left".to_string() }
 fn default_skin_cape_key() -> String { "migrator".to_string() }
 fn default_skin_equip_type() -> String { "cape".to_string() }
+fn default_network_mode() -> String { "automatic".to_string() }
 
 fn default_true() -> bool { true }
 fn default_hardware_acceleration() -> bool {
@@ -630,6 +642,8 @@ impl Default for LauncherSettings {
             unlock_dev_stuff: false,
             debug_mode: false,
             private_servers_ips: String::new(),
+
+            network_mode: default_network_mode(),
 
 
             enable_crash_analysis: false,
