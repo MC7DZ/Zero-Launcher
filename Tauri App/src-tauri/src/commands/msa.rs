@@ -58,6 +58,9 @@ fn save_microsoft_login(state: &State<'_, AppState>, login: &CompleteLoginRespon
         mc_uuid: Some(login.id.clone()),
         ms_refresh_token: Some(login.refresh_token.clone()),
         needs_reauth: false,
+        elyby_access_token: None,
+        elyby_client_token: None,
+        elyby_oauth_refresh_token: None,
     };
     accounts.push(acc.clone());
     drop(accounts);

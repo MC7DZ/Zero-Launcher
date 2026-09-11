@@ -45,10 +45,11 @@ pub fn sanitize_user_path(raw: &str) -> String {
 pub struct AccountInfo {
     pub id: String,
     pub username: String,
-    pub account_type: String, // "offline" or "microsoft"
+    pub account_type: String, // "offline", "microsoft", or "elyby"
     pub is_active: bool,
-    /// Minecraft profile UUID — set for Microsoft accounts, used to launch
-    /// with the real profile identity instead of a random offline UUID.
+    /// Minecraft profile UUID — set for Microsoft and Ely.by accounts, used
+    /// to launch with the real profile identity instead of a random
+    /// offline UUID.
     #[serde(default)]
     pub mc_uuid: Option<String>,
     /// Microsoft OAuth refresh token — set for Microsoft accounts. Used to
@@ -63,6 +64,25 @@ pub struct AccountInfo {
     /// the user signs in again. Never set for offline accounts.
     #[serde(default)]
     pub needs_reauth: bool,
+    /// Ely.by (Yggdrasil-compatible) access token — set for "elyby"
+    /// accounts. Long-lived; refreshed in place at launch time via
+    /// authserver.ely.by/auth/refresh so the user isn't re-prompted for
+    /// their password on every launch.
+    #[serde(default)]
+    pub elyby_access_token: Option<String>,
+    /// Ely.by client token paired with `elyby_access_token`, required by
+    /// the refresh/validate/invalidate endpoints. Generated once at first
+    /// login and kept for the lifetime of the account. Only used for
+    /// the legacy password-based sign-in — OAuth2 accounts use
+    /// `elyby_oauth_refresh_token` instead.
+    #[serde(default)]
+    pub elyby_client_token: Option<String>,
+    /// Ely.by OAuth2 refresh token — set for "elyby" accounts that signed
+    /// in via the browser (OAuth2) rather than typing a password
+    /// in-app. Presence of this field (vs. `elyby_client_token`) is how
+    /// the launcher tells which of the two Ely.by refresh flows to use.
+    #[serde(default)]
+    pub elyby_oauth_refresh_token: Option<String>,
 }
 
 /// Ensures at most one account is marked `is_active`. If more than one is

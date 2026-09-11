@@ -48,6 +48,12 @@ pub struct AppState {
     /// `microsoft_device_code_poll`. Only one device-code sign-in can be
     /// in flight at a time.
     pub device_code_session: Mutex<Option<String>>,
+    /// Ely.by OAuth2 sign-in currently in progress (if any) — set by
+    /// `elyby_oauth_start`, read/cleared by `elyby_oauth_poll`. Holds the
+    /// expected `state` value plus a shared slot the local loopback
+    /// callback server writes its result into. Only one Ely.by OAuth
+    /// sign-in can be in flight at a time.
+    pub elyby_oauth_session: Mutex<Option<crate::commands::elyby::ElybyOauthSession>>,
     /// In-memory cache of valid Minecraft access tokens / login sessions keyed by account id.
     /// Prevents repeated and concurrent OAuth refreshes that burn refresh tokens or rate limit.
     pub msa_session_cache: Mutex<HashMap<String, CachedMsaSession>>,
@@ -131,6 +137,7 @@ impl AppState {
             generic_cancels: Mutex::new(HashMap::new()),
             log_file: Mutex::new(log_file),
             device_code_session: Mutex::new(None),
+            elyby_oauth_session: Mutex::new(None),
             msa_session_cache: Mutex::new(HashMap::new()),
             msa_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
             last_activity_at: Mutex::new(std::time::Instant::now()),

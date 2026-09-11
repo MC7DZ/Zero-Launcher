@@ -23,6 +23,9 @@ pub async fn add_offline_account(
         mc_uuid: None,
         ms_refresh_token: None,
         needs_reauth: false,
+        elyby_access_token: None,
+        elyby_client_token: None,
+        elyby_oauth_refresh_token: None,
     };
 
     let result = {

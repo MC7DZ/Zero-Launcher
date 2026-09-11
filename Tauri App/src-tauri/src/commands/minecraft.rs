@@ -1545,6 +1545,39 @@ pub async fn launch_minecraft(
                 }
             }
         }
+    } else if active_account_type == "elyby" {
+        // Ely.by launch: refresh (or validate) the stored Yggdrasil-style
+        // session, falling back to an offline launch if that fails —
+        // same "don't block Play on the network" behavior as the
+        // Microsoft branch above.
+        match crate::commands::elyby::refresh_elyby_login(&state, &active_account_id).await {
+            Ok(session) => mc_launcher_core::account::Account::Microsoft {
+                username: session.username,
+                uuid: session.uuid,
+                access_token: session.access_token,
+            },
+            Err(e) => {
+                logger::warn_for_instance(
+                    &app,
+                    &state,
+                    &version_id,
+                    "LAUNCHER",
+                    &format!("Could not refresh Ely.by session online ({e}) — falling back to offline launch mode..."),
+                );
+                let _ = app.emit("toast-notification", &serde_json::json!({
+                    "message": "Ely.by auth timed out / offline — launching in offline mode (skins won't load)",
+                    "type": "info"
+                }));
+                if let Some(uuid) = active_mc_uuid {
+                    mc_launcher_core::account::Account::Offline {
+                        username: username.clone(),
+                        uuid,
+                    }
+                } else {
+                    mc_launcher_core::account::Account::offline(&username)
+                }
+            }
+        }
     } else {
         mc_launcher_core::account::Account::offline(&username)
     };
@@ -1573,6 +1606,13 @@ pub async fn launch_minecraft(
     // instance's own game directory is.
     let mc_dir = minecraft_dir.clone();
     let dir = game_dir.clone();
+    // Captured before `mc_account` is moved into the launch options below —
+    // true only when we actually ended up with a live Ely.by session (not
+    // one of the offline fallbacks above), since that's the only case
+    // authlib-injector has anything valid to authenticate against.
+    let needs_authlib_injector = active_account_type == "elyby"
+        && !offline
+        && matches!(mc_account, mc_launcher_core::account::Account::Microsoft { .. });
     let account_for_launch = mc_account;
 
     // Load the version metadata first (blocking, but fast — just reads the
@@ -1960,6 +2000,27 @@ pub async fn launch_minecraft(
     // resolves/connects) so the game works regardless of which protocol the
     // player's network or the server they're joining actually uses.
     args.push("-Ddiscordfix=net.minecraft.client.main.Main".to_string());
+    // Ely.by accounts need authlib-injector so the game fetches
+    // skins/capes/session validation from Ely.by instead of Mojang — this
+    // is what actually makes an Ely.by skin/cape show up in-game.
+    // Skipped when we fell back to an offline launch above (no session
+    // to validate against Ely.by in that case).
+    if needs_authlib_injector {
+        match crate::commands::elyby::ensure_authlib_injector(&app, &state).await {
+            Ok(jar_path) => {
+                args.push(format!("-javaagent:{}=ely.by", jar_path.display()));
+            }
+            Err(e) => {
+                logger::warn_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
+                    "Could not prepare authlib-injector ({e}) — launching without it, skins/capes won't load"
+                ));
+                let _ = app.emit("toast-notification", &serde_json::json!({
+                    "message": "Couldn't download authlib-injector — Ely.by skins won't show this launch",
+                    "type": "info"
+                }));
+            }
+        }
+    }
     if !jvm_args_str.is_empty() {
         args.extend(jvm_args_str.split_whitespace().map(String::from));
     }

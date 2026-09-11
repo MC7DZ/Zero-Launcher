@@ -377,6 +377,12 @@ const api = {
   microsoftDeviceCodeCancel: () => invoke('microsoft_device_code_cancel'),
   refreshMicrosoftAccount: (id) => invoke('refresh_microsoft_account', { id }),
   refreshAllMicrosoftAccounts: () => invoke('refresh_all_microsoft_accounts'),
+  elybyLogin: (username, password) => invoke('elyby_login', { username, password }),
+  elybyLogout: (accountId) => invoke('elyby_logout', { accountId }),
+  elybyOauthStart: () => invoke('elyby_oauth_start'),
+  elybyOauthPoll: () => invoke('elyby_oauth_poll'),
+  elybyOauthCancel: () => invoke('elyby_oauth_cancel'),
+  getElybySkinInfo: (username) => invoke('get_elyby_skin_info', { username }),
   cacheAccountSkin: (username, renderUrl) => invoke('cache_account_skin', { username, renderUrl }),
   listCachedSkins: () => invoke('list_cached_skins'),
   listSkins: () => invoke('list_skins'),
@@ -915,6 +921,7 @@ function showAccountView(view) {
     empty: 'account-empty-state',
     msa: 'account-msa-section',
     offline: 'account-offline-section',
+    elyby: 'account-elyby-section',
   };
   Object.values(map).forEach(id => {
     const el = document.getElementById(id);
@@ -958,6 +965,7 @@ function stopAccountManagerAutoRefresh() {
 // never touch the network to authenticate).
 const ACCOUNT_TYPE_ICON_MICROSOFT = `<svg viewBox="0 0 24 24" width="12" height="12" style="flex-shrink:0;"><rect x="2" y="2" width="9" height="9" fill="#f35325"/><rect x="13" y="2" width="9" height="9" fill="#81bc06"/><rect x="2" y="13" width="9" height="9" fill="#05a6f0"/><rect x="13" y="13" width="9" height="9" fill="#ffba08"/></svg>`;
 const ACCOUNT_TYPE_ICON_OFFLINE = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>`;
+const ACCOUNT_TYPE_ICON_ELYBY = `<svg viewBox="0 0 24 24" width="12" height="12" style="flex-shrink:0;"><rect x="1" y="1" width="22" height="22" rx="6" fill="#2E8ED7"/><path d="M7 6.5h10v2.6H10v2.9h6.2v2.5H10v3h7.2V20H7V6.5z" fill="#fff"/></svg>`;
 
 async function refreshAccountUI() {
   try {
@@ -1038,6 +1046,7 @@ async function refreshAccountUI() {
       const initial = (useUnknownTag || useUnknownPic) ? '?' : (acc.username || 'A').charAt(0).toUpperCase();
       const shownName = escapeHtml(useUnknownTag ? 'Unknown' : maskUsernameForDisplay(acc.username));
       const isMsa = acc.account_type === 'microsoft';
+      const isElyby = acc.account_type === 'elyby';
       // Player-head avatar: keyed by the real Minecraft UUID when we have one
       // (Microsoft accounts), otherwise by username (offline accounts get
       // whatever skin — Steve/Alex — that name resolves to). Skipped
@@ -1065,8 +1074,8 @@ async function refreshAccountUI() {
               ${needsReauth ? '<span class="account-reauth-tag">⚠ Sign-in expired</span>' : ''}
             </div>
             <div style="display:flex; align-items:center; gap:5px; font-size:11px; color:var(--text-muted); margin-top:2px;">
-              ${isMsa ? ACCOUNT_TYPE_ICON_MICROSOFT : ACCOUNT_TYPE_ICON_OFFLINE}
-              <span>${isMsa ? 'Microsoft Account' : 'Offline Account'}</span>
+              ${isMsa ? ACCOUNT_TYPE_ICON_MICROSOFT : (isElyby ? ACCOUNT_TYPE_ICON_ELYBY : ACCOUNT_TYPE_ICON_OFFLINE)}
+              <span>${isMsa ? 'Microsoft Account' : (isElyby ? 'Ely.by Account' : 'Offline Account')}</span>
               ${(!needsReauth && acc.is_active) ? '<span style="color:var(--accent); font-weight:700; margin-left:4px;">● In Use</span>' : ''}
             </div>
           </div>
@@ -1235,6 +1244,14 @@ function initAccountDropdown() {
   const showAddBtn = document.getElementById('btn-show-add-account');
   const choiceMsaBtn = document.getElementById('btn-choice-msa');
   const choiceOfflineBtn = document.getElementById('btn-choice-offline');
+  const choiceElybyBtn = document.getElementById('btn-choice-elyby');
+  const elybyIdleEl = document.getElementById('elyby-oauth-idle');
+  const elybyWaitingEl = document.getElementById('elyby-oauth-waiting');
+  const elybyOauthLoginBtn = document.getElementById('btn-elyby-oauth-login');
+  const elybyOauthOpenAgainBtn = document.getElementById('btn-elyby-oauth-open-again');
+  const elybyOauthCancelBtn = document.getElementById('btn-elyby-oauth-cancel');
+  const elybyStatusEl = document.getElementById('elyby-oauth-status');
+  const elybyErrorEl = document.getElementById('elyby-error');
   const backBtns = document.querySelectorAll('.btn-back-to-choices');
 
   // Device-code sign-in elements
@@ -1290,9 +1307,103 @@ function initAccountDropdown() {
     });
   }
 
+  function openUrlInBrowser(url) {
+    invoke('open_url_in_browser', { url }).catch((e) => {
+      console.error('Failed to open browser for Ely.by sign-in:', e);
+    });
+  }
+
+  let elybyPollTimer = null;
+  function stopElybyPolling() {
+    if (elybyPollTimer) {
+      clearInterval(elybyPollTimer);
+      elybyPollTimer = null;
+    }
+  }
+
+  function resetElybyPanel() {
+    stopElybyPolling();
+    if (elybyIdleEl) elybyIdleEl.classList.remove('hidden');
+    if (elybyWaitingEl) elybyWaitingEl.classList.add('hidden');
+    if (elybyOauthCancelBtn) elybyOauthCancelBtn.classList.add('hidden');
+    if (elybyErrorEl) elybyErrorEl.classList.add('hidden');
+  }
+
+  async function startElybyOauthSignIn() {
+    if (elybyErrorEl) elybyErrorEl.classList.add('hidden');
+    let authorizeUrl;
+    try {
+      authorizeUrl = await api.elybyOauthStart();
+    } catch (err) {
+      if (elybyErrorEl) {
+        elybyErrorEl.textContent = typeof err === 'string' ? err : 'Could not start Ely.by sign-in.';
+        elybyErrorEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (elybyIdleEl) elybyIdleEl.classList.add('hidden');
+    if (elybyWaitingEl) elybyWaitingEl.classList.remove('hidden');
+    if (elybyOauthCancelBtn) elybyOauthCancelBtn.classList.remove('hidden');
+    openUrlInBrowser(authorizeUrl);
+
+    stopElybyPolling();
+    elybyPollTimer = setInterval(async () => {
+      try {
+        const account = await api.elybyOauthPoll();
+        if (account) {
+          stopElybyPolling();
+          resetElybyPanel();
+          await refreshAccountUI();
+          showAccountView('list');
+          showToast(`Signed in as ${account.username || 'Ely.by account'}!`, 'success');
+        }
+        // account === null -> still pending, keep polling
+      } catch (err) {
+        stopElybyPolling();
+        if (elybyWaitingEl) elybyWaitingEl.classList.add('hidden');
+        if (elybyIdleEl) elybyIdleEl.classList.remove('hidden');
+        if (elybyOauthCancelBtn) elybyOauthCancelBtn.classList.add('hidden');
+        if (elybyErrorEl) {
+          elybyErrorEl.textContent = typeof err === 'string' ? err : 'Ely.by sign-in failed.';
+          elybyErrorEl.classList.remove('hidden');
+        }
+      }
+    }, 2000);
+  }
+
+  async function cancelElybyOauthSignIn() {
+    stopElybyPolling();
+    try { await api.elybyOauthCancel(); } catch (_) { /* best-effort */ }
+    resetElybyPanel();
+  }
+
+  if (choiceElybyBtn) {
+    choiceElybyBtn.addEventListener('click', () => {
+      resetElybyPanel();
+      showAccountView('elyby');
+    });
+  }
+  if (elybyOauthLoginBtn) {
+    elybyOauthLoginBtn.addEventListener('click', startElybyOauthSignIn);
+  }
+  if (elybyOauthOpenAgainBtn) {
+    elybyOauthOpenAgainBtn.addEventListener('click', async () => {
+      // A fresh sign-in attempt (rather than trying to recover the old
+      // authorize URL) — simplest way to guarantee the local listener/
+      // state token backing it are still valid.
+      await cancelElybyOauthSignIn();
+      startElybyOauthSignIn();
+    });
+  }
+  if (elybyOauthCancelBtn) {
+    elybyOauthCancelBtn.addEventListener('click', cancelElybyOauthSignIn);
+  }
+
   backBtns.forEach(btn => {
     btn.addEventListener('click', async () => {
       backToMethodChoice();
+      cancelElybyOauthSignIn();
       const accounts = await api.getAccounts().catch(() => []);
       showAccountView(accounts.length === 0 ? 'empty' : 'list');
     });
@@ -1313,6 +1424,7 @@ function initAccountDropdown() {
   // Close modal functions
   const closeModal = () => {
     deviceFlow.stopDevicePolling();
+    cancelElybyOauthSignIn();
     stopAccountManagerAutoRefresh();
     if (modalOverlay) modalOverlay.classList.add('hidden');
   };
@@ -3288,6 +3400,43 @@ async function populateDressingRoomSkins() {
   const active = accounts.find(a => a.is_active);
   loadSkinSettingsForAccount(active);
 
+  const addSkinBtn = document.getElementById('btn-dressing-add-skin');
+  const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
+  const isElyby = active && active.account_type === 'elyby';
+
+  if (isOffline) {
+    if (addSkinBtn) addSkinBtn.style.display = 'none';
+    const note = document.createElement('div');
+    note.className = 'dressing-room-empty-center';
+    note.style.gridColumn = '1 / -1';
+    note.innerHTML = `
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:10px; opacity:0.6;"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+      <span>You're using an offline account — you can't change your skin. Sign in with a Microsoft account, or use Ely.by's skin system with another account, to set a custom skin.</span>
+    `;
+    grid.appendChild(note);
+    return;
+  }
+
+  if (isElyby) {
+    if (addSkinBtn) addSkinBtn.style.display = 'none';
+    const note = document.createElement('div');
+    note.className = 'dressing-room-empty-center';
+    note.style.gridColumn = '1 / -1';
+    note.innerHTML = `
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:10px; opacity:0.6;"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+      <span>You can't change your skin from here. Please change it from <button type="button" class="dressing-room-note-link" id="dressing-room-elyby-skin-link">ely.by/skins</button>.</span>
+    `;
+    grid.appendChild(note);
+    document.getElementById('dressing-room-elyby-skin-link')?.addEventListener('click', () => {
+      invoke('open_url_in_browser', { url: 'https://ely.by/skins' }).catch((e) => {
+        console.error('Failed to open browser for Ely.by skins page:', e);
+      });
+    });
+    return;
+  }
+
+  if (addSkinBtn) addSkinBtn.style.display = '';
+
   // Auto-cache active account's skin to Zero Launcher/skins/ if available
   if (active && active.username) {
     const isOffline = active.account_type === 'offline' || !active.mc_uuid;
@@ -3446,6 +3595,22 @@ async function populateDressingRoomCapes() {
   const accounts = await api.getAccounts().catch(() => []);
   const active = accounts.find(a => a.is_active);
   const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
+  const isElyby = active && active.account_type === 'elyby';
+
+  if (isElyby) {
+    // Ely.by doesn't let accounts set a custom cape — capes.ely.by just
+    // proxies whatever Mojang cape (if any) the underlying Mojang account
+    // already has, and there's no API to change that. So rather than show
+    // a confusing "fetch failed" error, explain that up front.
+    const note = document.createElement('div');
+    note.className = 'dressing-room-empty-center';
+    note.innerHTML = `
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:10px; opacity:0.6;"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+      <span>Ely.by doesn't support custom capes — it can only show a cape already tied to a Mojang account, and there's no way to set one from here.</span>
+    `;
+    grid.appendChild(note);
+    return;
+  }
 
   if (isOffline) {
     const note = document.createElement('div');
@@ -3724,11 +3889,9 @@ function initDressingRoomUI() {
   // Capes note link
   document.getElementById('dressing-room-editskin-link')?.addEventListener('click', async () => {
     const url = 'https://www.minecraft.net/en-us/msaprofile/mygames/editskin';
-    if (window.__TAURI__ && window.__TAURI__.shell && window.__TAURI__.shell.open) {
-      await window.__TAURI__.shell.open(url);
-    } else {
-      window.open(url, '_blank');
-    }
+    invoke('open_url_in_browser', { url }).catch((e) => {
+      console.error('Failed to open browser for editskin link:', e);
+    });
   });
 }
 
@@ -4120,6 +4283,7 @@ async function updateSkinMiniPreview() {
     loadSkinSettingsForAccount(active);
 
     const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
+    const isElyby = active && active.account_type === 'elyby';
 
     const useUnknownSkin = Boolean(currentSkinAnonSkin);
     const useUnknownTag = Boolean(currentSkinAnonTag);
@@ -4127,11 +4291,43 @@ async function updateSkinMiniPreview() {
     // Skin resolution:
     // 1) If anonymous skin is on -> unknownSkin placeholder
     // 2) If account has an equipped custom skin -> load local file via convertFileSrc
-    // 3) Else if Microsoft account -> mineskin.eu/skin/{username}
-    // 4) Fallback -> defaultOfflineSkin
+    // 3) Else if Ely.by account -> read the live texture straight from Ely.by
+    // 4) Else if Microsoft account -> mineskin.eu/skin/{username}
+    // 5) Fallback -> defaultOfflineSkin
     let skinUrl = unknownSkin;
+    let elybyModel = null;
     if (!useUnknownSkin) {
-      if (currentSkinEquippedPath) {
+      if (isElyby && active.username) {
+        // Ely.by accounts can't equip a local skin anymore (dressing room
+        // locks that out) — always prefer the live Ely.by texture over
+        // any stale currentSkinEquippedPath left over from before that
+        // lock existed, rather than silently showing an outdated skin.
+        //
+        // Loading the remote Ely.by URL directly into the 3D viewer kept
+        // showing stale images no matter how the URL was cache-busted, so
+        // instead this mirrors exactly how a normal equipped local skin
+        // loads: download the current texture to a local file first (a
+        // filename keyed by the skin's content hash, so a re-upload gets
+        // a genuinely new file instead of overwriting one that might
+        // still be cached under the old name), then load that local file
+        // via convertFileSrc — the same reliable path used everywhere
+        // else in the app for "my equipped skin".
+        try {
+          const info = await api.getElybySkinInfo(active.username);
+          if (info && info.skin_url) {
+            elybyModel = info.model === 'slim' ? 'slim' : 'classic';
+            const hashSuffix = info.skin_hash ? `_${info.skin_hash}` : '';
+            const localName = `elyby_${active.username}${hashSuffix}`;
+            const cached = await api.cacheSkinTexture(localName, info.skin_url);
+            skinUrl = window.__TAURI__.core.convertFileSrc(cached.path);
+          } else {
+            skinUrl = defaultOfflineSkin;
+          }
+        } catch (elybyErr) {
+          console.warn('Could not load Ely.by skin, falling back:', elybyErr);
+          skinUrl = defaultOfflineSkin;
+        }
+      } else if (currentSkinEquippedPath) {
         skinUrl = window.__TAURI__.core.convertFileSrc(currentSkinEquippedPath);
       } else if (active && active.username && !isOffline) {
         skinUrl = `https://mineskin.eu/skin/${encodeURIComponent(active.username)}`;
@@ -4176,10 +4372,13 @@ async function updateSkinMiniPreview() {
     // Force load skin
     currentMiniPreviewSkinUrl = skinUrl;
     try {
-      await skinMiniPreviewInstance.loadSkin(skinUrl, { model: 'auto-detect' });
-      // Auto cache account skin texture if remote
-      if (!useUnknownSkin && !currentSkinEquippedPath && active && active.username && !isOffline) {
-        api.cacheSkinTexture(active.username, `https://mineskin.eu/skin/${encodeURIComponent(active.username)}`).catch(() => {});
+      await skinMiniPreviewInstance.loadSkin(skinUrl, { model: elybyModel || 'auto-detect' });
+      // Auto cache account skin texture if remote (Ely.by is already
+      // cached above as part of resolving skinUrl, so skip it here).
+      if (!useUnknownSkin && !currentSkinEquippedPath && active && active.username && !isElyby) {
+        if (!isOffline) {
+          api.cacheSkinTexture(active.username, `https://mineskin.eu/skin/${encodeURIComponent(active.username)}`).catch(() => {});
+        }
       }
     } catch (skinErr) {
       console.warn('Could not load skin, falling back to default:', skinErr);

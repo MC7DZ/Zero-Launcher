@@ -355,6 +355,12 @@ pub fn run() {
             commands::msa::microsoft_device_code_cancel,
             commands::msa::refresh_microsoft_account,
             commands::msa::refresh_all_microsoft_accounts,
+            commands::elyby::elyby_login,
+            commands::elyby::elyby_logout,
+            commands::elyby::elyby_oauth_start,
+            commands::elyby::elyby_oauth_poll,
+            commands::elyby::elyby_oauth_cancel,
+            commands::elyby::get_elyby_skin_info,
             // Skin management
             commands::skins::list_skins,
             commands::skins::import_skin,

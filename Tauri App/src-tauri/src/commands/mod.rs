@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod crash_analysis;
 pub mod discover;
+pub mod elyby;
 pub mod java;
 pub mod logs;
 pub mod minecraft;

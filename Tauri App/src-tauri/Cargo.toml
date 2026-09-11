@@ -20,8 +20,10 @@ crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+dotenvy = "0.15"
 
 [dependencies]
+socket2 = "0.5"
 tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png", "devtools"] }
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"

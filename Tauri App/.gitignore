@@ -1,4 +1,16 @@
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+
+# Rust
+/target
+src-tauri/target
+
+# Node
 node_modules
 dist
-src-tauri/target
-/.idea/
+
+# OS
+.DS_Store
+Thumbs.db

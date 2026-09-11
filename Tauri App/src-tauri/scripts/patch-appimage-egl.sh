@@ -71,7 +71,7 @@ fi
 # 25-40% smaller than gzip for the same content. Slower to build (xz is
 # CPU-heavier than gzip), but decompression at launch is unaffected enough
 # to not matter, and this only costs build time, not user startup time.
-$APPIMAGETOOL squashfs-root "patched.AppImage" -- -comp xz -Xdict-size 100% -Xbcj x86
+$APPIMAGETOOL squashfs-root "patched.AppImage" -comp xz -Xdict-size 100% -Xbcj x86
 
 popd > /dev/null
 
