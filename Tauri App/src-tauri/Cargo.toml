@@ -20,7 +20,6 @@ crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-dotenvy = "0.15"
 
 [dependencies]
 socket2 = "0.5"

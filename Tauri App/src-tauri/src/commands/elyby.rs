@@ -182,19 +182,14 @@ pub async fn elyby_login(
 // https://ely.by/skins; OAuth here is about not handling the user's
 // password, not about unlocking skin management.
 
-/// Fill these in after registering an app at
-/// https://account.ely.by/dev/applications/new (type "Website", redirect
-/// URI `http://127.0.0.1:38621/callback` to match `OAUTH_REDIRECT_PORT`
-/// below). Left blank, `elyby_oauth_start` fails with a message
-/// explaining why instead of silently misbehaving.
-const ELYBY_OAUTH_CLIENT_ID: &str = match option_env!("ELYBY_CLIENT_ID") {
-    Some(v) => v,
-    None => "",
-};
-const ELYBY_OAUTH_CLIENT_SECRET: &str = match option_env!("ELYBY_CLIENT_SECRET") {
-    Some(v) => v,
-    None => "",
-};
+/// Filled in directly instead of pulled from the environment/.env at build
+/// time — register an app at https://account.ely.by/dev/applications/new
+/// (type "Website", redirect URI `http://127.0.0.1:38621/callback` to
+/// match `OAUTH_REDIRECT_PORT` below) and put the values here. Left
+/// blank, `elyby_oauth_start` fails with a message explaining why instead
+/// of silently misbehaving.
+const ELYBY_OAUTH_CLIENT_ID: &str = "zero-launcher";
+const ELYBY_OAUTH_CLIENT_SECRET: &str = "9GPWN8LenlOlMUTzzVWU9EDNszsYgJMHsU_wxyYpx2qXV9H2x8K8q1mT2Ao_s7O6";
 /// Must exactly match the port baked into the redirect URI registered
 /// above. Picked high/uncommon to avoid colliding with anything else the
 /// user might have running locally.
