@@ -258,6 +258,10 @@ function isLikelyMcVersion(v) {
 const ICON_UNKNOWN_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M9.4 9.4a2.6 2.6 0 1 1 3.6 3.4c-.6.5-1 .9-1 1.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="16.9" r="0.95" fill="currentColor"/></svg>';
 // Empty list of items (no mods installed, no instances yet).
 const ICON_EMPTY_BOX_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 8.3 12 4l8.5 4.3V16L12 20.3 3.5 16V8.3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3.9 8.1 12 12.4l8.1-4.3" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 12.4V20.3" stroke="currentColor" stroke-width="1.6"/></svg>';
+const ICON_COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8.5" y="8.5" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 15.5h-1a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+const ICON_CHEVRON_LEFT_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 5.5 8 12l7 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_CHEVRON_RIGHT_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 5.5l7 6.5-7 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_CLOSE_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 // No search/filter results found.
 const ICON_SEARCH_EMPTY_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10.3" cy="10.3" r="6.3" stroke="currentColor" stroke-width="1.8"/><path d="m19.3 19.3-4.2-4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
 // Read-only / locked content (modpack-managed mods).
@@ -460,6 +464,21 @@ const api = {
   installModFiles: (paths, gameDir) => invoke('install_mod_files', { paths, directory: gameDir }),
   exportModsList: (path, content) => invoke('export_mods_list', { path, content }),
   readModsListFile: (path) => invoke('read_mods_list_file', { path }),
+  // Resource packs / shader packs — same shape as the mod equivalents above,
+  // just scoped to the "resourcepacks"/"shaderpacks" folder via `kind`.
+  listPacks: (gameDir, kind) => invoke('list_packs', { directory: gameDir, kind }),
+  openPacksFolder: (gameDir, kind) => invoke('open_packs_folder', { directory: gameDir, kind }),
+  installPackFiles: (paths, gameDir, kind) => invoke('install_pack_files', { paths, directory: gameDir, kind }),
+  // Toggling/deleting a pack file works exactly like a mod file (rename with
+  // a .disabled suffix / remove the file), so these reuse the same commands.
+  togglePack: (path) => invoke('toggle_mod', { path }),
+  deletePack: (path) => invoke('delete_mod', { path }),
+  // Screenshots — plain files, no toggle/metadata, but delete/folder reuse
+  // the same generic backend commands as mods/packs.
+  listScreenshots: (gameDir) => invoke('list_screenshots', { directory: gameDir }),
+  openScreenshotsFolder: (gameDir) => invoke('open_screenshots_folder', { directory: gameDir }),
+  readScreenshotImage: (path) => invoke('read_screenshot_image', { path }),
+  deleteScreenshot: (path) => invoke('delete_mod', { path }),
   getLogs: (level, source) => invoke('get_logs', { level, source }),
   clearLogs: () => invoke('clear_logs'),
   openDevtools: () => invoke('open_devtools'),
@@ -830,7 +849,7 @@ function initTabs() {
         // Only the Mods content type actually loads from the backend — if
         // the user had Resource Packs/Worlds selected, re-activating this
         // tab should keep showing that, not silently jump back to Mods.
-        if (activeContentType === 'mod') {
+        if (['mod', 'resourcepack', 'shaderpack', 'screenshot'].includes(activeContentType)) {
           showModsTabLoading();
           loadModInstances().then(() => {
             // Bail if the user has already switched to another tab since
@@ -5206,7 +5225,7 @@ function selectOptionIfAvailable(select, value) {
 async function syncInstanceSelectionAcrossTabs() {
   await loadModInstances();
   populateDiscoverInstanceSelect();
-  if (getActiveTabId() === 'mods' && activeContentType === 'mod') {
+  if (getActiveTabId() === 'mods' && ['mod', 'resourcepack', 'shaderpack', 'screenshot'].includes(activeContentType)) {
     await loadMods();
   }
   if (getActiveTabId() === 'discover' && discoverState.loaded) {
@@ -6432,8 +6451,9 @@ let modUpdateInfoByDir = new Map();
 // tracked instance (so two instances sharing a mods folder never see each
 // other's results), falling back to the raw directory for the untracked
 // "no instance selected" case.
-function modsCacheKey(instance, directory) {
-  return instance && instance.version_id ? `inst:${instance.version_id}` : `dir:${directory}`;
+function modsCacheKey(instance, directory, type) {
+  const t = type || activeContentType;
+  return (instance && instance.version_id ? `inst:${instance.version_id}` : `dir:${directory}`) + `:${t}`;
 }
 // True while a Check Updates / Update All pass (manual or the automatic
 // one run at launch) is in flight — Update All is disabled meanwhile so it
@@ -6461,15 +6481,15 @@ function refreshUpdateAllButtonState() {
 // Runs the update check for one instance's mod directory and stores the
 // result, refreshing the on-card Update buttons in place if that directory
 // happens to be the one currently shown in the Mods tab.
-async function checkUpdatesForDirectory(directory, instance) {
-  const up = await checkUpdatesForMods(directory, instance);
+async function checkUpdatesForDirectory(directory, instance, type = activeContentType) {
+  const up = await checkUpdatesForContent(directory, instance, type);
   const map = new Map();
   for (const u of up) {
     if (u.mod && u.mod.path) map.set(u.mod.path, u);
   }
-  const key = modsCacheKey(instance, directory);
+  const key = modsCacheKey(instance, directory, type);
   modUpdateInfoByDir.set(key, map);
-  if (modsCacheKey(getModsTargetInstance(), getModsTargetDirectory()) === key) {
+  if (type === activeContentType && modsCacheKey(getModsTargetInstance(), getModsTargetDirectory(), type) === key) {
     modUpdateInfo = map;
     refreshUpdateButtonsOnVisibleCards();
   }
@@ -6500,6 +6520,7 @@ function refreshUpdateButtonsOnVisibleCards() {
 // off entirely via Settings > Behavior.
 async function checkSelectedInstanceForUpdates() {
   if (modsUpdateCheckBusy) return;
+  if (!['mod', 'resourcepack', 'shaderpack'].includes(activeContentType)) return;
   const target = getModsTargetInstance();
   const directory = getModsTargetDirectory();
   if (!directory) return;
@@ -6507,7 +6528,8 @@ async function checkSelectedInstanceForUpdates() {
   try {
     const up = await checkUpdatesForDirectory(directory, target);
     if (up.length > 0 && (!settings || settings.notify_on_auto_mod_updates !== false)) {
-      showToast(`${up.length} mod update${up.length === 1 ? '' : 's'} available`, 'info');
+      const unit = activeContentType === 'shaderpack' ? 'shader pack' : activeContentType === 'resourcepack' ? 'resource pack' : 'mod';
+      showToast(`${up.length} ${unit} update${up.length === 1 ? '' : 's'} available`, 'info');
     }
   } catch (e) {
     console.error('Update check failed for', (target && (target.name || target.version_id)) || directory, e);
@@ -6755,9 +6777,18 @@ function getModVirtualObserver() {
   return modVirtualObserver;
 }
 
+function projectTypeForContentType(type) {
+  return type === 'shaderpack' ? 'shader' : type === 'resourcepack' ? 'resourcepack' : 'mod';
+}
+
+function contentKindLabel(type) {
+  return type === 'shaderpack' ? 'shader pack' : type === 'resourcepack' ? 'resource pack' : 'mod';
+}
+
 function renderModCardContent(card) {
   const mod = card._mod;
   const directory = card._directory;
+  const type = card._type || 'mod';
   const preservedIconHtml = card._preservedIconHtml;
   if (!mod || card._isRendered) return;
   card._isRendered = true;
@@ -6783,7 +6814,7 @@ function renderModCardContent(card) {
         <span class="mod-toggle-slider"></span>
       </label>
       ${updateBtnHtml}
-      <button class="btn-danger-pill btn-sm btn-delete-mod" data-path="${discoverEscape(mod.path)}" title="Delete mod">🗑</button>
+      <button class="btn-danger-pill btn-sm btn-delete-mod" data-path="${discoverEscape(mod.path)}" title="Delete ${contentKindLabel(type)}">🗑</button>
     </div>
   `;
 
@@ -6819,7 +6850,7 @@ function renderModCardContent(card) {
     showToast(`Updating ${modLabel}…`, 'info');
     let ok = false;
     try {
-      await trackedDiscoverDownload(directory, 'mod', info.file.url, info.file.filename, dlId);
+      await trackedDiscoverDownload(directory, projectTypeForContentType(type), info.file.url, info.file.filename, dlId);
       await deleteOldModFileIfReplaced(directory, oldPath, info.file.filename);
       modUpdateInfo.delete(oldPath);
       card.classList.remove('mod-update-glow');
@@ -6862,10 +6893,10 @@ function renderModCardContent(card) {
 
   card.querySelector('.btn-delete-mod').addEventListener('click', async (ev) => {
     ev.stopPropagation();
-    const modLabel = mod.name || mod.file_name || 'this mod';
+    const modLabel = mod.name || mod.file_name || `this ${contentKindLabel(type)}`;
     const proceed = await showConfirmDialog({
       type: 'delete',
-      title: 'Delete Mod',
+      title: `Delete ${contentKindLabel(type).replace(/\b\w/g, c => c.toUpperCase())}`,
       message: `Are you sure you want to delete "${modLabel}"?`,
       confirmText: 'Delete',
       isDanger: true,
@@ -6876,7 +6907,7 @@ function renderModCardContent(card) {
       card.remove();
       updateModsCount();
       updateDeleteSelectedState();
-      showToast('Mod deleted', 'success');
+      showToast(`${contentKindLabel(type).replace(/\b\w/g, c => c.toUpperCase())} deleted`, 'success');
     } catch (e) { showToast(String(e), 'error'); }
   });
 }
@@ -6892,13 +6923,14 @@ function unloadModCardContent(card) {
   card.innerHTML = '';
 }
 
-function createVirtualModCard(mod, directory, preservedIconHtml) {
+function createVirtualModCard(mod, directory, preservedIconHtml, type) {
   const card = document.createElement('div');
   card.className = 'glass-card mod-card is-unloaded' + (!mod.enabled ? ' disabled' : '');
   card.dataset.path = mod.path || '';
   card.dataset.name = (mod.name || mod.file_name || '').toLowerCase();
   card._mod = mod;
   card._directory = directory;
+  card._type = type || 'mod';
   card._preservedIconHtml = preservedIconHtml;
   card._isRendered = false;
 
@@ -6939,7 +6971,7 @@ function updateDeleteSelectedState() {
   const grid = document.getElementById('mods-grid');
   const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
   if (!grid || !deleteSelectedBtn) return;
-  const selected = grid.querySelectorAll('.mod-card.selected').length;
+  const selected = grid.querySelectorAll('.mod-card.selected, .screenshot-card.selected').length;
   deleteSelectedBtn.classList.toggle('hidden', selected === 0);
   deleteSelectedBtn.textContent = `Delete Selected (${selected})`;
 }
@@ -6952,9 +6984,10 @@ function updateModsCount() {
   const visible = grid.querySelectorAll('.mod-card:not(.search-hidden)').length;
   const targetInstance = getModsTargetInstance();
   const label = targetInstance ? ` for ${targetInstance.name || targetInstance.version_id}` : '';
+  const unit = contentKindLabel(activeContentType);
   const countText = total === 0
-    ? '0 mods' + label
-    : `${visible === total ? total : visible + ' / ' + total} mod${total !== 1 ? 's' : ''}${label}`;
+    ? `0 ${unit}s` + label
+    : `${visible === total ? total : visible + ' / ' + total} ${unit}${total !== 1 ? 's' : ''}${label}`;
   countEl.textContent = countText;
 }
 
@@ -6963,7 +6996,7 @@ function filterMods() {
   const searchInput = document.getElementById('mods-search');
   if (!grid || !searchInput) return;
   const query = searchInput.value.trim().toLowerCase();
-  const cards = grid.querySelectorAll('.mod-card');
+  const cards = grid.querySelectorAll('.mod-card, .screenshot-card');
   cards.forEach(card => {
     const matches = !query || (card.dataset.name || '').includes(query);
     card.classList.toggle('search-hidden', !matches);
@@ -6971,7 +7004,7 @@ function filterMods() {
   });
 
   let noResultsEl = grid.querySelector('.mods-no-results');
-  const visibleCount = grid.querySelectorAll('.mod-card:not(.search-hidden)').length;
+  const visibleCount = grid.querySelectorAll('.mod-card:not(.search-hidden), .screenshot-card:not(.search-hidden)').length;
   const showNoResults = !!query && cards.length > 0 && visibleCount === 0;
   if (showNoResults) {
     if (!noResultsEl) {
@@ -6984,7 +7017,11 @@ function filterMods() {
     noResultsEl.remove();
   }
 
-  updateModsCount();
+  if (activeContentType === 'screenshot') {
+    updateScreenshotsCountFromGrid();
+  } else {
+    updateModsCount();
+  }
 }
 
 let modsTabLoadingHideTimer = null;
@@ -7010,6 +7047,12 @@ function hideModsTabLoading() {
 // Only 'mod' is fully wired up to the backend today; the other two show a
 // placeholder so the toggle is honest about what it currently does.
 let activeContentType = 'mod';
+// Bumped every time the content type switches so an in-flight load from a
+// previous type (mods/resourcepacks/shaderpacks/screenshots) can tell it's
+// stale once its await resolves and bail out instead of overwriting the
+// grid with content nobody asked for anymore (was the "switch tabs fast
+// and the old list is still there" bug).
+let modsLoadGeneration = 0;
 const CONTENT_TYPE_LABELS = {
   mod: 'Mods',
   resourcepack: 'Resource Packs',
@@ -7021,27 +7064,68 @@ const CONTENT_TYPE_LABELS = {
 
 function setContentType(type) {
   activeContentType = type;
+  modsLoadGeneration++;
   const label = CONTENT_TYPE_LABELS[type] || 'Content';
   const searchInput = document.getElementById('mods-search');
   const grid = document.getElementById('mods-grid');
   const countEl = document.getElementById('mods-count');
   const rightPanel = document.querySelector('.mods-top-panel-right');
   const subpanel = document.getElementById('modpack-mods-subpanel');
+  const updateAllBtn = document.getElementById('btn-update-all-mods');
+  const checkUpdatesBtn = document.getElementById('btn-check-updates');
+  const fixModsRunBtn = document.getElementById('btn-fix-mods-run');
+  const fixModsWrapper = document.querySelector('.fix-mods-wrapper');
+  const exportBtn = document.getElementById('btn-export-mods');
+  const importBtn = document.getElementById('btn-import-mods');
+  const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
+  const openBtn = document.getElementById('btn-open-mods');
 
   // The panel title stays a static "Manage" — the segmented toggle above it
   // already shows which content type is selected, so echoing it here too
   // would just be redundant.
   if (searchInput) searchInput.placeholder = `⌕ Search ${label.toLowerCase()}…`;
 
-  if (type === 'mod') {
-    if (rightPanel) rightPanel.style.display = '';
-    if (countEl) countEl.style.display = '';
-    loadMods();
+  // Mods, Resource Packs, and Shader Packs all share the same toolbar
+  // (Update All / Check Updates / Delete Selected / Folder) and the same
+  // card grid + icon cache — only Fix Mods / Export / Import stay
+  // mod-specific, since duplicating/deduping/dependency-installing doesn't
+  // have an equivalent for packs.
+  const isManageable = type === 'mod' || type === 'resourcepack' || type === 'shaderpack' || type === 'screenshot';
+  const modOnlyDisplay = type === 'mod' ? '' : 'none';
+
+  if (rightPanel) rightPanel.style.display = isManageable ? '' : 'none';
+  if (countEl) countEl.style.display = isManageable ? '' : 'none';
+  if (fixModsRunBtn) fixModsRunBtn.style.display = modOnlyDisplay;
+  if (fixModsWrapper) fixModsWrapper.style.display = modOnlyDisplay;
+  if (exportBtn) exportBtn.style.display = modOnlyDisplay;
+  if (importBtn) importBtn.style.display = modOnlyDisplay;
+  // Update All / Check Updates don't apply to screenshots — there's
+  // nothing on Modrinth to check a screenshot against.
+  if (updateAllBtn) updateAllBtn.style.display = type === 'screenshot' ? 'none' : '';
+  if (checkUpdatesBtn) checkUpdatesBtn.style.display = type === 'screenshot' ? 'none' : '';
+  if (openBtn) openBtn.title = `Open this instance's ${label.toLowerCase()} folder`;
+  // The screenshots grid uses its own CSS layout (image tiles); every
+  // other content type uses the mod-list row layout, so make sure the
+  // modifier class doesn't leak across a switch.
+  if (grid) grid.classList.toggle('screenshots-mode', type === 'screenshot');
+
+  if (type !== 'mod' && subpanel) subpanel.classList.add('hidden');
+
+  if (isManageable) {
+    if (type !== 'mod' && type !== 'screenshot') {
+      // loadMods() re-derives these for the modpack-view case on the 'mod'
+      // path; for packs there's no modpack view, so just make sure a
+      // previous mod-tab state (e.g. mid modpack-view) didn't leave them
+      // hidden.
+      if (checkUpdatesBtn) checkUpdatesBtn.style.display = '';
+      if (updateAllBtn) updateAllBtn.style.display = '';
+    }
+    showModsTabLoading();
+    Promise.resolve(loadMods()).catch(() => {}).finally(() => hideModsTabLoading());
   } else {
     hideModsTabLoading();
-    if (rightPanel) rightPanel.style.display = 'none';
-    if (countEl) { countEl.textContent = ''; countEl.style.display = 'none'; }
     if (subpanel) subpanel.classList.add('hidden');
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
     if (grid) {
       grid.innerHTML = `<div class="empty-state"><span>${label} management is coming soon</span></div>`;
     }
@@ -7061,7 +7145,17 @@ let currentModpackInfo = null;
 let activeModsView = 'normal'; // 'normal' | 'modpack'
 
 async function loadMods() {
+  if (activeContentType === 'resourcepack' || activeContentType === 'shaderpack') {
+    return loadPacksGrid(activeContentType);
+  }
+  if (activeContentType === 'screenshot') {
+    return loadScreenshotsGrid();
+  }
   if (!settings) return;
+  // Snapshot the generation so that if the user switches content type again
+  // before our awaits below resolve, we can tell our result is stale and
+  // skip rendering it instead of stomping on whatever loaded after us.
+  const myGeneration = modsLoadGeneration;
   const grid = document.getElementById('mods-grid');
   const countEl = document.getElementById('mods-count');
   const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
@@ -7080,6 +7174,10 @@ async function loadMods() {
   } catch {
     currentModpackInfo = null;
   }
+  // The content type (or instance) changed while we were awaiting — bail
+  // out so this stale response doesn't overwrite whatever the user
+  // switched to.
+  if (myGeneration !== modsLoadGeneration) return;
 
   const isModpackInstance = !!(currentModpackInfo && currentModpackInfo.mods && currentModpackInfo.mods.length > 0);
   if (subpanel) {
@@ -7137,7 +7235,8 @@ async function loadMods() {
 
   try {
     const allMods = await api.listMods(directory);
-    
+    if (myGeneration !== modsLoadGeneration) return;
+
     // Separate mods into normal and modpack
     const packModSet = new Set(
       (currentModpackInfo && currentModpackInfo.mods ? currentModpackInfo.mods : []).map(m => {
@@ -7180,12 +7279,536 @@ async function loadMods() {
     grid.innerHTML = '';
     grid.appendChild(frag);
 
-    if (deleteSelectedBtn) deleteSelectedBtn.classList.toggle('hidden', displayedMods.length === 0);
+    // Newly rendered cards start unselected, so Delete Selected has
+    // nothing to act on yet — it reappears once something is selected.
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
     updateModsCount();
     filterMods();
   } catch (e) {
     grid.innerHTML = `<div class="empty-state"><span style="color:var(--danger)">${e}</span></div>`;
     if (countEl) countEl.textContent = '';
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+  }
+}
+
+// Resource Packs / Shader Packs share the mods grid, card layout, icon
+// cache, and update machinery — this is their equivalent of the 'mod'
+// branch above, just against `list_packs`/the resourcepacks|shaderpacks
+// folder instead of `list_mods`/mods, and with no modpack-mods subpanel
+// (packs aren't split into "user" vs "modpack-managed").
+async function loadPacksGrid(type) {
+  if (!settings) return;
+  const myGeneration = modsLoadGeneration;
+  const grid = document.getElementById('mods-grid');
+  const countEl = document.getElementById('mods-count');
+  const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
+  const subpanel = document.getElementById('modpack-mods-subpanel');
+  if (!grid) return;
+  if (subpanel) subpanel.classList.add('hidden');
+
+  const isFirstLoad = grid.children.length === 0;
+  if (isFirstLoad) grid.innerHTML = '<div class="empty-state"><span>Loading content…</span></div>';
+
+  const targetInstance = getModsTargetInstance();
+  const directory = targetInstance ? (targetInstance.directory || settings.game_directory) : settings.game_directory;
+
+  modUpdateInfo = modUpdateInfoByDir.get(modsCacheKey(targetInstance, directory, type)) || new Map();
+  refreshUpdateAllButtonState();
+
+  const preservedIcons = new Map();
+  grid.querySelectorAll('.mod-card').forEach(card => {
+    const path = card.dataset.path;
+    const iconEl = card.querySelector('.mod-icon');
+    if (path && iconEl && !iconEl.classList.contains('loading')) {
+      preservedIcons.set(path, iconEl.innerHTML);
+    } else if (path && card._preservedIconHtml) {
+      preservedIcons.set(path, card._preservedIconHtml);
+    }
+  });
+
+  try {
+    const items = await api.listPacks(directory, type);
+    if (myGeneration !== modsLoadGeneration) return;
+    const unit = contentKindLabel(type);
+    const frag = document.createDocumentFragment();
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.innerHTML = `<span class="empty-icon">${ICON_EMPTY_BOX_SVG}</span><span>No ${unit}s added</span>`;
+      frag.appendChild(empty);
+    } else {
+      items.forEach(item => frag.appendChild(createVirtualModCard(item, directory, preservedIcons.get(item.path), type)));
+    }
+    grid.innerHTML = '';
+    grid.appendChild(frag);
+
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+    updateModsCount();
+    filterMods();
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state"><span style="color:var(--danger)">${e}</span></div>`;
+    if (countEl) countEl.textContent = '';
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+  }
+}
+
+// ── Screenshots ──────────────────────────────────────────────────────────
+// Screenshots get their own grid layout (image tiles instead of the mod
+// list rows) since there's no name/version/toggle to show — just the
+// image, its filename, and copy/delete on hover.
+function updateScreenshotsCount(total, targetInstance) {
+  const countEl = document.getElementById('mods-count');
+  if (!countEl) return;
+  const label = targetInstance ? ` for ${targetInstance.name || targetInstance.version_id}` : '';
+  countEl.textContent = `${total} screenshot${total !== 1 ? 's' : ''}${label}`;
+}
+
+function updateScreenshotsCountFromGrid() {
+  const grid = document.getElementById('mods-grid');
+  if (!grid) return;
+  const total = grid.querySelectorAll('.screenshot-card').length;
+  const visible = grid.querySelectorAll('.screenshot-card:not(.search-hidden)').length;
+  updateScreenshotsCount(visible === total ? total : `${visible} / ${total}`, getModsTargetInstance());
+}
+
+// path -> Promise<dataUrl>. Shared by the grid thumbnails and the lightbox
+// so opening a screenshot that's already visible in the grid is instant
+// instead of re-reading the file a second time.
+const screenshotImageCache = new Map();
+function getScreenshotImageDataUrl(path) {
+  if (screenshotImageCache.has(path)) return screenshotImageCache.get(path);
+  const promise = api.readScreenshotImage(path).catch(e => {
+    screenshotImageCache.delete(path); // let a later retry try again
+    throw e;
+  });
+  screenshotImageCache.set(path, promise);
+  return promise;
+}
+
+// Thumbnails load through a small shared queue so at most
+// SCREENSHOT_LOAD_CONCURRENCY reads are ever in flight together — reset
+// (disconnected + recreated) on every grid re-render so it never holds
+// onto cards that just got replaced. Scrolling to a card still loads it
+// right away: the observer jumps it to the front of the same queue
+// instead of bypassing the cap, so it doesn't reintroduce the
+// "everything visible loads at once" burst.
+let screenshotObserver = null;
+function resetScreenshotObserver() {
+  if (screenshotObserver) screenshotObserver.disconnect();
+  screenshotObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      screenshotObserver.unobserve(entry.target);
+      enqueueScreenshotLoad(entry.target, { priority: true });
+    });
+  }, { rootMargin: '400px' });
+  return screenshotObserver;
+}
+
+// At most this many screenshots are ever being read+decoded at once.
+// Kept small on purpose — the point isn't to load faster, it's to read a
+// couple, let them actually land on screen, then read the next couple,
+// instead of every thumbnail's IPC read + image decode competing for the
+// main thread all at the same time.
+const SCREENSHOT_LOAD_CONCURRENCY = 2;
+let screenshotLoadQueue = [];
+let screenshotLoadActive = 0;
+
+// Adds a card to the shared load queue. `priority: true` (used when a
+// card scrolls into view) jumps it to the front instead of the back, but
+// it still has to wait its turn behind whatever's already in flight —
+// that's what keeps the concurrency cap meaningful.
+function enqueueScreenshotLoad(card, opts) {
+  if (card.dataset.loaded === '1' || card.dataset.queued === '1') return;
+  card.dataset.queued = '1';
+  if (opts && opts.priority) screenshotLoadQueue.unshift(card);
+  else screenshotLoadQueue.push(card);
+  pumpScreenshotLoadQueue();
+}
+
+function pumpScreenshotLoadQueue() {
+  while (screenshotLoadActive < SCREENSHOT_LOAD_CONCURRENCY && screenshotLoadQueue.length) {
+    const card = screenshotLoadQueue.shift();
+    if (!card.isConnected) continue;
+    screenshotLoadActive++;
+    loadScreenshotThumbnail(card).finally(() => {
+      screenshotLoadActive--;
+      pumpScreenshotLoadQueue();
+    });
+  }
+}
+
+async function loadScreenshotThumbnail(card) {
+  if (card.dataset.loaded === '1') return;
+  const img = card.querySelector('img');
+  const path = card.dataset.path;
+  if (!img || !path) return;
+  try {
+    const dataUrl = await getScreenshotImageDataUrl(path);
+    if (!card.isConnected) return;
+    img.src = dataUrl;
+    card.dataset.loaded = '1';
+  } catch (e) {
+    if (!card.isConnected) return;
+    // Surface the real reason (hover the "?" icon, or check devtools) —
+    // a silent failure here is indistinguishable from "still broken" no
+    // matter what the actual cause is. The most common cause during
+    // development is simply that the Rust side hasn't been rebuilt since
+    // read_screenshot_image was added — invoke() then rejects with an
+    // "unknown command" style error, which will show up here verbatim.
+    console.error('Failed to load screenshot', path, e);
+    markScreenshotCardBroken(card, e);
+    card.dataset.loaded = '1'; // broken counts as "done" so the queue doesn't retry it
+  }
+}
+
+function markScreenshotCardBroken(card, reason) {
+  card.classList.add('screenshot-broken');
+  const img = card.querySelector('img');
+  if (!img) return;
+  const icon = document.createElement('div');
+  icon.className = 'screenshot-broken-icon';
+  icon.innerHTML = ICON_UNKNOWN_SVG;
+  if (reason) icon.title = `Couldn't load this screenshot: ${reason}`;
+  img.replaceWith(icon);
+}
+
+function createScreenshotCard(item, directory, allItems, index) {
+  const card = document.createElement('div');
+  card.className = 'screenshot-card glass-card';
+  card.dataset.path = item.path || '';
+  card.dataset.name = (item.file_name || '').toLowerCase();
+
+  card.innerHTML = `
+    <div class="screenshot-overlay">
+      <div class="screenshot-name" title="${discoverEscape(item.file_name)}">${discoverEscape(item.file_name)}</div>
+      <div class="screenshot-actions">
+        <button type="button" class="btn-copy-screenshot" title="Copy image to clipboard">${ICON_COPY_SVG}</button>
+        <button type="button" class="btn-danger-pill btn-delete-screenshot" title="Delete screenshot">🗑</button>
+      </div>
+    </div>
+  `;
+
+  // The <img> starts empty — read_screenshot_image() is only invoked once
+  // the card scrolls into view (see resetScreenshotObserver). Its bytes
+  // come back as a data: URL rather than an asset://-protocol path: a
+  // screenshot lives wherever the user's real instance folder is (spaces,
+  // non-English usernames, unusual drives/mounts), and pointing an <img>
+  // straight at that via convertFileSrc was what made the thumbnail never
+  // actually load even though the card rendered fine. Reading the bytes
+  // ourselves sidesteps that path entirely.
+  const img = document.createElement('img');
+  img.alt = '';
+  img.decoding = 'async';
+  card.prepend(img);
+  (screenshotObserver || resetScreenshotObserver()).observe(card);
+
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('.screenshot-actions')) return;
+    // Ctrl/Cmd+click selects (for bulk delete); a plain click opens the
+    // full-size viewer instead of toggling selection.
+    if (e.ctrlKey || e.metaKey) {
+      card.classList.toggle('selected');
+      updateDeleteSelectedState();
+      return;
+    }
+    openScreenshotLightbox(allItems, index);
+  });
+
+  card.querySelector('.btn-copy-screenshot').addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    try {
+      const dataUrl = await getScreenshotImageDataUrl(item.path);
+      const resp = await fetch(dataUrl);
+      const blob = await resp.blob();
+      if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
+      } else {
+        throw new Error('Clipboard image copy is not supported here');
+      }
+      showToast('Screenshot copied to clipboard', 'success');
+    } catch (e) {
+      showToast('Failed to copy image: ' + e, 'error');
+    }
+  });
+
+  card.querySelector('.btn-delete-screenshot').addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    const ok = await deleteScreenshotWithConfirm(item);
+    if (!ok) return;
+    card.remove();
+    updateDeleteSelectedState();
+    updateScreenshotsCountFromGrid();
+  });
+
+  return card;
+}
+
+// Shared by the grid's per-card delete button and the lightbox's delete
+// button — confirms, calls the API, and clears the image cache. Returns
+// true on success so each caller can do its own bit of cleanup (removing
+// a grid card vs. advancing the lightbox to the next image).
+async function deleteScreenshotWithConfirm(item) {
+  const proceed = await showConfirmDialog({
+    type: 'delete',
+    title: 'Delete Screenshot',
+    message: `Are you sure you want to delete "${item.file_name}"?`,
+    confirmText: 'Delete',
+    isDanger: true,
+  });
+  if (!proceed) return false;
+  try {
+    await api.deleteScreenshot(item.path);
+    screenshotImageCache.delete(item.path);
+    showToast('Screenshot deleted', 'success');
+    return true;
+  } catch (e) {
+    showToast(String(e), 'error');
+    return false;
+  }
+}
+
+// ── Screenshot lightbox ──────────────────────────────────────────────────
+// A single overlay reused across opens; built once on first use rather
+// than living in index.html since it's just an image + prev/next/close.
+let screenshotLightboxEl = null;
+let screenshotLightboxItems = [];
+let screenshotLightboxIndex = 0;
+
+function ensureScreenshotLightbox() {
+  if (screenshotLightboxEl) return screenshotLightboxEl;
+  const el = document.createElement('div');
+  el.className = 'screenshot-lightbox hidden';
+  el.innerHTML = `
+    <button type="button" class="screenshot-lightbox-nav screenshot-lightbox-prev" title="Previous (←)">${ICON_CHEVRON_LEFT_SVG}</button>
+    <div class="screenshot-lightbox-stage">
+      <img class="screenshot-lightbox-img" alt="" decoding="async" />
+      <div class="screenshot-lightbox-status">Loading…</div>
+    </div>
+    <button type="button" class="screenshot-lightbox-nav screenshot-lightbox-next" title="Next (→)">${ICON_CHEVRON_RIGHT_SVG}</button>
+    <div class="screenshot-lightbox-bottom">
+      <div class="screenshot-lightbox-caption"></div>
+      <div class="screenshot-lightbox-toolbar">
+        <button type="button" class="screenshot-lightbox-copy">${ICON_COPY_SVG}Copy</button>
+        <button type="button" class="screenshot-lightbox-delete">${ICON_TRASH_SVG}Delete</button>
+        <button type="button" class="screenshot-lightbox-close" title="Close (Esc)">${ICON_CLOSE_SVG}Close</button>
+      </div>
+    </div>
+  `;
+  // Lives inside #app rather than directly on <body> — #app is its own
+  // stacking context (isolation: isolate + transform), so nesting the
+  // lightbox here means its z-index only has to beat #app's other
+  // children instead of burying #custom-titlebar (z-index 99999), which
+  // sits in that same context. That's what keeps the window's
+  // minimize/maximize/close buttons visible and clickable over a
+  // screenshot preview.
+  const appEl = document.getElementById('app') || document.body;
+  appEl.appendChild(el);
+
+  el.addEventListener('click', (e) => {
+    // Close on a click that lands on the dim backdrop or the stage area
+    // around the image, but not on the image itself or any button
+    // (those have their own handlers with stopPropagation).
+    if (e.target === el || e.target.classList.contains('screenshot-lightbox-stage')) {
+      closeScreenshotLightbox();
+    }
+  });
+  el.querySelector('.screenshot-lightbox-close').addEventListener('click', closeScreenshotLightbox);
+  el.querySelector('.screenshot-lightbox-prev').addEventListener('click', (e) => { e.stopPropagation(); stepScreenshotLightbox(-1); });
+  el.querySelector('.screenshot-lightbox-next').addEventListener('click', (e) => { e.stopPropagation(); stepScreenshotLightbox(1); });
+
+  el.querySelector('.screenshot-lightbox-copy').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const item = screenshotLightboxItems[screenshotLightboxIndex];
+    if (!item) return;
+    try {
+      const dataUrl = await getScreenshotImageDataUrl(item.path);
+      const resp = await fetch(dataUrl);
+      const blob = await resp.blob();
+      if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
+      } else {
+        throw new Error('Clipboard image copy is not supported here');
+      }
+      showToast('Screenshot copied to clipboard', 'success');
+    } catch (err) {
+      showToast('Failed to copy image: ' + err, 'error');
+    }
+  });
+
+  el.querySelector('.screenshot-lightbox-delete').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const item = screenshotLightboxItems[screenshotLightboxIndex];
+    if (!item) return;
+    const ok = await deleteScreenshotWithConfirm(item);
+    if (!ok) return;
+    removeScreenshotFromLightbox(item.path);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (screenshotLightboxEl.classList.contains('hidden')) return;
+    if (e.key === 'Escape') closeScreenshotLightbox();
+    else if (e.key === 'ArrowLeft') stepScreenshotLightbox(-1);
+    else if (e.key === 'ArrowRight') stepScreenshotLightbox(1);
+  });
+
+  screenshotLightboxEl = el;
+  return el;
+}
+
+// After a delete from inside the lightbox: drop the item from the
+// lightbox's own list and from the grid, then move on to the next image
+// (or the new item that slides into the same index, or close if that was
+// the last screenshot) instead of just closing the preview.
+function removeScreenshotFromLightbox(path) {
+  const removedIndex = screenshotLightboxItems.findIndex((it) => it.path === path);
+  if (removedIndex !== -1) screenshotLightboxItems.splice(removedIndex, 1);
+
+  const grid = document.getElementById('mods-grid');
+  const gridCard = grid && Array.from(grid.querySelectorAll('.screenshot-card')).find((c) => c.dataset.path === path);
+  if (gridCard) gridCard.remove();
+  updateDeleteSelectedState();
+  updateScreenshotsCountFromGrid();
+
+  if (screenshotLightboxItems.length === 0) {
+    closeScreenshotLightbox();
+    return;
+  }
+  if (screenshotLightboxIndex >= screenshotLightboxItems.length) {
+    screenshotLightboxIndex = screenshotLightboxItems.length - 1;
+  }
+  renderScreenshotLightbox();
+}
+
+function openScreenshotLightbox(items, index) {
+  screenshotLightboxItems = items || [];
+  screenshotLightboxIndex = index || 0;
+  const el = ensureScreenshotLightbox();
+  el.classList.remove('hidden');
+  document.body.classList.add('screenshot-lightbox-open');
+  renderScreenshotLightbox();
+}
+
+function closeScreenshotLightbox() {
+  if (!screenshotLightboxEl) return;
+  screenshotLightboxEl.classList.add('hidden');
+  document.body.classList.remove('screenshot-lightbox-open');
+  const img = screenshotLightboxEl.querySelector('.screenshot-lightbox-img');
+  if (img) img.src = '';
+}
+
+function stepScreenshotLightbox(delta) {
+  if (!screenshotLightboxItems.length) return;
+  screenshotLightboxIndex = (screenshotLightboxIndex + delta + screenshotLightboxItems.length) % screenshotLightboxItems.length;
+  renderScreenshotLightbox();
+}
+
+async function renderScreenshotLightbox() {
+  const el = screenshotLightboxEl;
+  if (!el) return;
+  const item = screenshotLightboxItems[screenshotLightboxIndex];
+  const img = el.querySelector('.screenshot-lightbox-img');
+  const status = el.querySelector('.screenshot-lightbox-status');
+  const caption = el.querySelector('.screenshot-lightbox-caption');
+  const prevBtn = el.querySelector('.screenshot-lightbox-prev');
+  const nextBtn = el.querySelector('.screenshot-lightbox-next');
+  const hasMultiple = screenshotLightboxItems.length > 1;
+  if (prevBtn) prevBtn.style.display = hasMultiple ? '' : 'none';
+  if (nextBtn) nextBtn.style.display = hasMultiple ? '' : 'none';
+  if (!item) return;
+
+  const myRequestIndex = screenshotLightboxIndex;
+  img.src = '';
+  img.classList.remove('loaded');
+  if (status) { status.textContent = 'Loading…'; status.classList.remove('hidden'); }
+  if (caption) {
+    caption.textContent = item.file_name || '';
+    caption.title = item.file_name || '';
+  }
+
+  try {
+    const dataUrl = await getScreenshotImageDataUrl(item.path);
+    // The user may have already stepped to a different image while this
+    // was in flight — don't let a slow load stomp on what's shown now.
+    if (screenshotLightboxIndex !== myRequestIndex || el.classList.contains('hidden')) return;
+    img.src = dataUrl;
+    img.classList.add('loaded');
+    if (status) status.classList.add('hidden');
+  } catch (e) {
+    if (screenshotLightboxIndex !== myRequestIndex || el.classList.contains('hidden')) return;
+    console.error('Failed to load screenshot', item.path, e);
+    if (status) { status.textContent = `Failed to load this screenshot: ${e}`; status.classList.remove('hidden'); }
+  }
+}
+
+async function loadScreenshotsGrid() {
+  if (!settings) return;
+  const myGeneration = modsLoadGeneration;
+  const grid = document.getElementById('mods-grid');
+  const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
+  const subpanel = document.getElementById('modpack-mods-subpanel');
+  if (!grid) return;
+  if (subpanel) subpanel.classList.add('hidden');
+  grid.classList.add('screenshots-mode');
+
+  grid.innerHTML = '<div class="empty-state"><span>Loading content…</span></div>';
+
+  const targetInstance = getModsTargetInstance();
+  const directory = targetInstance ? (targetInstance.directory || settings.game_directory) : settings.game_directory;
+
+  try {
+    const items = await api.listScreenshots(directory);
+    if (myGeneration !== modsLoadGeneration) return;
+    resetScreenshotObserver();
+
+    if (items.length === 0) {
+      grid.innerHTML = '';
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.innerHTML = `<span class="empty-icon">${ICON_EMPTY_BOX_SVG}</span><span>No screenshots yet</span>`;
+      grid.appendChild(empty);
+      if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+      updateScreenshotsCount(0, targetInstance);
+      filterMods();
+      return;
+    }
+
+    // A folder with hundreds of screenshots used to build every card
+    // synchronously in one giant burst, which is what froze the UI for a
+    // moment on switching to this tab. Instead, build+insert them in
+    // small batches across animation frames — the "Loading content…"
+    // state stays up until the first batch lands, then the rest streams
+    // in behind it without blocking the main thread.
+    grid.innerHTML = '';
+    const BATCH_SIZE = 24;
+    let i = 0;
+    await new Promise((resolve) => {
+      const appendBatch = () => {
+        if (myGeneration !== modsLoadGeneration) return resolve();
+        const frag = document.createDocumentFragment();
+        const end = Math.min(i + BATCH_SIZE, items.length);
+        for (; i < end; i++) frag.appendChild(createScreenshotCard(items[i], directory, items, i));
+        grid.appendChild(frag);
+        updateScreenshotsCount(items.length, targetInstance);
+        if (i < items.length) requestAnimationFrame(appendBatch);
+        else resolve();
+      };
+      requestAnimationFrame(appendBatch);
+    });
+    if (myGeneration !== modsLoadGeneration) return;
+
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+    filterMods();
+
+    // Enqueue every card in top-to-bottom order — the shared queue (see
+    // enqueueScreenshotLoad) is what actually paces this to a couple of
+    // reads at a time instead of all of them firing together. Clear out
+    // anything left over from a previous grid first so a reload doesn't
+    // just pile new cards behind stale, already-disconnected ones.
+    screenshotLoadQueue = [];
+    grid.querySelectorAll('.screenshot-card').forEach((card) => enqueueScreenshotLoad(card));
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state"><span style="color:var(--danger)">${e}</span></div>`;
     if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
   }
 }
@@ -7232,7 +7855,11 @@ function initMods() {
       if (!settings) settings = await api.getSettings().catch(() => null);
       const directory = getModsTargetDirectory();
       try {
-        await api.openModsFolder(directory);
+        if (activeContentType === 'resourcepack' || activeContentType === 'shaderpack') {
+          await api.openPacksFolder(directory, activeContentType);
+        } else {
+          await api.openModsFolder(directory);
+        }
       } catch (e) {
         showToast('Failed to open folder: ' + e, 'error');
       }
@@ -7248,31 +7875,34 @@ function initMods() {
   const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
   if (deleteSelectedBtn) {
     deleteSelectedBtn.addEventListener('click', async () => {
-      const selected = Array.from(document.querySelectorAll('.mod-card.selected'));
+      const selected = Array.from(document.querySelectorAll('.mod-card.selected, .screenshot-card.selected'));
       if (selected.length === 0) return;
+      const unitLabel = contentKindLabel(activeContentType);
+      const unitLabelCap = unitLabel.replace(/\b\w/g, c => c.toUpperCase());
       const proceed = await showConfirmDialog({
         type: 'delete',
-        title: 'Delete Selected Mods',
-        message: `Are you sure you want to delete ${selected.length} selected mod(s)?`,
-        confirmText: `Delete ${selected.length} Mod(s)`,
+        title: `Delete Selected ${unitLabelCap}s`,
+        message: `Are you sure you want to delete ${selected.length} selected ${unitLabel}(s)?`,
+        confirmText: `Delete ${selected.length} ${unitLabelCap}(s)`,
         isDanger: true,
       });
       if (!proceed) return;
+      const directory = getModsTargetDirectory();
       const paths = selected.map(card => card.dataset.path).filter(Boolean);
       try {
-        await Promise.all(paths.map(path => api.deleteMod(path)));
+        await Promise.all(paths.map(path => api.deleteMod(directory, path)));
         await loadMods();
-        showToast(`Deleted ${paths.length} mod(s)`, 'success');
+        showToast(`Deleted ${paths.length} ${unitLabel}(s)`, 'success');
       } catch (e) {
         showToast(String(e), 'error');
       }
     });
   }
 
-  // Replaces the old manual Refresh button — the mods list now keeps
+  // Replaces the old manual Refresh button — the mods/packs list now keeps
   // itself up to date on its own while the Mods tab is open.
   setInterval(() => {
-    if (getActiveTabId() === 'mods' && activeContentType === 'mod') loadMods();
+    if (getActiveTabId() === 'mods' && ['mod', 'resourcepack', 'shaderpack', 'screenshot'].includes(activeContentType)) loadMods();
   }, MODS_AUTO_REFRESH_MS);
 
   initModsDragDrop();
@@ -7774,13 +8404,20 @@ async function trackedDiscoverDownload(directory, projectType, fileUrl, fileName
   }
 }
 
-async function gatherModsForDirectory(directory) {
+async function gatherContentForDirectory(directory, type) {
   try {
+    if (type === 'resourcepack' || type === 'shaderpack') {
+      return await api.listPacks(directory, type);
+    }
     return await api.listMods(directory);
   } catch (e) {
-    showToast('Failed to list mods: ' + e, 'error');
+    showToast(`Failed to list ${contentKindLabel(type)}s: ` + e, 'error');
     return [];
   }
+}
+
+async function gatherModsForDirectory(directory) {
+  return gatherContentForDirectory(directory, 'mod');
 }
 
 // After downloading a mod's new version, the old jar is still sitting in the
@@ -7815,12 +8452,14 @@ async function deleteOldModFileIfReplaced(directory, oldPath, newFilename) {
 // project + version, so the comparison is between two values Modrinth
 // itself reports for that project — which is what actually fixes updated
 // mods still showing as outdated on the next check.
-async function checkUpdatesForMods(directory, instance) {
-  const mods = await gatherModsForDirectory(directory);
-  const withHash = mods.filter(m => m.sha1);
+async function checkUpdatesForContent(directory, instance, type) {
+  const items = await gatherContentForDirectory(directory, type);
+  const withHash = items.filter(m => m.sha1);
   if (withHash.length === 0) return [];
 
-  const loaderFilter = instance && instance.loader ? instance.loader.toLowerCase() : null;
+  // Loader filtering only makes sense for mods — resource packs and shader
+  // packs aren't loader-specific.
+  const loaderFilter = (type === 'mod' && instance && instance.loader) ? instance.loader.toLowerCase() : null;
   const gameVersion = instance && instance.minecraft_version ? instance.minecraft_version : null;
 
   let lookup;
@@ -7854,6 +8493,10 @@ async function checkUpdatesForMods(directory, instance) {
     }
   }
   return updatable;
+}
+
+async function checkUpdatesForMods(directory, instance) {
+  return checkUpdatesForContent(directory, instance, 'mod');
 }
 
 // Strips version numbers / mc-version / loader tags so "sodium-fabric-mc1.20.1-0.5.8.jar"
@@ -8032,11 +8675,13 @@ async function runDedupe() {
 async function runCheckUpdates() {
   const target = getModsTargetInstance();
   const directory = getModsTargetDirectory();
-  return checkUpdatesForDirectory(directory, target);
+  return checkUpdatesForDirectory(directory, target, activeContentType);
 }
 
 async function runUpdateAll(up, dlId) {
   const directory = getModsTargetDirectory();
+  const type = activeContentType;
+  const projectType = projectTypeForContentType(type);
   const updateAllBtn = document.getElementById('btn-update-all-mods');
   const updateAllIcon = updateAllBtn && updateAllBtn.querySelector('.update-icon');
   if (updateAllBtn) updateAllBtn.classList.add('is-downloading');
@@ -8048,10 +8693,10 @@ async function runUpdateAll(up, dlId) {
       const u = up[i];
       const modLabel = (u.mod && (u.mod.name || u.mod.file_name)) || u.file.filename;
       if (dlWidgetGeneric) {
-        dlWidgetGeneric.update(dlId, undefined, `Mod ${i + 1} of ${up.length}: ${modLabel}`, (i / up.length) * 100);
+        dlWidgetGeneric.update(dlId, undefined, `${contentKindLabel(type).replace(/\b\w/g, c => c.toUpperCase())} ${i + 1} of ${up.length}: ${modLabel}`, (i / up.length) * 100);
       }
       try {
-        await trackedDiscoverDownload(directory, 'mod', u.file.url, u.file.filename, dlId, modLabel);
+        await trackedDiscoverDownload(directory, projectType, u.file.url, u.file.filename, dlId, modLabel);
         await deleteOldModFileIfReplaced(directory, u.mod.path, u.file.filename);
         modUpdateInfo.delete(u.mod.path);
         ok++;
@@ -8106,7 +8751,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // rescan was the "checks for updates even though I already checked"
         // behavior. Only run a fresh check if nothing's been checked yet.
         let up;
-        const existing = modUpdateInfoByDir.get(modsCacheKey(target, directory));
+        const existing = modUpdateInfoByDir.get(modsCacheKey(target, directory, activeContentType));
         if (existing && existing.size > 0) {
           up = Array.from(existing.values());
         } else {
@@ -8117,15 +8762,16 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast('No updates found', 'success');
           return;
         }
-        showToast(`Updating ${up.length} mod(s) (may take a while)...`, 'info');
+        const unitLabel = contentKindLabel(activeContentType);
+        showToast(`Updating ${up.length} ${unitLabel}(s) (may take a while)...`, 'info');
         const dlId = genDlId('mods-update-all');
-        if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, `Updating ${up.length} mod(s)…`, 'Starting…', { icon: 'update' });
+        if (dlWidgetGeneric) dlWidgetGeneric.begin(dlId, `Updating ${up.length} ${unitLabel}(s)…`, 'Starting…', { icon: 'update' });
         if (dlWidgetGeneric) dlWidgetGeneric.seedFiles(dlId, up.map(u => (u.mod && (u.mod.name || u.mod.file_name)) || u.file.filename));
         let ok = 0;
         try {
           ok = await runUpdateAll(up, dlId);
         } finally {
-          if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, ok > 0, `Updated ${ok} of ${up.length} mod(s)`);
+          if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, ok > 0, `Updated ${ok} of ${up.length} ${unitLabel}(s)`);
         }
         await loadMods();
         showToast(`Updated ${ok} of ${up.length} mod(s)`, ok > 0 ? 'success' : 'error');
@@ -13330,23 +13976,21 @@ async function refreshRunningInstances() {
   renderPlaytimeChart();
   renderGlobalPlaytimeStats();
 
-  // High GPU & WebKitGTK Optimization:
-  // When a game is running, pause background canvas particles and 3D skin model rendering
-  // so the launcher consumes 0% GPU while the user plays.
-  const anyGameRunning = Array.isArray(runningInstancesCache) && runningInstancesCache.some(i => i.running);
-  if (anyGameRunning) {
-    if (typeof BG !== 'undefined' && BG.pause) BG.pause();
-    if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
-  } else {
-    const settingsOpen = document.body.classList.contains('settings-modal-active');
-    const skinModalOpen = !document.getElementById('skin-viewer-overlay')?.classList.contains('hidden');
-    const dressingOpen = !document.getElementById('dressing-room-overlay')?.classList.contains('hidden');
-    if (!document.hidden && !settingsOpen) {
-      if (typeof BG !== 'undefined' && BG.resume) BG.resume();
-    }
-    if (!document.hidden && !skinModalOpen && !dressingOpen && skinMiniPreviewInstance) {
-      skinMiniPreviewInstance.renderPaused = false;
-    }
+  // Note: this used to also pause the background canvas animation and the
+  // 3D skin preview for as long as any instance was running, to save GPU.
+  // That made the whole UI look frozen/dead behind the game window
+  // whenever you tabbed back to the launcher — removed. Backgrounding
+  // (window hidden, blurred, or a modal open) still pauses these via the
+  // handlers in BG.init() and below; only the "a game happens to be
+  // running" condition has been dropped.
+  const settingsOpen = document.body.classList.contains('settings-modal-active');
+  const skinModalOpen = !document.getElementById('skin-viewer-overlay')?.classList.contains('hidden');
+  const dressingOpen = !document.getElementById('dressing-room-overlay')?.classList.contains('hidden');
+  if (!document.hidden && !settingsOpen) {
+    if (typeof BG !== 'undefined' && BG.resume) BG.resume();
+  }
+  if (!document.hidden && !skinModalOpen && !dressingOpen && skinMiniPreviewInstance) {
+    skinMiniPreviewInstance.renderPaused = false;
   }
 }
 
@@ -13625,14 +14269,13 @@ const BG = {
       if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
     });
     window.addEventListener('focus', () => {
-      const anyRunning = Array.isArray(runningInstancesCache) && runningInstancesCache.some(i => i.running);
       const settingsOpen = document.body.classList.contains('settings-modal-active');
       const skinModalOpen = !document.getElementById('skin-viewer-overlay')?.classList.contains('hidden');
       const dressingOpen = !document.getElementById('dressing-room-overlay')?.classList.contains('hidden');
-      if (!anyRunning && !settingsOpen && !document.hidden) {
+      if (!settingsOpen && !document.hidden) {
         this.resume();
       }
-      if (!anyRunning && !skinModalOpen && !dressingOpen && !document.hidden && skinMiniPreviewInstance) {
+      if (!skinModalOpen && !dressingOpen && !document.hidden && skinMiniPreviewInstance) {
         skinMiniPreviewInstance.renderPaused = false;
       }
     });

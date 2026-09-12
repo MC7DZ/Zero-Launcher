@@ -378,6 +378,12 @@ pub fn run() {
             commands::mods::delete_mod,
             commands::mods::open_mods_folder,
             commands::mods::install_mod_files,
+            commands::mods::list_packs,
+            commands::mods::open_packs_folder,
+            commands::mods::install_pack_files,
+            commands::mods::list_screenshots,
+            commands::mods::open_screenshots_folder,
+            commands::mods::read_screenshot_image,
             commands::mods::export_mods_list,
             commands::mods::read_mods_list_file,
             // Presets

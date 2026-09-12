@@ -53,6 +53,7 @@ discord-rich-presence = "1.1.0"
 sha1 = "0.10"
 flate2 = "1"
 tar = "0.4"
+base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 mslnk = "0.1"

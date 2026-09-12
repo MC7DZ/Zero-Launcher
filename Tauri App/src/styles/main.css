@@ -3977,6 +3977,250 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   }
 }
 
+/* ── Screenshots grid ─────────────────────────────────────────────────── */
+.mods-list.screenshots-mode {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.screenshot-card {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0;
+}
+.screenshot-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.screenshot-card.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.screenshot-broken-icon {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.35;
+}
+.screenshot-broken-icon svg {
+  width: 32px;
+  height: 32px;
+}
+.screenshot-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 100%);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.screenshot-card:hover .screenshot-overlay,
+.screenshot-card.selected .screenshot-overlay {
+  opacity: 1;
+}
+.screenshot-name {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.screenshot-actions {
+  display: flex;
+  gap: 6px;
+}
+.screenshot-actions button {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.screenshot-actions button svg {
+  width: 14px;
+  height: 14px;
+}
+.screenshot-actions button:hover {
+  background: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+}
+.screenshot-actions .btn-delete-screenshot {
+  background: rgba(220, 53, 69, 0.7);
+}
+.screenshot-actions .btn-delete-screenshot:hover {
+  background: rgba(220, 53, 69, 0.92);
+}
+
+/* ── Screenshot lightbox ─────────────────────────────────────────────── */
+body.screenshot-lightbox-open {
+  overflow: hidden;
+}
+.screenshot-lightbox {
+  /* Lives inside #app (see openScreenshotLightbox in app.js) rather than
+     directly on <body>. #app has `isolation: isolate` + a transform, so
+     it forms its own stacking context — a z-index here only competes
+     against #app's other children (like #custom-titlebar, z-index
+     99999), which is what keeps the window's min/max/close buttons
+     clickable and visible while a screenshot preview is open. */
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 10, 0.92);
+  backdrop-filter: blur(6px);
+  animation: screenshotLightboxIn 0.12s ease;
+}
+.screenshot-lightbox.hidden {
+  display: none;
+}
+@keyframes screenshotLightboxIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.screenshot-lightbox-stage {
+  position: relative;
+  width: min(88vw, 1400px);
+  height: min(72vh, 780px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: -48px; /* nudge the whole viewer up so the toolbar below fits without cramping the image */
+}
+.screenshot-lightbox-img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.screenshot-lightbox-img.loaded {
+  opacity: 1;
+}
+.screenshot-lightbox-status {
+  position: absolute;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  pointer-events: none;
+}
+.screenshot-lightbox-status.hidden {
+  display: none;
+}
+.screenshot-lightbox-nav {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.screenshot-lightbox-nav:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.screenshot-lightbox-nav {
+  top: calc(50% - 24px);
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+}
+.screenshot-lightbox-nav:hover {
+  transform: translateY(-50%) scale(1.06);
+}
+.screenshot-lightbox-nav svg {
+  width: 22px;
+  height: 22px;
+}
+.screenshot-lightbox-prev { left: 20px; }
+.screenshot-lightbox-next { right: 20px; }
+
+/* Bottom bar: filename + actions, sitting under the stage instead of a
+   floating close button stuck in the corner of the whole window. */
+.screenshot-lightbox-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 90vw;
+}
+.screenshot-lightbox-caption {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  max-width: 70vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.screenshot-lightbox-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.screenshot-lightbox-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.screenshot-lightbox-toolbar button svg {
+  width: 14px;
+  height: 14px;
+}
+.screenshot-lightbox-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+.screenshot-lightbox-toolbar .screenshot-lightbox-delete {
+  background: rgba(220, 53, 69, 0.7);
+}
+.screenshot-lightbox-toolbar .screenshot-lightbox-delete:hover {
+  background: rgba(220, 53, 69, 0.92);
+}
+.screenshot-lightbox-toolbar .screenshot-lightbox-close {
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .mod-card {
   position: relative;
   display: flex;
@@ -9611,6 +9855,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   content-visibility: auto;
   contain-intrinsic-size: 0 220px;
 }
+.is-webkit-gtk .screenshot-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 180px;
+}
 
 /* ── 4. Promote ALL scroll containers to their own GPU layer ── */
 .is-webkit-gtk .settings-modal-body,
@@ -9837,3 +10085,42 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   transition: background var(--transition), color var(--transition);
 }
 
+
+/* ── 11. Screenshot lightbox — this is the actual "huge lag on click" fix.
+         Opening it used to run a `backdrop-filter: blur(6px)` fade over
+         the entire screenshots grid behind it, plus the same blur again
+         on the nav/toolbar buttons sitting on top of that — WebKitGTK's
+         compositor blurs those in software, recomputed every frame of the
+         fade-in, over however many screenshot tiles are on screen. That
+         combination is what caused the stutter; on other platforms it's
+         cheap enough not to notice. ── */
+.is-webkit-gtk .screenshot-lightbox {
+  contain: strict;
+  background: rgba(8, 8, 10, 0.94) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  animation: none !important;
+}
+.is-webkit-gtk .screenshot-lightbox-nav,
+.is-webkit-gtk .screenshot-lightbox-toolbar button {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(46, 46, 50, 0.95);
+  transition: background var(--transition-fast);
+}
+.is-webkit-gtk .screenshot-lightbox-nav:hover,
+.is-webkit-gtk .screenshot-lightbox-toolbar button:hover {
+  background: rgba(64, 64, 70, 0.95);
+  transform: none !important;
+}
+.is-webkit-gtk .screenshot-lightbox-toolbar .screenshot-lightbox-delete {
+  background: rgba(190, 48, 62, 0.95);
+}
+.is-webkit-gtk .screenshot-lightbox-toolbar .screenshot-lightbox-delete:hover {
+  background: rgba(212, 53, 68, 0.95);
+}
+.is-webkit-gtk .screenshot-lightbox-img {
+  /* Plain opacity fade only — no blur anywhere near it now — so this
+     stays on the compositor thread instead of forcing a paint. */
+  transition: opacity 0.1s ease;
+}
