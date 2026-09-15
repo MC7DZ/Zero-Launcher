@@ -649,7 +649,7 @@ impl Default for LauncherSettings {
             rpc_show_game_state: false,
             rpc_custom_state_text: default_rpc_custom_state(),
             rpc_app_id: default_rpc_app_id(),
-            rpc_show_launcher_activity: false,
+            rpc_show_launcher_activity: true,
             rpc_tab_instances: true,
             rpc_tab_mods: true,
             rpc_tab_settings: true,

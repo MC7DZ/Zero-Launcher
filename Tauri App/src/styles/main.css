@@ -20,7 +20,11 @@
   --radius-sm:  8px;
   --radius-pill: 999px;
   --font:       'Noto Sans', sans-serif;
-  --transition: 0.1s ease;
+  --transition: 0.14s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --transition-fast: 0.08s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --transition-slow: 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  /* Spring-like curve for modal/overlay entry: fast out, gentle settle */
+  --ease-out-spring: cubic-bezier(0.16, 1, 0.3, 1);
   --overlay-rgb: 255, 255, 255;
   --field-bg:   #141414;
 }
@@ -125,7 +129,7 @@ input, textarea, select, [contenteditable="true"] {
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
-  transition: opacity 0.3s ease, filter 0.3s ease;
+  transition: opacity 0.3s ease, filter 0.3s ease; /* WebKitGTK strips filter — see .is-webkit-gtk #bg-image-layer below */
   opacity: 0;
 }
 
@@ -639,30 +643,28 @@ input, textarea, select, [contenteditable="true"] {
 .pill-tab {
   background: transparent;
   border: 1px solid transparent;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.55);
   font-family: var(--font);
   font-weight: 600;
   font-size: 13px;
   padding: 6px 16px;
   border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: background var(--transition), color var(--transition);
+  /* color fades instantly with the indicator; scale is the only transform */
+  transition: color 0.18s ease, transform var(--transition-fast);
   position: relative;
+  z-index: 1; /* sit above the sliding indicator */
 }
 .pill-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  color: rgba(255, 255, 255, 0.85);
 }
 .pill-tab.active {
-  background: #2a2a2a;
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.16);
+  /* background is handled by .tab-indicator so we keep this transparent */
+  background: transparent;
+  border-color: transparent;
 }
-/* Kill the browser's default focus rectangle on click (that's the boxy
-   "selection box" outline) — replace it with a quick, subtle press-scale
-   instead. Keyboard users still get a clear (but calm) ring via
-   :focus-visible, which only fires for keyboard/programmatic focus, not
-   mouse clicks. */
+/* Kill the browser's default focus rectangle on click */
 .pill-tab {
   outline: none;
 }
@@ -674,7 +676,31 @@ input, textarea, select, [contenteditable="true"] {
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 16, 185, 129), 0.5);
 }
 .pill-tab:active {
-  transform: scale(0.96);
+  transform: scale(0.95);
+}
+
+/* ── Sliding pill indicator ──────────────────────────────────────────────────
+   A <div class="tab-indicator"> inside #tab-bar that glides beneath the active tab.
+   Smooth transform: translateX() + width transition.                         */
+.tab-indicator {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: 0;
+  background: #2a2a2a;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-pill);
+  z-index: 0;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: transform 0.26s cubic-bezier(0.25, 1, 0.5, 1),
+              width 0.26s cubic-bezier(0.25, 1, 0.5, 1),
+              opacity 0.2s ease;
+  opacity: 0;
+}
+.tab-indicator.ready {
+  opacity: 1;
 }
 
 /* ═══ Tab Content ═══ */
@@ -693,24 +719,11 @@ input, textarea, select, [contenteditable="true"] {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   contain: layout paint;
-  /* Promote the scroll container to its own compositor layer. */
   transform: translateZ(0);
   backface-visibility: hidden;
 }
 .tab-page.active { display: block; }
 .tab-page.mods-two-pane-page.active { display: flex; overflow: hidden; padding: 20px; }
-
-/* ── Tab switching animation ───────────────────────────────────────────── */
-/* .tab-entering is added by JS AFTER a forced reflow (void page.offsetWidth)
-   so the browser has already committed display:block before the animation
-   starts — this is the only reliable way to animate display:none→block. */
-@keyframes tab-fade-in {
-  from { opacity: 0; transform: translateY(5px); }
-  to   { opacity: 1; transform: translateY(0);   }
-}
-.tab-page.tab-entering {
-  animation: tab-fade-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
 
 /* ═══ Glass Card ═══ */
 .glass-card,
@@ -939,12 +952,17 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 10px 22px;
   border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: all var(--transition);
+  transition: filter var(--transition), transform var(--transition), box-shadow var(--transition), background var(--transition);
 }
 .btn-accent:hover {
   filter: brightness(1.1);
   transform: translateY(-1px);
   box-shadow: 0 4px 16px var(--accent-glow);
+}
+.btn-accent:active {
+  filter: brightness(0.95);
+  transform: translateY(0) scale(0.97);
+  box-shadow: none;
 }
 .btn-accent:disabled { opacity: 0.4; pointer-events: none; }
 
@@ -1021,9 +1039,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 10px 22px;
   border-radius: var(--radius);
   cursor: pointer;
-  transition: background var(--transition);
+  transition: background var(--transition), border-color var(--transition), transform var(--transition-fast);
 }
-.btn-secondary:hover { background: rgba(var(--overlay-rgb),0.12); }
+.btn-secondary:hover { background: rgba(var(--overlay-rgb),0.12); border-color: rgba(var(--overlay-rgb),0.2); }
+.btn-secondary:active { transform: scale(0.97); }
 
 .btn-danger {
   background: var(--danger, #ef4444);
@@ -1036,7 +1055,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: var(--radius-sm, 8px);
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
-  transition: all var(--transition);
+  transition: background var(--transition), filter var(--transition), transform var(--transition), box-shadow var(--transition);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1049,7 +1068,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   box-shadow: 0 6px 20px rgba(239, 68, 68, 0.5);
 }
 .btn-danger:active {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.97);
+  filter: brightness(0.95);
+  box-shadow: none;
 }
 .btn-danger:disabled {
   opacity: 0.4;
@@ -1066,9 +1087,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 10px 22px;
   border-radius: var(--radius);
   cursor: pointer;
-  transition: all var(--transition);
+  transition: background var(--transition), border-color var(--transition), transform var(--transition);
 }
 .btn-danger-outline:hover { background: rgba(239,68,68,0.12); border-color: var(--danger); }
+.btn-danger-outline:active { transform: scale(0.97); }
 
 .btn-danger-pill {
   background: rgba(239,68,68,0.1);
@@ -1080,9 +1102,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 8px 16px;
   border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: all var(--transition);
+  transition: background var(--transition), color var(--transition), transform var(--transition);
 }
 .btn-danger-pill:hover { background: var(--danger); color: #fff; }
+.btn-danger-pill:active { transform: scale(0.97); }
 
 .btn-ghost {
   background: transparent;
@@ -1094,9 +1117,11 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   padding: 10px 22px;
   border-radius: var(--radius);
   cursor: pointer;
-  transition: color var(--transition);
+  transition: color var(--transition), background var(--transition), transform var(--transition);
 }
-.btn-ghost:hover { color: var(--text); }
+.btn-ghost:hover { color: var(--text); background: rgba(var(--overlay-rgb), 0.05); }
+.btn-ghost:active { transform: scale(0.97); }
+
 
 /* ═══ PLAY Button ═══ */
 .btn-play {
@@ -1110,13 +1135,18 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: var(--radius);
   cursor: pointer;
   letter-spacing: 1px;
-  transition: all var(--transition);
+  transition: filter var(--transition), transform var(--transition), box-shadow var(--transition), background var(--transition);
   box-shadow: 0 4px 20px var(--accent-glow);
 }
 .btn-play:hover:not(:disabled) {
   filter: brightness(1.1);
   transform: translateY(-2px);
   box-shadow: 0 8px 30px var(--accent-glow);
+}
+.btn-play:active:not(:disabled) {
+  filter: brightness(0.95);
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 2px 8px var(--accent-glow);
 }
 .btn-play:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
 
@@ -1285,11 +1315,14 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   content-visibility: auto;
   contain-intrinsic-size: auto 60px;
   transform: translateZ(0);
-  transition: background var(--transition), border-color var(--transition);
+  transition: background var(--transition), border-color var(--transition), transform var(--transition-fast);
 }
 .instance-card:hover {
   background: rgba(var(--overlay-rgb), 0.06);
   border-color: rgba(var(--overlay-rgb), 0.09);
+}
+.instance-card:active {
+  transform: scale(0.985) translateZ(0);
 }
 .instance-card.selected {
   background: var(--accent-dim);
@@ -2329,8 +2362,34 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   z-index: 10000;
   transform: translateZ(0);
   backface-visibility: hidden;
+  /* Smooth fade in/out — opacity+pointer-events instead of display:none
+     so the compositor never needs to promote a new layer mid-animation. */
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity var(--transition-fast);
 }
-.overlay.hidden { display: none; }
+.overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Entry animation for overlay cards — spring from slightly below */
+@keyframes overlay-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.overlay:not(.hidden) .overlay-card,
+.overlay:not(.hidden) .discover-project-modal,
+.overlay:not(.hidden) .skin-viewer-modal,
+.overlay:not(.hidden) .dressing-room-modal {
+  animation: overlay-card-enter 0.22s var(--ease-out-spring) both;
+}
 
 /* Stacking tiers for global and nested overlays */
 #modpack-import-overlay {
@@ -3532,22 +3591,25 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   display: flex;
   flex-direction: column;
   gap: 8px;
+  position: relative; /* positioning context for the sliding indicator */
 }
 
 .content-type-segment {
   display: flex;
   align-items: center;
   gap: 10px;
-  border: none;
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--text-muted);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
-  padding: 10px 12px;
+  padding: 9px 12px;
   border-radius: 9px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: color 0.18s ease, transform var(--transition-fast), background 0.15s ease, border-color 0.15s ease;
+  position: relative;
+  z-index: 1;
 }
 
 .content-type-icon-wrap {
@@ -3557,33 +3619,72 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   width: 30px;
   height: 30px;
   flex-shrink: 0;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  transition: background 0.15s ease;
-}
-.content-type-segment.active .content-type-icon-wrap {
-  background: rgba(0, 0, 0, 0.15);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 
 .content-type-icon {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   flex-shrink: 0;
 }
 
 .content-type-label {
   flex: 1;
   min-width: 0;
+  letter-spacing: 0.01em;
 }
 
 .content-type-segment:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.content-type-segment:hover .content-type-icon-wrap {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
 }
 
 .content-type-segment.active {
-  background: var(--accent);
-  color: var(--bg);
+  background: transparent;
+  color: #ffffff;
+}
+
+.content-type-segment.active .content-type-icon-wrap {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.content-type-segment.active:hover {
+  background: transparent;
+}
+
+/* ── Sliding indicator for content-type panel ────────────────────────────────
+   Smooth glowing slate/glass pill behind active item.
+   JS controls transform (x,y), width, and height.                     */
+.content-type-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.07) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  border-radius: 9px;
+  z-index: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+              width    0.25s cubic-bezier(0.25, 1, 0.5, 1),
+              height   0.25s cubic-bezier(0.25, 1, 0.5, 1),
+              opacity  0.18s ease;
+  opacity: 0;
+}
+.content-type-indicator.ready {
+  opacity: 1;
 }
 
 /* ── Top Panel (Toolbar Island) ── */
@@ -3981,6 +4082,15 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .mods-list.screenshots-mode {
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
+}
+.mods-list.worlds-mode,
+.mods-list.servers-mode {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 780px) {
+  .mods-list.worlds-mode,
+  .mods-list.servers-mode { grid-template-columns: 1fr; }
 }
 .screenshot-card {
   position: relative;
@@ -4393,6 +4503,302 @@ body.screenshot-lightbox-open {
   box-shadow: 0 4px 10px rgba(0,0,0,0.06);
   transition: transform 140ms ease, box-shadow 140ms ease, background 120ms ease;
 }
+
+/* ── Worlds Grid & Cards ─────────────────────────────────────────────── */
+.world-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  padding: 14px;
+  padding-right: 195px;
+  min-height: 110px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  contain: layout style paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+}
+.world-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.3);
+  background: var(--panel-hover);
+}
+.world-card.selected {
+  outline: 2px solid var(--accent);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+}
+.world-icon {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(var(--overlay-rgb), 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.world-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.world-icon svg {
+  width: 32px;
+  height: 32px;
+  opacity: 0.6;
+}
+.world-meta {
+  flex: 1;
+  min-width: 0;
+}
+.world-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.world-details-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+.world-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(var(--overlay-rgb), 0.08);
+  color: var(--text);
+}
+.world-mode-badge.hardcore {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.world-mode-badge.creative {
+  background: rgba(14, 165, 233, 0.18);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+}
+.world-version-tag {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.world-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.world-actions,
+.server-actions {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.world-actions button,
+.server-actions button {
+  pointer-events: auto;
+  height: 32px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: background var(--transition), color var(--transition), transform var(--transition), border-color var(--transition);
+}
+.world-actions button:hover,
+.server-actions button:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.world-actions button:active,
+.server-actions button:active {
+  transform: scale(0.95);
+}
+.world-actions .btn-play-world,
+.server-actions .btn-play-server {
+  background: rgba(var(--accent-rgb, 16, 185, 129), 0.18);
+  color: var(--accent);
+  border: 1px solid rgba(var(--accent-rgb, 16, 185, 129), 0.4);
+  padding: 0 13px;
+  font-weight: 700;
+}
+.world-actions .btn-play-world:hover,
+.server-actions .btn-play-server:hover {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb, 16, 185, 129), 0.4);
+}
+.world-actions .btn-delete-world:hover,
+.server-actions .btn-delete-server:hover {
+  background: rgba(239, 68, 68, 0.85);
+  color: #ffffff;
+  border-color: rgba(239, 68, 68, 0.85);
+}
+
+/* ── Server Card Styles ─────────────────────────────────────────────── */
+.server-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  padding: 14px;
+  padding-right: 215px;
+  min-height: 94px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  contain: layout style paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+}
+.server-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.3);
+  background: var(--panel-hover);
+}
+.server-card .server-icon {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(var(--overlay-rgb), 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.server-card .server-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.server-card .server-icon svg {
+  width: 32px;
+  height: 32px;
+  opacity: 0.6;
+}
+.server-card .server-meta {
+  flex: 1;
+  min-width: 0;
+  margin-left: 14px;
+}
+.server-card .server-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.server-card .server-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+.server-card .server-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.server-card .server-badge-players {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.14);
+  color: #10b981;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.server-card .server-badge-players.offline {
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+}
+.server-card .server-badge-ping {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+}
+.server-card .server-motd {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  max-height: 38px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+  white-space: pre-line;
+  user-select: text;
+}
+.server-card .server-motd.motd-loading {
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+}
+
+/* ── Minecraft Color Codes (§ and & formatting) ────────────────────────── */
+.mc-c-0 { color: #000000; }
+.mc-c-1 { color: #0000AA; }
+.mc-c-2 { color: #00AA00; }
+.mc-c-3 { color: #00AAAA; }
+.mc-c-4 { color: #AA0000; }
+.mc-c-5 { color: #AA00AA; }
+.mc-c-6 { color: #FFAA00; }
+.mc-c-7 { color: #AAAAAA; }
+.mc-c-8 { color: #555555; }
+.mc-c-9 { color: #5555FF; }
+.mc-c-a { color: #55FF55; }
+.mc-c-b { color: #55FFFF; }
+.mc-c-c { color: #FF5555; }
+.mc-c-d { color: #FF55FF; }
+.mc-c-e { color: #FFFF55; }
+.mc-c-f { color: #FFFFFF; }
+.mc-f-l { font-weight: 700; }
+.mc-f-m { text-decoration: line-through; }
+.mc-f-n { text-decoration: underline; }
+.mc-f-o { font-style: italic; }
+.mc-f-k { opacity: 0.8; letter-spacing: 0.5px; }
+
 .fix-mods-inline .btn-ghost:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 18px rgba(0,0,0,0.12);
@@ -9506,6 +9912,15 @@ body.screenshot-lightbox-open {
   background: rgba(0, 0, 0, 0.75) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  /* Keep the opacity transition but skip the card's spring entry animation
+     (scale+translate is expensive on WebKitGTK's compositor path). */
+}
+/* On WebKitGTK: overlay entry is opacity-only, no spring transform */
+.is-webkit-gtk .overlay:not(.hidden) .overlay-card,
+.is-webkit-gtk .overlay:not(.hidden) .discover-project-modal,
+.is-webkit-gtk .overlay:not(.hidden) .skin-viewer-modal,
+.is-webkit-gtk .overlay:not(.hidden) .dressing-room-modal {
+  animation: none;
 }
 
 /* Make all overlay modal cards opaque when transparency is OFF */
@@ -10123,4 +10538,73 @@ body.screenshot-lightbox-open {
   /* Plain opacity fade only — no blur anywhere near it now — so this
      stays on the compositor thread instead of forcing a paint. */
   transition: opacity 0.1s ease;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   WEBKITGTK EXTENDED PERFORMANCE PASS — BATCH 2
+   Additional fixes found after the initial audit.
+   All rules scoped to .is-webkit-gtk.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── bg-image-layer: drop the filter half of the transition.
+      `filter` forces a full GPU texture re-upload every frame during the
+      background crossfade on WebKitGTK's compositing path. The background
+      image only ever changes opacity (fade in/out) and background-image
+      (instant swap in JS before the fade), so keeping the filter transition
+      adds zero visual value while costing a per-frame repaint. ── */
+.is-webkit-gtk #bg-image-layer {
+  transition: opacity 0.3s ease;
+}
+
+/* ── Splash screen scale animations: stop them on WebKitGTK.
+      sl-breathe and sl-pulse both animate `transform: scale()`, which can
+      cause a repaint per frame on WebKitGTK's software-ish path when the
+      element shares a layer with content that is simultaneously being laid
+      out during startup. The star drift/twinkle animations use only
+      background-position which is cheap and left running. ── */
+.is-webkit-gtk .sl-glow-bg {
+  animation: none !important;
+}
+.is-webkit-gtk .sl-logo {
+  animation: none !important;
+  transform: none;
+}
+
+/* ── Mods drag-and-drop overlay: contain painting so dragging a file over
+      the mods tab doesn't force the entire page to be repainted on every
+      pointermove. The overlay is position:fixed so it's already out of flow,
+      but `contain: paint` tells the compositor to skip repainting the
+      elements behind it entirely. ── */
+.is-webkit-gtk .mods-drag-overlay {
+  contain: layout paint;
+}
+
+/* ── Discover cards: backface-visibility hint promotes each card to its own
+      compositor layer ahead of time, so scroll and hover don't stall waiting
+      for a layer promotion mid-gesture. Only applied here (not the base rules)
+      because on non-WebKitGTK platforms this would create too many layers. ── */
+.is-webkit-gtk .discover-card {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* ── Fix will-change misuse on non-scroll-container children.
+      The existing rules apply will-change: scroll-position to elements that
+      are _inside_ the scroll container but aren't themselves scrollable.
+      This causes unnecessary compositor layer promotion with no benefit.
+      Reset to auto on the specific children that are not scroll roots. ── */
+.is-webkit-gtk .mods-bottom-panel,
+.is-webkit-gtk .hidden-instances-list,
+.is-webkit-gtk #hidden-instances-list,
+.is-webkit-gtk #mods-grid {
+  will-change: auto;
+}
+
+/* ── Top-bar and bg-container: `contain: layout style paint` is the right
+      containment here, but `will-change: auto` ensures the UA doesn't
+      speculatively promote them, which wastes a compositor layer when the
+      top-bar never actually animates during normal use. ── */
+.is-webkit-gtk #top-bar,
+.is-webkit-gtk #bg-container {
+  will-change: auto;
 }

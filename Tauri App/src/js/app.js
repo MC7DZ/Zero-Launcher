@@ -421,7 +421,13 @@ const api = {
         old_version_id: oldVersionId || null,
       }
     }),
-  launchGame: (versionId, offline) => invoke('launch_minecraft', { versionId, offline: offline ?? null }),
+  launchGame: (versionId, offline, quickPlaySingleplayer, quickPlayMultiplayer) =>
+    invoke('launch_minecraft', {
+      versionId,
+      offline: offline ?? null,
+      quickPlaySingleplayer: quickPlaySingleplayer || null,
+      quickPlayMultiplayer: quickPlayMultiplayer || null,
+    }),
   updateInstance: (versionId, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs, loader, minecraftVersion) =>
     invoke('update_instance', {
       versionId,
@@ -479,6 +485,16 @@ const api = {
   openScreenshotsFolder: (gameDir) => invoke('open_screenshots_folder', { directory: gameDir }),
   readScreenshotImage: (path) => invoke('read_screenshot_image', { path }),
   deleteScreenshot: (path) => invoke('delete_mod', { path }),
+  // Worlds — Minecraft saves with level.dat parsing
+  listWorlds: (gameDir) => invoke('list_worlds', { directory: gameDir }),
+  openWorldsFolder: (gameDir) => invoke('open_worlds_folder', { directory: gameDir }),
+  readWorldIcon: (path) => invoke('read_world_icon', { path }),
+  deleteWorld: (path) => invoke('delete_world', { path }),
+  // Servers — servers.dat multiplayer list
+  listServers: (gameDir) => invoke('list_servers', { directory: gameDir }),
+  addServer: (gameDir, name, ip) => invoke('add_server', { directory: gameDir, name, ip }),
+  deleteServer: (gameDir, ip) => invoke('delete_server', { directory: gameDir, ip }),
+  pingServer: (serverIp) => invoke('ping_server', { serverIp }),
   getLogs: (level, source) => invoke('get_logs', { level, source }),
   clearLogs: () => invoke('clear_logs'),
   openDevtools: () => invoke('open_devtools'),
@@ -802,32 +818,49 @@ window.showToast = showToast;
 let latestTabToken = 0;
 
 function initTabs() {
+  const tabBar = document.getElementById('tab-bar');
+  const indicator = document.createElement('div');
+  indicator.className = 'tab-indicator';
+  if (tabBar) tabBar.prepend(indicator);
+
+  function updateIndicator(btn) {
+    if (!btn || !tabBar) return;
+    const barRect = tabBar.getBoundingClientRect();
+    const btnRect = btn.getBoundingClientRect();
+    const x = btnRect.left - barRect.left;
+    const w = btnRect.width;
+    if (w > 0) {
+      indicator.style.transform = `translateX(${x}px)`;
+      indicator.style.width = `${w}px`;
+      if (!indicator.classList.contains('ready')) {
+        indicator.classList.add('ready');
+      }
+    }
+  }
+
+  // Position on the initial active tab once rendered
+  requestAnimationFrame(() => {
+    const active = document.querySelector('.pill-tab.active');
+    if (active) updateIndicator(active);
+  });
+
   document.querySelectorAll('.pill-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       const tabId = btn.dataset.tab;
 
-      // Re-clicking the tab you're already on used to re-run its entire
-      // load chain (mod list refetch, Discord RPC ping, etc.) for no
-      // reason — harmless individually, but it's exactly the kind of
-      // extra in-flight work that piles up during rapid clicking. Skip it.
       if (btn.classList.contains('active')) return;
 
       const myToken = ++latestTabToken;
 
       document.querySelectorAll('.pill-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      document.querySelectorAll('.tab-page').forEach(p => {
-        p.classList.remove('active');
-        p.classList.remove('tab-entering');
-      });
+      updateIndicator(btn);
+
+      // Instant page switch — no delay
+      document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
       const page = document.getElementById('tab-' + tabId);
       if (page) {
         page.classList.add('active');
-        // Force a reflow so display:block is committed before we add the
-        // animation class — without this the browser collapses both into one
-        // frame and the @keyframes animation never actually fires.
-        void page.offsetWidth;
-        page.classList.add('tab-entering');
         refreshCardCullingIn(page);
       }
       // Lazy-load data when switching
@@ -846,10 +879,11 @@ function initTabs() {
         }
       }
       if (tabId === 'mods') {
-        // Only the Mods content type actually loads from the backend — if
-        // the user had Resource Packs/Worlds selected, re-activating this
-        // tab should keep showing that, not silently jump back to Mods.
-        if (['mod', 'resourcepack', 'shaderpack', 'screenshot'].includes(activeContentType)) {
+        if (window.refreshContentTypeIndicator) {
+          requestAnimationFrame(() => window.refreshContentTypeIndicator(true));
+        }
+        // Keeps the currently selected content type active when switching back
+        if (['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world'].includes(activeContentType)) {
           showModsTabLoading();
           loadModInstances().then(() => {
             // Bail if the user has already switched to another tab since
@@ -878,6 +912,14 @@ function initTabs() {
       }
     });
   });
+
+  // Keep indicator in sync if the window is resized
+  if (tabBar && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => {
+      const activeBtn = document.querySelector('.pill-tab.active');
+      if (activeBtn) updateIndicator(activeBtn);
+    }).observe(tabBar);
+  }
 
   // Global Keybinds: Alt + 1..4 for fast Tab Switching, Alt + 5 / Alt + S for Settings Modal
   window.addEventListener('keydown', (e) => {
@@ -1094,7 +1136,7 @@ async function refreshAccountUI() {
             </div>
             <div style="display:flex; align-items:center; gap:5px; font-size:11px; color:var(--text-muted); margin-top:2px;">
               ${isMsa ? ACCOUNT_TYPE_ICON_MICROSOFT : (isElyby ? ACCOUNT_TYPE_ICON_ELYBY : ACCOUNT_TYPE_ICON_OFFLINE)}
-              <span>${isMsa ? 'Microsoft Account' : (isElyby ? 'Ely.by Account' : 'Offline Account')}</span>
+              <span>${isMsa ? 'Microsoft Account' : (isElyby ? 'Ely.by Account' : 'Offline/Free Account')}</span>
               ${(!needsReauth && acc.is_active) ? '<span style="color:var(--accent); font-weight:700; margin-left:4px;">● In Use</span>' : ''}
             </div>
           </div>
@@ -5101,7 +5143,7 @@ initPlaytimeRangeButtons();
 // Window Behavior → "Close launcher when game starts" → "Make it smart",
 // and `commands::minecraft::launch_minecraft` on the Rust side.
 (function initActivityTracking() {
-  const THROTTLE_MS = 4000;
+  const THROTTLE_MS = 1000;
   let lastSent = 0;
   const ping = () => {
     const now = Date.now();
@@ -5175,6 +5217,15 @@ function selectInstance(id) {
   updateSelectedInstancePlaytimeDisplay();
   renderPlaytimeChart();
   playBtn.disabled = !!inst.missing_jar;
+  // If a launch was in flight for a *different* instance, the launching flag
+  // no longer applies to this newly-selected instance — clear it so the user
+  // can immediately hit Play again.
+  const launchingBtn = document.getElementById('btn-play');
+  if (launchingBtn && launchingBtn.dataset.launching) {
+    delete launchingBtn.dataset.launching;
+    // Also reset button text from "LAUNCHING…" back to "▶ PLAY"
+    updatePlayButtonRunningState();
+  }
   updatePlayGearEnabled();
   document.getElementById('play-status-text')?.classList.add('hidden');
 
@@ -5225,7 +5276,7 @@ function selectOptionIfAvailable(select, value) {
 async function syncInstanceSelectionAcrossTabs() {
   await loadModInstances();
   populateDiscoverInstanceSelect();
-  if (getActiveTabId() === 'mods' && ['mod', 'resourcepack', 'shaderpack', 'screenshot'].includes(activeContentType)) {
+  if (getActiveTabId() === 'mods' && ['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world', 'server'].includes(activeContentType)) {
     await loadMods();
   }
   if (getActiveTabId() === 'discover' && discoverState.loaded) {
@@ -5404,6 +5455,10 @@ function initInstanceActions() {
   async function launchSelectedInstance(offlineOverride) {
     if (!selectedInstanceId) return;
     const btn = document.getElementById('btn-play');
+    // Track which instance this launch is for — if the user clicks a different
+    // instance card mid-launch, selectInstance() re-enables the button for
+    // the new selection and we should NOT re-disable it at the end.
+    const launchingId = selectedInstanceId;
     btn.disabled = true;
     updatePlayGearEnabled();
     btn.dataset.launching = '1';
@@ -5496,8 +5551,14 @@ function initInstanceActions() {
         }
       }
     }
-    btn.disabled = false;
-    updatePlayGearEnabled();
+    // Only update the button's disabled state if we're still looking at the
+    // same instance that was just launched.  If the user clicked a different
+    // card mid-launch, selectInstance() already re-enabled the button for
+    // that new selection — we must not override it here.
+    if (selectedInstanceId === launchingId) {
+      btn.disabled = false;
+      updatePlayGearEnabled();
+    }
     delete btn.dataset.launching;
     await refreshRunningInstances();
   }
@@ -6782,7 +6843,11 @@ function projectTypeForContentType(type) {
 }
 
 function contentKindLabel(type) {
-  return type === 'shaderpack' ? 'shader pack' : type === 'resourcepack' ? 'resource pack' : 'mod';
+  if (type === 'shaderpack') return 'shader pack';
+  if (type === 'resourcepack') return 'resource pack';
+  if (type === 'world') return 'world';
+  if (type === 'server') return 'server';
+  return 'mod';
 }
 
 function renderModCardContent(card) {
@@ -6803,8 +6868,8 @@ function renderModCardContent(card) {
     <div class="mod-info">
       <div class="mod-icon loading">${ICON_UNKNOWN_SVG}</div>
       <div class="mod-meta">
-        <div class="mod-name">${discoverEscape(mod.name || '')}${modpackBadge}</div>
-        <div class="mod-desc">${mod.description ? (mod.description.length > 140 ? discoverEscape(mod.description.slice(0,137)) + '...' : discoverEscape(mod.description)) : ''}</div>
+        <div class="mod-name">${renderMinecraftFormattedText(mod.name || '')}${modpackBadge}</div>
+        <div class="mod-desc">${mod.description ? renderMinecraftFormattedText(mod.description.length > 140 ? mod.description.slice(0,137) + '…' : mod.description) : ''}</div>
         <div class="mod-version">${discoverEscape(mod.version || '')}${badges ? ' ' + badges : ''}</div>
       </div>
     </div>
@@ -6980,8 +7045,10 @@ function updateModsCount() {
   const grid = document.getElementById('mods-grid');
   const countEl = document.getElementById('mods-count');
   if (!grid || !countEl) return;
-  const total = grid.querySelectorAll('.mod-card').length;
-  const visible = grid.querySelectorAll('.mod-card:not(.search-hidden)').length;
+  const cardSelector = activeContentType === 'world' ? '.world-card' : activeContentType === 'server' ? '.server-card' : '.mod-card';
+  const hiddenSelector = activeContentType === 'world' ? '.world-card:not(.search-hidden)' : activeContentType === 'server' ? '.server-card:not(.search-hidden)' : '.mod-card:not(.search-hidden)';
+  const total = grid.querySelectorAll(cardSelector).length;
+  const visible = grid.querySelectorAll(hiddenSelector).length;
   const targetInstance = getModsTargetInstance();
   const label = targetInstance ? ` for ${targetInstance.name || targetInstance.version_id}` : '';
   const unit = contentKindLabel(activeContentType);
@@ -6996,15 +7063,15 @@ function filterMods() {
   const searchInput = document.getElementById('mods-search');
   if (!grid || !searchInput) return;
   const query = searchInput.value.trim().toLowerCase();
-  const cards = grid.querySelectorAll('.mod-card, .screenshot-card');
+  const cards = grid.querySelectorAll('.mod-card, .screenshot-card, .world-card, .server-card');
   cards.forEach(card => {
-    const matches = !query || (card.dataset.name || '').includes(query);
+    const matches = !query || (card.dataset.name || '').includes(query) || (card.dataset.ip || '').includes(query);
     card.classList.toggle('search-hidden', !matches);
     card.style.display = matches ? '' : 'none';
   });
 
   let noResultsEl = grid.querySelector('.mods-no-results');
-  const visibleCount = grid.querySelectorAll('.mod-card:not(.search-hidden), .screenshot-card:not(.search-hidden)').length;
+  const visibleCount = grid.querySelectorAll('.mod-card:not(.search-hidden), .screenshot-card:not(.search-hidden), .world-card:not(.search-hidden), .server-card:not(.search-hidden)').length;
   const showNoResults = !!query && cards.length > 0 && visibleCount === 0;
   if (showNoResults) {
     if (!noResultsEl) {
@@ -7085,13 +7152,12 @@ function setContentType(type) {
   // would just be redundant.
   if (searchInput) searchInput.placeholder = `⌕ Search ${label.toLowerCase()}…`;
 
-  // Mods, Resource Packs, and Shader Packs all share the same toolbar
-  // (Update All / Check Updates / Delete Selected / Folder) and the same
-  // card grid + icon cache — only Fix Mods / Export / Import stay
-  // mod-specific, since duplicating/deduping/dependency-installing doesn't
-  // have an equivalent for packs.
-  const isManageable = type === 'mod' || type === 'resourcepack' || type === 'shaderpack' || type === 'screenshot';
+  // Mods, Resource Packs, Shader Packs, Screenshots, Worlds, and Servers all share
+  // the toolbar (with content-appropriate buttons shown/hidden).
+  const isManageable = type === 'mod' || type === 'resourcepack' || type === 'shaderpack' || type === 'screenshot' || type === 'world' || type === 'server';
   const modOnlyDisplay = type === 'mod' ? '' : 'none';
+
+  const addServerBtn = document.getElementById('btn-add-server');
 
   if (rightPanel) rightPanel.style.display = isManageable ? '' : 'none';
   if (countEl) countEl.style.display = isManageable ? '' : 'none';
@@ -7099,29 +7165,36 @@ function setContentType(type) {
   if (fixModsWrapper) fixModsWrapper.style.display = modOnlyDisplay;
   if (exportBtn) exportBtn.style.display = modOnlyDisplay;
   if (importBtn) importBtn.style.display = modOnlyDisplay;
-  // Update All / Check Updates don't apply to screenshots — there's
-  // nothing on Modrinth to check a screenshot against.
-  if (updateAllBtn) updateAllBtn.style.display = type === 'screenshot' ? 'none' : '';
-  if (checkUpdatesBtn) checkUpdatesBtn.style.display = type === 'screenshot' ? 'none' : '';
+  if (addServerBtn) addServerBtn.style.display = type === 'server' ? '' : 'none';
+  // Update All / Check Updates don't apply to screenshots, worlds, or servers
+  const canUpdate = type === 'mod' || type === 'resourcepack' || type === 'shaderpack';
+  if (updateAllBtn) updateAllBtn.style.display = canUpdate ? '' : 'none';
+  if (checkUpdatesBtn) checkUpdatesBtn.style.display = canUpdate ? '' : 'none';
   if (openBtn) openBtn.title = `Open this instance's ${label.toLowerCase()} folder`;
-  // The screenshots grid uses its own CSS layout (image tiles); every
-  // other content type uses the mod-list row layout, so make sure the
-  // modifier class doesn't leak across a switch.
-  if (grid) grid.classList.toggle('screenshots-mode', type === 'screenshot');
+  // The screenshots, worlds, and servers grids use their own CSS layout classes
+  if (grid) {
+    grid.classList.toggle('screenshots-mode', type === 'screenshot');
+    grid.classList.toggle('worlds-mode', type === 'world');
+    grid.classList.toggle('servers-mode', type === 'server');
+  }
 
   if (type !== 'mod' && subpanel) subpanel.classList.add('hidden');
 
   if (isManageable) {
-    if (type !== 'mod' && type !== 'screenshot') {
-      // loadMods() re-derives these for the modpack-view case on the 'mod'
-      // path; for packs there's no modpack view, so just make sure a
-      // previous mod-tab state (e.g. mid modpack-view) didn't leave them
-      // hidden.
+    if (canUpdate) {
       if (checkUpdatesBtn) checkUpdatesBtn.style.display = '';
       if (updateAllBtn) updateAllBtn.style.display = '';
     }
     showModsTabLoading();
-    Promise.resolve(loadMods()).catch(() => {}).finally(() => hideModsTabLoading());
+    if (type === 'screenshot') {
+      const myGen = modsLoadGeneration;
+      setTimeout(() => {
+        if (myGen !== modsLoadGeneration) return;
+        Promise.resolve(loadMods()).catch(() => {}).finally(() => hideModsTabLoading());
+      }, 500);
+    } else {
+      Promise.resolve(loadMods()).catch(() => {}).finally(() => hideModsTabLoading());
+    }
   } else {
     hideModsTabLoading();
     if (subpanel) subpanel.classList.add('hidden');
@@ -7132,14 +7205,69 @@ function setContentType(type) {
   }
 }
 
-document.querySelectorAll('.content-type-segment').forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (btn.classList.contains('active')) return;
-    document.querySelectorAll('.content-type-segment').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    setContentType(btn.dataset.contentType);
+// ── Sliding indicator for the Content Type panel ──────────────────────────
+(function initContentTypeIndicator() {
+  const body = document.querySelector('.mods-type-body');
+  if (!body) return;
+
+  const indicator = document.createElement('div');
+  indicator.className = 'content-type-indicator';
+  body.prepend(indicator);
+
+  function updateContentTypeIndicator(btn, immediate = false) {
+    if (!btn || !body) return;
+    const bodyRect = body.getBoundingClientRect();
+    const btnRect  = btn.getBoundingClientRect();
+    if (btnRect.width === 0 || btnRect.height === 0) return;
+
+    const x = btnRect.left - bodyRect.left;
+    const y = btnRect.top - bodyRect.top + body.scrollTop;
+
+    if (immediate) {
+      indicator.style.transition = 'none';
+    }
+    indicator.style.transform = `translate(${x}px, ${y}px)`;
+    indicator.style.width     = `${btnRect.width}px`;
+    indicator.style.height    = `${btnRect.height}px`;
+
+    if (!indicator.classList.contains('ready')) {
+      indicator.classList.add('ready');
+    }
+
+    if (immediate) {
+      indicator.offsetHeight; // force reflow
+      indicator.style.transition = '';
+    }
+  }
+
+  // Export so tab switches or resizes can refresh indicator alignment
+  window.refreshContentTypeIndicator = function(immediate = false) {
+    const active = body.querySelector('.content-type-segment.active');
+    if (active) updateContentTypeIndicator(active, immediate);
+  };
+
+  // Check whenever visibility changes via IntersectionObserver
+  const io = new IntersectionObserver((entries) => {
+    if (entries.some(e => e.isIntersecting)) {
+      window.refreshContentTypeIndicator(true);
+    }
+  }, { threshold: 0.05 });
+  io.observe(body);
+
+  window.addEventListener('resize', () => {
+    window.refreshContentTypeIndicator(true);
   });
-});
+
+  document.querySelectorAll('.content-type-segment').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('active')) return;
+      document.querySelectorAll('.content-type-segment').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      updateContentTypeIndicator(btn, false);
+      setContentType(btn.dataset.contentType);
+    });
+  });
+})();
 
 let currentModpackInfo = null;
 let activeModsView = 'normal'; // 'normal' | 'modpack'
@@ -7150,6 +7278,12 @@ async function loadMods() {
   }
   if (activeContentType === 'screenshot') {
     return loadScreenshotsGrid();
+  }
+  if (activeContentType === 'world') {
+    return loadWorldsGrid();
+  }
+  if (activeContentType === 'server') {
+    return loadServersGrid();
   }
   if (!settings) return;
   // Snapshot the generation so that if the user switches content type again
@@ -7350,6 +7484,569 @@ async function loadPacksGrid(type) {
     if (countEl) countEl.textContent = '';
     if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
   }
+}
+
+// ── Worlds ────────────────────────────────────────────────────────────────
+// Shows Minecraft world saves. Each card displays the world name, game mode,
+// version, last-played date and size. Icons are loaded asynchronously.
+async function loadWorldsGrid() {
+  if (!settings) return;
+  const myGeneration = modsLoadGeneration;
+  const grid = document.getElementById('mods-grid');
+  const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
+  const subpanel = document.getElementById('modpack-mods-subpanel');
+  const countEl = document.getElementById('mods-count');
+  if (!grid) return;
+  if (subpanel) subpanel.classList.add('hidden');
+
+  if (!settings) {
+    grid.innerHTML = '<div class="empty-state"><span>Settings not loaded yet — try again in a moment.</span></div>';
+    return;
+  }
+
+  const targetInstance = getModsTargetInstance();
+  const directory = targetInstance
+    ? (targetInstance.directory || settings.game_directory)
+    : settings.game_directory;
+
+  // Always show loading indicator before await
+  grid.innerHTML = '<div class="empty-state"><span>Loading worlds…</span></div>';
+
+  try {
+    const worlds = await api.listWorlds(directory);
+    if (myGeneration !== modsLoadGeneration) return;
+
+    grid.innerHTML = '';
+
+    if (worlds.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.innerHTML = `<span class="empty-icon">${ICON_EMPTY_BOX_SVG}</span><span>No worlds found</span><span style="font-size:11px;color:var(--text-muted);margin-top:4px">${escapeHtml(directory)}/saves/</span>`;
+      grid.appendChild(empty);
+      if (countEl) {
+        const label = targetInstance ? ` for ${targetInstance.name || targetInstance.version_id}` : '';
+        countEl.textContent = `0 worlds${label}`;
+      }
+      if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    worlds.forEach(world => frag.appendChild(createWorldCard(world)));
+    grid.appendChild(frag);
+
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+    updateModsCount();
+    filterMods();
+
+    // Load world icons asynchronously so they don't block initial render
+    grid.querySelectorAll('.world-card[data-has-icon="true"]').forEach(card => {
+      const imgEl = card.querySelector('.world-icon img');
+      const worldPath = card.dataset.path;
+      if (!imgEl || !worldPath) return;
+      api.readWorldIcon(worldPath).then(dataUrl => {
+        imgEl.src = dataUrl;
+        imgEl.style.display = '';
+        const svgEl = card.querySelector('.world-icon svg');
+        if (svgEl) svgEl.style.display = 'none';
+      }).catch(() => {
+        // Leave the globe SVG fallback visible
+      });
+    });
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state"><span style="color:var(--danger)">Failed to load worlds: ${escapeHtml(String(e))}</span><span style="font-size:11px;color:var(--text-muted);margin-top:4px">Scanned: ${escapeHtml(directory)}/saves/</span></div>`;
+    if (countEl) countEl.textContent = '';
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+  }
+}
+
+function createWorldCard(world) {
+  const card = document.createElement('div');
+  card.className = 'world-card';
+  card.dataset.path = world.path;
+  card.dataset.name = (world.name || world.folder_name || '').toLowerCase();
+  card.dataset.hasIcon = world.has_icon ? 'true' : 'false';
+
+  const lastPlayed = world.last_played_ms > 0
+    ? new Date(world.last_played_ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    : 'Never';
+
+  const size = fmtBytes(world.size_bytes);
+  const badgeClass = world.hardcore ? 'hardcore' : world.game_mode === 'Creative' ? 'creative' : '';
+  const displayName = world.name || world.folder_name || 'Unknown World';
+
+  const globeSvg = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.7"/><path d="M3.5 12h17M12 3.5c2.3 2.3 3.5 5.3 3.5 8.5s-1.2 6.2-3.5 8.5c-2.3-2.3-3.5-5.3-3.5-8.5s1.2-6.2 3.5-8.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`;
+  const trashSvg = `<svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><path d="M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9.5 7V5.2c0-.66.54-1.2 1.2-1.2h2.6c.66 0 1.2.54 1.2 1.2V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 7 7.3 19a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5L17.5 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const folderSvg = `<svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6H10l2 2.5H18a2.5 2.5 0 0 1 2.5 2.5v6A2.5 2.5 0 0 1 18 19.5H5.5A2.5 2.5 0 0 1 3 17V8.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`;
+  const playSvg = `<svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><polygon points="6 3 20 12 6 21 6 3"/></svg>`;
+
+  card.innerHTML = `
+    <div class="world-icon">
+      <img src="" alt="${escapeHtml(displayName)}" style="display:none">
+      ${globeSvg}
+    </div>
+    <div class="world-meta" style="margin-left:12px">
+      <div class="world-name" title="${escapeHtml(displayName)}">${renderMinecraftFormattedText(displayName)}</div>
+      <div class="world-details-row">
+        <span class="world-mode-badge ${badgeClass}">${escapeHtml(world.game_mode || 'Survival')}</span>
+        ${world.version ? `<span class="world-version-tag">${escapeHtml(world.version)}</span>` : ''}
+      </div>
+      <div class="world-sub-row">
+        <span>Last played: ${lastPlayed}</span>
+        <span>${size}</span>
+      </div>
+    </div>
+    <div class="world-actions">
+      <button class="btn-play-world" title="Play this world (Quick Play)">${playSvg} Play</button>
+      <button class="btn-open-world-folder" title="Open world folder">${folderSvg}</button>
+      <button class="btn-delete-world" title="Delete world">${trashSvg}</button>
+    </div>
+  `;
+
+  // Selection (click on card body, not buttons)
+  card.addEventListener('click', e => {
+    if (e.target.closest('.world-actions')) return;
+    card.classList.toggle('selected');
+    const anySelected = document.querySelectorAll('.world-card.selected').length > 0;
+    const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.toggle('hidden', !anySelected);
+  });
+
+  // Play world button (Quick Play)
+  const playBtn = card.querySelector('.btn-play-world');
+  if (playBtn) {
+    playBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const targetInstance = getModsTargetInstance();
+      if (!targetInstance) {
+        showToast('Please select an instance first', 'error');
+        return;
+      }
+      const worldFolderName = world.folder_name || world.name;
+      try {
+        showToast(`Launching ${targetInstance.name || targetInstance.version_id} into "${displayName}"…`, 'info');
+        await api.launchGame(targetInstance.version_id, null, worldFolderName, null);
+      } catch (err) {
+        showToast('Launch failed: ' + err, 'error');
+      }
+    });
+  }
+
+  // Open world folder button
+  const openBtn = card.querySelector('.btn-open-world-folder');
+  if (openBtn) {
+    openBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      // world.path = <game_dir>/saves/<world_name>
+      // open_worlds_folder expects game_dir (it appends /saves/ internally)
+      // So go two path segments up from world.path
+      const sep = world.path.includes('\\') ? '\\' : '/';
+      const parts = world.path.split(sep);
+      parts.pop(); // remove world folder name
+      parts.pop(); // remove 'saves'
+      const gameDir = parts.join(sep);
+      await api.openWorldsFolder(gameDir).catch(() => {});
+    });
+  }
+
+  // Delete individual world button
+  const deleteBtn = card.querySelector('.btn-delete-world');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const confirmed = await showConfirmDialog({
+        type: 'delete',
+        title: 'Delete World',
+        message: `Are you sure you want to permanently delete "${displayName}"? This cannot be undone.`,
+        confirmText: 'Delete World',
+        isDanger: true,
+      });
+      if (!confirmed) return;
+      try {
+        await api.deleteWorld(world.path);
+        card.remove();
+        updateModsCount();
+        filterMods();
+        showToast(`Deleted "${displayName}"`, 'success');
+      } catch (err) {
+        showToast('Failed to delete world: ' + err, 'error');
+      }
+    });
+  }
+
+  return card;
+}
+
+// ── Servers ───────────────────────────────────────────────────────────────
+// Shows multiplayer servers from servers.dat.
+// Displays server icon, name, IP, and quick copy-to-clipboard action.
+async function loadServersGrid() {
+  if (!settings) return;
+  const myGeneration = modsLoadGeneration;
+  const grid = document.getElementById('mods-grid');
+  const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
+  const subpanel = document.getElementById('modpack-mods-subpanel');
+  const countEl = document.getElementById('mods-count');
+  if (!grid) return;
+  if (subpanel) subpanel.classList.add('hidden');
+
+  const targetInstance = getModsTargetInstance();
+  const directory = targetInstance
+    ? (targetInstance.directory || settings.game_directory)
+    : settings.game_directory;
+
+  grid.innerHTML = '<div class="empty-state"><span>Loading servers…</span></div>';
+
+  try {
+    const servers = await api.listServers(directory);
+    if (myGeneration !== modsLoadGeneration) return;
+
+    grid.innerHTML = '';
+
+    if (!servers || servers.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.innerHTML = `<span class="empty-icon">${ICON_EMPTY_BOX_SVG}</span><span>No servers found</span><span style="font-size:11px;color:var(--text-muted);margin-top:4px">${escapeHtml(directory)}/servers.dat</span>`;
+      grid.appendChild(empty);
+      if (countEl) {
+        const label = targetInstance ? ` for ${targetInstance.name || targetInstance.version_id}` : '';
+        countEl.textContent = `0 servers${label}`;
+      }
+      if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    servers.forEach(server => frag.appendChild(createServerCard(server)));
+    grid.appendChild(frag);
+
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+    updateModsCount();
+    filterMods();
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state"><span style="color:var(--danger)">Failed to load servers: ${escapeHtml(String(e))}</span></div>`;
+    if (countEl) countEl.textContent = '';
+    if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+  }
+}
+
+function renderMinecraftFormattedText(raw) {
+  if (!raw) return '';
+  const s = String(raw);
+  // Match both section (§) and ampersand (&) formatting codes
+  // Valid codes: 0-9, a-f (colors), l, m, n, o, k (formats), r (reset)
+  const re = /[§&]([0-9a-fA-Fk-oK-OrR])/g;
+  if (!re.test(s)) {
+    return escapeHtml(s);
+  }
+
+  let html = '';
+  let currentColor = null;
+  const formats = new Set();
+
+  function openSpans() {
+    let classes = [];
+    if (currentColor) classes.push('mc-c-' + currentColor);
+    for (const f of formats) {
+      classes.push('mc-f-' + f);
+    }
+    if (classes.length > 0) {
+      return `<span class="${classes.join(' ')}">`;
+    }
+    return '';
+  }
+
+  function closeSpans() {
+    if (currentColor || formats.size > 0) {
+      return '</span>';
+    }
+    return '';
+  }
+
+  let lastIndex = 0;
+  re.lastIndex = 0;
+  let match;
+
+  while ((match = re.exec(s)) !== null) {
+    const textChunk = s.slice(lastIndex, match.index);
+    if (textChunk) {
+      html += escapeHtml(textChunk);
+    }
+
+    const code = match[1].toLowerCase();
+    if (code >= '0' && code <= '9' || (code >= 'a' && code <= 'f')) {
+      html += closeSpans();
+      currentColor = code;
+      formats.clear();
+      html += openSpans();
+    } else if (code === 'r') {
+      html += closeSpans();
+      currentColor = null;
+      formats.clear();
+    } else {
+      html += closeSpans();
+      formats.add(code);
+      html += openSpans();
+    }
+
+    lastIndex = re.lastIndex;
+  }
+
+  const remaining = s.slice(lastIndex);
+  if (remaining) {
+    html += escapeHtml(remaining);
+  }
+  html += closeSpans();
+
+  return html;
+}
+
+function createServerCard(server) {
+  const card = document.createElement('div');
+  card.className = 'server-card';
+  card.dataset.name = (server.name || '').toLowerCase();
+  card.dataset.ip = (server.ip || '').toLowerCase();
+
+  const displayName = server.name || server.ip || 'Minecraft Server';
+  const serverIp = server.ip || '';
+
+  const serverIconSvg = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="1.8"/><circle cx="7" cy="7" r="1" fill="currentColor"/><circle cx="7" cy="17" r="1" fill="currentColor"/></svg>`;
+  const copySvg = `<svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1.8"/></svg>`;
+  const trashSvg = `<svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><polyline points="3 6 5 6 21 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const playSvg = `<svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><polygon points="6 3 20 12 6 21 6 3"/></svg>`;
+
+  card.innerHTML = `
+    <div class="server-icon">
+      ${server.icon_base64 ? `<img src="${escapeHtml(server.icon_base64)}" alt="${escapeHtml(displayName)}">` : serverIconSvg}
+    </div>
+    <div class="server-meta">
+      <div class="server-header">
+        <div class="server-name" title="${escapeHtml(displayName)}">${renderMinecraftFormattedText(displayName)}</div>
+        <div class="server-badges">
+          <span class="server-badge-players">Pinging…</span>
+          <span class="server-badge-ping" style="display:none;"></span>
+        </div>
+      </div>
+      <div class="server-motd motd-loading">Checking status…</div>
+    </div>
+    <div class="server-actions">
+      <button class="btn-play-server" title="Connect to server (Quick Play)">${playSvg} Join</button>
+      <button class="btn-copy-server-ip" title="Copy server address (${escapeHtml(serverIp)})">${copySvg}</button>
+      <button class="btn-delete-server" title="Remove server">${trashSvg}</button>
+    </div>
+  `;
+
+  // Fetch live server ping, MOTD, player counts, and icon in background
+  if (serverIp) {
+    api.pingServer(serverIp).then(status => {
+      if (!card.isConnected) return;
+      const playerBadge = card.querySelector('.server-badge-players');
+      const pingBadge = card.querySelector('.server-badge-ping');
+      const motdEl = card.querySelector('.server-motd');
+      const iconWrap = card.querySelector('.server-icon');
+
+      if (!status || !status.online) {
+        if (playerBadge) {
+          playerBadge.textContent = '🔴 Offline';
+          playerBadge.classList.add('offline');
+        }
+        if (pingBadge) pingBadge.style.display = 'none';
+        if (motdEl) {
+          motdEl.textContent = "Can't connect to server";
+          motdEl.classList.remove('motd-loading');
+        }
+        return;
+      }
+
+      // Online!
+      if (playerBadge) {
+        playerBadge.classList.remove('offline');
+        if (status.players_online !== null && status.players_online !== undefined) {
+          playerBadge.textContent = `🟢 ${status.players_online}${status.players_max ? `/${status.players_max}` : ''}`;
+        } else {
+          playerBadge.textContent = '🟢 Online';
+        }
+      }
+
+      if (pingBadge && status.latency_ms !== null && status.latency_ms !== undefined) {
+        pingBadge.textContent = `${status.latency_ms}ms`;
+        pingBadge.style.display = '';
+      }
+
+      if (motdEl) {
+        motdEl.classList.remove('motd-loading');
+        if (status.motd) {
+          motdEl.innerHTML = renderMinecraftFormattedText(status.motd);
+        } else {
+          motdEl.textContent = 'A Minecraft Server';
+        }
+      }
+
+      // Auto-fetch icon if the server didn't already have one in servers.dat
+      if (!server.icon_base64 && status.favicon && iconWrap) {
+        iconWrap.innerHTML = `<img src="${escapeHtml(status.favicon)}" alt="${escapeHtml(displayName)}">`;
+      }
+    }).catch(() => {
+      if (!card.isConnected) return;
+      const playerBadge = card.querySelector('.server-badge-players');
+      const motdEl = card.querySelector('.server-motd');
+      if (playerBadge) {
+        playerBadge.textContent = '🔴 Offline';
+        playerBadge.classList.add('offline');
+      }
+      if (motdEl) {
+        motdEl.textContent = "Can't connect to server";
+        motdEl.classList.remove('motd-loading');
+      }
+    });
+  }
+
+  // Play server button (Quick Play)
+  const playBtn = card.querySelector('.btn-play-server');
+  if (playBtn) {
+    playBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const targetInstance = getModsTargetInstance();
+      if (!targetInstance) {
+        showToast('Please select an instance first', 'error');
+        return;
+      }
+      if (!serverIp) {
+        showToast('Server address is empty', 'error');
+        return;
+      }
+      try {
+        showToast(`Launching ${targetInstance.name || targetInstance.version_id} and joining ${serverIp}…`, 'info');
+        await api.launchGame(targetInstance.version_id, null, null, serverIp);
+      } catch (err) {
+        showToast('Launch failed: ' + err, 'error');
+      }
+    });
+  }
+
+  // Click handler to copy IP (via copy button)
+  const copyBtn = card.querySelector('.btn-copy-server-ip');
+  const copyAction = async (e) => {
+    e.stopPropagation();
+    if (!serverIp) return;
+    try {
+      await navigator.clipboard.writeText(serverIp);
+      showToast(`Copied ${serverIp}`, 'success');
+    } catch {
+      showToast('Failed to copy to clipboard', 'error');
+    }
+  };
+
+  if (copyBtn) copyBtn.addEventListener('click', copyAction);
+
+  // Delete server button
+  const deleteBtn = card.querySelector('.btn-delete-server');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm(`Remove "${displayName}" from your server list?`)) return;
+      const targetInstance = getModsTargetInstance();
+      const directory = (targetInstance && targetInstance.directory) || (settings && settings.game_directory);
+      try {
+        await api.deleteServer(directory, serverIp);
+        card.remove();
+        showToast(`Removed ${displayName}`, 'success');
+      } catch (err) {
+        showToast('Failed to remove server: ' + err, 'error');
+      }
+    });
+  }
+
+  return card;
+}
+
+async function openAddServerModal() {
+  const targetInstance = getModsTargetInstance();
+  if (!targetInstance) {
+    showToast('Please select an instance first', 'error');
+    return;
+  }
+  const directory = targetInstance.directory || (settings && settings.game_directory);
+
+  // Simple modal dialog for server name and IP
+  let overlay = document.getElementById('add-server-modal-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'add-server-modal-overlay';
+    overlay.className = 'modal-overlay';
+    overlay.style.zIndex = '9999';
+    overlay.innerHTML = `
+      <div class="modal-card glass-card" style="width: 440px; max-width: 90vw; padding: 24px;">
+        <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <h3 style="margin:0; font-size:18px; font-weight:700;">Add Minecraft Server</h3>
+          <button type="button" class="btn-ghost btn-sm btn-close-add-server" style="padding:4px 8px;">✕</button>
+        </div>
+        <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
+          <div>
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-muted);">Server Name</label>
+            <input type="text" id="add-server-input-name" class="input-field" style="width:100%; box-sizing:border-box;" placeholder="Minecraft Server" />
+          </div>
+          <div>
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-muted);">Server Address (IP or Domain) *</label>
+            <input type="text" id="add-server-input-ip" class="input-field" style="width:100%; box-sizing:border-box;" placeholder="e.g. mc.example.com or 127.0.0.1:25565" />
+          </div>
+        </div>
+        <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; margin-top:22px;">
+          <button type="button" class="btn-ghost btn-close-add-server">Cancel</button>
+          <button type="button" id="btn-confirm-add-server" class="btn-primary" style="padding:8px 18px;">Add Server</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => {
+      overlay.style.display = 'none';
+    };
+
+    overlay.querySelectorAll('.btn-close-add-server').forEach(b => b.addEventListener('click', close));
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) close();
+    });
+
+    const confirmBtn = overlay.querySelector('#btn-confirm-add-server');
+    confirmBtn.addEventListener('click', async () => {
+      const nameInput = overlay.querySelector('#add-server-input-name');
+      const ipInput = overlay.querySelector('#add-server-input-ip');
+      const name = nameInput.value.trim();
+      const ip = ipInput.value.trim();
+
+      if (!ip) {
+        showToast('Please enter a server address', 'error');
+        ipInput.focus();
+        return;
+      }
+
+      try {
+        confirmBtn.disabled = true;
+        await api.addServer(directory, name, ip);
+        close();
+        nameInput.value = '';
+        ipInput.value = '';
+        showToast(`Added server "${name || ip}"`, 'success');
+        await loadServersGrid();
+      } catch (err) {
+        showToast('Failed to add server: ' + err, 'error');
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    });
+
+    overlay.querySelector('#add-server-input-ip').addEventListener('keydown', e => {
+      if (e.key === 'Enter') confirmBtn.click();
+    });
+  }
+
+  const nameInput = overlay.querySelector('#add-server-input-name');
+  const ipInput = overlay.querySelector('#add-server-input-ip');
+  nameInput.value = '';
+  ipInput.value = '';
+  overlay.style.display = 'flex';
+  setTimeout(() => ipInput.focus(), 50);
 }
 
 // ── Screenshots ──────────────────────────────────────────────────────────
@@ -7857,6 +8554,13 @@ function initMods() {
       try {
         if (activeContentType === 'resourcepack' || activeContentType === 'shaderpack') {
           await api.openPacksFolder(directory, activeContentType);
+        } else if (activeContentType === 'world') {
+          await api.openWorldsFolder(directory);
+        } else if (activeContentType === 'server') {
+          // Open game directory where servers.dat lives
+          await api.openInstanceFolder(directory);
+        } else if (activeContentType === 'screenshot') {
+          await api.openScreenshotsFolder(directory);
         } else {
           await api.openModsFolder(directory);
         }
@@ -7872,10 +8576,13 @@ function initMods() {
   const importModsBtn = document.getElementById('btn-import-mods');
   if (importModsBtn) importModsBtn.addEventListener('click', () => startImportMods());
 
+  const addServerBtn = document.getElementById('btn-add-server');
+  if (addServerBtn) addServerBtn.addEventListener('click', () => openAddServerModal());
+
   const deleteSelectedBtn = document.getElementById('btn-delete-selected-mods');
   if (deleteSelectedBtn) {
     deleteSelectedBtn.addEventListener('click', async () => {
-      const selected = Array.from(document.querySelectorAll('.mod-card.selected, .screenshot-card.selected'));
+      const selected = Array.from(document.querySelectorAll('.mod-card.selected, .screenshot-card.selected, .world-card.selected'));
       if (selected.length === 0) return;
       const unitLabel = contentKindLabel(activeContentType);
       const unitLabelCap = unitLabel.replace(/\b\w/g, c => c.toUpperCase());
@@ -7890,7 +8597,11 @@ function initMods() {
       const directory = getModsTargetDirectory();
       const paths = selected.map(card => card.dataset.path).filter(Boolean);
       try {
-        await Promise.all(paths.map(path => api.deleteMod(directory, path)));
+        if (activeContentType === 'world') {
+          await Promise.all(paths.map(path => api.deleteWorld(path)));
+        } else {
+          await Promise.all(paths.map(path => api.deleteMod(directory, path)));
+        }
         await loadMods();
         showToast(`Deleted ${paths.length} ${unitLabel}(s)`, 'success');
       } catch (e) {
@@ -7899,10 +8610,10 @@ function initMods() {
     });
   }
 
-  // Replaces the old manual Refresh button — the mods/packs list now keeps
+  // Replaces the old manual Refresh button — the mods/packs/worlds list now keeps
   // itself up to date on its own while the Mods tab is open.
   setInterval(() => {
-    if (getActiveTabId() === 'mods' && ['mod', 'resourcepack', 'shaderpack', 'screenshot'].includes(activeContentType)) loadMods();
+    if (getActiveTabId() === 'mods' && ['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world'].includes(activeContentType)) loadMods();
   }, MODS_AUTO_REFRESH_MS);
 
   initModsDragDrop();
@@ -13244,7 +13955,7 @@ function initSettings() {
           rpc_show_game_state: false,
           rpc_custom_state_text: 'In Zero Launcher',
           rpc_app_id: '1131048770109460500',
-          rpc_show_launcher_activity: false,
+          rpc_show_launcher_activity: true,
           rpc_tab_instances: true,
           rpc_tab_mods: true,
           rpc_tab_settings: true,
@@ -15866,8 +16577,8 @@ function hideStartupSplashScreen(immediate = false) {
     splash.classList.add('splash-hidden');
     setTimeout(() => {
       try { splash.remove(); } catch (_) { splash.style.display = 'none'; }
-    }, 450);
-  }, 350);
+    }, 250);
+  }, 150);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -15880,6 +16591,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       hideStartupSplashScreen(true);
     });
   }
+
+  // On WebKitGTK, use the minimum viable frame-boundary delay for
+  // synchronous-only phases (just enough to commit the DOM batch and
+  // repaint the splash progress arc before the next batch starts).
+  // Phases that contain real async work (getSettings, refreshAccountUI,
+  // refreshInstances) already yield naturally and need no extra padding.
+  const PHASE_DELAY = IS_WEBKIT_GTK ? 0 : 30;
 
   const delay = (ms) => {
     if (splashSkipRequested) return Promise.resolve();
@@ -15897,7 +16615,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initInstanceActions();
   initRunningInstancesWidget();
   initCustomContextMenu();
-  await delay(260);
+  await delay(PHASE_DELAY);
 
   // Phase 2: Configuration & Settings
   setStartupSplashProgress(28, 'Loading settings & system preferences…');
@@ -15908,7 +16626,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   settings = loadedSettings || { game_directory: '' };
   initSettings();
   initWindowBehaviorSettings();
-  await delay(280);
+  await delay(PHASE_DELAY);
 
   // Phase 3: Player Profiles & Accounts
   setStartupSplashProgress(45, 'Connecting accounts & user profiles…');
@@ -15916,12 +16634,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSkinViewerUI();
   initDressingRoomUI();
   initDiscoverProjectModal();
-  await delay(320);
+  await delay(PHASE_DELAY);
 
   // Phase 4: Minecraft Instances & Scanning
   setStartupSplashProgress(62, 'Scanning Minecraft versions & instances…');
   await refreshInstances().catch(e => console.error('Instances load failed', e));
-  await delay(340);
+  await delay(PHASE_DELAY);
 
   // Phase 5: Starfield Engine & Instance Rendering
   setStartupSplashProgress(76, 'Starting background Starfield engine…');
@@ -15934,7 +16652,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fallbackId = pickFallbackInstance();
     if (fallbackId) selectInstance(fallbackId);
   }
-  await delay(300);
+  await delay(PHASE_DELAY);
 
   // Phase 6: 3D Standee & Diagnostic Windows
   setStartupSplashProgress(88, 'Pre-warming 3D player standee & shaders…');
@@ -15943,7 +16661,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initInstanceTroubleshootWindow();
   initCrashDialog();
   initLaunchVerifyStatus();
-  await delay(280);
+  await delay(PHASE_DELAY);
 
   // Phase 7: Mod Manager, Discover & Presets
   setStartupSplashProgress(96, 'Preparing mod catalog & discover cache…');
@@ -15966,11 +16684,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else {
     initSetupWizard();
   }
-  await delay(350);
+  await delay(PHASE_DELAY);
 
-  // Phase 8: Finalized
+  // Phase 8: Finalized — one short breath so the 100% arc renders
+  // before the splash fades, then dismiss immediately.
   setStartupSplashProgress(100, 'Welcome to Zero Launcher');
-  await delay(450);
+  await delay(IS_WEBKIT_GTK ? 80 : 150);
   hideStartupSplashScreen();
 
   // Background update checks after splash is dismissed

@@ -112,7 +112,12 @@ pub fn run() {
             first_run_setup::run_first_time_setup(&app.handle().clone());
 
             #[cfg(target_os = "linux")]
-            let _ = first_run_setup::ensure_linux_xdg_icons();
+            // Run icon-cache update in the background — `gtk-update-icon-cache`
+            // can take 50–200 ms and doesn't need to finish before the window
+            // appears. Spawning it off the setup thread keeps startup fast.
+            std::thread::spawn(|| {
+                let _ = first_run_setup::ensure_linux_xdg_icons();
+            });
             #[cfg(target_os = "windows")]
             let _ = first_run_setup::ensure_windows_shortcuts();
 
@@ -384,6 +389,14 @@ pub fn run() {
             commands::mods::list_screenshots,
             commands::mods::open_screenshots_folder,
             commands::mods::read_screenshot_image,
+            commands::mods::list_worlds,
+            commands::mods::open_worlds_folder,
+            commands::mods::read_world_icon,
+            commands::mods::delete_world,
+            commands::mods::list_servers,
+            commands::mods::add_server,
+            commands::mods::delete_server,
+            commands::mods::ping_server,
             commands::mods::export_mods_list,
             commands::mods::read_mods_list_file,
             // Presets

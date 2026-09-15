@@ -392,10 +392,15 @@ fn create_linux_shortcut(exe_path: &Path) -> Result<(), String> {
         write_and_mark_executable(df, &desktop_entry);
     }
 
-    // Best-effort nudge so DEs that cache the app list pick it up right away
-    let _ = std::process::Command::new("update-desktop-database")
-        .arg(&apps_dir)
-        .status();
+    // Best-effort nudge so DEs that cache the app list pick it up right away.
+    // Run in a background thread — this process can take 100–400 ms and is
+    // only a cache-freshness hint; the .desktop file is already written above.
+    let apps_dir_clone = apps_dir.clone();
+    std::thread::spawn(move || {
+        let _ = std::process::Command::new("update-desktop-database")
+            .arg(&apps_dir_clone)
+            .status();
+    });
 
     // Also drop a launcher icon straight onto the user's Desktop, same as
     // the Windows build does with a .lnk in %USERPROFILE%\Desktop. Not
@@ -488,10 +493,15 @@ pub fn ensure_linux_xdg_icons() -> Option<PathBuf> {
         // GNOME setups that don't use the old gdk-pixbuf icon cache), and
         // failing quietly here is fine either way since it's just a
         // freshness optimization, not something the app depends on.
-        let _ = std::process::Command::new("gtk-update-icon-cache")
-            .args(["-f", "-t"])
-            .arg(data_dir.join("icons/hicolor"))
-            .status();
+        // Run in a background thread — the cache update can take 50–200 ms
+        // and the icons are already written to disk before this runs.
+        let hicolor_parent = data_dir.join("icons/hicolor");
+        std::thread::spawn(move || {
+            let _ = std::process::Command::new("gtk-update-icon-cache")
+                .args(["-f", "-t"])
+                .arg(hicolor_parent)
+                .status();
+        });
     }
 
     if wrote_icon_path {

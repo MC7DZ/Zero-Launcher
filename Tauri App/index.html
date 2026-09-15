@@ -1744,6 +1744,7 @@
             <button id="btn-delete-selected-mods" class="btn-pill btn-sm hidden" title="Delete the checked mods"><svg viewBox="0 0 24 24" fill="none" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><path d="M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9.5 7V5.2c0-.66.54-1.2 1.2-1.2h2.6c.66 0 1.2.54 1.2 1.2V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 7 7.3 19a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5L17.5 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.2 11v6M13.8 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Delete Selected</button>
             <button id="btn-export-mods" class="btn-pill btn-sm btn-pill-export" title="Export the selected instance's mods to a JSON list"><svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 7.5 12 3l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Export</button>
             <button id="btn-import-mods" class="btn-pill btn-sm btn-pill-import" title="Import a mod list JSON into the selected instance"><svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 10.5 12 15l4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Import</button>
+            <button id="btn-add-server" class="btn-pill btn-sm" style="display:none;" title="Add a new server to this instance"><svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Add Server</button>
             <button id="btn-open-mods" class="btn-pill btn-sm" title="Open this instance's mods folder">⌗ Folder</button>
           </div>
         </div>
@@ -2746,7 +2747,8 @@
 
               <div class="dropdown-divider" style="margin: 14px 0;"></div>
 
-              <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">In-Game — Game States on Discord</h4>
+              <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:6px;">In-Game — Game States on Discord</h4>
+              <p class="settings-hint" style="margin-bottom:10px;">⚠️ Not recommended — game states are detected from log output, which may be inaccurate or delayed.</p>
               <div style="display:flex; flex-direction:column; gap:10px;">
                 <label class="toggle-row">
                   <input type="checkbox" id="setting-rpc-state-launching" />

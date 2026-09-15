@@ -1289,6 +1289,8 @@ pub async fn launch_minecraft(
     // explicit per-launch choice from the gear menu (▶ PLAY vs Launch
     // Offline), which always wins over the saved setting for that one launch.
     offline: Option<bool>,
+    quick_play_singleplayer: Option<String>,
+    quick_play_multiplayer: Option<String>,
 ) -> Result<(), String> {
     use mc_launcher_core::prelude::*;
 
@@ -2026,6 +2028,19 @@ pub async fn launch_minecraft(
     }
     args.extend(launch_cmd.args.clone());
 
+    // Quick Play: Direct join into a singleplayer world or multiplayer server
+    if let Some(ref world_name) = quick_play_singleplayer {
+        if !world_name.trim().is_empty() {
+            args.push("--quickPlaySingleplayer".to_string());
+            args.push(world_name.trim().to_string());
+        }
+    } else if let Some(ref server_address) = quick_play_multiplayer {
+        if !server_address.trim().is_empty() {
+            args.push("--quickPlayMultiplayer".to_string());
+            args.push(server_address.trim().to_string());
+        }
+    }
+
     // Debug-only, and subject to two Privacy settings:
     //  - "Hide Launch Command from Logs" skips this line entirely
     //  - "Redact Auth Tokens in Logs" strips the offline session's
@@ -2171,8 +2186,8 @@ pub async fn launch_minecraft(
                 // before closing it. If they're mid-launch already idle,
                 // this closes almost right away; if they're still Browse
                 // mods or editing an instance, it waits for them to finish.
-                const IDLE_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(15);
-                const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1500);
+                const IDLE_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(2);
+                const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
                 // Safety net: never wait forever on a launcher that's kept
                 // "busy" indefinitely (e.g. activity pings still coming in
                 // from some other window/tab) — close it anyway after this
