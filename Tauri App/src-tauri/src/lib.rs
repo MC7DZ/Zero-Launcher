@@ -83,6 +83,28 @@ pub fn run() {
         glib::set_application_name("Zero Launcher");
     }
 
+    // Windows equivalent of the Wayland app_id problem above: without an
+    // explicit AppUserModelID, Windows has no reliable way to know that
+    // *this* running process and the Desktop/Start Menu .lnk shortcuts
+    // (first_run_setup::create_windows_shortcuts) represent the same
+    // application. The practical symptom is a taskbar icon that doesn't
+    // match the running app — e.g. right after launching from a pinned
+    // shortcut, or when the shortcut is pinned to the taskbar, Windows can
+    // keep showing that shortcut's own icon (icons/shortcut.ico — the
+    // branded variant meant only for the static Desktop/Start Menu icon)
+    // instead of swapping over to the live window's icon (icons/icon.png,
+    // set via window.set_icon() below, same as the tray icon).
+    //
+    // Registering the same identifier used everywhere else (tauri.conf.json
+    // "identifier": "com.zerolauncher.app") fixes this at the source: it
+    // doesn't change the shortcut files or their icon at all, it just tells
+    // Windows "the taskbar entry for this process is the same app as that
+    // shortcut", so the taskbar consistently shows the running app's own
+    // icon rather than a stale shortcut icon. Must be called before any
+    // window is created.
+    #[cfg(target_os = "windows")]
+    set_windows_app_user_model_id("com.zerolauncher.app");
+
     tauri::Builder::default()
         // Must be the first plugin registered. If the launcher is opened
         // again while it's already running, this fires in the *existing*
@@ -497,4 +519,30 @@ pub fn run() {
                 }
             }
         });
+}
+
+/// Registers this process's AppUserModelID with Windows via
+/// `SetCurrentProcessExplicitAppUserModelID` (shell32.dll), so the taskbar
+/// ties the running window to the same identity as the Desktop/Start Menu
+/// shortcuts. Declared by hand via `extern "system"` rather than pulling in
+/// a `windows`/`winapi` crate dependency just for one call — shell32 is
+/// already part of every Windows install, so this links against it
+/// directly. Best-effort: if it somehow fails, the app still runs fine,
+/// just without this taskbar-icon-consistency fix.
+#[cfg(target_os = "windows")]
+fn set_windows_app_user_model_id(id: &str) {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SetCurrentProcessExplicitAppUserModelID(AppID: *const u16) -> i32;
+    }
+
+    let wide: Vec<u16> = std::ffi::OsStr::new(id)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        let _ = SetCurrentProcessExplicitAppUserModelID(wide.as_ptr());
+    }
 }
