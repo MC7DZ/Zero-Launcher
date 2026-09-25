@@ -19,11 +19,28 @@ jobs:
       - name: Build in release mode
         working-directory: Tauri App
         run: ./build.sh --release
-      - name: Upload build artifacts
+
+      - name: Generate zsync file
+        working-directory: Tauri App/src-tauri/target/release/bundle/appimage
+        run: |
+          APPIMAGE=$(ls *.AppImage | head -n1)
+          echo "Target AppImage: $APPIMAGE"
+          zsyncmake -o "${APPIMAGE}.zsync" "$APPIMAGE"
+          echo "Files in bundle directory:"
+          ls -lh
+
+      - name: Upload build artifacts (AppImage + zsync)
         uses: actions/upload-artifact@v4
         with:
           name: zerolauncher-linux-build
           path: |
             Tauri App/src-tauri/target/release/bundle/appimage/*.AppImage
             Tauri App/src-tauri/target/release/bundle/appimage/*.zsync
+          if-no-files-found: warn
+
+      - name: Upload zsync delta file
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZeroLauncher-zsync
+          path: Tauri App/src-tauri/target/release/bundle/appimage/*.zsync
           if-no-files-found: warn
