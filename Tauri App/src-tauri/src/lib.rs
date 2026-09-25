@@ -320,6 +320,7 @@ pub fn run() {
             commands::save_global_stats,
             commands::updater::check_for_update,
             commands::updater::download_update,
+            commands::updater::download_update_zsync,
             commands::updater::install_update,
             commands::updater::open_current_exe_folder,
             // Minecraft

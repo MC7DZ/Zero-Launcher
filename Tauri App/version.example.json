@@ -11,8 +11,10 @@
   },
   "linux": {
     "version": "2.0.0",
-    "url": "https://github.com/MC7DZ/Zero-Launcher/releases/download/v2.0.0/Zero.Launcher.AppImage",
+    "url": "https://github.com/MC7DZ/Zero-Launcher/releases/download/v2.0.0/ZeroLauncher_2.0.0_amd64.AppImage",
+    "zsync_url": "https://github.com/MC7DZ/Zero-Launcher/releases/download/v2.0.0/ZeroLauncher_2.0.0_amd64.AppImage.zsync",
     "size_mb": 107,
+    "zsync_size_mb": 8.5,
     "changelog": [
       "Fixed Minecraft install failing on network errors",
       "Added a real per-file progress bar to the Files — Installing… window",

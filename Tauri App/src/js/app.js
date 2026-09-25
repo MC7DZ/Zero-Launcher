@@ -406,6 +406,7 @@ const api = {
   getSystemInfo: () => invoke('get_system_info'),
   checkForUpdate: () => invoke('check_for_update'),
   downloadUpdate: (url) => invoke('download_update', { url }),
+  downloadUpdateZsync: (zsyncUrl, fallbackUrl) => invoke('download_update_zsync', { zsyncUrl, fallbackUrl }),
   installUpdate: (downloadedPath, relaunch) => invoke('install_update', { downloadedPath, relaunch }),
   openCurrentExeFolder: () => invoke('open_current_exe_folder'),
   getAvailableVersions: () => invoke('get_available_versions'),
@@ -17508,7 +17509,24 @@ function initAutoUpdate() {
         }
       });
 
-      downloadedUpdatePath = await api.downloadUpdate(pendingUpdate.url);
+      // On Linux, prefer the zsync delta download when the manifest provides
+      // a .zsync URL — it only fetches changed blocks (typically 5–20 MB
+      // instead of the full 100+ MB). The Rust backend falls back to a full
+      // download automatically if zsync isn't installed on this machine.
+      const isLinux = navigator.userAgent.includes('Linux') ||
+                      (typeof window.__TAURI__ !== 'undefined');
+      if (isLinux && pendingUpdate.zsync_url) {
+        const sizeTip = pendingUpdate.zsync_size_mb
+          ? ` (~${pendingUpdate.zsync_size_mb.toFixed(1)} MB delta)`
+          : '';
+        progressLabel.textContent = `Downloading update${sizeTip}…`;
+        downloadedUpdatePath = await api.downloadUpdateZsync(
+          pendingUpdate.zsync_url,
+          pendingUpdate.url
+        );
+      } else {
+        downloadedUpdatePath = await api.downloadUpdate(pendingUpdate.url);
+      }
 
       if (unlistenProgress) { unlistenProgress(); unlistenProgress = null; }
 
