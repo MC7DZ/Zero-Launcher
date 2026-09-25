@@ -23,5 +23,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: zerolauncher-linux-build
-          path: Tauri App/src-tauri/target/release/bundle/appimage/*.AppImage
+          path: |
+            Tauri App/src-tauri/target/release/bundle/appimage/*.AppImage
+            Tauri App/src-tauri/target/release/bundle/appimage/*.zsync
           if-no-files-found: warn

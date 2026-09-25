@@ -134,7 +134,7 @@ build_app() {
         if [ -n "$APPIMAGE" ]; then
             if command -v zsyncmake > /dev/null 2>&1; then
                 log "Generating zsync file for delta updates"
-                zsyncmake "$APPIMAGE"
+                zsyncmake -o "${APPIMAGE}.zsync" "$APPIMAGE"
                 ZSYNC_FILE="${APPIMAGE}.zsync"
                 if [ -f "$ZSYNC_FILE" ]; then
                     log "zsync file created: $ZSYNC_FILE"
