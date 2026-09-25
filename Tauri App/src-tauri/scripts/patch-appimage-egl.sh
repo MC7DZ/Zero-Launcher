@@ -51,9 +51,7 @@ find squashfs-root/usr/lib -maxdepth 1 \( \
   -name "libwayland-server.so*" \
 \) -exec rm -fv {} \; || true
 
-# Repackage using appimagetool if available; otherwise fall back to
-# AppRun-based direct execution (handled by the wrapper, not needed here
-# since we rebuild a proper AppImage below).
+# Repackage using appimagetool if available; otherwise download it.
 if ! command -v appimagetool > /dev/null 2>&1; then
   echo "appimagetool not found, installing..."
   wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
@@ -63,15 +61,20 @@ else
   APPIMAGETOOL="appimagetool"
 fi
 
-# appimagetool passes any trailing args straight through to the mksquashfs
-# call it makes internally. Its own default (mksquashfs's plain default,
-# gzip) leaves real size on the table for an image this large — xz with a
-# full-size dictionary and the x86 BCJ filter (tuned for the Rust/WebKitGTK
-# machine code that makes up most of this bundle) typically comes in
-# 25-40% smaller than gzip for the same content. Slower to build (xz is
-# CPU-heavier than gzip), but decompression at launch is unaffected enough
-# to not matter, and this only costs build time, not user startup time.
-$APPIMAGETOOL squashfs-root "patched.AppImage" -comp xz -Xdict-size 100% -Xbcj x86
+# Try xz compression via the env var interface supported by newer appimagetool
+# (the old -comp/-X* direct args were dropped from the continuous release).
+# xz with a full-size dictionary and the x86 BCJ filter typically produces
+# 25-40% smaller output than gzip for a Rust/WebKitGTK bundle.
+# If the env var approach also fails (e.g. mksquashfs doesn't support xz on
+# this host), fall back silently to default compression so the build never
+# breaks just over a size optimisation.
+if APPIMAGETOOL_MKSQUASHFS_ARGS="-comp xz -Xdict-size 100% -Xbcj x86" \
+     $APPIMAGETOOL squashfs-root "patched.AppImage" 2>/dev/null; then
+  echo "Repackaged with xz compression."
+else
+  echo "xz compression unavailable, falling back to default compression..."
+  $APPIMAGETOOL squashfs-root "patched.AppImage"
+fi
 
 popd > /dev/null
 
