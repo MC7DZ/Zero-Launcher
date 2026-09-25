@@ -67,11 +67,7 @@ struct OsUpdateEntry {
     version: String,
     url: String,
     #[serde(default)]
-    zsync_url: Option<String>,
-    #[serde(default)]
     size_mb: Option<f64>,
-    #[serde(default)]
-    zsync_size_mb: Option<f64>,
     /// Short plain-text bullet points describing what changed in this
     /// version. Optional — an absent or empty list just means the update
     /// prompt won't show a "What's new" section.
@@ -90,14 +86,7 @@ struct UpdateManifest {
 pub struct UpdateAvailable {
     pub version: String,
     pub url: String,
-    /// URL to the `.AppImage.zsync` delta file (Linux only). When present,
-    /// the frontend should prefer `download_update_zsync` over `download_update`
-    /// so users only fetch the changed blocks instead of the full file.
-    pub zsync_url: Option<String>,
     pub size_mb: Option<f64>,
-    /// Estimated download size when using zsync (delta only). Typically
-    /// 5–20 MB vs 100+ MB for a full AppImage download.
-    pub zsync_size_mb: Option<f64>,
     pub changelog: Vec<String>,
 }
 
@@ -248,9 +237,7 @@ pub async fn check_for_update(
         Ok(Some(UpdateAvailable {
             version: entry.version,
             url: entry.url,
-            zsync_url: entry.zsync_url,
             size_mb: entry.size_mb,
-            zsync_size_mb: entry.zsync_size_mb,
             changelog: entry.changelog,
         }))
     } else {
@@ -732,215 +719,4 @@ fn install_update_linux(
 
     logger::info(app, state, LOG_SOURCE, "Relaunched with updated executable; exiting old process");
     std::process::exit(0);
-}
-
-/// Linux-only: download a launcher update using **zsync** so only the changed
-/// blocks of the AppImage are fetched (delta update). Typically 5–20 MB
-/// instead of the full 100+ MB AppImage.
-///
-/// - `zsync_url`   – URL to the `.AppImage.zsync` file hosted alongside the release.
-/// - `fallback_url` – Full AppImage URL, used if `zsync` is not installed.
-///
-/// Emits `update-download-progress` events (same shape as `download_update`)
-/// while running. Returns the path to the completed file, just like
-/// `download_update` does, so `install_update` works unchanged.
-///
-/// If `zsync` is not on PATH, transparently falls back to the regular
-/// `download_update` so the update still succeeds (just downloads more).
-#[tauri::command]
-pub async fn download_update_zsync(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    zsync_url: String,
-    fallback_url: String,
-) -> Result<String, String> {
-    // Only meaningful on Linux where AppImages live. Windows uses the
-    // regular download_update path and never sees this command.
-    #[cfg(not(target_os = "linux"))]
-    {
-        logger::info(&app, &state, LOG_SOURCE, "zsync download called on non-Linux — falling back to full download");
-        return download_update(app, state, fallback_url).await;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        // Check if zsync is available.
-        if std::process::Command::new("zsync")
-            .arg("--help")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_err()
-        {
-            logger::info(
-                &app,
-                &state,
-                LOG_SOURCE,
-                "zsync not found on PATH — falling back to full AppImage download. \
-                 Install the 'zsync' package to enable delta updates.",
-            );
-            return download_update(app, state, fallback_url).await;
-        }
-
-        let updates_dir = state.data_dir.join("updates");
-        std::fs::create_dir_all(&updates_dir).map_err(|e| {
-            let msg = format!("Failed to create updates folder: {e}");
-            logger::error(&app, &state, LOG_SOURCE, &msg);
-            msg
-        })?;
-
-        // The output file name is derived from the zsync URL (everything after
-        // the last '/', minus the '.zsync' suffix).
-        let zsync_filename = zsync_url
-            .rsplit('/')
-            .next()
-            .unwrap_or("ZeroLauncher.AppImage.zsync");
-        let out_filename = zsync_filename
-            .strip_suffix(".zsync")
-            .unwrap_or(zsync_filename);
-        let dest_path = updates_dir.join(out_filename);
-
-        // Use the running AppImage as the seed file so zsync can reuse
-        // unchanged blocks — this is what makes it a delta download.
-        let seed = std::env::var_os("APPIMAGE").map(std::path::PathBuf::from);
-
-        logger::info(
-            &app,
-            &state,
-            LOG_SOURCE,
-            &format!(
-                "Starting zsync delta download: {} -> {}{}",
-                zsync_url,
-                dest_path.display(),
-                match &seed {
-                    Some(s) => format!(" (seed: {})", s.display()),
-                    None => " (no seed — first install)".to_string(),
-                }
-            ),
-        );
-
-        let mut cmd = std::process::Command::new("zsync");
-        if let Some(ref seed_path) = seed {
-            cmd.arg("-i").arg(seed_path);
-        }
-        cmd.arg("-o").arg(&dest_path);
-        cmd.arg(&zsync_url);
-        // Capture both stdout and stderr so we can parse progress lines.
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let mut child = cmd.spawn().map_err(|e| {
-            let msg = format!("Failed to start zsync process: {e}");
-            logger::error(&app, &state, LOG_SOURCE, &msg);
-            msg
-        })?;
-
-        // Read zsync's combined output (it prints progress to both stdout and
-        // stderr depending on version). We poll the output file size as the
-        // most reliable cross-version progress signal; zsync's text output is
-        // used for logging and as a secondary % source.
-        use std::io::{BufRead, BufReader};
-        let stderr = child.stderr.take().map(BufReader::new);
-        let stdout = child.stdout.take().map(BufReader::new);
-
-        // Spawn a thread to drain stdout (we mostly care about stderr for %).
-        if let Some(out) = stdout {
-            let app2 = app.clone();
-            let st2 = state.data_dir.clone();
-            let _ = st2; // used to keep it alive
-            std::thread::spawn(move || {
-                for line in out.lines().flatten() {
-                    let _ = app2.emit("_zsync_stdout", &line);
-                }
-            });
-        }
-
-        // Parse stderr progress lines: zsync prints "  23.1%" or "Done : 23%".
-        // We also poll the file size as a fallback for versions that don't
-        // print parseable percentages.
-        let app_prog = app.clone();
-        let dest_for_thread = dest_path.clone();
-        if let Some(err_reader) = stderr {
-            for line in err_reader.lines().flatten() {
-                // Log everything at debug level.
-                logger::debug(&app, &state, LOG_SOURCE, &format!("[zsync] {line}"));
-
-                // Try to parse a percentage out of the line.
-                // zsync 0.6.2: "  23.1%" or "Done : 23%" or "reading ...%"
-                let pct: Option<f64> = line
-                    .split_whitespace()
-                    .find_map(|w| w.trim_end_matches('%').parse::<f64>().ok());
-
-                let file_size = std::fs::metadata(&dest_for_thread)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
-
-                if file_size > 0 || pct.is_some() {
-                    // Emit progress based on percentage if available, or
-                    // raw bytes if not.
-                    let _ = app_prog.emit(
-                        "update-download-progress",
-                        UpdateProgress {
-                            downloaded_bytes: file_size,
-                            total_bytes: pct.map(|p| {
-                                if p > 0.0 {
-                                    (file_size as f64 * 100.0 / p) as u64
-                                } else {
-                                    0
-                                }
-                            }),
-                        },
-                    );
-                }
-            }
-        }
-
-        let status = child.wait().map_err(|e| {
-            let msg = format!("zsync process error: {e}");
-            logger::error(&app, &state, LOG_SOURCE, &msg);
-            msg
-        })?;
-
-        if !status.success() {
-            let msg = format!(
-                "zsync exited with code {}. Falling back to full download.",
-                status.code().unwrap_or(-1)
-            );
-            logger::warn(&app, &state, LOG_SOURCE, &msg);
-            // Clean up any partial file zsync left.
-            let _ = std::fs::remove_file(&dest_path);
-            return download_update(app, state, fallback_url).await;
-        }
-
-        // Final 100% progress event.
-        let final_size = std::fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
-        let _ = app.emit(
-            "update-download-progress",
-            UpdateProgress {
-                downloaded_bytes: final_size,
-                total_bytes: Some(final_size),
-            },
-        );
-
-        // Make the result executable.
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(&dest_path) {
-            let mut perms = meta.permissions();
-            perms.set_mode(0o755);
-            let _ = std::fs::set_permissions(&dest_path, perms);
-        }
-
-        logger::info(
-            &app,
-            &state,
-            LOG_SOURCE,
-            &format!(
-                "zsync delta download complete: {:.1} MB at {}",
-                final_size as f64 / 1_048_576.0,
-                dest_path.display()
-            ),
-        );
-
-        Ok(dest_path.to_string_lossy().to_string())
-    }
 }

@@ -51,8 +51,7 @@ install_deps() {
         libfuse2 \
         desktop-file-utils \
         ca-certificates \
-        pkg-config \
-        zsync
+        pkg-config
 
     # libayatana-appindicator3-dev isn't in Ubuntu 20.04's default repos
     # (it landed in 22.04); fall back to the older libappindicator3-dev,
@@ -126,26 +125,6 @@ build_app() {
             chmod +x src-tauri/scripts/patch-appimage-egl.sh
             ./src-tauri/scripts/patch-appimage-egl.sh
         fi
-
-        # Generate the zsync file so users can delta-update (only download
-        # changed blocks rather than the full AppImage each time).
-        APPIMAGE_DIR="src-tauri/target/release/bundle/appimage"
-        if [ -d "$APPIMAGE_DIR" ]; then
-            pushd "$APPIMAGE_DIR" >/dev/null
-            APPIMAGE=$(find . -maxdepth 1 -name "*.AppImage" -printf "%f\n" | head -n1)
-            if [ -n "$APPIMAGE" ]; then
-                if command -v zsyncmake > /dev/null 2>&1; then
-                    log "Generating zsync file for delta updates ($APPIMAGE)"
-                    zsyncmake "$APPIMAGE"
-                    if [ -f "${APPIMAGE}.zsync" ]; then
-                        log "zsync file created: ${APPIMAGE}.zsync"
-                    fi
-                else
-                    log "WARNING: zsyncmake not found — skipping zsync generation. Run --deps to install it."
-                fi
-            fi
-            popd >/dev/null
-        fi
     elif [ "$mode" = "debug" ]; then
         log "Building Zero Launcher (debug)"
         npm run tauri build -- --debug
@@ -154,7 +133,7 @@ build_app() {
     fi
 
     log "Build finished. Output files:"
-    find src-tauri/target/*/bundle -type f \( -iname "*.AppImage" -o -iname "*.deb" -o -iname "*.zsync" \) 2>/dev/null || true
+    find src-tauri/target/*/bundle -type f \( -iname "*.AppImage" -o -iname "*.deb" \) 2>/dev/null || true
 }
 
 usage() {
