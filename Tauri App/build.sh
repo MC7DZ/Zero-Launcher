@@ -130,18 +130,21 @@ build_app() {
         # Generate the zsync file so users can delta-update (only download
         # changed blocks rather than the full AppImage each time).
         APPIMAGE_DIR="src-tauri/target/release/bundle/appimage"
-        APPIMAGE=$(find "$APPIMAGE_DIR" -maxdepth 1 -name "*.AppImage" | head -n1)
-        if [ -n "$APPIMAGE" ]; then
-            if command -v zsyncmake > /dev/null 2>&1; then
-                log "Generating zsync file for delta updates"
-                zsyncmake -o "${APPIMAGE}.zsync" "$APPIMAGE"
-                ZSYNC_FILE="${APPIMAGE}.zsync"
-                if [ -f "$ZSYNC_FILE" ]; then
-                    log "zsync file created: $ZSYNC_FILE"
+        if [ -d "$APPIMAGE_DIR" ]; then
+            pushd "$APPIMAGE_DIR" >/dev/null
+            APPIMAGE=$(find . -maxdepth 1 -name "*.AppImage" -printf "%f\n" | head -n1)
+            if [ -n "$APPIMAGE" ]; then
+                if command -v zsyncmake > /dev/null 2>&1; then
+                    log "Generating zsync file for delta updates ($APPIMAGE)"
+                    zsyncmake "$APPIMAGE"
+                    if [ -f "${APPIMAGE}.zsync" ]; then
+                        log "zsync file created: ${APPIMAGE}.zsync"
+                    fi
+                else
+                    log "WARNING: zsyncmake not found — skipping zsync generation. Run --deps to install it."
                 fi
-            else
-                log "WARNING: zsyncmake not found — skipping zsync generation. Run --deps to install it."
             fi
+            popd >/dev/null
         fi
     elif [ "$mode" = "debug" ]; then
         log "Building Zero Launcher (debug)"

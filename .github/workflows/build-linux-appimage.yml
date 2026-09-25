@@ -20,12 +20,15 @@ jobs:
         working-directory: Tauri App
         run: ./build.sh --release
 
-      - name: Generate zsync file
+      - name: Verify and generate zsync file
         working-directory: Tauri App/src-tauri/target/release/bundle/appimage
         run: |
           APPIMAGE=$(ls *.AppImage | head -n1)
           echo "Target AppImage: $APPIMAGE"
-          zsyncmake -o "${APPIMAGE}.zsync" "$APPIMAGE"
+          if [ ! -f "${APPIMAGE}.zsync" ]; then
+            echo "Generating zsync for $APPIMAGE..."
+            zsyncmake "$APPIMAGE"
+          fi
           echo "Files in bundle directory:"
           ls -lh
 
@@ -36,11 +39,11 @@ jobs:
           path: |
             Tauri App/src-tauri/target/release/bundle/appimage/*.AppImage
             Tauri App/src-tauri/target/release/bundle/appimage/*.zsync
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Upload zsync delta file
         uses: actions/upload-artifact@v4
         with:
           name: ZeroLauncher-zsync
           path: Tauri App/src-tauri/target/release/bundle/appimage/*.zsync
-          if-no-files-found: warn
+          if-no-files-found: error
