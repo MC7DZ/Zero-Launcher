@@ -74,6 +74,7 @@ pub struct AppState {
     /// those would tick the live Game Advancements counter up separately
     /// for what is really a single advancement.
     pub recent_advancement_lines: Mutex<HashMap<String, (String, std::time::Instant)>>,
+    pub cli_launch_args: Mutex<Option<crate::commands::shortcuts::CliLaunchArgs>>,
 }
 
 #[derive(Clone)]
@@ -142,6 +143,7 @@ impl AppState {
             msa_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
             last_activity_at: Mutex::new(std::time::Instant::now()),
             recent_advancement_lines: Mutex::new(HashMap::new()),
+            cli_launch_args: Mutex::new(crate::commands::shortcuts::parse_cli_launch_args(&std::env::args().collect::<Vec<_>>())),
         }
     }
 

@@ -10,6 +10,7 @@ pub mod mods;
 pub mod msa;
 pub mod presets;
 pub mod settings;
+pub mod shortcuts;
 pub mod skins;
 pub mod updater;
 

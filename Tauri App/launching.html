@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Launching</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .window {
+      width: 100vw;
+      height: 100vh;
+      background: #1b1b1b;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 14px 12px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      flex-shrink: 0;
+    }
+
+    .icon-wrap {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: #121212;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .icon-wrap img {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+    }
+
+    .header-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .inst-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: #e2e2ea;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .inst-sub {
+      font-size: 11px;
+      color: rgba(226, 226, 234, 0.4);
+      margin-top: 1px;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: rgba(226, 226, 234, 0.3);
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 5px;
+      border-radius: 6px;
+      transition: color 0.15s;
+      flex-shrink: 0;
+      align-self: flex-start;
+    }
+
+    .close-btn:hover { color: #e2e2ea; }
+
+    /* ── Status bar ── */
+    .status-bar {
+      padding: 8px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      flex-shrink: 0;
+    }
+
+    .status-text {
+      font-size: 12px;
+      color: rgba(226, 226, 234, 0.65);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status-text.error { color: #ef4444; }
+
+    /* ── Log area ── */
+    .log-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .log-area::-webkit-scrollbar { width: 0; }
+
+    .log-entry {
+      font-size: 11px;
+      color: rgba(226, 226, 234, 0.38);
+      line-height: 1.5;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .log-entry.current {
+      color: rgba(226, 226, 234, 0.75);
+    }
+
+    .log-entry.ok {
+      color: rgba(183, 183, 183, 0.55);
+    }
+
+    .log-entry.fail {
+      color: rgba(239, 68, 68, 0.8);
+    }
+  </style>
+</head>
+<body>
+  <div class="window">
+    <!-- Header -->
+    <div class="header" data-tauri-drag-region>
+      <div class="icon-wrap" data-tauri-drag-region>
+        <img id="mini-icon-img" src="" alt="" data-tauri-drag-region />
+      </div>
+      <div class="header-text" data-tauri-drag-region>
+        <div class="inst-name" id="mini-title">Minecraft</div>
+        <div class="inst-sub" id="mini-sub">Launching…</div>
+      </div>
+      <button class="close-btn" id="btn-mini-close" title="Cancel">✕</button>
+    </div>
+
+    <!-- Current status -->
+    <div class="status-bar">
+      <div class="status-text" id="mini-status">Preparing launch</div>
+    </div>
+
+    <!-- Log feed -->
+    <div class="log-area" id="log-area"></div>
+  </div>
+
+  <script type="module" src="/src/js/launching.js"></script>
+</body>
+</html>

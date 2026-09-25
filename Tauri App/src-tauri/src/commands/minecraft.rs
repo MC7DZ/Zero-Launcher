@@ -1779,23 +1779,14 @@ pub async fn launch_minecraft(
             );
             (result, downloading_started, downloaded_bytes)
         });
-        let verify_res = tokio::time::timeout(std::time::Duration::from_secs(5), verify_result_handle).await;
-        let (result, downloading_started, downloaded_bytes) = match verify_res {
-            Ok(Ok(res)) => res,
-            Ok(Err(e)) => {
+        let (result, downloading_started, downloaded_bytes) = match verify_result_handle.await {
+            Ok(res) => res,
+            Err(e) => {
                 logger::warn_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
                     "Verification task failed ({e}) — automatically launching offline"
                 ));
                 let _ = app.emit("toast-notification", &serde_json::json!({
                     "message": "Verification failed / no internet — launching in offline mode",
-                    "type": "info"
-                }));
-                (Ok(()), false, 0)
-            }
-            Err(_) => {
-                logger::warn_for_instance(&app, &state, &vid, "LAUNCHER", "Verification timed out — automatically launching offline");
-                let _ = app.emit("toast-notification", &serde_json::json!({
-                    "message": "Verification timed out — launching in offline mode",
                     "type": "info"
                 }));
                 (Ok(()), false, 0)
@@ -1921,9 +1912,15 @@ pub async fn launch_minecraft(
     // with a clear message instead of silently reaching out to the
     // network anyway (which is exactly what "Launch Offline" is supposed
     // to avoid).
-    let java_executable = crate::commands::java::ensure_java_for_instance(&app, &state, &version, inst_java_path.as_deref(), offline)
-        .await
-        .map_err(|e| { fail_cleanup(); format!("Java setup failed: {e}") })?;
+    let java_executable = {
+        let _ = app.emit("launch-status-update", &serde_json::json!({
+            "version_id": vid,
+            "message": "Setting up Java…"
+        }));
+        crate::commands::java::ensure_java_for_instance(&app, &state, &version, inst_java_path.as_deref(), offline)
+            .await
+            .map_err(|e| { fail_cleanup(); format!("Java setup failed: {e}") })?
+    };
 
     // On Windows, Minecraft must be launched using javaw.exe (never java.exe)
     // so Discord and system utilities properly recognize the game window
@@ -1963,6 +1960,11 @@ pub async fn launch_minecraft(
     logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
         "Using Java: {}", java_executable.display()
     ));
+
+    let _ = app.emit("launch-status-update", &serde_json::json!({
+        "version_id": &version_id,
+        "message": "Building launch command…"
+    }));
 
     // Build launch command in blocking context
     let launch_cmd = tokio::task::spawn_blocking(move || {
@@ -2130,6 +2132,10 @@ pub async fn launch_minecraft(
         launch_command.env_remove("GIO_LAUNCHED_DESKTOP_FILE_PID");
         launch_command.env_remove("BAMF_DESKTOP_FILE_HINT");
     }
+    let _ = app.emit("launch-status-update", &serde_json::json!({
+        "version_id": &version_id,
+        "message": "Spawning game process…"
+    }));
     let mut child = launch_command
         .spawn()
         .map_err(|e| { fail_cleanup(); format!("Failed to start game: {e}") })?;
@@ -2168,6 +2174,7 @@ pub async fn launch_minecraft(
     // know this instance is still out there.
     state.save_running_instances();
     let _ = app.emit("running-instances-changed", ());
+    let _ = app.emit("instance-process-started", &version_id);
     crate::commands::trim_memory();
 
     // Settings → Window Behavior → "When launching a game". These were

@@ -281,113 +281,226 @@
 
     <!-- ═══ Accounts Management Modal Overlay ═══ -->
     <div id="account-modal-overlay" class="overlay hidden">
-      <div class="overlay-card account-overlay-card" style="max-width: 520px; width: 90%;">
-        <div class="overlay-header">
-          <h3>Accounts Manager</h3>
-          <button class="overlay-close" id="btn-close-account-modal">✕</button>
+      <div class="overlay-card account-overlay-card" style="max-width: 500px; width: 94%;">
+        <!-- Modern Header -->
+        <div class="account-modal-header">
+          <div class="account-modal-header-info">
+            <div class="account-modal-header-icon">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+            </div>
+            <div>
+              <h3>Accounts Manager</h3>
+              <div class="account-modal-subtitle">Manage Microsoft, Ely.by & offline player profiles</div>
+            </div>
+          </div>
+          <button class="overlay-close" id="btn-close-account-modal" title="Close" style="border-radius:6px; width:30px; height:30px; display:flex; align-items:center; justify-content:center; padding:0;">✕</button>
         </div>
 
-        <!-- Section 1: Select Active Account (hidden when there are no accounts yet) -->
-        <div id="account-list-section" style="margin-bottom: 20px;">
-          <label style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">Switch Account</label>
-          <div id="modal-account-list" style="display:flex; flex-direction:column; gap:8px; max-height: 200px; overflow-y: auto; padding-right: 4px; margin-bottom:10px;"></div>
-          <button id="btn-show-add-account" class="btn-secondary" style="width:100%;">+ Add Account</button>
+        <!-- Animated content wrapper for resize transitions -->
+        <div class="account-overlay-content" id="account-overlay-content">
+          <!-- Section 1: Select Active Account (shown when accounts exist) -->
+          <div id="account-list-section" style="margin-bottom: 20px;">
+          <div class="account-section-tag">
+            <span>Saved Profiles</span>
+            <span class="account-section-count" id="account-list-count">0</span>
+          </div>
+          <div id="modal-account-list" style="display:flex; flex-direction:column; gap:6px; max-height: 240px; overflow-y: auto; padding-right: 2px; margin-bottom: 14px;"></div>
+          <button id="btn-show-add-account" class="btn-secondary" style="width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px; font-weight:600;">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Add Another Account
+          </button>
         </div>
 
-        <!-- Empty state: no accounts yet, offer the two ways to add one -->
+        <!-- Empty state / Add account choices: Choice between Microsoft and Free/Offline -->
         <div id="account-empty-state" class="hidden">
-          <div style="text-align:center; padding: 6px 0 18px;">
-            <div style="font-size:14px; font-weight:600; color:var(--text); margin-bottom:2px;">No accounts yet</div>
-            <div style="font-size:12px; color:var(--text-muted);">Add a Microsoft account or play offline for free.</div>
+          <div style="margin-bottom: 16px;">
+            <div class="account-section-tag" style="margin-bottom: 4px;">Choose Sign-In Method</div>
+            <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.45; margin: 0;">Connect your official Minecraft account or play with a free profile.</p>
           </div>
+          
           <div id="account-choice-buttons" style="display:flex; flex-direction:column; gap:10px;">
-            <button id="btn-choice-msa" class="btn-secondary" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; font-size:14px;">
-              <svg viewBox="0 0 23 23" width="18" height="18"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>
-              Add Microsoft Account
+            <!-- Choice 1: Microsoft Account -->
+            <button id="btn-choice-msa" type="button" class="acc-choice-card">
+              <div class="acc-choice-icon">
+                <svg viewBox="0 0 23 23" width="20" height="20">
+                  <rect x="1" y="1" width="10" height="10" fill="#f25022"/>
+                  <rect x="12" y="1" width="10" height="10" fill="#7fba00"/>
+                  <rect x="1" y="12" width="10" height="10" fill="#00a4ef"/>
+                  <rect x="12" y="12" width="10" height="10" fill="#ffb900"/>
+                </svg>
+              </div>
+              <div class="acc-choice-content">
+                <div class="acc-choice-title">
+                  Microsoft Account
+                  <span class="acc-choice-badge acc-choice-badge-official">Official</span>
+                </div>
+                <div class="acc-choice-desc">Join multiplayer servers, Realms, and load your official skin</div>
+              </div>
+              <div class="acc-choice-arrow">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
             </button>
-            <button id="btn-choice-offline" class="btn-secondary" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; font-size:14px;">
-              <span style="width:18px; height:18px; border-radius:50%; background:var(--accent-dim); border:1px solid var(--accent); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; flex-shrink:0;">?</span>
-              Add Free Offline Account
-            </button>
-            <button id="btn-choice-elyby" class="btn-secondary" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; font-size:14px;">
-              <svg viewBox="0 0 24 24" width="18" height="18"><rect x="1" y="1" width="22" height="22" rx="6" fill="#2E8ED7"/><path d="M7 6.5h10v2.6H10v2.9h6.2v2.5H10v3h7.2V20H7V6.5z" fill="#fff"/></svg>
-              Add Ely.by Account
+
+            <!-- Choice 2: Free Account (Offline & Ely.by) -->
+            <button id="btn-choice-offline" type="button" class="acc-choice-card">
+              <div class="acc-choice-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="8.5" cy="7" r="4"></circle>
+                  <line x1="20" y1="8" x2="20" y2="14"></line>
+                  <line x1="23" y1="11" x2="17" y2="11"></line>
+                </svg>
+              </div>
+              <div class="acc-choice-content">
+                <div class="acc-choice-title">
+                  Free Account
+                  <span class="acc-choice-badge acc-choice-badge-free">Offline & Skins</span>
+                </div>
+                <div class="acc-choice-desc">Create custom username or connect Ely.by skins & auth</div>
+              </div>
+              <div class="acc-choice-arrow">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
             </button>
           </div>
         </div>
 
-        <!-- Section 2b: Microsoft Sign-In -->
+        <!-- Section 2b: Microsoft Sign-In Flow -->
         <div id="account-msa-section" class="hidden">
-          <button class="btn-ghost btn-sm btn-back-to-choices" style="margin-bottom:12px;">← Back</button>
-          <label style="font-size:12px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">Sign in with Microsoft</label>
-
-          <!-- Sign-in method: device code only (opens Microsoft's sign-in in the
-               user's normal browser instead of an embedded popup webview). -->
-          <div id="msa-method-choice" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;">
-            <button id="btn-msa-device-login" class="btn-secondary" style="white-space:nowrap; display:flex; align-items:center; justify-content:center; gap:6px; width:100%; padding:12px;">
-              <svg viewBox="0 0 23 23" width="14" height="14"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>
-              Sign In with Microsoft
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+            <button class="btn-ghost btn-sm btn-back-to-choices" style="padding:4px 8px; border-radius:4px; display:inline-flex; align-items:center; gap:4px; font-size:12px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              Back
             </button>
-            <p style="font-size:11px; line-height:1.5; color:var(--text-muted); margin:2px 0 0;">
-              You'll get a short code to enter at microsoft.com/link in your normal browser — this plays nicer with 2FA, family/child accounts, and passkeys than an embedded sign-in window.
-            </p>
+            <div style="font-size:13px; font-weight:600; color:#fff;">Microsoft Authentication</div>
           </div>
 
-          <!-- Device-code panel: shown after choosing the code option -->
+          <!-- Initial choice state before code requested -->
+          <div id="msa-method-choice">
+            <div style="padding:16px; background:#181818; border:1px solid rgba(255,255,255,0.08); border-radius:6px; margin-bottom:12px;">
+              <div style="display:flex; align-items:flex-start; gap:12px; margin-bottom:14px;">
+                <div style="width:32px; height:32px; border-radius:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                  <svg viewBox="0 0 23 23" width="16" height="16"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>
+                </div>
+                <div>
+                  <div style="font-size:13px; font-weight:600; color:#fff;">Secure Device Authorization</div>
+                  <div style="font-size:12px; color:var(--text-muted); margin-top:3px; line-height:1.45;">You will receive a code to confirm at <strong style="color:var(--text);">microsoft.com/link</strong> in your browser. Supports 2FA, passkeys, and family accounts securely.</div>
+                </div>
+              </div>
+
+              <button id="btn-msa-device-login" class="btn-accent" style="width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:11px; font-size:13px;">
+                Start Sign-In Process
+              </button>
+            </div>
+          </div>
+
+          <!-- Device-code panel: shown while waiting for user confirmation -->
           <div id="msa-device-panel" class="hidden">
-            <div style="text-align:center; padding:16px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);">
-              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Your code <span style="font-size:10px; opacity:0.75; text-transform:none;">(Click to copy)</span></div>
-              <div id="msa-device-code" style="font-size:26px; font-weight:800; letter-spacing:3px; color:var(--accent); margin-bottom:12px; cursor:pointer;" title="Click to copy code">— — — — —</div>
-              <button id="btn-msa-device-open" class="btn-accent btn-sm" style="margin-bottom:8px;">Open microsoft.com/link</button>
-              <div id="msa-device-status" style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; gap:6px;">
-                <span class="msa-device-spinner" style="width:10px; height:10px; border-radius:50%; border:2px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span>
-                Waiting for you to sign in…
+            <div style="text-align:center; padding:22px 18px; border-radius:6px; background:#181818; border:1px solid rgba(255,255,255,0.08);">
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.8px; font-weight:700; margin-bottom:8px;">
+                Your Sign-In Code
+              </div>
+              <div id="msa-device-code" style="font-family:'Consolas','JetBrains Mono',monospace; font-size:26px; font-weight:800; letter-spacing:4px; color:#fff; background:rgba(0,0,0,0.3); border:1px dashed rgba(255,255,255,0.18); border-radius:6px; padding:10px 16px; margin:0 auto 14px auto; display:inline-block; cursor:pointer;" title="Click to copy code">— — — — —</div>
+              
+              <div style="display:flex; justify-content:center; gap:8px; margin-bottom:14px;">
+                <button id="btn-msa-device-open" class="btn-accent btn-sm" style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px;">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  Open microsoft.com/link
+                </button>
+              </div>
+
+              <div id="msa-device-status" style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; gap:7px;">
+                <span class="msa-device-spinner" style="width:11px; height:11px; border-radius:50%; border:2px solid #34d399; border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span>
+                Waiting for authorization…
               </div>
             </div>
-            <button id="btn-msa-device-cancel" class="btn-ghost btn-sm" style="width:100%; margin-top:10px;">Cancel</button>
+            <button id="btn-msa-device-cancel" class="btn-ghost btn-sm" style="width:100%; margin-top:10px;">Cancel Sign-In</button>
           </div>
         </div>
 
-        <!-- Section 2c: Ely.by Sign-In (OAuth2 — opens ely.by in the user's
-             real browser, same "device code"-style pattern as Microsoft
-             sign-in above, so the password never touches the launcher). -->
+        <!-- Section 2c: Ely.by Sign-In -->
         <div id="account-elyby-section" class="hidden">
-          <button class="btn-ghost btn-sm btn-back-to-choices" style="margin-bottom:12px;">← Back</button>
-          <label style="font-size:12px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">Sign in with Ely.by</label>
-
-          <div id="elyby-oauth-idle">
-            <button id="btn-elyby-oauth-login" class="btn-secondary" style="white-space:nowrap; display:flex; align-items:center; justify-content:center; gap:6px; width:100%; padding:12px;">
-              <svg viewBox="0 0 24 24" width="16" height="16" style="flex-shrink:0;"><rect x="1" y="1" width="22" height="22" rx="6" fill="#2E8ED7"/><path d="M7 6.5h10v2.6H10v2.9h6.2v2.5H10v3h7.2V20H7V6.5z" fill="#fff"/></svg>
-              Sign In with Ely.by
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+            <button class="btn-ghost btn-sm btn-back-to-choices" style="padding:4px 8px; border-radius:4px; display:inline-flex; align-items:center; gap:4px; font-size:12px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              Back
             </button>
-            <p style="font-size:11px; line-height:1.5; color:var(--text-muted); margin:8px 0 0;">
-              Opens ely.by in your normal browser to sign in — your password is typed there, never in the launcher. Skins are still managed at <span style="color:var(--accent);">ely.by/skins</span> and will show up in-game automatically once you're signed in here.
-            </p>
+            <div style="font-size:13px; font-weight:600; color:#fff;">Ely.by Skin & Account System</div>
           </div>
 
-          <div id="elyby-oauth-waiting" class="hidden" style="text-align:center; padding:16px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);">
-            <div id="elyby-oauth-status" style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; gap:6px;">
-              <span class="msa-device-spinner" style="width:10px; height:10px; border-radius:50%; border:2px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span>
-              Waiting for you to sign in on ely.by…
+          <div id="elyby-oauth-idle" style="padding:16px; background:#181818; border:1px solid rgba(255,255,255,0.08); border-radius:6px;">
+            <div style="display:flex; align-items:flex-start; gap:12px; margin-bottom:14px;">
+              <div style="width:34px; height:34px; border-radius:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                <svg viewBox="0 0 24 24" width="18" height="18"><rect x="1" y="1" width="22" height="22" rx="4" fill="#06b6d4"/><path d="M7 6.5h10v2.6H10v2.9h6.2v2.5H10v3h7.2V20H7V6.5z" fill="#fff"/></svg>
+              </div>
+              <div>
+                <div style="font-size:13px; font-weight:600; color:#fff;">Sign In via Ely.by</div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:3px; line-height:1.45;">
+                  Authorizes safely through your web browser. Free custom skins, capes, and Ely.by server authentication.
+                </div>
+              </div>
             </div>
-            <button id="btn-elyby-oauth-open-again" class="btn-ghost btn-sm" style="margin-top:10px;">Reopen browser</button>
+
+            <button id="btn-elyby-oauth-login" class="btn-secondary" style="width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:11px; font-size:13px; color:#fff;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Open Ely.by Authorization in Browser
+            </button>
           </div>
-          <div id="elyby-error" class="hidden" style="font-size:12px; color:#ff6b6b; margin-top:10px;"></div>
+
+          <div id="elyby-oauth-waiting" class="hidden" style="text-align:center; padding:20px; border-radius:6px; background:#181818; border:1px solid rgba(255,255,255,0.08);">
+            <div id="elyby-oauth-status" style="font-size:12.5px; color:var(--text); display:flex; align-items:center; justify-content:center; gap:8px;">
+              <span class="msa-device-spinner" style="width:11px; height:11px; border-radius:50%; border:2px solid #34d399; border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span>
+              Waiting for approval in your browser…
+            </div>
+            <button id="btn-elyby-oauth-open-again" class="btn-ghost btn-sm" style="margin-top:12px;">Reopen browser tab</button>
+          </div>
+          <div id="elyby-error" class="hidden" style="font-size:12px; color:#ff6b6b; margin-top:10px; padding:8px 12px; background:rgba(255,107,107,0.08); border-radius:4px; border:1px solid rgba(255,107,107,0.2);"></div>
           <button id="btn-elyby-oauth-cancel" class="btn-ghost btn-sm hidden" style="width:100%; margin-top:10px;">Cancel</button>
         </div>
 
-        <!-- Section 2: Create New Offline Account -->
+        <!-- Section 2: Create New Free / Offline Account -->
         <div id="account-offline-section" class="hidden">
-          <button class="btn-ghost btn-sm btn-back-to-choices" style="margin-bottom:12px;">← Back</button>
-          <label style="font-size:12px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:8px;">Create Offline Account</label>
-          <div style="display:flex; gap:10px;">
-            <input type="text" id="modal-new-username" class="input-field" placeholder="Username (1-16 chars)" style="flex:1;" />
-            <button id="btn-modal-add-account" class="btn-accent">Create</button>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+            <button class="btn-ghost btn-sm btn-back-to-choices" style="padding:4px 8px; border-radius:4px; display:inline-flex; align-items:center; gap:4px; font-size:12px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              Back
+            </button>
+            <div style="font-size:13px; font-weight:600; color:#fff;">Create Free Account</div>
+          </div>
+
+          <div style="padding:16px; background:#181818; border:1px solid rgba(255,255,255,0.08); border-radius:6px;">
+            <label style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.6px; display:block; margin-bottom:8px;">Choose Player Username</label>
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+              <input type="text" id="modal-new-username" class="input-field" placeholder="e.g. Steve123 (1-16 chars)" maxlength="16" style="flex:1;" />
+              <button id="btn-modal-add-account" class="btn-accent" style="padding:0 18px; font-size:13px; white-space:nowrap;">Create</button>
+            </div>
+            <div style="font-size:11.5px; color:var(--text-muted); line-height:1.4;">Allows playing singleplayer and joining offline-mode / cracked servers.</div>
+
+            <!-- OR Divider -->
+            <div class="acc-divider-or">OR</div>
+
+            <!-- Ely.by Option Box inside Free Account screen -->
+            <div class="acc-elyby-banner" id="btn-choice-elyby" style="cursor:pointer;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:28px; height:28px; border-radius:4px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                  <svg viewBox="0 0 24 24" width="16" height="16"><rect x="1" y="1" width="22" height="22" rx="4" fill="#06b6d4"/><path d="M7 6.5h10v2.6H10v2.9h6.2v2.5H10v3h7.2V20H7V6.5z" fill="#fff"/></svg>
+                </div>
+                <div>
+                  <div style="font-size:12.5px; font-weight:600; color:#fff;">Add Ely.by Skins & Accounts System</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Free skins, capes, and cloud profile authentication</div>
+                </div>
+              </div>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-muted); flex-shrink:0;"><path d="M9 18l6-6-6-6"/></svg>
+            </div>
           </div>
         </div>
+        </div>
 
-        <div class="overlay-actions" style="margin-top:24px;">
-          <button id="btn-done-account-modal" class="btn-ghost" style="width:100%;">Done</button>
+        <div class="overlay-actions" style="margin-top:20px; border-top:1px solid rgba(255,255,255,0.06); padding-top:16px;">
+          <button id="btn-done-account-modal" class="btn-ghost" style="width:100%; border-radius:6px; font-weight:600;">Close</button>
         </div>
       </div>
     </div>
@@ -476,9 +589,10 @@
       </div>
     </div>
 
-    <!-- ═══ Dressing Room Modal Overlay ═══ -->
-    <div id="dressing-room-overlay" class="overlay hidden">
-      <div class="overlay-card dressing-room-modal">
+    <!-- ═══ Dressing Room — independent drawer (mirrors Downloads panel structure) ═══ -->
+    <div id="dressing-room-backdrop" class="dr-backdrop hidden"></div>
+    <div id="dressing-room-overlay" class="dressing-room-panel hidden">
+      <div class="dressing-room-modal">
         <div class="dressing-room-header dl-panel-heading-row">
           <button class="overlay-close" id="btn-close-dressing-room" title="Close Dressing Room">✕</button>
           <div class="dl-panel-heading-text">
@@ -531,6 +645,7 @@
 
       </div>
     </div>
+
 
     <!-- ═══ Discover Project Page Panel (mod/modpack/resourcepack/shader detail) ═══ -->
     <div id="discover-project-overlay" class="overlay hidden">
@@ -668,6 +783,82 @@
           <button id="btn-vanilla-delete-cancel" class="btn-ghost">Cancel</button>
           <button id="btn-vanilla-delete-hide" class="btn-secondary">Hide</button>
           <button id="btn-vanilla-delete-anyway" class="btn-danger-outline">Delete Anyway</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Instance Shortcut Overlay -->
+    <div id="create-shortcut-overlay" class="overlay hidden">
+      <div class="overlay-card" style="max-width: 480px; width: 90%;">
+        <div class="overlay-header">
+          <h3 style="display:flex; align-items:center; gap:8px;">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+            <span>Create Instance Shortcut</span>
+          </h3>
+          <button class="overlay-close" id="btn-close-shortcut-modal">✕</button>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:14px; margin: 14px 0 16px; padding: 12px; border-radius: 10px; background: rgba(var(--overlay-rgb), 0.05); border: 1px solid rgba(var(--overlay-rgb), 0.1);">
+          <div id="shortcut-icon-preview" style="width: 44px; height: 44px; border-radius: 8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background: rgba(var(--overlay-rgb), 0.08);">
+            <img id="shortcut-icon-img" src="" alt="Instance Icon" style="width: 32px; height: 32px; object-fit: contain;" />
+          </div>
+          <div style="flex:1; min-width:0;">
+            <div id="shortcut-inst-title" style="font-weight:600; font-size:14px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+            <div id="shortcut-inst-sub" style="font-size:12px; color:var(--text-muted); margin-top:2px;"></div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          <div>
+            <label class="form-label" for="shortcut-name-input" style="font-size:13px; font-weight:600; margin-bottom:6px; display:block;">Shortcut Name</label>
+            <input type="text" id="shortcut-name-input" class="input-field" placeholder="Shortcut Name" style="width:100%; box-sizing:border-box;" />
+          </div>
+
+          <div>
+            <label class="form-label" for="shortcut-account-select" style="font-size:13px; font-weight:600; margin-bottom:6px; display:block;">Launch Account</label>
+            <select id="shortcut-account-select" class="input-field" style="width:100%; box-sizing:border-box;"></select>
+            <p class="settings-hint" style="margin-top:4px; font-size:11.5px; color:var(--text-muted);">Default uses whichever account is currently active when launched.</p>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:10px; background:rgba(var(--overlay-rgb),0.03); border:1px solid rgba(var(--overlay-rgb),0.08);">
+            <label style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:2px;">Where to Place Shortcut</label>
+            <label class="toggle-row" style="cursor:pointer; display:flex; align-items:center; gap:10px;">
+              <input type="checkbox" id="shortcut-dest-desktop" checked />
+              <span class="toggle-slider"></span>
+              <div>
+                <span style="font-size:13px; font-weight:500;">Desktop</span>
+                <span style="display:block; font-size:11.5px; color:var(--text-muted);">Place a clickable launcher shortcut on your Desktop</span>
+              </div>
+            </label>
+            <label class="toggle-row" style="cursor:pointer; display:flex; align-items:center; gap:10px;">
+              <input type="checkbox" id="shortcut-dest-appmenu" checked />
+              <span class="toggle-slider"></span>
+              <div>
+                <span id="shortcut-appmenu-label" style="font-size:13px; font-weight:500;">Search / App Menu</span>
+                <span id="shortcut-appmenu-hint" style="display:block; font-size:11.5px; color:var(--text-muted);">Add to system launcher menu to launch from search</span>
+              </div>
+            </label>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:10px; background:rgba(var(--overlay-rgb),0.03); border:1px solid rgba(var(--overlay-rgb),0.08);">
+            <label style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:2px;">Launch Options</label>
+            <label class="toggle-row" style="cursor:pointer; display:flex; align-items:center; gap:10px;">
+              <input type="checkbox" id="shortcut-offline-toggle" />
+              <span class="toggle-slider"></span>
+              <div>
+                <span style="font-size:13px; font-weight:500;">Offline Launch</span>
+                <span style="display:block; font-size:11.5px; color:var(--text-muted);">Launch immediately without checking online services</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="overlay-actions" style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+          <button id="btn-shortcut-cancel" class="btn-ghost">Cancel</button>
+          <button id="btn-shortcut-confirm" class="btn-accent">Create Shortcut</button>
         </div>
       </div>
     </div>
@@ -1706,6 +1897,7 @@
                 </div>
                 <button id="btn-edit-instance" class="btn-secondary" title="Rename or change the loader version of the selected instance">Edit</button>
                 <button id="btn-delete-instance" class="btn-danger-outline" title="Permanently delete the selected instance">Delete</button>
+                <button id="btn-create-shortcut" class="btn-secondary" title="Create a desktop or search menu shortcut to directly launch this instance"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px; vertical-align:-1.5px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>Create Shortcut</button>
               </div>
             </div>
           </div>
@@ -2234,19 +2426,19 @@
               <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
                 <div>
                   <label class="toggle-row">
-                    <input type="checkbox" id="setting-bg-anim-enable" />
-                    <span class="toggle-slider"></span>
-                    <span>Background Animations</span>
-                  </label>
-                  <p class="settings-hint">Turn off to completely freeze canvas animation loops and conserve computer resources.</p>
-                </div>
-                <div>
-                  <label class="toggle-row">
                     <input type="checkbox" id="setting-transparency" />
                     <span class="toggle-slider"></span>
                     <span>Transparent UI Cards (High Performance)</span>
                   </label>
                   <p class="settings-hint">Renders translucent glass cards using lightweight CSS layers without slow backdrop filters.</p>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-ui-animations-enable" />
+                    <span class="toggle-slider"></span>
+                    <span>UI Animations</span>
+                  </label>
+                  <p class="settings-hint">Enable smooth transitions and slide animations across the interface. Disable to keep only essential functional animations.</p>
                 </div>
               </div>
 

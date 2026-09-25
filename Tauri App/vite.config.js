@@ -17,6 +17,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
         console: resolve(__dirname, "console.html"),
+        launching: resolve(__dirname, "launching.html"),
       },
     },
   },

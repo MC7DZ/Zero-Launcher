@@ -223,8 +223,6 @@ pub struct LauncherSettings {
     pub custom_font_paths: String,
     #[serde(default = "default_background_style")]
     pub background_style: String,
-    #[serde(default = "default_true")]
-    pub enable_background_animation: bool,
     #[serde(default = "default_bg_anim_style")]
     pub background_animation_style: String,
     #[serde(default = "default_speed")]
@@ -582,7 +580,6 @@ impl Default for LauncherSettings {
             font_family: default_font_family(),
             custom_font_paths: String::new(),
             background_style: default_background_style(),
-            enable_background_animation: true,
             background_animation_style: default_bg_anim_style(),
             background_animation_speed: 1.0,
             background_animation_intensity: 1.0,

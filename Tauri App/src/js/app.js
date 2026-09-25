@@ -448,6 +448,17 @@ const api = {
   hideInstance: (versionId) => invoke('hide_instance', { versionId }),
   unhideInstance: (versionId) => invoke('unhide_instance', { versionId }),
   getDependentInstances: (versionId) => invoke('get_dependent_instances', { versionId }),
+  createInstanceShortcut: (instanceId, shortcutName, accountId, offline, desktop, appMenu) =>
+    invoke('create_instance_shortcut', {
+      instanceId,
+      shortcutName,
+      accountId: accountId || null,
+      offline: !!offline,
+      desktop: !!desktop,
+      appMenu: !!appMenu,
+    }),
+  getCliLaunchArgs: () => invoke('get_cli_launch_args'),
+  hideMainWindow: () => invoke('hide_main_window'),
   listJavaInstallations: () => invoke('list_java_installations'),
   installManagedJava: (major) => invoke('install_managed_java', { major }),
   deleteManagedJava: (major) => invoke('delete_managed_java', { major }),
@@ -973,10 +984,13 @@ function applyUsernamePrivacy() {
   refreshAccountUI().catch(() => {});
 }
 
+let currentAccountView = 'list';
+
 // Shows one of: the account list + "add account" button (accounts exist),
 // or the empty-state choice screen (no accounts yet). Also used to reset
 // the modal back to its default view whenever it's (re)opened.
 function showAccountView(view) {
+  currentAccountView = view;
   const map = {
     list: 'account-list-section',
     empty: 'account-empty-state',
@@ -984,12 +998,84 @@ function showAccountView(view) {
     offline: 'account-offline-section',
     elyby: 'account-elyby-section',
   };
+
+  const container = document.getElementById('account-overlay-content');
+  const targetId = map[view];
+  const targetEl = document.getElementById(targetId);
+
+  // If container is not visible or already closed, just switch classes directly
+  const modalOverlay = document.getElementById('account-modal-overlay');
+  if (!container || !targetEl || !modalOverlay || modalOverlay.classList.contains('hidden')) {
+    Object.values(map).forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.add('hidden');
+        el.classList.remove('acc-view-enter', 'acc-view-enter-active');
+      }
+    });
+    if (targetEl) {
+      targetEl.classList.remove('hidden');
+      targetEl.classList.remove('acc-view-enter', 'acc-view-enter-active');
+    }
+    if (container) {
+      container.style.height = '';
+      container.style.overflow = '';
+      container.style.transition = '';
+    }
+    return;
+  }
+
+  // 1. Measure current rendered height
+  const oldHeight = container.offsetHeight;
+
+  // Prepare target element: make it visible but opacity: 0 and slightly translated
+  targetEl.classList.add('acc-view-enter');
+  targetEl.classList.remove('acc-view-enter-active');
+
+  // Hide other sections, show target
   Object.values(map).forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.classList.add('hidden');
+    if (id !== targetId) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.add('hidden');
+        el.classList.remove('acc-view-enter', 'acc-view-enter-active');
+      }
+    }
   });
-  const target = document.getElementById(map[view]);
-  if (target) target.classList.remove('hidden');
+  targetEl.classList.remove('hidden');
+
+  // 2. Measure target height
+  container.style.transition = 'none';
+  container.style.height = 'auto';
+  const newHeight = container.offsetHeight;
+
+  // 3. Lock to oldHeight first, then animate smoothly to newHeight
+  container.style.height = oldHeight + 'px';
+  container.style.overflow = 'hidden';
+
+  // Force reflow
+  container.offsetHeight;
+
+  // Animate the container height like a window resize
+  container.style.transition = 'height 0.28s cubic-bezier(0.25, 1, 0.5, 1)';
+  container.style.height = newHeight + 'px';
+
+  // Clean up existing transition listeners/timeouts on container
+  if (container._resizeTimeout) clearTimeout(container._resizeTimeout);
+
+  // 4. Once resize finishes (or after 280ms), show content with fade/slide
+  container._resizeTimeout = setTimeout(() => {
+    targetEl.classList.add('acc-view-enter-active');
+    // Once transition completes, reset inline styles so contents can expand dynamically if needed
+    setTimeout(() => {
+      if (currentAccountView === view) {
+        container.style.height = '';
+        container.style.overflow = '';
+        container.style.transition = '';
+        targetEl.classList.remove('acc-view-enter', 'acc-view-enter-active');
+      }
+    }, 240);
+  }, 280);
 }
 
 // Accounts Manager auto-refresh: while the modal is open, silently
@@ -1010,7 +1096,8 @@ function startAccountManagerAutoRefresh() {
       // whichever account it was, which the next refreshAccountUI() call
       // will surface normally.
     }
-    refreshAccountUI().catch(() => {});
+    // Refresh background data without resetting user's current view
+    refreshAccountUI(true).catch(() => {});
   }, ACCOUNT_MANAGER_AUTO_REFRESH_MS);
 }
 
@@ -1026,9 +1113,12 @@ function stopAccountManagerAutoRefresh() {
 // never touch the network to authenticate).
 const ACCOUNT_TYPE_ICON_MICROSOFT = `<svg viewBox="0 0 24 24" width="12" height="12" style="flex-shrink:0;"><rect x="2" y="2" width="9" height="9" fill="#f35325"/><rect x="13" y="2" width="9" height="9" fill="#81bc06"/><rect x="2" y="13" width="9" height="9" fill="#05a6f0"/><rect x="13" y="13" width="9" height="9" fill="#ffba08"/></svg>`;
 const ACCOUNT_TYPE_ICON_OFFLINE = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>`;
-const ACCOUNT_TYPE_ICON_ELYBY = `<svg viewBox="0 0 24 24" width="12" height="12" style="flex-shrink:0;"><rect x="1" y="1" width="22" height="22" rx="6" fill="#2E8ED7"/><path d="M7 6.5h10v2.6H10v2.9h6.2v2.5H10v3h7.2V20H7V6.5z" fill="#fff"/></svg>`;
+const ACCOUNT_TYPE_ICON_ELYBY = `<svg viewBox="0 0 24 24" width="12" height="12" style="flex-shrink:0;"><rect x="1" y="1" width="22" height="22" rx="4" fill="#06b6d4"/><path d="M7 6.5h10v2.6H10v2.9h6.2v2.5H10v3h7.2V20H7V6.5z" fill="#fff"/></svg>`;
 
-async function refreshAccountUI() {
+let lastAccountSwitchTimestamp = 0;
+let accountSwitchCooldownTimer = null;
+
+async function refreshAccountUI(isBackgroundRefresh = false) {
   try {
     renderInstanceList();
     updateSkinMiniPreview().catch(() => {});
@@ -1067,9 +1157,6 @@ async function refreshAccountUI() {
           headerFallback.style.display = '';
         };
       } else {
-        // No active account, or the account's Profile Picture / Nametag is set to
-        // "Use Unknown" — show the black "?" placeholder instead of
-        // fetching/displaying the real head render.
         headerImg.classList.add('hidden');
         headerImg.removeAttribute('src');
         headerFallback.style.display = '';
@@ -1080,27 +1167,26 @@ async function refreshAccountUI() {
     if (!list) return;
     list.innerHTML = '';
 
+    const countEl = document.getElementById('account-list-count');
+    if (countEl) countEl.textContent = accounts.length;
+
     if (accounts.length === 0) {
-      showAccountView('empty');
+      if (!isBackgroundRefresh || currentAccountView === 'list') {
+        showAccountView('empty');
+      }
       return;
     }
 
-    showAccountView('list');
+    // Only force 'list' view if this is NOT a background poll, OR if the user is already on list/empty
+    if (!isBackgroundRefresh) {
+      showAccountView('list');
+    } else if (currentAccountView === 'empty' && accounts.length > 0) {
+      showAccountView('list');
+    }
 
     accounts.forEach(acc => {
       const item = document.createElement('div');
-      item.className = 'glass-card' + (acc.is_active ? ' active' : '');
-      item.style.cssText = `
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px 14px;
-        border-radius: 8px;
-        background: ${acc.is_active ? 'var(--accent-dim)' : 'rgba(255,255,255,0.04)'};
-        border: 1px solid ${acc.is_active ? 'var(--accent)' : 'rgba(255,255,255,0.08)'};
-        position: relative;
-        overflow: hidden;
-      `;
+      item.className = 'acc-list-item' + (acc.is_active ? ' active' : '');
 
       const useUnknownTag = shouldUseUnknownNametag(acc);
       const useUnknownPic = shouldUseUnknownProfilePic(acc);
@@ -1108,67 +1194,129 @@ async function refreshAccountUI() {
       const shownName = escapeHtml(useUnknownTag ? 'Unknown' : maskUsernameForDisplay(acc.username));
       const isMsa = acc.account_type === 'microsoft';
       const isElyby = acc.account_type === 'elyby';
-      // Player-head avatar: keyed by the real Minecraft UUID when we have one
-      // (Microsoft accounts), otherwise by username (offline accounts get
-      // whatever skin — Steve/Alex — that name resolves to). Skipped
-      // entirely when this account's Profile Picture / Nametag is set to "Use
-      // Unknown" — shows the black "?" placeholder instead.
       const headKey = encodeURIComponent(acc.mc_uuid || acc.username || 'MHF_Steve');
       const headUrl = `https://mc-heads.net/avatar/${headKey}/64`;
       const needsReauth = !!acc.needs_reauth;
-      // Expired sessions get a subtle animated amber accent (CSS-only,
-      // opacity/transform based so it stays cheap to paint) plus a
-      // matching "Sign-in expired" tag next to the account name — no more
-      // masked cracked-glass texture layer.
+
       item.classList.toggle('account-item-reauth', needsReauth);
-      item.classList.toggle('account-item-clickable', !acc.is_active);
       item.dataset.id = acc.id;
       item.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px; position:relative; z-index:1;">
+        <div style="display:flex; align-items:center; gap:12px; min-width:0; position:relative; z-index:1;">
           <div class="account-avatar">
             <span class="account-avatar-fallback${useUnknownPic ? ' account-avatar-fallback-mc' : ''}">${useUnknownPic ? '?' : initial}</span>
             ${useUnknownPic ? '' : `<img src="${headUrl}" alt="" loading="lazy" onerror="this.remove()" onload="this.previousElementSibling.style.display='none'" />`}
           </div>
-          <div>
-            <div style="display:flex; align-items:center; gap:8px; font-size:14px;">
-              <span style="font-weight:600; color:var(--text);">${shownName}</span>
-              ${needsReauth ? '<span class="account-reauth-tag">⚠ Sign-in expired</span>' : ''}
+          <div style="min-width:0;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-weight:600; font-size:13.5px; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${shownName}</span>
+              ${needsReauth ? '<span class="account-reauth-tag">⚠ Needs Re-auth</span>' : ''}
+              ${(!needsReauth && acc.is_active) ? '<span style="font-size:10px; font-weight:700; color:var(--text); background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.14); padding:1px 6px; border-radius:3px; text-transform:uppercase; letter-spacing:0.4px;">Active</span>' : ''}
             </div>
-            <div style="display:flex; align-items:center; gap:5px; font-size:11px; color:var(--text-muted); margin-top:2px;">
+            <div style="display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-muted); margin-top:2px;">
               ${isMsa ? ACCOUNT_TYPE_ICON_MICROSOFT : (isElyby ? ACCOUNT_TYPE_ICON_ELYBY : ACCOUNT_TYPE_ICON_OFFLINE)}
-              <span>${isMsa ? 'Microsoft Account' : (isElyby ? 'Ely.by Account' : 'Offline/Free Account')}</span>
-              ${(!needsReauth && acc.is_active) ? '<span style="color:var(--accent); font-weight:700; margin-left:4px;">● In Use</span>' : ''}
+              <span>${isMsa ? 'Microsoft' : (isElyby ? 'Ely.by' : 'Free Offline')}</span>
             </div>
           </div>
         </div>
-        <div style="display:flex; gap:6px; position:relative; z-index:1;">
-          <button class="btn-danger-outline btn-sm btn-delete-account" data-id="${acc.id}" title="Remove Account">✕</button>
+        <div style="display:flex; align-items:center; gap:6px; position:relative; z-index:1; flex-shrink:0;">
+          ${!acc.is_active ? `<button class="btn-switch-account" data-id="${acc.id}">Use</button>` : ''}
+          <button class="btn-ghost btn-sm btn-delete-account" data-id="${acc.id}" title="Remove Profile" style="padding:4px 8px; border-radius:4px; color:var(--text-muted); font-size:13px; line-height:1;">✕</button>
         </div>
       `;
       list.appendChild(item);
     });
 
-    // Clicking anywhere on a non-active account's card selects it (the
-    // delete button stops propagation below, so it's excluded). Already-
-    // active cards aren't clickable — there's nothing to switch to.
-    list.querySelectorAll('.account-item-clickable').forEach(cardEl => {
-      cardEl.addEventListener('click', async () => {
+    // Sliding active indicator behind the active account card (same as tab-indicator / content-type-indicator)
+    const activeIndicator = document.createElement('div');
+    activeIndicator.className = 'acc-list-indicator';
+    list.prepend(activeIndicator);
+
+    function updateAccountIndicator(activeCard) {
+      if (!activeCard || !list) return;
+      const listRect = list.getBoundingClientRect();
+      const cardRect = activeCard.getBoundingClientRect();
+      const top = cardRect.top - listRect.top + list.scrollTop;
+      const left = cardRect.left - listRect.left;
+      const width = cardRect.width;
+      const height = cardRect.height;
+      if (width > 0 && height > 0) {
+        activeIndicator.style.transform = `translate(${left}px, ${top}px)`;
+        activeIndicator.style.width = `${width}px`;
+        activeIndicator.style.height = `${height}px`;
+        if (!activeIndicator.classList.contains('ready')) {
+          activeIndicator.classList.add('ready');
+        }
+      }
+    }
+
+    requestAnimationFrame(() => {
+      const activeCard = list.querySelector('.acc-list-item.active');
+      if (activeCard) {
+        updateAccountIndicator(activeCard);
+      }
+    });
+
+    // Account selection ONLY on clicking the "Use" button with sliding indicator animation and 1s cooldown
+    const now = Date.now();
+    const remainingCooldown = Math.max(0, 1000 - (now - lastAccountSwitchTimestamp));
+
+    list.querySelectorAll('.btn-switch-account').forEach(btn => {
+      // If still within cooldown, apply cooldown style and disable
+      if (remainingCooldown > 0) {
+        btn.disabled = true;
+        btn.classList.add('cooldown');
+      }
+
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (Date.now() - lastAccountSwitchTimestamp < 1000) {
+          return;
+        }
+
+        btn.classList.add('switching');
+        btn.textContent = '...';
+
+        const targetCard = btn.closest('.acc-list-item');
+        const prevActiveCard = list.querySelector('.acc-list-item.active');
+
+        // Immediately glide the indicator to the clicked card smoothly
+        if (targetCard) {
+          updateAccountIndicator(targetCard);
+        }
+
         try {
-          await api.setActiveAccount(cardEl.dataset.id);
-          await refreshAccountUI();
+          await api.setActiveAccount(btn.dataset.id);
+          lastAccountSwitchTimestamp = Date.now();
+          if (prevActiveCard) prevActiveCard.classList.remove('active');
+          if (targetCard) targetCard.classList.add('active');
+          await refreshAccountUI(true);
           showToast('Switched account successfully', 'success');
         } catch (err) {
           showToast('Failed to switch account: ' + err, 'error');
+          btn.classList.remove('switching');
+          btn.textContent = 'Use';
+          if (prevActiveCard) updateAccountIndicator(prevActiveCard);
         }
       });
     });
+
+    // Schedule re-enabling buttons once cooldown expires
+    if (remainingCooldown > 0) {
+      if (accountSwitchCooldownTimer) clearTimeout(accountSwitchCooldownTimer);
+      accountSwitchCooldownTimer = setTimeout(() => {
+        list.querySelectorAll('.btn-switch-account').forEach(btn => {
+          btn.disabled = false;
+          btn.classList.remove('cooldown');
+        });
+      }, remainingCooldown);
+    }
 
     list.querySelectorAll('.btn-delete-account').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         try {
           await api.removeAccount(btn.dataset.id);
-          await refreshAccountUI();
+          await refreshAccountUI(true);
           showToast('Account removed', 'info');
         } catch (err) {
           showToast('Failed to remove account: ' + err, 'error');
@@ -1213,11 +1361,33 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
         await onSuccess(account);
         return;
       }
+      // Still pending — schedule next poll.
       devicePollTimer = setTimeout(() => pollDeviceCode(intervalSeconds), intervalSeconds * 1000);
     } catch (e) {
-      stopDevicePolling();
-      setDeviceStatus(String(e), true);
-      showToast('Microsoft sign-in failed: ' + e, 'error');
+      const msg = String(e).toLowerCase();
+      // Fatal errors from Microsoft that mean the code/session is dead and
+      // cannot be recovered by retrying — stop polling and tell the user.
+      const isFatal =
+        msg.includes('expired') ||
+        msg.includes('authorization_declined') ||
+        msg.includes('access_denied') ||
+        msg.includes('bad_verification_code') ||
+        msg.includes('no device sign-in in progress');
+
+      if (isFatal) {
+        stopDevicePolling();
+        // Turn the raw OAuth error string into something a human can act on.
+        let friendly = 'Something went wrong — please try signing in again.';
+        if (msg.includes('expired')) friendly = 'The code expired before you finished signing in. Click "Sign In with Microsoft" to get a new one.';
+        else if (msg.includes('authorization_declined') || msg.includes('access_denied')) friendly = 'Sign-in was cancelled or denied in the browser. You can try again.';
+        else if (msg.includes('bad_verification_code')) friendly = 'Microsoft rejected the code. Please try again.';
+        setDeviceStatus(friendly, true);
+        showToast('Microsoft sign-in failed — ' + friendly, 'error');
+      } else {
+        // Transient: network blip, slow_down, timeout, etc. — keep polling.
+        console.warn('[MSA device poll] transient error, will retry:', e);
+        devicePollTimer = setTimeout(() => pollDeviceCode(intervalSeconds), intervalSeconds * 1000);
+      }
     }
   }
 
@@ -1259,7 +1429,7 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
     if (methodChoiceEl) methodChoiceEl.classList.add('hidden');
     devicePanelEl.classList.remove('hidden');
     if (deviceCodeEl) deviceCodeEl.textContent = '— — — — —';
-    setDeviceStatus('Requesting a code…', false);
+    setDeviceStatus('Requesting a sign-in code from Microsoft…', false);
     try {
       const startRes = await api.microsoftDeviceCodeStart();
       deviceVerificationUri = startRes.verification_uri || 'https://microsoft.com/link';
@@ -1267,12 +1437,14 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
         deviceCodeEl.textContent = startRes.user_code;
         deviceCodeEl.title = 'Click to copy code';
       }
-      setDeviceStatus('Waiting for you to sign in…', false);
+      setDeviceStatus('Waiting for you to sign in… (this page will update automatically)', false);
       const interval = Math.max(startRes.interval || 5, 3);
       devicePollTimer = setTimeout(() => pollDeviceCode(interval), interval * 1000);
     } catch (e) {
-      setDeviceStatus(String(e), true);
-      showToast('Could not start device sign-in: ' + e, 'error');
+      const friendly = 'Could not reach Microsoft — check your internet connection and try again.';
+      setDeviceStatus(friendly, true);
+      showToast(friendly, 'error');
+      console.error('[MSA device start] error:', e);
     }
   }
 
@@ -1285,11 +1457,13 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
 
   function openVerificationLink() {
     const url = deviceVerificationUri || 'https://microsoft.com/link';
-    if (window.__TAURI__ && window.__TAURI__.shell && window.__TAURI__.shell.open) {
-      window.__TAURI__.shell.open(url);
-    } else {
-      window.open(url, '_blank');
-    }
+    // Use the same Rust command as every other "open in browser" call in this
+    // codebase — window.__TAURI__.shell.open is a Tauri v1 API and is not
+    // available in Tauri v2, which is why the button sometimes did nothing.
+    invoke('open_url_in_browser', { url }).catch((e) => {
+      console.error('Failed to open Microsoft sign-in page:', e);
+      showToast('Could not open browser — please visit ' + url + ' manually.', 'warning');
+    });
   }
 
   return { start, cancel, openVerificationLink, stopDevicePolling };
@@ -3389,10 +3563,28 @@ function drawCape2DPreview(canvas, img) {
 }
 
 /// Dressing Room — Wardrobe for browsing, adding, and equipping skins and capes.
+function isDressingRoomOpen() {
+  const panel = document.getElementById('dressing-room-overlay');
+  return panel && panel.classList.contains('dr-open');
+}
+
 async function openDressingRoomModal() {
-  const overlay = document.getElementById('dressing-room-overlay');
-  if (!overlay) return;
-  overlay.classList.remove('hidden');
+  const panel = document.getElementById('dressing-room-overlay');
+  const backdrop = document.getElementById('dressing-room-backdrop');
+  const modal = panel && panel.querySelector('.dressing-room-modal');
+  if (!panel || !modal) return;
+  if (isDressingRoomOpen()) return;
+
+  // Remove display:none from both containers so they're in the layout
+  panel.classList.remove('hidden');
+  if (backdrop) backdrop.classList.remove('hidden');
+
+  // Force a layout reflow so the browser commits transform:translate3d(100%,0,0)
+  // BEFORE the open class fires the transition. Mirrors openPanel() exactly.
+  void modal.offsetWidth;
+
+  panel.classList.add('dr-open');
+  if (backdrop) backdrop.classList.add('dr-backdrop-open');
 
   // Pause main menu standee while Dressing Room is open
   if (skinMiniPreviewInstance) {
@@ -3403,13 +3595,41 @@ async function openDressingRoomModal() {
 }
 
 function closeDressingRoomModal() {
-  const overlay = document.getElementById('dressing-room-overlay');
-  if (!overlay) return;
-  overlay.classList.add('hidden');
+  const panel = document.getElementById('dressing-room-overlay');
+  const backdrop = document.getElementById('dressing-room-backdrop');
+  const modal = panel && panel.querySelector('.dressing-room-modal');
+  if (!panel) return;
+  if (!isDressingRoomOpen() && panel.classList.contains('hidden')) return;
+
+  // Remove open class — CSS transition slides modal back to translate3d(100%,0,0)
+  panel.classList.remove('dr-open');
+  if (backdrop) backdrop.classList.remove('dr-backdrop-open');
+
+  const done = () => {
+    panel.classList.add('hidden');
+    if (backdrop) backdrop.classList.add('hidden');
+  };
+
+  let settled = false;
+  if (modal) {
+    const onEnd = (e) => {
+      if (e && e.target !== modal) return;
+      if (settled) return;
+      settled = true;
+      modal.removeEventListener('transitionend', onEnd);
+      done();
+    };
+    modal.addEventListener('transitionend', onEnd);
+  }
+  // Fallback in case transitionend never fires
+  setTimeout(() => { if (!settled) { settled = true; done(); } }, 300);
 
   // Resume main menu standee
   showSkinMiniPreview();
 }
+
+
+
 
 // Debounced & serialized sync of a locally-imported skin to Mojang's
 // servers for Microsoft accounts. Debounced so rapid re-imports/equips
@@ -5199,6 +5419,8 @@ function selectInstance(id) {
     if (playtimeEl) playtimeEl.textContent = '—';
     if (lastPlayedEl) lastPlayedEl.textContent = '—';
     playBtn.disabled = true;
+    const shortcutBtn = document.getElementById('btn-create-shortcut');
+    if (shortcutBtn) shortcutBtn.disabled = true;
     updatePlayGearEnabled();
     if (iconEl) iconEl.innerHTML = '';
     document.getElementById('play-status-text')?.classList.add('hidden');
@@ -5217,6 +5439,8 @@ function selectInstance(id) {
   updateSelectedInstancePlaytimeDisplay();
   renderPlaytimeChart();
   playBtn.disabled = !!inst.missing_jar;
+  const shortcutBtn = document.getElementById('btn-create-shortcut');
+  if (shortcutBtn) shortcutBtn.disabled = false;
   // If a launch was in flight for a *different* instance, the launching flag
   // no longer applies to this newly-selected instance — clear it so the user
   // can immediately hit Play again.
@@ -5695,6 +5919,11 @@ function initInstanceActions() {
     }
   });
 
+  // Create Shortcut
+  document.getElementById('btn-create-shortcut')?.addEventListener('click', () => {
+    openCreateShortcutModal();
+  });
+
   // New Instance overlay (Hyprland Floating Islands)
   const overlay = document.getElementById('new-instance-overlay');
   const instLoaderInput = document.getElementById('inst-loader');
@@ -6067,6 +6296,300 @@ function initInstanceActions() {
         showToast('Could not open folder picker: ' + e, 'error');
       }
     });
+  }
+
+  initCreateShortcutModal();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CREATE INSTANCE SHORTCUT MODAL
+// ═══════════════════════════════════════════════════════════════════
+let shortcutAccountsCache = [];
+
+async function openCreateShortcutModal() {
+  if (!selectedInstanceId) return;
+  const inst = getInstances().find(i => i.version_id === selectedInstanceId);
+  if (!inst) return;
+
+  const overlay = document.getElementById('create-shortcut-overlay');
+  if (!overlay) return;
+
+  const titleEl = document.getElementById('shortcut-inst-title');
+  const subEl = document.getElementById('shortcut-inst-sub');
+  const iconImg = document.getElementById('shortcut-icon-img');
+  const nameInput = document.getElementById('shortcut-name-input');
+  const accountSelect = document.getElementById('shortcut-account-select');
+  const destDesktop = document.getElementById('shortcut-dest-desktop');
+  const destAppMenu = document.getElementById('shortcut-dest-appmenu');
+  const appMenuLabel = document.getElementById('shortcut-appmenu-label');
+  const appMenuHint = document.getElementById('shortcut-appmenu-hint');
+  const offlineToggle = document.getElementById('shortcut-offline-toggle');
+
+  if (titleEl) titleEl.textContent = inst.name || inst.version_id;
+  const loaderStr = (inst.loader && inst.loader !== 'vanilla') ? loaderLabel(inst.loader) : 'Vanilla';
+  if (subEl) subEl.textContent = `${inst.minecraft_version || inst.version_id} • ${loaderStr}`;
+
+  if (iconImg) {
+    iconImg.src = loaderIcon(inst.loader);
+    iconImg.alt = loaderLabel(inst.loader);
+  }
+
+  if (nameInput) {
+    nameInput.value = inst.name || inst.version_id;
+  }
+
+  const isWin = /Win/i.test(navigator.platform) || /Windows/i.test(navigator.userAgent);
+  if (appMenuLabel) {
+    appMenuLabel.textContent = isWin ? 'Start Menu' : 'Search / App Menu';
+  }
+  if (appMenuHint) {
+    appMenuHint.textContent = isWin
+      ? 'Add to Windows Start Menu so it appears in search'
+      : 'Add to Application Menu so it appears in system search';
+  }
+
+  if (destDesktop) destDesktop.checked = true;
+  if (destAppMenu) destAppMenu.checked = true;
+  if (offlineToggle) offlineToggle.checked = false;
+
+  if (accountSelect) {
+    accountSelect.innerHTML = '<option value="">Loading accounts…</option>';
+    try {
+      shortcutAccountsCache = await api.getAccounts().catch(() => []);
+    } catch (_) {
+      shortcutAccountsCache = [];
+    }
+    const activeAcc = shortcutAccountsCache.find(a => a.is_active);
+    const activeText = activeAcc ? ` (Current: ${activeAcc.username})` : '';
+
+    let html = `<option value="">Active / Last Used Account${activeText}</option>`;
+    shortcutAccountsCache.forEach(acc => {
+      const typeLabel = acc.account_type ? ` [${acc.account_type}]` : '';
+      const activeMarker = acc.is_active ? ' ★' : '';
+      html += `<option value="${acc.id}">${acc.username}${typeLabel}${activeMarker}</option>`;
+    });
+    accountSelect.innerHTML = html;
+  }
+
+  overlay.classList.remove('hidden');
+}
+
+function closeCreateShortcutModal() {
+  const overlay = document.getElementById('create-shortcut-overlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+function initCreateShortcutModal() {
+  const overlay = document.getElementById('create-shortcut-overlay');
+  const closeBtn = document.getElementById('btn-close-shortcut-modal');
+  const cancelBtn = document.getElementById('btn-shortcut-cancel');
+  const confirmBtn = document.getElementById('btn-shortcut-confirm');
+
+  closeBtn?.addEventListener('click', closeCreateShortcutModal);
+  cancelBtn?.addEventListener('click', closeCreateShortcutModal);
+
+  overlay?.addEventListener('click', (e) => {
+    if (e.target === overlay) closeCreateShortcutModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlay && !overlay.classList.contains('hidden')) {
+      closeCreateShortcutModal();
+    }
+  });
+
+  confirmBtn?.addEventListener('click', async () => {
+    if (!selectedInstanceId) return;
+    const nameInput = document.getElementById('shortcut-name-input');
+    const accountSelect = document.getElementById('shortcut-account-select');
+    const destDesktop = document.getElementById('shortcut-dest-desktop');
+    const destAppMenu = document.getElementById('shortcut-dest-appmenu');
+    const offlineToggle = document.getElementById('shortcut-offline-toggle');
+
+    const shortcutName = (nameInput?.value || '').trim();
+    if (!shortcutName) {
+      showToast('Please provide a shortcut name', 'warning');
+      nameInput?.focus();
+      return;
+    }
+
+    const desktop = !!(destDesktop && destDesktop.checked);
+    const appMenu = !!(destAppMenu && destAppMenu.checked);
+    if (!desktop && !appMenu) {
+      showToast('Please select at least one location (Desktop or Search / App Menu)', 'warning');
+      return;
+    }
+
+    const accountId = accountSelect?.value || null;
+    const offline = !!(offlineToggle && offlineToggle.checked);
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Creating…';
+
+    try {
+      const msg = await api.createInstanceShortcut(
+        selectedInstanceId,
+        shortcutName,
+        accountId,
+        offline,
+        desktop,
+        appMenu
+      );
+      showToast(msg || 'Shortcut created successfully', 'success');
+      closeCreateShortcutModal();
+    } catch (err) {
+      console.error('Failed to create shortcut:', err);
+      showToast('Failed to create shortcut: ' + err, 'error');
+    } finally {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Create Shortcut';
+    }
+  });
+}
+
+async function handleCliLaunch(args) {
+  if (!args || !args.version_id) return;
+  console.log('[CLI Launch] Shortcut requested launch of instance:', args);
+
+  // 1. Immediately ensure the main window stays hidden in the system tray
+  try {
+    await api.hideMainWindow();
+  } catch (_) {}
+  hideStartupSplashScreen(true);
+
+  // 2. Ensure instance list is loaded
+  let inst = getInstances().find(i => i.version_id === args.version_id);
+  if (!inst) {
+    try {
+      await refreshInstances();
+    } catch (_) {}
+    inst = getInstances().find(i => i.version_id === args.version_id);
+  }
+
+  // 3. Fallback: check on-disk scan
+  if (!inst) {
+    try {
+      await api.scanMinecraftVersions();
+      await refreshInstances();
+      inst = getInstances().find(i => i.version_id === args.version_id);
+    } catch (_) {}
+  }
+
+  const instName = (inst && (inst.name || inst.version_id)) || args.version_id;
+  const instLoader = (inst && inst.loader) || 'vanilla';
+  const instMc = (inst && inst.minecraft_version) || '';
+
+  // 4. Open the small simple status window (Mini Launcher)
+  // NOTE: We MUST set up the mini-window-ready promise BEFORE creating the
+  // WebviewWindow so we never miss the event if the window loads very quickly.
+  let miniReadyResolve = null;
+  const miniReadyPromise = new Promise((resolve) => { miniReadyResolve = resolve; });
+  let miniReadyUnlisten = null;
+  if (window.__TAURI__?.event?.listen) {
+    miniReadyUnlisten = await window.__TAURI__.event.listen('mini-window-ready', (evt) => {
+      if (!evt?.payload || evt.payload === args.version_id) {
+        if (miniReadyUnlisten) { miniReadyUnlisten(); miniReadyUnlisten = null; }
+        miniReadyResolve();
+      }
+    }).catch(() => null);
+  }
+  // Hard fallback: never block launch for more than 3 seconds
+  setTimeout(() => miniReadyResolve(), 3000);
+
+  let miniWin = null;
+  let miniWinLabel = null;
+  try {
+    const { WebviewWindow } = window.__TAURI__.webviewWindow;
+    miniWinLabel = 'launching-mini-' + String(args.version_id).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    // Close existing if open
+    const existing = await WebviewWindow.getByLabel(miniWinLabel).catch(() => null);
+    if (existing) {
+      await existing.close().catch(() => {});
+    }
+
+    const url = `launching.html?instance=${encodeURIComponent(args.version_id)}&name=${encodeURIComponent(instName)}&loader=${encodeURIComponent(instLoader)}&mc=${encodeURIComponent(instMc)}`;
+    miniWin = new WebviewWindow(miniWinLabel, {
+      url,
+      title: 'Launching ' + instName,
+      width: 360,
+      height: 280,
+      resizable: false,
+      decorations: false,
+      transparent: true,
+      center: true,
+      focus: true,
+      alwaysOnTop: true,
+    });
+  } catch (winErr) {
+    console.error('[CLI Launch] Failed to open mini launcher window:', winErr);
+    miniReadyResolve(); // unblock if window failed to open
+  }
+
+  const closeMiniWin = () => {
+    try { if (miniWin) miniWin.close().catch(() => {}); } catch (_) {}
+    miniWin = null;
+  };
+
+  // Listen for game process start to close the mini window immediately
+  let miniUnlistenStarted = null;
+  let miniUnlistenChanged = null;
+  if (window.__TAURI__?.event?.listen) {
+    miniUnlistenStarted = await window.__TAURI__.event.listen('instance-process-started', (evt) => {
+      if (evt && (evt.payload === args.version_id || !evt.payload)) {
+        closeMiniWin();
+        if (miniUnlistenStarted) { miniUnlistenStarted(); miniUnlistenStarted = null; }
+        if (miniUnlistenChanged) { miniUnlistenChanged(); miniUnlistenChanged = null; }
+      }
+    }).catch(() => null);
+
+    miniUnlistenChanged = await window.__TAURI__.event.listen('running-instances-changed', async () => {
+      try {
+        const running = await window.__TAURI__.core.invoke('get_running_instances').catch(() => []);
+        const inst2 = Array.isArray(running) ? running.find(r => r.version_id === args.version_id) : null;
+        if (inst2 && inst2.running && inst2.pid) {
+          closeMiniWin();
+          if (miniUnlistenStarted) { miniUnlistenStarted(); miniUnlistenStarted = null; }
+          if (miniUnlistenChanged) { miniUnlistenChanged(); miniUnlistenChanged = null; }
+        }
+      } catch (_) {}
+    }).catch(() => null);
+  }
+
+  // 5. Select the instance in the UI model
+  selectInstance(args.version_id);
+
+  // 6. Select account if specified
+  if (args.account_id) {
+    try {
+      await api.setActiveAccount(args.account_id);
+      await refreshAccountUI().catch(() => {});
+    } catch (e) {
+      console.warn('[CLI Launch] Failed to switch account:', e);
+    }
+  }
+
+  // 7. Wait for launching.js to signal it has registered all its listeners.
+  //    The promise was created BEFORE the window so no event can be missed.
+  if (miniWin) {
+    await miniReadyPromise;
+  }
+
+  // 8. Launch game
+  try {
+    await api.launchGame(args.version_id, args.offline ? true : undefined);
+    // Fallback: if the process-started event was not received, close the mini window shortly after
+    setTimeout(() => { closeMiniWin(); }, 3200);
+  } catch (launchErr) {
+    console.error('[CLI Launch] Game launch error:', launchErr);
+    if (window.__TAURI__?.event?.emit) {
+      window.__TAURI__.event.emit('launch-failed', String(launchErr)).catch(() => {});
+    }
+    // Give the mini window a moment to show the error before cleaning up listeners
+    setTimeout(() => {
+      if (miniUnlistenStarted) { miniUnlistenStarted(); miniUnlistenStarted = null; }
+      if (miniUnlistenChanged) { miniUnlistenChanged(); miniUnlistenChanged = null; }
+    }, 5000);
   }
 }
 
@@ -12723,8 +13246,8 @@ function populateSettingsUI() {
   document.getElementById('setting-bg-anim-style').value = settings.background_animation_style || 'Starfield';
   document.getElementById('setting-bg-anim-speed').value = settings.background_animation_speed || 1.0;
   document.getElementById('setting-bg-anim-fps').value = settings.background_animation_fps || 60;
-  document.getElementById('setting-bg-anim-enable').checked = settings.enable_background_animation !== false;
   document.getElementById('setting-transparency').checked = settings.enable_transparency !== false;
+  document.getElementById('setting-ui-animations-enable').checked = settings.enable_ui_animations !== false;
 
   // Background Image
   document.getElementById('setting-use-bg-image').checked = !!settings.use_background_image;
@@ -12902,6 +13425,10 @@ function applyThemeFromSettings() {
   const isTransparent = settings && settings.enable_transparency !== false;
   root.classList.toggle('transparent-ui', isTransparent);
 
+  // UI animations toggle (decorative transitions / slide-ins)
+  const uiAnimEnabled = settings && settings.enable_ui_animations !== false;
+  root.classList.toggle('no-ui-animations', !uiAnimEnabled);
+
   if (isTransparent) {
     root.style.setProperty('--panel', 'linear-gradient(180deg, rgba(34, 34, 34, 0.65) 0%, rgba(20, 20, 20, 0.45) 100%)');
     root.style.setProperty('--panel-solid', 'rgba(27, 27, 27, 0.85)');
@@ -13070,8 +13597,8 @@ function collectSettingsFromUI() {
   settings.background_animation_speed = parseFloat(document.getElementById('setting-bg-anim-speed').value) || 1.0;
   settings.background_animation_intensity = parseFloat(document.getElementById('setting-bg-anim-intensity').value) || 1.0;
   settings.background_animation_fps = parseInt(document.getElementById('setting-bg-anim-fps').value) || 60;
-  settings.enable_background_animation = document.getElementById('setting-bg-anim-enable').checked;
   settings.enable_transparency = document.getElementById('setting-transparency').checked;
+  settings.enable_ui_animations = document.getElementById('setting-ui-animations-enable').checked;
 
   // Appearance: Background Image
   settings.use_background_image = document.getElementById('setting-use-bg-image').checked;
@@ -13484,7 +14011,7 @@ function initSettings() {
   const immediateIds = [
     'setting-bg-style', 'setting-bg-anim-style', 'setting-notif-style',
     'setting-bg-anim-speed', 'setting-bg-anim-intensity', 'setting-bg-anim-fps',
-    'setting-bg-anim-enable', 'setting-transparency',
+    'setting-transparency', 'setting-ui-animations-enable',
     'setting-use-bg-image', 'setting-bg-image-fit',
     'setting-bg-image-dim', 'setting-bg-image-brightness', 'setting-bg-image-blur',
     'setting-bg-image-tint', 'setting-bg-image-vignette',
@@ -13921,7 +14448,6 @@ function initSettings() {
           background_animation_speed: 1.0,
           background_animation_intensity: 1.0,
           background_animation_fps: 60,
-          enable_background_animation: true,
           enable_transparency: true,
           use_background_image: false,
           background_image_path: '',
@@ -14114,8 +14640,8 @@ const SETTINGS_SEARCH_CATALOG = [
   { label: 'Animation Speed', keywords: 'animation speed velocity fast slow rate', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-speed' },
   { label: 'Animation FPS', keywords: 'animation fps framerate 60 120 30 performance hz', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-fps' },
   { label: 'Animation Intensity', keywords: 'animation intensity brightness glow opacity', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-intensity' },
-  { label: 'Background Animations', keywords: 'enable background animations toggle particles off on', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-enable' },
   { label: 'Transparent UI Cards', keywords: 'transparent ui cards high performance opacity glass acrylic', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-transparency' },
+  { label: 'UI Animations', keywords: 'ui animations transitions slide enable disable decorative effects smooth', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-ui-animations-enable' },
   { label: 'Use Background Image', keywords: 'custom wallpaper background image photo wallpaper picture', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-use-bg-image' },
   { label: 'Background Image File', keywords: 'browse background image file wallpaper photo', section: 'appearance', sectionLabel: 'Appearance', targetId: 'btn-browse-bg-image' },
   { label: 'Background Image Fit', keywords: 'image fit cover contain stretch center tile wallpaper', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-fit' },
@@ -15289,7 +15815,7 @@ const BG = {
   loop(timestamp) {
     this._scheduled = false;
     const s = settings || {};
-    const enabled = s.enable_background_animation !== false;
+    const enabled = true;
     const ctx = this.ctx;
     const canvas = this.canvas;
 
@@ -16582,6 +17108,16 @@ function hideStartupSplashScreen(immediate = false) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // If launched via shortcut, keep main window hidden in system tray immediately
+  const startupCliArgsPromise = api.getCliLaunchArgs().catch(() => null);
+  startupCliArgsPromise.then(args => {
+    if (args) {
+      api.hideMainWindow().catch(() => {});
+      hideStartupSplashScreen(true);
+      handleCliLaunch(args);
+    }
+  });
+
   const skipBtn = document.getElementById('splash-skip-btn');
   if (skipBtn) {
     skipBtn.addEventListener('click', (e) => {
@@ -16694,6 +17230,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Background update checks after splash is dismissed
   checkSelectedInstanceForUpdates().catch(e => console.error('Startup update check failed', e));
+
+  // Single-instance CLI launch event listener
+  if (typeof listen === 'function') {
+    listen('cli-launch-instance', (evt) => {
+      if (evt && evt.payload) handleCliLaunch(evt.payload);
+    });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════

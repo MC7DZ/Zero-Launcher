@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capabilities for ZeroLauncher",
-  "windows": ["main", "console-*"],
+  "windows": ["main", "console-*", "launching-*"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",

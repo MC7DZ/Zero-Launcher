@@ -465,11 +465,7 @@ input, textarea, select, [contenteditable="true"] {
   background: #000;
 }
 
-/* Match the "Sign in with Microsoft" / "Add Microsoft Account" buttons to
-   the same, less-rounded corner radius as the offline account button. */
-#account-modal-overlay .btn-accent {
-  border-radius: var(--radius);
-}
+
 
 /* Player card — a light frame around the account row so it reads as one
    unit with the standee above it instead of two loose buttons floating
@@ -2119,6 +2115,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   align-items: center;
   gap: 10px;
 }
+#btn-create-shortcut {
+  margin-left: auto;
+}
 
 /* ═══ Running Instances (single-line strip in its own hero panel) ═══
    One pill per running instance, always on one row — whatever doesn't fit
@@ -2386,8 +2385,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 .overlay:not(.hidden) .overlay-card,
 .overlay:not(.hidden) .discover-project-modal,
-.overlay:not(.hidden) .skin-viewer-modal,
-.overlay:not(.hidden) .dressing-room-modal {
+.overlay:not(.hidden) .skin-viewer-modal {
   animation: overlay-card-enter 0.22s var(--ease-out-spring) both;
 }
 
@@ -2750,25 +2748,24 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .overlay-close:hover { background: rgba(var(--overlay-rgb),0.1); color: var(--text); }
 .overlay-actions { display: flex; gap: 10px; margin-top: 20px; }
 
-/* ── Accounts Manager overlay: blurred Microsoft-logo backdrop ─────────── */
+/* ── Accounts Manager overlay: sleek, human-crafted modern dark styling ── */
 .account-overlay-card {
   position: relative;
   overflow: hidden;
-  background: #1b1b1b;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 .account-overlay-card::before {
   content: "";
   position: absolute;
-  inset: 0;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 23 23'><rect x='1' y='1' width='10' height='10' fill='%23f25022'/><rect x='12' y='1' width='10' height='10' fill='%237fba00'/><rect x='1' y='12' width='10' height='10' fill='%2300a4ef'/><rect x='12' y='12' width='10' height='10' fill='%23ffb900'/></svg>");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 320px 320px;
-  /* Was filter: blur(30px) — a decorative glow behind the Microsoft logo.
-     Blurring a full-card layer is expensive for something purely
-     cosmetic, so it's dropped in favor of a flat, low-opacity tint. */
-  opacity: 0.12;
-  z-index: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  z-index: 2;
   pointer-events: none;
 }
 .account-overlay-card > * {
@@ -2776,19 +2773,263 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   z-index: 1;
 }
 
-/* ── Player-head avatars in the accounts list ───────────────────────── */
-.account-avatar {
-  position: relative;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  overflow: hidden;
-  background: var(--accent);
+.account-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 18px 24px;
+  margin: -28px -28px 20px -28px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.account-modal-header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.account-modal-header-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(var(--overlay-rgb), 0.15);
+  color: var(--text);
+  flex-shrink: 0;
+}
+.account-modal-header h3 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: #fff;
+  margin: 0;
+}
+.account-modal-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.account-section-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.account-section-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Method choice cards (Microsoft vs Free Offline) */
+.acc-choice-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  color: var(--text);
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
+}
+.acc-choice-card:hover {
+  background: #222222;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.acc-choice-card:active {
+  transform: translateY(1px);
+}
+.acc-choice-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.acc-choice-content {
+  flex: 1;
+  min-width: 0;
+}
+.acc-choice-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.acc-choice-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.4px;
+}
+.acc-choice-badge-official {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.acc-choice-badge-free {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e2ea;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.acc-choice-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+.acc-choice-arrow {
+  color: rgba(255, 255, 255, 0.25);
+  transition: transform 0.12s ease, color 0.12s ease;
+  flex-shrink: 0;
+}
+.acc-choice-card:hover .acc-choice-arrow {
+  color: #fff;
+  transform: translateX(2px);
+}
+
+#modal-account-list {
+  position: relative;
+}
+
+/* Sliding active indicator for account item selection, matching tab-indicator */
+.acc-list-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  background: #2a2a2a;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  z-index: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  transition: transform 0.26s cubic-bezier(0.25, 1, 0.5, 1),
+              width    0.26s cubic-bezier(0.25, 1, 0.5, 1),
+              height   0.26s cubic-bezier(0.25, 1, 0.5, 1),
+              opacity  0.2s ease;
+  opacity: 0;
+}
+.acc-list-indicator.ready {
+  opacity: 1;
+}
+
+/* Account items in the list */
+.acc-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  z-index: 1;
+  transition: background 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+              border-color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+              box-shadow 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.acc-list-item.active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+
+
+/* ── Account step-change: height resize → content appear ── */
+.account-overlay-content {
+  overflow: hidden;
+  transition: height 0.32s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.acc-view-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.acc-view-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+/* ── "Use" Switch button with Content-Type style smooth transition ── */
+
+.btn-switch-account {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  outline: none;
+  position: relative;
+  transition: background 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+              border-color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+              color 0.18s ease,
+              transform var(--transition-fast),
+              box-shadow 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.btn-switch-account:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.btn-switch-account:active {
+  transform: translateY(0) scale(0.97);
+}
+.btn-switch-account:disabled,
+.btn-switch-account.cooldown {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* ── Player-head avatars in the accounts list ───────────────────────── */
+.account-avatar {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: #222222;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 .account-avatar img {
   position: absolute;
@@ -2804,59 +3045,97 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   z-index: 0;
   color: #fff;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
 }
 
-/* ── Expired-session treatment ────────────────────────────────────────
-   Applied to the whole Microsoft account card when its session needs
-   re-auth. Kept to opacity/transform-only animation on a thin accent
-   bar (compositor-only, no repaint, no filters/masks) so it stays cheap
-   to paint even with several accounts in the list. */
+/* ── Expired-session treatment ──────────────────────────────────────── */
 .account-item-reauth {
-  position: relative;
+  border-color: rgba(245, 158, 11, 0.45) !important;
+  background: rgba(245, 158, 11, 0.05) !important;
 }
 .account-item-reauth::before {
   content: "";
   position: absolute;
-  inset: 0 auto 0 0;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
   width: 3px;
-  background: linear-gradient(180deg, #fde68a, #f5c518 55%, #b8860b);
-  z-index: 1;
-  pointer-events: none;
-  transform-origin: center;
-  animation: reauthAccentPulse 1.8s ease-in-out infinite;
-}
-@keyframes reauthAccentPulse {
-  0%, 100% { opacity: 0.55; }
-  50%      { opacity: 1; }
-}
-
-/* ── Click-to-select account cards ───────────────────────────────────
-   Replaces the old "Select" button — the whole card is the hit target.
-   Only non-active-account cards get this class, so already-selected
-   accounts don't show a false affordance. transform/box-shadow-only,
-   compositor-friendly. */
-.account-item-clickable {
-  cursor: pointer;
-}
-.account-item-clickable:hover {
-  border-color: var(--accent-dim);
-  box-shadow: 0 0 0 1px var(--accent-dim), 0 8px 20px rgba(0,0,0,0.22);
-}
-.account-item-clickable:active {
-  transform: scale(0.98) translateZ(0);
+  border-radius: 0 2px 2px 0;
+  background: #f59e0b;
 }
 
 .account-reauth-tag {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* Ely.by alternative box inside offline view */
+.acc-elyby-banner {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition: background 0.18s ease, border-color 0.18s ease, transform var(--transition-fast);
+}
+.acc-elyby-banner:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+.acc-elyby-banner:active {
+  transform: translateY(0);
+}
+.acc-divider-or {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 16px 0 12px;
+  color: var(--text-muted);
+  font-size: 11px;
   font-weight: 700;
-  background: linear-gradient(90deg, #fde68a, #f5c518);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.acc-divider-or::before,
+.acc-divider-or::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.acc-divider-or:not(:empty)::before {
+  margin-right: 12px;
+}
+.acc-divider-or:not(:empty)::after {
+  margin-left: 12px;
+}
+
+/* Action button overrides inside account modal */
+#account-modal-overlay .btn-accent,
+#account-modal-overlay .btn-secondary,
+#account-modal-overlay .btn-ghost {
+  border-radius: 6px;
+}
+#account-modal-overlay .input-field {
+  border-radius: 6px;
+  background: #121212;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+#account-modal-overlay .input-field:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
 }
 
 /* ── Update Available overlay ────────────────────────────────────────── */
@@ -8741,16 +9020,41 @@ body.screenshot-lightbox-open {
   transition: border-color var(--transition);
 }
 
-/* Docked to the right edge, full window height — same window chrome
-   (dark #1b1b1b panel, thin light border, header treatment, edge-flush
-   corners) as the Downloads drawer (#dl-widget-panel), just mirrored to
-   the right side and opened/closed via the existing overlay/button flow
-   instead of a swipe gesture. */
-#dressing-room-overlay {
-  align-items: stretch;
-  justify-content: flex-end;
+/* ── Dressing Room — independent drawer, mirroring #dl-widget-panel exactly ── */
+/* Backdrop */
+.dr-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 915;
+  background: rgba(0, 0, 0, 0.78);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+.dr-backdrop.hidden { display: none; }
+.dr-backdrop.dr-backdrop-open {
+  opacity: 1;
+  pointer-events: auto;
 }
 
+/* Outer wrapper — just a fixed full-screen positioning container, hidden with its OWN .hidden rule so the global .hidden { display:none !important } on .overlay never touches it */
+.dressing-room-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 920;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.dressing-room-panel.hidden {
+  display: none;
+}
+.dressing-room-panel.dr-open {
+  pointer-events: auto;
+}
+
+/* The sliding panel itself — starts off-screen to the right, slides left on open */
 .dressing-room-modal {
   width: 380px;
   max-width: 88vw;
@@ -8765,16 +9069,17 @@ body.screenshot-lightbox-open {
   border-right: none;
   border-radius: var(--radius) 0 0 var(--radius);
   box-shadow: -16px 0 48px rgba(0, 0, 0, 0.6);
-  transform: translateZ(0);
-  position: relative;
+  transform: translate3d(100%, 0, 0);
+  transform-origin: center right;
   overflow: hidden;
-  animation: dressing-room-in 0.24s cubic-bezier(0.22, 0.9, 0.3, 1);
+  transition: transform 0.3s cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+.dressing-room-panel.dr-open .dressing-room-modal {
+  transform: translate3d(0, 0, 0);
 }
 
-@keyframes dressing-room-in {
-  from { transform: translate3d(100%, 0, 0); }
-  to   { transform: translate3d(0, 0, 0); }
-}
+
+
 
 .dressing-room-content {
   display: flex;
@@ -9885,7 +10190,6 @@ body.screenshot-lightbox-open {
 .is-webkit-gtk .import-mods-modal,
 .is-webkit-gtk .account-overlay-card,
 .is-webkit-gtk .skin-viewer-modal,
-.is-webkit-gtk .dressing-room-modal,
 .is-webkit-gtk #dl-files-panel,
 .is-webkit-gtk .dressing-room-skin-card,
 .is-webkit-gtk .settings-card,
@@ -9895,6 +10199,7 @@ body.screenshot-lightbox-open {
   transform: none;
   -webkit-transform: none;
 }
+/* .dressing-room-modal is intentionally excluded — it needs transform for its slide-in animation */
 /* Settings modal gets containment but keeps transform free for its open animation */
 .is-webkit-gtk .settings-modal-window {
   contain: layout style;
@@ -9915,13 +10220,24 @@ body.screenshot-lightbox-open {
   /* Keep the opacity transition but skip the card's spring entry animation
      (scale+translate is expensive on WebKitGTK's compositor path). */
 }
+/* Dressing room is now a standalone drawer (.dressing-room-panel), not .overlay */
+/* Give its backdrop and panel container lightweight containment */
+.is-webkit-gtk .dr-backdrop {
+  contain: layout style paint;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* The panel wrapper uses contain:layout so the child modal can still use transform */
+.is-webkit-gtk .dressing-room-panel {
+  contain: layout;
+}
 /* On WebKitGTK: overlay entry is opacity-only, no spring transform */
 .is-webkit-gtk .overlay:not(.hidden) .overlay-card,
 .is-webkit-gtk .overlay:not(.hidden) .discover-project-modal,
-.is-webkit-gtk .overlay:not(.hidden) .skin-viewer-modal,
-.is-webkit-gtk .overlay:not(.hidden) .dressing-room-modal {
+.is-webkit-gtk .overlay:not(.hidden) .skin-viewer-modal {
   animation: none;
 }
+
 
 /* Make all overlay modal cards opaque when transparency is OFF */
 .is-webkit-gtk:not(.transparent-ui) .hypr-island,
@@ -10276,9 +10592,10 @@ body.screenshot-lightbox-open {
 }
 
 /* ── 4. Promote ALL scroll containers to their own GPU layer ── */
+/* NOTE: .dressing-room-modal is intentionally excluded — translateZ(0) would
+   override its translate3d(100%,0,0) starting transform and break the slide animation */
 .is-webkit-gtk .settings-modal-body,
 .is-webkit-gtk .overlay-card,
-.is-webkit-gtk .dressing-room-modal,
 .is-webkit-gtk .apply-preset-mod-list,
 .is-webkit-gtk .discover-scroll-area,
 .is-webkit-gtk .presets-container,
@@ -10291,6 +10608,12 @@ body.screenshot-lightbox-open {
   -webkit-transform: translateZ(0);
   transform: translateZ(0);
 }
+/* Dressing room panel wrapper gets the GPU hint instead */
+.is-webkit-gtk .dressing-room-panel {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
 
 /* ── 5. Remove expensive hover box-shadows on interactive elements ── */
 .is-webkit-gtk .btn-accent:hover,
@@ -10348,14 +10671,17 @@ body.screenshot-lightbox-open {
          - contain:paint stops the drag from ever invalidating anything
            outside the drawer's own box.
          - perspective on the fixed ancestors is a cheap no-op that some
-           WebKit builds use as another compositing hint. ── */
+/* NOTE: .dressing-room-modal excluded — contain:paint clips overflow which would
+   prevent the translate3d(100%,0,0) off-screen state from animating in correctly.
+   The wrapper .dressing-room-panel gets these compositor hints instead. */
 .is-webkit-gtk #dl-widget-panel,
 .is-webkit-gtk .dl-widget-backdrop,
-.is-webkit-gtk .dressing-room-modal {
+.is-webkit-gtk .dressing-room-panel {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   contain: paint;
 }
+
 .is-webkit-gtk #dl-widget-panel.dl-panel-dragging,
 .is-webkit-gtk .dl-widget-backdrop.dl-backdrop-dragging {
   perspective: 1000px;
@@ -10607,4 +10933,16 @@ body.screenshot-lightbox-open {
 .is-webkit-gtk #top-bar,
 .is-webkit-gtk #bg-container {
   will-change: auto;
+}
+
+/* ── UI Animations Toggle (setting-ui-animations-enable) ─────────────────── */
+/* When UI animations are disabled, suppress all decorative transitions and     */
+/* animations. Functional spinners and loading indicators are preserved.        */
+.no-ui-animations *:not(.msa-device-spinner):not([class*="loading-spinner"]):not([class*="loading-ring"]):not([class*="spin"]):not([class*="-spinner"]) {
+  transition: none !important;
+  animation: none !important;
+}
+/* Dressing room snaps open instantly with no slide when animations are disabled */
+.no-ui-animations .dressing-room-modal {
+  transform: translate3d(0, 0, 0) !important;
 }

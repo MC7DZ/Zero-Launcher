@@ -22,7 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
-fn install_dir() -> PathBuf {
+pub fn install_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
         let mut dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -37,7 +37,7 @@ fn install_dir() -> PathBuf {
     }
 }
 
-fn target_exe_name() -> &'static str {
+pub fn target_exe_name() -> &'static str {
     #[cfg(target_os = "windows")]
     {
         "ZeroLauncher.exe"

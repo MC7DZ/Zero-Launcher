@@ -88,14 +88,18 @@ pub fn run() {
         // again while it's already running, this fires in the *existing*
         // process instead of a second instance starting up — we just show
         // and focus the window that's already there.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-                // See the matching emit() calls in the tray handlers below for
-                // why this exists.
-                let _ = app.emit("launcher-shown", ());
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(parsed) = crate::commands::shortcuts::parse_cli_launch_args(&args) {
+                let _ = app.emit("cli-launch-instance", parsed);
+            } else {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                    // See the matching emit() calls in the tray handlers below for
+                    // why this exists.
+                    let _ = app.emit("launcher-shown", ());
+                }
             }
         }))
         .plugin(tauri_plugin_notification::init())
@@ -138,6 +142,11 @@ pub fn run() {
 
             // Initialize app state with persistence in the platform data dir
             let state = AppState::new(data_dir.clone());
+            if state.cli_launch_args.lock().unwrap().is_some() {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
 
             // Rehydrate instances that were still running when a *previous*
             // launcher process quit. Those game processes are spawned
@@ -338,6 +347,9 @@ pub fn run() {
             commands::minecraft::check_linux_zlib_conflict,
             commands::minecraft::install_linux_package,
             commands::minecraft::get_instance_disk_size,
+            commands::shortcuts::create_instance_shortcut,
+            commands::shortcuts::get_cli_launch_args,
+            commands::shortcuts::hide_main_window,
             // Modpack import (.mrpack / CurseForge zip drag-and-drop)
             commands::modpack::preview_modpack,
             commands::modpack::import_modpack,
