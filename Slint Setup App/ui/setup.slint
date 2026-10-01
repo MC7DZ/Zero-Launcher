@@ -1,0 +1,866 @@
+import { Button, CheckBox, LineEdit } from "std-widgets.slint";
+
+export struct LogItem {
+    message: string,
+    level: string, // "info", "ok", "error"
+}
+
+export component AppWindow inherits Window {
+    title: "Zero Launcher Setup";
+    icon: @image-url("../assets/icon.png");
+    width: 480px;
+    height: 420px;
+    no-frame: true;
+    background: transparent;
+    default-font-family: "Segoe UI, -apple-system, Roboto, Ubuntu, sans-serif";
+
+    // Callbacks to Rust
+    callback start_install();
+    callback cancel_or_close();
+    callback launch_app();
+    callback drag_window(length, length);  // delta_x, delta_y for window movement
+    callback webview2_confirm(bool);       // true = install, false = skip
+
+    // Bound properties
+    in-out property <int> current_step: 0; // 0: Config, 1: Installing, 2: Done, 3: Error
+    in-out property <bool> install_appimage: true;
+    in-out property <bool> create_desktop_shortcut: true;
+    in-out property <bool> create_menu_shortcut: true;
+    in-out property <bool> check_system_deps: true;
+    in-out property <bool> webview2_dialog_visible: false; // Windows only: ask before installing WebView2
+
+    // Status & Progress during install
+    in-out property <string> status_text: "Ready to install";
+    in-out property <float> progress_value: 0.0; // 0.0 to 1.0
+    in-out property <string> progress_label: "0%";
+    in-out property <[LogItem]> logs: [];
+    in-out property <string> error_message: "";
+
+    // Window frame panel (Styled like launcher shortcut window)
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #1b1b1b;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: rgba(255, 255, 255, 0.08);
+        clip: true;
+
+        VerticalLayout {
+            padding: 0px;
+            spacing: 0px;
+
+            // ── Custom Titlebar & Header (Dark grayesh launcher design) ──
+            Rectangle {
+                height: 56px;
+                background: #171717;
+
+                // Drag-to-move touch area covering the header
+                TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    moved => {
+                        if (self.pressed) {
+                            root.drag_window(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    alignment: space-between;
+
+                    // Left brand info
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+
+                        // Logo icon box
+                        Rectangle {
+                            width: 34px;
+                            height: 34px;
+                            y: (parent.height - self.height) / 2;
+                            background: #121212;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: rgba(255, 255, 255, 0.08);
+
+                            Image {
+                                source: @image-url("../assets/icon.png");
+                                width: 22px;
+                                height: 22px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+
+                        // Title text
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2px;
+
+                            Text {
+                                text: "Zero Launcher Setup";
+                                font-size: 13px;
+                                font-weight: 700;
+                                color: #e2e2ea;
+                            }
+                            Text {
+                                text: current_step == 0 ? "Installation & Component Options" :
+                                      current_step == 1 ? "Installing required files & runtime..." :
+                                      current_step == 2 ? "Setup Completed Successfully" : "Installation Problem";
+                                font-size: 11px;
+                                color: rgba(226, 226, 234, 0.45);
+                            }
+                        }
+                    }
+
+                    // Right window controls & step badge
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: end;
+
+                        // Step badge
+                        Rectangle {
+                            width: 68px;
+                            height: 22px;
+                            y: (parent.height - self.height) / 2;
+                            background: #121212;
+                            border-radius: 11px;
+                            border-width: 1px;
+                            border-color: rgba(255, 255, 255, 0.06);
+
+                            Text {
+                                text: current_step == 0 ? "Step 1/2" :
+                                      current_step == 1 ? "Working" :
+                                      current_step == 2 ? "Ready" : "Error";
+                                font-size: 10px;
+                                font-weight: 600;
+                                color: #b7b7b7;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+
+                        // Custom close button
+                        Rectangle {
+                            width: 28px;
+                            height: 28px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 6px;
+                            background: touch_win_close.has-hover ? #2e2e2e : transparent;
+
+                            Text {
+                                text: "✕";
+                                font-size: 12px;
+                                color: touch_win_close.has-hover ? #ffffff : rgba(226, 226, 234, 0.4);
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+
+                            touch_win_close := TouchArea {
+                                clicked => { cancel_or_close(); }
+                            }
+                        }
+                    }
+                }
+
+                // Header separator line
+                Rectangle {
+                    x: 0px;
+                    y: parent.height - 1px;
+                    width: parent.width;
+                    height: 1px;
+                    background: rgba(255, 255, 255, 0.06);
+                }
+            }
+
+            // ── Main Body Area ──
+            Rectangle {
+                vertical-stretch: 1;
+
+                // PAGE 0: CONFIGURATION
+                if current_step == 0: VerticalLayout {
+                    padding: 16px;
+                    spacing: 14px;
+                    alignment: start;
+
+                    // Security / elevation notice banner
+                    Rectangle {
+                        height: 58px;
+                        background: #161616;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: rgba(255, 255, 255, 0.07);
+
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 12px;
+                            alignment: start;
+
+                            Rectangle {
+                                width: 22px;
+                                height: 22px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: 11px;
+                                background: rgba(183, 183, 183, 0.15);
+
+                                Text {
+                                    text: "ℹ";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: #e2e2ea;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 3px;
+
+                                Text {
+                                    text: "Safe System Setup";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: #e2e2ea;
+                                }
+                                Text {
+                                    text: "If missing system packages are required, your system authentication dialog will prompt you safely.";
+                                    font-size: 10px;
+                                    color: rgba(226, 226, 234, 0.55);
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+
+                    // Options & Selective components Section
+                    Text {
+                        text: "INSTALLATION OPTIONS";
+                        font-size: 11px;
+                        font-weight: 700;
+                        color: rgba(226, 226, 234, 0.5);
+                    }
+
+                    VerticalLayout {
+                        spacing: 8px;
+
+                        // Checkbox: Install AppImage / Portable Binary (Recommended)
+                        Rectangle {
+                            height: 28px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Rectangle {
+                                    width: 18px;
+                                    height: 18px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 4px;
+                                    background: install_appimage ? #b7b7b7 : #141414;
+                                    border-width: 1px;
+                                    border-color: rgba(255, 255, 255, 0.2);
+
+                                    if install_appimage: Text {
+                                        text: "✓";
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        color: #121212;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+
+                                    TouchArea {
+                                        clicked => { install_appimage = !install_appimage; }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Text {
+                                        text: "Install latest Zero Launcher AppImage";
+                                        font-size: 12px;
+                                        color: #e2e2ea;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: "(Recommended)";
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        color: #6cc0ff;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Checkbox: System dependencies (WebKitGTK, libfuse2, etc.)
+                        Rectangle {
+                            height: 28px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Rectangle {
+                                    width: 18px;
+                                    height: 18px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 4px;
+                                    background: check_system_deps ? #b7b7b7 : #141414;
+                                    border-width: 1px;
+                                    border-color: rgba(255, 255, 255, 0.2);
+
+                                    if check_system_deps: Text {
+                                        text: "✓";
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        color: #121212;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+
+                                    TouchArea {
+                                        clicked => { check_system_deps = !check_system_deps; }
+                                    }
+                                }
+                                Text {
+                                    text: "Install required packages if missing (WebKitGTK, libfuse2, etc.)";
+                                    font-size: 12px;
+                                    color: #e2e2ea;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        // Checkbox: Desktop shortcut
+                        Rectangle {
+                            height: 28px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Rectangle {
+                                    width: 18px;
+                                    height: 18px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 4px;
+                                    background: create_desktop_shortcut ? #b7b7b7 : #141414;
+                                    border-width: 1px;
+                                    border-color: rgba(255, 255, 255, 0.2);
+
+                                    if create_desktop_shortcut: Text {
+                                        text: "✓";
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        color: #121212;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+
+                                    TouchArea {
+                                        clicked => { create_desktop_shortcut = !create_desktop_shortcut; }
+                                    }
+                                }
+                                Text {
+                                    text: "Create Desktop shortcut";
+                                    font-size: 12px;
+                                    color: #e2e2ea;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        // Checkbox: App menu shortcut
+                        Rectangle {
+                            height: 28px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Rectangle {
+                                    width: 18px;
+                                    height: 18px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 4px;
+                                    background: create_menu_shortcut ? #b7b7b7 : #141414;
+                                    border-width: 1px;
+                                    border-color: rgba(255, 255, 255, 0.2);
+
+                                    if create_menu_shortcut: Text {
+                                        text: "✓";
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        color: #121212;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+
+                                    TouchArea {
+                                        clicked => { create_menu_shortcut = !create_menu_shortcut; }
+                                    }
+                                }
+                                Text {
+                                    text: "Add to Applications / Start Menu";
+                                    font-size: 12px;
+                                    color: #e2e2ea;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                    }
+                }
+
+                // PAGE 1: INSTALLING & DOWNLOADING
+                if current_step == 1: VerticalLayout {
+                    padding: 14px;
+                    spacing: 10px;
+
+                    // Current action status
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text {
+                            text: status_text;
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: #e2e2ea;
+                        }
+                        Text {
+                            text: progress_label;
+                            font-size: 12px;
+                            font-weight: 700;
+                            color: #b7b7b7;
+                        }
+                    }
+
+                    // Progress track
+                    Rectangle {
+                        height: 8px;
+                        background: #141414;
+                        border-radius: 4px;
+                        border-width: 1px;
+                        border-color: rgba(255, 255, 255, 0.08);
+
+                        // Progress fill
+                        Rectangle {
+                            x: 0px;
+                            y: 0px;
+                            width: parent.width * Math.min(1.0, Math.max(0.0, progress_value));
+                            height: parent.height;
+                            background: #b7b7b7;
+                            border-radius: 4px;
+                        }
+                    }
+
+                    Rectangle { height: 4px; }
+
+                    // Log output container (identical style to launching.html log-area)
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: #141414;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: rgba(255, 255, 255, 0.06);
+                        clip: true;
+
+                        VerticalLayout {
+                            padding: 8px;
+                            spacing: 4px;
+                            alignment: start;
+
+                            for item[index] in logs: Text {
+                                text: item.message;
+                                font-size: 11px;
+                                color: item.level == "error" ? #ef4444 :
+                                       item.level == "ok" ? rgba(183, 183, 183, 0.8) :
+                                       rgba(226, 226, 234, 0.55);
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+
+                // PAGE 2: SUCCESS / FINISHED
+                if current_step == 2: VerticalLayout {
+                    padding: 24px;
+                    alignment: center;
+                    spacing: 14px;
+
+                    HorizontalLayout {
+                        alignment: center;
+
+                        Rectangle {
+                            width: 52px;
+                            height: 52px;
+                            border-radius: 26px;
+                            background: rgba(183, 183, 183, 0.12);
+                            border-width: 1px;
+                            border-color: rgba(183, 183, 183, 0.35);
+
+                            Text {
+                                text: "✓";
+                                font-size: 24px;
+                                font-weight: 700;
+                                color: #e2e2ea;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "Zero Launcher is ready!";
+                        font-size: 16px;
+                        font-weight: 700;
+                        color: #e2e2ea;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Installed files, runtime dependencies and shortcuts are configured.";
+                        font-size: 12px;
+                        color: rgba(226, 226, 234, 0.6);
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // PAGE 3: ERROR
+                if current_step == 3: VerticalLayout {
+                    padding: 20px;
+                    alignment: center;
+                    spacing: 12px;
+
+                    HorizontalLayout {
+                        alignment: center;
+
+                        Rectangle {
+                            width: 48px;
+                            height: 48px;
+                            border-radius: 24px;
+                            background: rgba(239, 68, 68, 0.12);
+                            border-width: 1px;
+                            border-color: rgba(239, 68, 68, 0.35);
+
+                            Text {
+                                text: "✕";
+                                font-size: 22px;
+                                font-weight: 700;
+                                color: #ef4444;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "Installation encountered an issue";
+                        font-size: 15px;
+                        font-weight: 700;
+                        color: #ef4444;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: error_message;
+                        font-size: 11px;
+                        color: rgba(226, 226, 234, 0.7);
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            // ── Footer Bar ──
+            Rectangle {
+                height: 54px;
+                background: #171717;
+
+                // Footer separator line
+                Rectangle {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width;
+                    height: 1px;
+                    background: rgba(255, 255, 255, 0.06);
+                }
+
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    alignment: space-between;
+
+                    // Left side secondary action
+                    HorizontalLayout {
+                        alignment: start;
+                        if current_step == 0: Rectangle {
+                            width: 80px;
+                            height: 32px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 6px;
+                            background: touch_cancel.has-hover ? #252525 : #1a1a1a;
+                            border-width: 1px;
+                            border-color: rgba(255, 255, 255, 0.08);
+
+                            Text {
+                                text: "Cancel";
+                                font-size: 12px;
+                                color: rgba(226, 226, 234, 0.6);
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+
+                            touch_cancel := TouchArea {
+                                clicked => { cancel_or_close(); }
+                            }
+                        }
+                    }
+
+                    // Right side primary actions
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: end;
+
+                        // Step 0: "Install Now"
+                        if current_step == 0: Rectangle {
+                            width: 110px;
+                            height: 32px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 6px;
+                            background: touch_install.has-hover ? #cecece : #b7b7b7;
+
+                            Text {
+                                text: "Install Now";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: #121212;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+
+                            touch_install := TouchArea {
+                                clicked => { start_install(); }
+                            }
+                        }
+
+                        // Step 2: "Close" and "Launch"
+                        if current_step == 2: HorizontalLayout {
+                            spacing: 8px;
+                            y: (parent.height - self.height) / 2;
+
+                            Rectangle {
+                                width: 80px;
+                                height: 32px;
+                                border-radius: 6px;
+                                background: touch_close.has-hover ? #252525 : #1a1a1a;
+                                border-width: 1px;
+                                border-color: rgba(255, 255, 255, 0.08);
+
+                                Text {
+                                    text: "Close";
+                                    font-size: 12px;
+                                    color: #e2e2ea;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+
+                                touch_close := TouchArea {
+                                    clicked => { cancel_or_close(); }
+                                }
+                            }
+
+                            Rectangle {
+                                width: 110px;
+                                height: 32px;
+                                border-radius: 6px;
+                                background: touch_launch.has-hover ? #cecece : #b7b7b7;
+
+                                Text {
+                                    text: "Launch App";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: #121212;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+
+                                touch_launch := TouchArea {
+                                    clicked => { launch_app(); }
+                                }
+                            }
+                        }
+
+                        // Step 3 (Error): "Retry"
+                        if current_step == 3: HorizontalLayout {
+                            spacing: 8px;
+                            y: (parent.height - self.height) / 2;
+
+                            Rectangle {
+                                width: 80px;
+                                height: 32px;
+                                border-radius: 6px;
+                                background: touch_err_close.has-hover ? #252525 : #1a1a1a;
+                                border-width: 1px;
+                                border-color: rgba(255, 255, 255, 0.08);
+
+                                Text {
+                                    text: "Close";
+                                    font-size: 12px;
+                                    color: #e2e2ea;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+
+                                touch_err_close := TouchArea {
+                                    clicked => { cancel_or_close(); }
+                                }
+                            }
+
+                            Rectangle {
+                                width: 90px;
+                                height: 32px;
+                                border-radius: 6px;
+                                background: touch_retry.has-hover ? #cecece : #b7b7b7;
+
+                                Text {
+                                    text: "Back";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: #121212;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+
+                                touch_retry := TouchArea {
+                                    clicked => { current_step = 0; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── WebView2 Install Confirmation Dialog (Windows only) ──
+        // Shown as an overlay during install step when WebView2 is missing
+        if webview2_dialog_visible: Rectangle {
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+
+            // Dialog card
+            Rectangle {
+                width: 340px;
+                height: 220px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                background: #1e1e1e;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: rgba(255, 255, 255, 0.1);
+
+                VerticalLayout {
+                    padding: 20px;
+                    spacing: 12px;
+
+                    // Title row
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+
+                        Rectangle {
+                            width: 28px;
+                            height: 28px;
+                            border-radius: 14px;
+                            background: rgba(108, 192, 255, 0.15);
+                            border-width: 1px;
+                            border-color: rgba(108, 192, 255, 0.3);
+
+                            Text {
+                                text: "?";
+                                font-size: 14px;
+                                font-weight: 700;
+                                color: #6cc0ff;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "WebView2 Runtime Missing";
+                                font-size: 13px;
+                                font-weight: 700;
+                                color: #e2e2ea;
+                            }
+                        }
+                    }
+
+                    // Description
+                    Text {
+                        text: "Microsoft Edge WebView2 Runtime is required for Zero Launcher to work on Windows. The setup can download and install it automatically from Microsoft (~1.5 MB). This is safe and official.";
+                        font-size: 11px;
+                        color: rgba(226, 226, 234, 0.65);
+                        wrap: word-wrap;
+                    }
+
+                    // Spacer
+                    Rectangle { vertical-stretch: 1; background: transparent; }
+
+                    // Action buttons
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+
+                        // Skip button
+                        Rectangle {
+                            width: 80px;
+                            height: 30px;
+                            border-radius: 6px;
+                            background: touch_wv2_skip.has-hover ? #252525 : #1a1a1a;
+                            border-width: 1px;
+                            border-color: rgba(255, 255, 255, 0.08);
+
+                            Text {
+                                text: "Skip";
+                                font-size: 12px;
+                                color: rgba(226, 226, 234, 0.6);
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+
+                            touch_wv2_skip := TouchArea {
+                                clicked => {
+                                    webview2_dialog_visible = false;
+                                    webview2_confirm(false);
+                                }
+                            }
+                        }
+
+                        // Install button
+                        Rectangle {
+                            width: 130px;
+                            height: 30px;
+                            border-radius: 6px;
+                            background: touch_wv2_install.has-hover ? #6cc0ff : #5aadf0;
+
+                            Text {
+                                text: "Install WebView2";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: #0a0a0a;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+
+                            touch_wv2_install := TouchArea {
+                                clicked => {
+                                    webview2_dialog_visible = false;
+                                    webview2_confirm(true);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

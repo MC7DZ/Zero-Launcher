@@ -1,0 +1,69 @@
+name: Build Slint Setup App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Slint Setup App/**'
+      - '.github/workflows/build-setup-app.yml'
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libfontconfig1-dev libfreetype6-dev libgl1-mesa-dev libegl1-mesa-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Setup App (Linux Release)
+        working-directory: Slint Setup App
+        run: cargo build --release
+
+      - name: Rename and Package
+        working-directory: Slint Setup App
+        run: |
+          mkdir -p dist
+          cp target/release/zero-launcher-setup dist/ZeroLauncher-Setup-linux
+          chmod +x dist/ZeroLauncher-Setup-linux
+
+      - name: Upload Linux Setup Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZeroLauncher-Setup-linux
+          path: Slint Setup App/dist/ZeroLauncher-Setup-linux
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Setup App (Windows Release)
+        working-directory: Slint Setup App
+        run: cargo build --release
+
+      - name: Rename and Package
+        working-directory: Slint Setup App
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/zero-launcher-setup.exe dist/ZeroLauncher-Setup.exe
+
+      - name: Upload Windows Setup Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZeroLauncher-Setup-windows
+          path: Slint Setup App/dist/ZeroLauncher-Setup.exe
+          if-no-files-found: error
