@@ -11852,9 +11852,33 @@ function discoverProjectModalEls() {
 function closeDiscoverProjectModal() {
   const { overlay } = discoverProjectModalEls();
   if (!overlay) return;
-  overlay.classList.add('hidden');
   discoverProjectModalCurrentId = null;
+
+  // Remove open class — CSS transition slides modal back to translate3d(100%,0,0)
+  overlay._dpClosing = true;
+  overlay.classList.remove('dp-open');
+
+  const modal = overlay.querySelector('.discover-project-modal');
+  let settled = false;
+  const done = () => {
+    // Guard against a rapid re-open that cleared _dpClosing before we got here
+    if (!overlay._dpClosing) return;
+    overlay.classList.add('hidden');
+  };
+  if (modal) {
+    const onEnd = (e) => {
+      if (e && e.target !== modal) return;
+      if (settled) return;
+      settled = true;
+      modal.removeEventListener('transitionend', onEnd);
+      done();
+    };
+    modal.addEventListener('transitionend', onEnd);
+  }
+  // Fallback in case transitionend never fires
+  setTimeout(() => { if (!settled) { settled = true; done(); } }, 350);
 }
+
 
 // Opens the "project page" panel for a Discover card — a single simple
 // scrolling page (icon/title/stats, download row, description, gallery,
@@ -11867,7 +11891,17 @@ async function openDiscoverProjectModal(hit) {
   discoverProjectModalCurrentType = hit.project_type;
   discoverProjectModalCurrentSlug = hit.slug || hit.project_id;
 
+  // Remove display:none so the panel is in the layout, then force a reflow
+  // so the browser commits transform:translate3d(100%,0,0) BEFORE adding the
+  // open class that fires the transition. Mirrors openDressingRoomModal exactly.
+  // Also cancel any in-flight close transition that might still be running.
+  els.overlay._dpClosing = false;
   els.overlay.classList.remove('hidden');
+  const modal = els.overlay.querySelector('.discover-project-modal');
+  if (modal) void modal.offsetWidth;
+  els.overlay.classList.add('dp-open');
+
+
   els.skeleton?.classList.remove('hidden');
   els.content?.classList.add('hidden');
   if (els.content) els.content.scrollTop = 0;
@@ -11875,6 +11909,7 @@ async function openDiscoverProjectModal(hit) {
   // Fill in what we already know from the card immediately so the panel
   // never looks empty, then replace with the fuller fetched detail.
   populateDiscoverProjectHeader(hit);
+
 
   try {
     let details = discoverProjectDetailsCache.get(hit.project_id);

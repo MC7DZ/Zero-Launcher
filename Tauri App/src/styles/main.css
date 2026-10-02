@@ -2384,10 +2384,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   }
 }
 .overlay:not(.hidden) .overlay-card,
-.overlay:not(.hidden) .discover-project-modal,
 .overlay:not(.hidden) .skin-viewer-modal {
   animation: overlay-card-enter 0.22s var(--ease-out-spring) both;
 }
+
 
 /* Stacking tiers for global and nested overlays */
 #modpack-import-overlay {
@@ -5577,11 +5577,16 @@ body.screenshot-lightbox-open {
   border-right: none;
   border-radius: var(--radius) 0 0 var(--radius);
   box-shadow: -16px 0 48px rgba(0, 0, 0, 0.6);
-  transform: translateZ(0);
+  transform: translate3d(100%, 0, 0);
+  transform-origin: center right;
   position: relative;
   overflow: hidden;
-  animation: dressing-room-in 0.24s cubic-bezier(0.22, 0.9, 0.3, 1);
+  transition: transform 0.3s cubic-bezier(0.22, 0.9, 0.3, 1);
 }
+#discover-project-overlay.dp-open .discover-project-modal {
+  transform: translate3d(0, 0, 0);
+}
+
 
 /* Drag handle on the panel's left edge — lets the width be resized by
    hand. Widened hit target beyond the visible line so it's easy to grab. */
@@ -10200,6 +10205,18 @@ body.screenshot-lightbox-open {
   -webkit-transform: none;
 }
 /* .dressing-room-modal is intentionally excluded — it needs transform for its slide-in animation */
+/* .discover-project-modal is also excluded: it uses translate3d(100%,0,0) for the same slide-in.
+   Re-assert the correct transforms here using an ID selector so they beat the 0,2,0 rule above. */
+.is-webkit-gtk #discover-project-overlay .discover-project-modal {
+  transform: translate3d(100%, 0, 0);
+  -webkit-transform: translate3d(100%, 0, 0);
+  contain: layout style; /* keep containment but allow transform */
+}
+.is-webkit-gtk #discover-project-overlay.dp-open .discover-project-modal {
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+}
+
 /* Settings modal gets containment but keeps transform free for its open animation */
 .is-webkit-gtk .settings-modal-window {
   contain: layout style;
@@ -10233,10 +10250,10 @@ body.screenshot-lightbox-open {
 }
 /* On WebKitGTK: overlay entry is opacity-only, no spring transform */
 .is-webkit-gtk .overlay:not(.hidden) .overlay-card,
-.is-webkit-gtk .overlay:not(.hidden) .discover-project-modal,
 .is-webkit-gtk .overlay:not(.hidden) .skin-viewer-modal {
   animation: none;
 }
+
 
 
 /* Make all overlay modal cards opaque when transparency is OFF */
@@ -10592,14 +10609,14 @@ body.screenshot-lightbox-open {
 }
 
 /* ── 4. Promote ALL scroll containers to their own GPU layer ── */
-/* NOTE: .dressing-room-modal is intentionally excluded — translateZ(0) would
-   override its translate3d(100%,0,0) starting transform and break the slide animation */
+/* NOTE: .dressing-room-modal and .discover-project-modal are intentionally excluded —
+   translateZ(0) would override their translate3d(100%,0,0) starting transform and
+   break the slide animation. Their wrapper panels get the GPU hint instead. */
 .is-webkit-gtk .settings-modal-body,
 .is-webkit-gtk .overlay-card,
 .is-webkit-gtk .apply-preset-mod-list,
 .is-webkit-gtk .discover-scroll-area,
 .is-webkit-gtk .presets-container,
-.is-webkit-gtk .discover-project-modal,
 .is-webkit-gtk .discover-project-content,
 .is-webkit-gtk .dl-files-list {
   will-change: scroll-position;
@@ -10608,11 +10625,13 @@ body.screenshot-lightbox-open {
   -webkit-transform: translateZ(0);
   transform: translateZ(0);
 }
-/* Dressing room panel wrapper gets the GPU hint instead */
-.is-webkit-gtk .dressing-room-panel {
+/* Dressing room and discover-project panel wrappers get the GPU hint instead */
+.is-webkit-gtk .dressing-room-panel,
+.is-webkit-gtk #discover-project-overlay {
   -webkit-transform: translateZ(0);
   transform: translateZ(0);
 }
+
 
 
 /* ── 5. Remove expensive hover box-shadows on interactive elements ── */
