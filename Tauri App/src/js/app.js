@@ -934,6 +934,8 @@ function initTabs() {
 
   // Global Keybinds: Alt + 1..4 for fast Tab Switching, Alt + 5 / Alt + S for Settings Modal
   window.addEventListener('keydown', (e) => {
+    // Disable all Alt hotkeys while the setup wizard is active
+    if (document.getElementById('tab-setup')?.classList.contains('active')) return;
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       const tabMap = {
         '1': 'instances',

@@ -66,13 +66,7 @@ const MAX_FETCH_ATTEMPTS: u32 = 5;
 /// Returns whether an error looks like a transient network failure worth
 /// retrying, rather than a real HTTP/decode error.
 fn looks_transient(err: &crate::LauncherError) -> bool {
-    let msg = err.to_string();
-    msg.contains("timed out")
-        || msg.contains("timeout")
-        || msg.contains("connection")
-        || msg.contains("error sending request")
-        || msg.contains("dns")
-        || msg.contains("reset")
+    err.is_transient()
 }
 
 /// Runs `f` up to [`MAX_FETCH_ATTEMPTS`] times, with a short backoff between

@@ -112,3 +112,106 @@ pub enum LauncherError {
         message: String,
     },
 }
+
+impl LauncherError {
+    /// Returns whether this error looks like a transient issue (network glitch,
+    /// body error, dropped connection, temporary CDN/server hiccup, checksum mismatch
+    /// from an interrupted transfer) that is worth retrying.
+    pub fn is_transient(&self) -> bool {
+        if self.is_fatal() {
+            return false;
+        }
+
+        match self {
+            LauncherError::Network { source } => {
+                if source.is_timeout() || source.is_connect() || source.is_body() {
+                    return true;
+                }
+                if let Some(status) = source.status() {
+                    let code = status.as_u16();
+                    if code == 429 || code == 500 || code == 502 || code == 503 || code == 504 {
+                        return true;
+                    }
+                }
+                let msg = source.to_string().to_lowercase();
+                msg.contains("timeout")
+                    || msg.contains("timed out")
+                    || msg.contains("connection")
+                    || msg.contains("connect")
+                    || msg.contains("reset")
+                    || msg.contains("closed")
+                    || msg.contains("broken pipe")
+                    || msg.contains("eof")
+                    || msg.contains("stream")
+                    || msg.contains("body")
+                    || msg.contains("dns")
+                    || msg.contains("resolve")
+                    || msg.contains("handshake")
+                    || msg.contains("tls")
+                    || msg.contains("ssl")
+            }
+            LauncherError::Io { source } => {
+                use std::io::ErrorKind;
+                match source.kind() {
+                    ErrorKind::TimedOut
+                    | ErrorKind::ConnectionReset
+                    | ErrorKind::ConnectionAborted
+                    | ErrorKind::NotConnected
+                    | ErrorKind::BrokenPipe
+                    | ErrorKind::UnexpectedEof
+                    | ErrorKind::Interrupted => return true,
+                    _ => {}
+                }
+                let msg = source.to_string().to_lowercase();
+                msg.contains("request or response body error")
+                    || msg.contains("body error")
+                    || msg.contains("connection")
+                    || msg.contains("reset")
+                    || msg.contains("closed")
+                    || msg.contains("eof")
+                    || msg.contains("timed out")
+                    || msg.contains("timeout")
+                    || msg.contains("broken pipe")
+                    || msg.contains("network")
+            }
+            LauncherError::ChecksumMismatch { .. } => true,
+            LauncherError::Other { message } => {
+                let msg = message.to_lowercase();
+                msg.contains("request or response body error")
+                    || msg.contains("body error")
+                    || msg.contains("timeout")
+                    || msg.contains("connection")
+                    || msg.contains("reset")
+                    || msg.contains("network")
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns whether this error is definitively non-recoverable (e.g. disk full,
+    /// permission denied, invalid version ID, unsupported platform).
+    pub fn is_fatal(&self) -> bool {
+        match self {
+            LauncherError::InvalidVersionId { .. } => true,
+            LauncherError::UnsupportedPlatform { .. } => true,
+            LauncherError::UnsafePath { .. } => true,
+            LauncherError::InvalidMavenCoordinate { .. } => true,
+            LauncherError::Io { source } => {
+                use std::io::ErrorKind;
+                if source.kind() == ErrorKind::PermissionDenied {
+                    return true;
+                }
+                if source.raw_os_error() == Some(28) {
+                    // ENOSPC on Linux / POSIX
+                    return true;
+                }
+                let msg = source.to_string().to_lowercase();
+                msg.contains("no space left on device")
+                    || msg.contains("disk full")
+                    || msg.contains("permission denied")
+                    || msg.contains("read-only file system")
+            }
+            _ => false,
+        }
+    }
+}

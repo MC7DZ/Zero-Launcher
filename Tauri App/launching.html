@@ -76,6 +76,50 @@
       margin-top: 1px;
     }
 
+    /* ── Header action area ── */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* ── Console button ── */
+    .abort-btn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: none;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: rgba(226, 226, 234, 0.45);
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+      white-space: nowrap;
+      align-self: flex-start;
+    }
+    .abort-btn:hover {
+      color: #e2e2ea;
+      border-color: rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .abort-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .abort-btn svg { flex-shrink: 0; }
+
+    /* ── Close button + confirm wrapper ── */
+    .close-wrap {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+    }
+
     .close-btn {
       background: none;
       border: none;
@@ -87,10 +131,45 @@
       border-radius: 6px;
       transition: color 0.15s;
       flex-shrink: 0;
-      align-self: flex-start;
     }
 
     .close-btn:hover { color: #e2e2ea; }
+
+    /* Confirm tooltip shown on first close click while launch is still in progress */
+    .close-confirm {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: #2a2a2a;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 8px 11px;
+      white-space: nowrap;
+      font-size: 11.5px;
+      color: rgba(226, 226, 234, 0.85);
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(-4px);
+      transition: opacity 0.15s, transform 0.15s;
+      z-index: 99;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+    .close-confirm.visible {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+    .close-confirm strong {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: #e2e2ea;
+      margin-bottom: 2px;
+    }
+    .close-confirm span {
+      color: rgba(226, 226, 234, 0.55);
+      font-size: 11px;
+    }
 
     /* ── Status bar ── */
     .status-bar {
@@ -154,7 +233,27 @@
         <div class="inst-name" id="mini-title">Minecraft</div>
         <div class="inst-sub" id="mini-sub">Launching…</div>
       </div>
-      <button class="close-btn" id="btn-mini-close" title="Cancel">✕</button>
+
+      <!-- Action buttons -->
+      <div class="header-actions">
+        <!-- Console: opens the log window for this instance -->
+        <button class="abort-btn" id="btn-mini-abort" title="Open the log console for this instance">
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3,5 6,8 3,11"/>
+            <line x1="8" y1="11" x2="13" y2="11"/>
+          </svg>
+          Console
+        </button>
+
+        <!-- Close: first click shows confirm badge, second click cancels launch + closes -->
+        <div class="close-wrap">
+          <button class="close-btn" id="btn-mini-close" title="Close">✕</button>
+          <div class="close-confirm" id="close-confirm">
+            <strong>Cancel launch?</strong>
+            <span>Click again to confirm</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Current status -->

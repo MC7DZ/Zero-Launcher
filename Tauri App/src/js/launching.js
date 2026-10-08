@@ -31,12 +31,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mc        = params.get('mc')       || '';
 
   // DOM refs
-  const titleEl  = document.getElementById('mini-title');
-  const subEl    = document.getElementById('mini-sub');
-  const statusEl = document.getElementById('mini-status');
-  const iconImg  = document.getElementById('mini-icon-img');
-  const closeBtn = document.getElementById('btn-mini-close');
-  const logArea  = document.getElementById('log-area');
+  const titleEl     = document.getElementById('mini-title');
+  const subEl       = document.getElementById('mini-sub');
+  const statusEl    = document.getElementById('mini-status');
+  const iconImg     = document.getElementById('mini-icon-img');
+  const closeBtn    = document.getElementById('btn-mini-close');
+  const consoleBtn  = document.getElementById('btn-mini-abort');
+  const confirmBox  = document.getElementById('close-confirm');
+  const logArea     = document.getElementById('log-area');
 
   // Initial content
   if (titleEl) titleEl.textContent = name;
@@ -98,7 +100,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     downloadEntry = null;
   };
 
-  // Close helper
+  // ── close / cancel / console helpers ────────────────────────────
+
+  /** Just close this window with no side effects. */
   const closeSelf = () => {
     try {
       if (currentWin?.close) currentWin.close().catch(() => {});
@@ -106,9 +110,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (_) { window.close(); }
   };
 
-  closeBtn?.addEventListener('click', closeSelf);
+  /** Open the log console window for this instance without touching the launch. */
+  const openConsole = async () => {
+    const WebviewWindow = window.__TAURI__?.webviewWindow?.WebviewWindow;
+    if (!WebviewWindow || !versionId) return;
+    try {
+      const label = 'console-' + versionId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const existing = await WebviewWindow.getByLabel(label).catch(() => null);
+      if (existing) {
+        try { await existing.unminimize?.(); await existing.show?.(); await existing.setFocus?.(); } catch (_) {}
+      } else {
+        const url = 'console.html?instance=' + encodeURIComponent(versionId)
+                  + '&name=' + encodeURIComponent(name || versionId);
+        new WebviewWindow(label, {
+          url,
+          title: 'Console — ' + (name || versionId),
+          width: 820,
+          height: 560,
+          minWidth: 480,
+          minHeight: 320,
+          focus: true,
+        });
+      }
+    } catch (_) {}
+  };
 
-  // Game started
+  /**
+   * Kill the instance (if still launching/running) and close this mini window.
+   * Does NOT open the console.
+   */
+  const cancelLaunch = async () => {
+    if (consoleBtn) consoleBtn.disabled = true;
+    if (closeBtn)   closeBtn.disabled   = true;
+
+    if (typeof invoke === 'function' && versionId) {
+      try {
+        await invoke('kill_instance', { versionId });
+      } catch (_) {
+        // May fail if the process already ended — that's fine
+      }
+    }
+
+    closeSelf();
+  };
+
+  // ── Game started tracking ────────────────────────────────────────
+
   let hasStarted = false;
   const markGameStarted = () => {
     if (hasStarted) return;
@@ -119,9 +166,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(closeSelf, 2000);
   };
 
+  // ── Console button ───────────────────────────────────────────────
+
+  consoleBtn?.addEventListener('click', () => {
+    openConsole();
+  });
+
+  // ── Close button (two-click confirmation while launching) ────────
+
+  let closeConfirmPending = false;
+  let closeConfirmTimer   = null;
+
+  const hideConfirm = () => {
+    closeConfirmPending = false;
+    clearTimeout(closeConfirmTimer);
+    closeConfirmTimer = null;
+    confirmBox?.classList.remove('visible');
+  };
+
+  closeBtn?.addEventListener('click', () => {
+    // If the game has already started, no need for a confirmation — just close.
+    if (hasStarted) {
+      closeSelf();
+      return;
+    }
+
+    if (!closeConfirmPending) {
+      // First click: show the confirmation badge and wait for a second click.
+      closeConfirmPending = true;
+      confirmBox?.classList.add('visible');
+      // Auto-dismiss after 4 seconds if the user doesn't confirm.
+      closeConfirmTimer = setTimeout(hideConfirm, 4000);
+    } else {
+      // Second click: confirmed — kill the launch and close (no console).
+      hideConfirm();
+      cancelLaunch();
+    }
+  });
+
+  // Clicking anywhere outside the close-wrap dismisses the confirm badge.
+  document.addEventListener('click', (e) => {
+    if (!closeConfirmPending) return;
+    const wrap = closeBtn?.closest('.close-wrap');
+    if (wrap && !wrap.contains(e.target)) {
+      hideConfirm();
+    }
+  }, true);
+
+  // ── Events ───────────────────────────────────────────────────────
+
   setStatus('Preparing launch');
 
-  // ── events ───────────────────────────────────────────────────────
   if (typeof listen !== 'function') return;
 
   // Verify-phase status (stage names + "installing" notice)
@@ -192,3 +287,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.__TAURI__.event.emit('mini-window-ready', versionId).catch(() => {});
   }
 });
+

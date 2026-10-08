@@ -90,67 +90,65 @@ fn fetch_task(client: &reqwest::blocking::Client, url: &str, task: &DownloadTask
     if let Some(parent) = task.destination.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut response = client.get(url).send()?.error_for_status()?;
-    let total = response.content_length();
-    let mut file = File::create(&task.destination)?;
+    let part_path = PathBuf::from(format!("{}.part", task.destination.display()));
 
-    let mut buf = [0u8; CHUNK_SIZE];
-    let mut received: u64 = 0;
-    loop {
-        let n = response.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        file.write_all(&buf[..n])?;
-        received += n as u64;
-        let _ = tx.send(Msg::Bytes {
-            label: task.label.clone(),
-            received,
-            total,
-        });
-    }
+    let res = (|| -> Result<()> {
+        let mut response = client.get(url).send()?.error_for_status()?;
+        let total = response.content_length();
+        let mut file = File::create(&part_path)?;
 
-    if let Some(Checksum::Sha1(expected)) = &task.checksum {
-        let actual = sha1_file(&task.destination)?;
-        if actual != *expected {
-            return Err(LauncherError::ChecksumMismatch {
-                path: task.destination.clone(),
-                expected: expected.clone(),
-                actual,
+        let mut buf = [0u8; CHUNK_SIZE];
+        let mut received: u64 = 0;
+        loop {
+            let n = response.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            file.write_all(&buf[..n])?;
+            received += n as u64;
+            let _ = tx.send(Msg::Bytes {
+                label: task.label.clone(),
+                received,
+                total,
             });
         }
+        file.flush()?;
+        drop(file);
+
+        if let Some(Checksum::Sha1(expected)) = &task.checksum {
+            let actual = sha1_file(&part_path)?;
+            if actual != *expected {
+                return Err(LauncherError::ChecksumMismatch {
+                    path: task.destination.clone(),
+                    expected: expected.clone(),
+                    actual,
+                });
+            }
+        }
+
+        fs::rename(&part_path, &task.destination)?;
+        Ok(())
+    })();
+
+    if res.is_err() {
+        let _ = fs::remove_file(&part_path);
     }
-    Ok(())
+    res
 }
 
 /// Retries a single file this many times on transient network errors before
 /// giving up on it. Keeps one flaky connection from failing an otherwise
 /// healthy install.
-const MAX_TASK_ATTEMPTS: u32 = 5;
+const MAX_TASK_ATTEMPTS: u32 = 6;
 
 fn looks_transient(err: &LauncherError) -> bool {
-    let msg = err.to_string();
-    msg.contains("timed out")
-        || msg.contains("timeout")
-        || msg.contains("connection")
-        || msg.contains("error sending request")
-        || msg.contains("dns")
-        || msg.contains("reset")
+    err.is_transient()
 }
 
 /// Returns whether an error is an HTTP 404, worth trying the next mirror
 /// for rather than retrying the same URL.
 fn looks_not_found(err: &LauncherError) -> bool {
     err.to_string().contains("404")
-}
-
-/// Returns whether an error is a checksum mismatch — almost always a
-/// corrupted/truncated transfer (a flaky mirror, a proxy that mangled the
-/// response, a connection that dropped mid-write) rather than a permanent
-/// problem with the file itself. Worth a clean re-download on the same URL
-/// before giving up on it.
-fn looks_checksum_mismatch(err: &LauncherError) -> bool {
-    matches!(err, LauncherError::ChecksumMismatch { .. })
 }
 
 fn fetch_task_with_retry(client: &reqwest::blocking::Client, task: &DownloadTask, tx: &Sender<Msg>) -> Result<()> {
@@ -165,45 +163,31 @@ fn fetch_task_with_retry(client: &reqwest::blocking::Client, task: &DownloadTask
             attempt += 1;
             match fetch_task(client, url, task, tx) {
                 Ok(()) => return Ok(()),
-                // Transient errors (timeouts, dropped connections, DNS blips)
+                // Transient errors (timeouts, dropped connections, DNS blips, body errors, checksum mismatches)
                 // get the full retry budget on this same URL.
                 Err(e) if attempt < MAX_TASK_ATTEMPTS && looks_transient(&e) => {
-                    std::thread::sleep(std::time::Duration::from_millis(300 * attempt as u64));
-                    continue;
-                }
-                // A checksum mismatch means the bytes we got don't match
-                // what the file is supposed to be. The bad copy is already
-                // on disk at this point (fetch_task wrote it before
-                // hashing) — remove it so a stale corrupt file never lingers
-                // if every retry below also happens to fail, then try a
-                // fresh download on the same URL. Most mismatches are a one-
-                // off transfer glitch and succeed on the very next attempt.
-                // (`last_err` isn't set on this retrying branch — it gets
-                // overwritten by the next attempt's outcome either way, and
-                // only the final exhausted-retries branch below needs it.)
-                Err(e) if attempt < MAX_TASK_ATTEMPTS && looks_checksum_mismatch(&e) => {
                     let _ = fs::remove_file(&task.destination);
                     std::thread::sleep(std::time::Duration::from_millis(300 * attempt as u64));
                     continue;
-                }
-                Err(e) if looks_checksum_mismatch(&e) => {
-                    let _ = fs::remove_file(&task.destination);
-                    last_err = Some(e);
-                    break;
                 }
                 // 404s are usually permanent (wrong coordinate/version), but
                 // some hosts (e.g. Maven mirrors) briefly 404 while an
                 // upload propagates, so give this URL a few tries too
                 // before moving on to the next mirror.
                 Err(e) if attempt < MAX_TASK_ATTEMPTS && looks_not_found(&e) => {
+                    let _ = fs::remove_file(&task.destination);
                     std::thread::sleep(std::time::Duration::from_millis(300 * attempt as u64));
                     continue;
                 }
                 Err(e) if looks_not_found(&e) => {
+                    let _ = fs::remove_file(&task.destination);
                     last_err = Some(e);
                     break;
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    let _ = fs::remove_file(&task.destination);
+                    return Err(e);
+                }
             }
         }
     }

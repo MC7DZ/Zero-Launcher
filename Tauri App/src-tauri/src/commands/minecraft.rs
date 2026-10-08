@@ -495,44 +495,39 @@ pub async fn install_minecraft(
 ) -> Result<InstalledInstance, String> {
     use mc_launcher_core::prelude::*;
 
-    // The default `.minecraft`-style directory — this is always where the
-    // actual game files (`versions/`, `libraries/`, `assets/`) get
-    // installed, no matter what custom path is chosen below. That means
-    // the jar + loader (e.g. the version and `fabric-loader-...` folders
-    // under `versions/`) always end up in the same default Minecraft
-    // directory, exactly as if the user had installed straight into the
-    // default location — and every instance that uses the same
-    // version/loader combo shares those files instead of re-downloading
-    // them into each custom folder.
-    let minecraft_dir = state.settings.lock().unwrap().resolved_game_directory();
+    let mc_version = payload.minecraft_version.clone();
+    let loader_type = payload.loader.clone();
+    let loader_ver = payload.loader_version.clone();
 
-    // The instance's own "game directory" — where saves, mods,
-    // resourcepacks, config, and logs for *this* instance live. This is
-    // the custom path the user picked, or the default directory if none
-    // was given (in which case it's the same directory as `minecraft_dir`
-    // above).
+    // Root directory for this instance. Each instance maintains its own
+    // isolated `libraries/`, `assets/`, `versions/`, `mods/`, and configs
+    // to avoid inter-instance conflicts and version collision issues.
+    let default_minecraft_dir = state.settings.lock().unwrap().resolved_game_directory();
+
+    let display_name = payload.name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
+        if loader_type == "vanilla" || loader_type.is_empty() {
+            mc_version.clone()
+        } else {
+            format!("{mc_version} ({loader_type})")
+        }
+    });
+
     let game_dir = if let Some(ref dir) = payload.directory {
         PathBuf::from(crate::models::sanitize_user_path(dir))
     } else {
-        minecraft_dir.clone()
+        default_minecraft_dir.join("!Instances").join(sanitize_instance_folder_name(&display_name))
     };
 
-    // Create both directories if needed.
-    std::fs::create_dir_all(&minecraft_dir)
-        .map_err(|e| format!("Failed to create Minecraft directory: {e}"))?;
+    let minecraft_dir = game_dir.clone();
+
+    // Create the instance directory.
     std::fs::create_dir_all(&game_dir)
-        .map_err(|e| format!("Failed to create game directory: {e}"))?;
+        .map_err(|e| format!("Failed to create instance directory: {e}"))?;
 
     logger::info(&app, &state, "LAUNCHER", &format!(
-        "Installing Minecraft {} with {} loader...",
-        payload.minecraft_version, payload.loader
+        "Installing Minecraft {} with {} loader in isolated instance folder: {}",
+        payload.minecraft_version, payload.loader, game_dir.display()
     ));
-    if game_dir != minecraft_dir {
-        logger::info(&app, &state, "LAUNCHER", &format!(
-            "Version files (jar/loader) will be shared from {} — mods, resourcepacks, saves, and config for this instance will live in {}",
-            minecraft_dir.display(), game_dir.display()
-        ));
-    }
 
     // If this install is actually replacing an existing instance (its
     // Minecraft version and/or loader changed, so it has to be
@@ -567,10 +562,6 @@ pub async fn install_minecraft(
         }
         state.save_instances();
     }
-
-    let mc_version = payload.minecraft_version.clone();
-    let loader_type = payload.loader.clone();
-    let loader_ver = payload.loader_version.clone();
 
     // ── Ensure a known-good managed Java is ready *before* we run a
     // Forge/NeoForge installer jar ────────────────────────────────────────
@@ -647,25 +638,9 @@ pub async fn install_minecraft(
     let versions_dir = minecraft_dir.join("versions");
     let is_loader = !(loader_type == "vanilla" || loader_type.is_empty());
 
-    // If another tracked instance already has this exact (minecraft_version,
-    // loader, loader_version) combo downloaded, copy its version folder
-    // instead of hitting the network again. Vanilla is excluded: its folder
-    // is shared, unrenamed infrastructure that every loader install depends
-    // on, so it never needs (or gets) a duplicate copy.
-    let reuse_source_id: Option<String> = if is_loader {
-        let instances = state.instances.lock().unwrap();
-        instances
-            .iter()
-            .find(|i| {
-                i.minecraft_version == mc_version
-                    && i.loader == loader_type
-                    && i.loader_version == loader_ver
-                    && versions_dir.join(&i.version_id).is_dir()
-            })
-            .map(|i| i.version_id.clone())
-    } else {
-        None
-    };
+    // Keep instances cleanly separated: each instance downloads and maintains
+    // its own libraries and assets rather than borrowing from other instances.
+    let reuse_source_id: Option<String> = None;
 
     if let Some(src_id) = reuse_source_id {
         let target_id = unique_version_folder_name(
@@ -776,6 +751,11 @@ pub async fn install_minecraft(
     // downloaded instead of hardcoding 0.
     let total_bytes_downloaded_outer = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let total_bytes_downloaded_for_progress = total_bytes_downloaded_outer.clone();
+    let total_bytes_downloaded_retry = total_bytes_downloaded_outer.clone();
+
+    let last_percent_outer = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let last_percent_for_progress = last_percent_outer.clone();
+    let last_percent_retry = last_percent_outer.clone();
 
     // Run blocking install in a separate thread
     let install_outcome = tokio::task::spawn_blocking(move || {
@@ -871,6 +851,12 @@ pub async fn install_minecraft(
         // report the real total instead of hardcoding 0 bytes downloaded.
         let total_bytes_downloaded = total_bytes_downloaded_for_progress;
 
+        let app_for_retry = app_for_progress.clone();
+        let id_for_retry = id_for_progress.clone();
+        let label_for_retry = label_for_progress.clone();
+        let mc_version_for_retry = mc_version_for_progress.clone();
+        let loader_for_retry = loader_for_progress.clone();
+
         let mut reporter = move |event: mc_launcher_core::progress::ProgressEvent| {
             use mc_launcher_core::progress::ProgressEvent as PE;
 
@@ -938,6 +924,10 @@ pub async fn install_minecraft(
                     tasks_started = 0;
                     tasks_done = 0;
                     current_task_total = None;
+                    active_labels.clear();
+                    label_display.clear();
+                    per_label_last_received.clear();
+                    per_label_total.clear();
                 }
                 PE::TaskStarted { label, path } => {
                     tasks_started += 1;
@@ -1029,6 +1019,7 @@ pub async fn install_minecraft(
             // Never let the bar (or anything derived from it, like ETA)
             // move backwards — clamp to the best we've seen so far.
             best_percent = best_percent.max(raw_percent);
+            last_percent_for_progress.store((best_percent * 100.0) as u32, Ordering::Relaxed);
             let percent = best_percent;
 
             // Extrapolate remaining time from elapsed time vs. percent
@@ -1064,12 +1055,11 @@ pub async fn install_minecraft(
         };
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // Mojang's metadata/asset servers occasionally hiccup on a single
-            // request (DNS blip, connection reset, brief timeout) — retry a
-            // couple of times on what look like transient network errors
-            // before giving up, instead of failing the whole install over
-            // one flaky request.
-            const MAX_ATTEMPTS: u32 = 3;
+            // Mojang's metadata/asset servers or loader mirrors occasionally
+            // hiccup on a single request (DNS blip, connection reset, body error,
+            // CDN glitch) — retry automatically so that flaky network drops
+            // never fail an install that can succeed on retry.
+            const MAX_ATTEMPTS: u32 = 10;
             let mut attempt: u32 = 0;
             loop {
                 attempt += 1;
@@ -1077,14 +1067,51 @@ pub async fn install_minecraft(
                 match launcher.install_with_progress(request, &mut reporter) {
                     Ok(v) => return Ok(v),
                     Err(e) => {
-                        let msg = e.to_string();
-                        let looks_transient = msg.contains("network error")
-                            || msg.contains("error sending request")
-                            || msg.contains("timed out")
-                            || msg.contains("connection")
-                            || msg.contains("dns");
-                        if looks_transient && attempt < MAX_ATTEMPTS {
-                            std::thread::sleep(std::time::Duration::from_secs(2 * attempt as u64));
+                        let is_retryable = !e.is_fatal();
+                        if is_retryable && attempt < MAX_ATTEMPTS {
+                            let app_state = app_for_retry.state::<AppState>();
+                            if app_state.download_cancelled.load(Ordering::Relaxed) {
+                                std::panic::panic_any(CANCEL_MARKER.to_string());
+                            }
+                            logger::warn(
+                                &app_for_retry,
+                                &app_state,
+                                "LAUNCHER",
+                                &format!(
+                                    "Install attempt {attempt}/{MAX_ATTEMPTS} for {} {} ({}) hit transient error: {e}. Retrying automatically...",
+                                    mc_version_for_retry, loader_for_retry, label_for_retry
+                                ),
+                            );
+
+                            let current_pct = last_percent_retry.load(Ordering::Relaxed) as f64 / 100.0;
+                            let retry_info = DownloadProgressInfo {
+                                id: id_for_retry.clone(),
+                                label: label_for_retry.clone(),
+                                minecraft_version: mc_version_for_retry.clone(),
+                                loader: loader_for_retry.clone(),
+                                stage: "Retrying".to_string(),
+                                current_file: String::new(),
+                                active_files: Vec::new(),
+                                downloaded_bytes: total_bytes_downloaded_retry.load(Ordering::Relaxed),
+                                total_bytes: None,
+                                percent: current_pct,
+                                speed_bps: 0.0,
+                                eta_seconds: None,
+                                status: "downloading".to_string(),
+                                message: Some(format!(
+                                    "Connection interrupted ({e}). Automatically retrying ({}/{MAX_ATTEMPTS})...",
+                                    attempt + 1
+                                )),
+                            };
+                            let _ = app_for_retry.emit("download-progress", &retry_info);
+
+                            let sleep_secs = (attempt as u64).min(4);
+                            for _ in 0..(sleep_secs * 4) {
+                                if app_state.download_cancelled.load(Ordering::Relaxed) {
+                                    std::panic::panic_any(CANCEL_MARKER.to_string());
+                                }
+                                std::thread::sleep(std::time::Duration::from_millis(250));
+                            }
                             continue;
                         }
                         return Err(e);
