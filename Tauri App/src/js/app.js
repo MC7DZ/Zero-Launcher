@@ -973,6 +973,22 @@ function maskUsernameForDisplay(name) {
   return name;
 }
 
+// Privacy → "Mask Username in Game Directory": replaces the OS username
+// with "User" in file paths displayed in the launcher UI when enabled.
+function formatDirectoryForDisplay(pathStr) {
+  if (!pathStr || typeof pathStr !== 'string') return pathStr || '—';
+  if (settings && settings.redact_user_paths === false) {
+    return pathStr;
+  }
+  // Linux / macOS: /home/<username>/... or /Users/<username>/... -> /home/User/... or /Users/User/...
+  let formatted = pathStr.replace(/^(\/home\/)[^\/]+(\/|$)/, '$1User$2');
+  formatted = formatted.replace(/^(\/Users\/)[^\/]+(\/|$)/, '$1User$2');
+  // Windows: C:\Users\<username>\... -> C:\Users\User\...
+  formatted = formatted.replace(/^([a-zA-Z]:\\Users\\)[^\\]+(\\|$)/, '$1User$2');
+  formatted = formatted.replace(/^([a-zA-Z]:\/Users\/)[^\/]+(\/|$)/, '$1User$2');
+  return formatted;
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
@@ -980,10 +996,23 @@ function escapeHtml(str) {
 }
 
 // Re-renders anything currently showing a username so a live toggle of
-// "Hide Username in UI" takes effect immediately, without waiting for the
+// privacy settings takes effect immediately, without waiting for the
 // next unrelated refresh.
 function applyUsernamePrivacy() {
   refreshAccountUI().catch(() => {});
+  if (selectedInstanceId) {
+    const inst = getInstances().find(i => i.version_id === selectedInstanceId);
+    if (inst) {
+      const dirEl = document.getElementById('info-dir');
+      if (dirEl) {
+        dirEl.textContent = formatDirectoryForDisplay(inst.directory || (settings ? settings.game_directory : '—'));
+      }
+      const editDirEl = document.getElementById('edit-inst-dir');
+      if (editDirEl) {
+        editDirEl.textContent = formatDirectoryForDisplay(inst.directory || (settings ? settings.game_directory : '—'));
+      }
+    }
+  }
 }
 
 let currentAccountView = 'list';
@@ -5436,7 +5465,7 @@ function selectInstance(id) {
   verEl.textContent = (inst.minecraft_version || inst.version_id) + (loaderStr ? '  •  ' + loaderStr : '');
   if (gameVerEl) gameVerEl.textContent = inst.minecraft_version || inst.version_id || '—';
   loaderEl.textContent = loaderStr || 'Vanilla';
-  dirEl.textContent = inst.directory || (settings ? settings.game_directory : '—');
+  dirEl.textContent = formatDirectoryForDisplay(inst.directory || (settings ? settings.game_directory : '—'));
   if (lastPlayedEl) lastPlayedEl.textContent = formatLastPlayed(inst.last_played_at);
   updateSelectedInstancePlaytimeDisplay();
   renderPlaytimeChart();
@@ -6163,7 +6192,7 @@ function initInstanceActions() {
     }
     setEditLoader(loaderLabel(inst.loader));
     document.getElementById('edit-inst-loader-version').value = (inst.loader_version && inst.loader_version !== 'latest') ? inst.loader_version : '';
-    document.getElementById('edit-inst-dir').textContent = inst.directory || (settings ? settings.game_directory : '—');
+    document.getElementById('edit-inst-dir').textContent = formatDirectoryForDisplay(inst.directory || (settings ? settings.game_directory : '—'));
     
     // Per-instance advanced options
     if (editMinRamInput) editMinRamInput.value = inst.min_ram_mb || '';
@@ -7136,6 +7165,22 @@ async function checkSelectedInstanceForUpdates() {
 // method the Java client's ModUpdateService uses) is an exact match instead.
 let modIconCache = {};
 try { modIconCache = JSON.parse(localStorage.getItem('zerolauncher-mod-icon-cache-v3') || '{}'); } catch { modIconCache = {}; }
+// On each startup: purge any null-miss entries so icons get a fresh lookup.
+// Stale misses (network error, Modrinth down, or from the broken observer
+// that never loaded icons) would otherwise block retries for 6 hours.
+{
+  let modIconCacheDirty = false;
+  for (const hash of Object.keys(modIconCache)) {
+    const entry = modIconCache[hash];
+    if (entry && typeof entry === 'object' && !entry.url) {
+      delete modIconCache[hash];
+      modIconCacheDirty = true;
+    }
+  }
+  if (modIconCacheDirty) {
+    try { localStorage.setItem('zerolauncher-mod-icon-cache-v3', JSON.stringify(modIconCache)); } catch { /* ignore */ }
+  }
+}
 function saveModIconCache() {
   try { localStorage.setItem('zerolauncher-mod-icon-cache-v3', JSON.stringify(modIconCache)); } catch { /* ignore */ }
 }
@@ -7147,6 +7192,19 @@ function saveModIconCache() {
 // client's ModMetadataCache.
 let projectIconCache = {};
 try { projectIconCache = JSON.parse(localStorage.getItem('zerolauncher-project-icon-cache-v1') || '{}'); } catch { projectIconCache = {}; }
+// Purge null project icon entries on startup too — same reasoning as above.
+{
+  let projCacheDirty = false;
+  for (const id of Object.keys(projectIconCache)) {
+    if (projectIconCache[id] === null) {
+      delete projectIconCache[id];
+      projCacheDirty = true;
+    }
+  }
+  if (projCacheDirty) {
+    try { localStorage.setItem('zerolauncher-project-icon-cache-v1', JSON.stringify(projectIconCache)); } catch { /* ignore */ }
+  }
+}
 function saveProjectIconCache() {
   try { localStorage.setItem('zerolauncher-project-icon-cache-v1', JSON.stringify(projectIconCache)); } catch { /* ignore */ }
 }
@@ -7176,13 +7234,16 @@ async function applyModIcon(iconEl, url) {
   const img = document.createElement('img');
   img.alt = '';
   img.loading = 'lazy';
-  // If the icon URL 404s or the request otherwise fails (this is what made
-  // icons "disappear" — a broken <img> renders as blank), fall back to the
-  // placeholder glyph instead of leaving an empty box.
+  // If the icon fails to load from the local cache protocol, fallback to the remote URL first
+  // before falling back to the placeholder glyph.
   img.addEventListener('error', () => {
     if (!iconEl.isConnected) return;
-    iconEl.innerHTML = ICON_UNKNOWN_SVG;
-    iconEl.classList.add('icon-fallback');
+    if (img.src !== url) {
+      img.src = url;
+    } else {
+      iconEl.innerHTML = ICON_UNKNOWN_SVG;
+      iconEl.classList.add('icon-fallback');
+    }
   });
   img.src = src;
   iconEl.innerHTML = '';
@@ -7337,10 +7398,19 @@ function applyFallbackIcon(iconEl) {
 }
 
 let modVirtualObserver = null;
+let modVirtualObserverRoot = null;
 
 function getModVirtualObserver() {
-  if (!modVirtualObserver) {
-    const root = document.getElementById('tab-mods');
+  // Use the actual scroll container (overflow-y: auto) as the root so that
+  // cards scrolled off-screen correctly fire as non-intersecting.
+  // tab-mods has overflow:hidden so it does NOT scroll — using it as the
+  // root means every card in the DOM is always "visible" to the observer
+  // and icons would never lazy-load correctly.
+  const root = document.querySelector('.mods-scroll-container') || document.getElementById('tab-mods');
+  if (!modVirtualObserver || modVirtualObserverRoot !== root) {
+    // Disconnect previous observer (root changed or first creation)
+    if (modVirtualObserver) modVirtualObserver.disconnect();
+    modVirtualObserverRoot = root;
     modVirtualObserver = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         const card = entry.target;
@@ -7409,12 +7479,14 @@ function renderModCardContent(card) {
   `;
 
   const iconEl = card.querySelector('.mod-icon');
-  if (preservedIconHtml) {
+  // Only reuse a preserved icon if it's an actual successfully-loaded <img>.
+  // If the preserved HTML is a fallback SVG (no <img> tag — meaning the
+  // previous Modrinth lookup failed), discard it and retry the API call so
+  // the icon gets another chance on every render pass instead of being
+  // permanently stuck as a "?" glyph.
+  if (preservedIconHtml && preservedIconHtml.includes('<img')) {
     iconEl.classList.remove('loading');
     iconEl.innerHTML = preservedIconHtml;
-    if (!preservedIconHtml.includes('<img')) {
-      iconEl.classList.add('icon-fallback');
-    }
   } else {
     scheduleIconResolve(mod, iconEl);
   }
@@ -10532,7 +10604,6 @@ async function loadPresetIconInto(container, presetId) {
     if (!path) return;
     const convert = window.__TAURI__.core.convertFileSrc;
     const src = convert ? convert(path) : path;
-    if (!container.isConnected) return;
     const img = document.createElement('img');
     img.alt = '';
     img.loading = 'lazy';
@@ -13395,6 +13466,8 @@ function populateSettingsUI() {
   document.getElementById('setting-redact-tokens').checked = settings.redact_tokens !== false;
   const redactPathsChk = document.getElementById('setting-redact-paths');
   if (redactPathsChk) redactPathsChk.checked = settings.redact_paths !== false;
+  const redactUserPathsChk = document.getElementById('setting-redact-user-paths');
+  if (redactUserPathsChk) redactUserPathsChk.checked = settings.redact_user_paths !== false;
   const hideLaunchCmdChk = document.getElementById('setting-hide-launch-command');
   if (hideLaunchCmdChk) hideLaunchCmdChk.checked = settings.hide_launch_command !== false;
   document.getElementById('setting-debug-mode').checked = !!settings.debug_mode;
@@ -13728,6 +13801,8 @@ function collectSettingsFromUI() {
   settings.redact_tokens = document.getElementById('setting-redact-tokens').checked;
   const redactPathsChk2 = document.getElementById('setting-redact-paths');
   if (redactPathsChk2) settings.redact_paths = redactPathsChk2.checked;
+  const redactUserPathsChk2 = document.getElementById('setting-redact-user-paths');
+  if (redactUserPathsChk2) settings.redact_user_paths = redactUserPathsChk2.checked;
   const hideLaunchCmdChk2 = document.getElementById('setting-hide-launch-command');
   if (hideLaunchCmdChk2) settings.hide_launch_command = hideLaunchCmdChk2.checked;
   settings.debug_mode = document.getElementById('setting-debug-mode').checked;
@@ -14068,7 +14143,7 @@ function initSettings() {
     'setting-rpc-tab-settings', 'setting-rpc-tab-logs',
     'setting-rpc-state-launching', 'setting-rpc-state-main-menu',
     'setting-rpc-state-singleplayer', 'setting-rpc-state-multiplayer',
-    'setting-redact-tokens', 'setting-redact-paths', 'setting-hide-launch-command',
+    'setting-redact-tokens', 'setting-redact-paths', 'setting-redact-user-paths', 'setting-hide-launch-command',
     'setting-debug-mode',
     'setting-crash-analysis',
     'setting-auto-open-console',
@@ -14730,6 +14805,7 @@ const SETTINGS_SEARCH_CATALOG = [
   // Privacy & Dev
   { label: 'Redact Sensitive Tokens in Logs', keywords: 'redact tokens auth bearer access secrets logs hide privacy', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'setting-redact-tokens' },
   { label: 'Redact Absolute Paths in Logs', keywords: 'redact absolute paths usernames home directories logs privacy', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'setting-redact-paths' },
+  { label: 'Mask Username in Game Directory', keywords: 'mask username game directory path user redact privacy home', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'setting-redact-user-paths' },
   { label: 'Hide Launch Command', keywords: 'hide launch command terminal shell jvm arguments security', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'setting-hide-launch-command' },
   { label: 'Debug Mode', keywords: 'debug mode verbose logging developer diagnostics trace', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'setting-debug-mode' },
   { label: 'Open Launcher Logs Folder', keywords: 'open logs folder directory files crashlog launcher.log log viewer', section: 'privacy', sectionLabel: 'Privacy & Dev', targetId: 'btn-open-logs-folder' },

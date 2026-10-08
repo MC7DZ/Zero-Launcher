@@ -479,6 +479,34 @@ pub fn ensure_linux_xdg_icons() -> Option<PathBuf> {
     let icon_path = install_dir().join("icon.png");
     let wrote_icon_path = fs::write(&icon_path, icon_bytes).is_ok();
 
+    let desktop_icon_bytes = include_bytes!("../icons/shortcut.png");
+    let desktop_icon_path = install_dir().join("desktop-icon.png");
+    let _ = fs::write(&desktop_icon_path, desktop_icon_bytes);
+
+    if let Some(desktop_dir) = dirs::desktop_dir() {
+        let desktop_shortcut = desktop_dir.join("Zero Launcher.desktop");
+        if desktop_shortcut.exists() {
+            if let Ok(content) = fs::read_to_string(&desktop_shortcut) {
+                let updated = if !content.contains(&desktop_icon_path.to_string_lossy().to_string()) {
+                    let mut lines: Vec<String> = content.lines().map(|l| {
+                        if l.starts_with("Icon=") {
+                            format!("Icon={}", desktop_icon_path.display())
+                        } else {
+                            l.to_string()
+                        }
+                    }).collect();
+                    lines.push(String::new());
+                    Some(lines.join("\n"))
+                } else {
+                    None
+                };
+                if let Some(new_content) = updated {
+                    write_and_mark_executable(&desktop_shortcut, &new_content);
+                }
+            }
+        }
+    }
+
     if let Some(data_dir) = dirs::data_dir() {
         let hicolor_dir = data_dir.join("icons/hicolor/128x128/apps");
         if fs::create_dir_all(&hicolor_dir).is_ok() {
@@ -486,15 +514,6 @@ pub fn ensure_linux_xdg_icons() -> Option<PathBuf> {
             let _ = fs::write(hicolor_dir.join("com.zerolauncher.app.png"), icon_bytes);
             let _ = fs::write(hicolor_dir.join("ZeroLauncher.png"), icon_bytes);
         }
-        // Nudge GTK/GNOME's icon cache so it doesn't keep serving a
-        // previously-cached version of an icon file that just changed
-        // out from under it. Best-effort: this cache dir/tool isn't
-        // present on every distro (e.g. it's a no-op on pure-Wayland
-        // GNOME setups that don't use the old gdk-pixbuf icon cache), and
-        // failing quietly here is fine either way since it's just a
-        // freshness optimization, not something the app depends on.
-        // Run in a background thread — the cache update can take 50–200 ms
-        // and the icons are already written to disk before this runs.
         let hicolor_parent = data_dir.join("icons/hicolor");
         std::thread::spawn(move || {
             let _ = std::process::Command::new("gtk-update-icon-cache")

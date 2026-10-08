@@ -4627,12 +4627,10 @@ body.screenshot-lightbox-open {
 }
 
 .mod-card.is-unloaded {
-  contain: strict !important;
-  content-visibility: hidden !important;
+  contain: layout style paint;
   background: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
-  pointer-events: none !important;
   min-height: 132px;
 }
 

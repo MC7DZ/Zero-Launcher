@@ -211,7 +211,6 @@ pub async fn create_instance_shortcut(
              Icon={}\n\
              Terminal=false\n\
              Categories=Game;\n\
-             StartupWMClass=zerolauncher\n\
              StartupNotify=true\n",
             target_exe.display(),
             instance_id,

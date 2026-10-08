@@ -344,8 +344,9 @@ pub async fn get_local_presets(state: State<'_, AppState>, app: AppHandle) -> Re
     Ok(read_local_presets(&state, &app))
 }
 
-/// Return the absolute path to a preset's `icon.png` (frontend loads it via
-/// the `asset://` protocol / `convertFileSrc`), or an error if it has none.
+/// Read a preset's `icon.png` and return it as a base64-encoded data URL
+/// (`data:image/png;base64,...`). This avoids `asset://` protocol issues
+/// with preset folder names that contain spaces or `&` characters.
 #[tauri::command]
 pub async fn get_preset_icon_path(
     state: State<'_, AppState>,
@@ -354,11 +355,16 @@ pub async fn get_preset_icon_path(
 ) -> Result<String, String> {
     let root = presets_root(&state, &app);
     let icon = folder_for_id(&root, &preset_id).join("icon.png");
-    if icon.is_file() {
-        Ok(icon.to_string_lossy().to_string())
-    } else {
-        Err("No icon for this preset".to_string())
+    if !icon.is_file() {
+        return Err("No icon for this preset".to_string());
     }
+    let bytes = tokio::task::spawn_blocking(move || std::fs::read(&icon))
+        .await
+        .map_err(|e| format!("Failed to read preset icon: {e}"))?
+        .map_err(|e| format!("Failed to read preset icon: {e}"))?;
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:image/png;base64,{encoded}"))
 }
 
 fn read_preset_json(root: &Path, preset_id: &str) -> Result<(PathBuf, RawPresetJson), String> {

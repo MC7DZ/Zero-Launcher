@@ -369,6 +369,8 @@ pub struct LauncherSettings {
     #[serde(default = "default_true")]
     pub redact_paths: bool,
     #[serde(default = "default_true")]
+    pub redact_user_paths: bool,
+    #[serde(default = "default_true")]
     pub redact_tokens: bool,
     #[serde(default)]
     pub clear_session_on_exit: bool,
@@ -632,6 +634,7 @@ impl Default for LauncherSettings {
             start_maximized: true,
             default_minecraft_dir: String::new(),
             redact_paths: true,
+            redact_user_paths: true,
             redact_tokens: true,
             clear_session_on_exit: false,
             hide_launch_command: true,
