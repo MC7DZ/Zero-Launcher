@@ -1378,6 +1378,67 @@ pub async fn launch_minecraft(
         (default_dir.clone(), default_dir)
     });
 
+    // Self-heal: if the stored minecraft_directory has no library jars
+    // (libraries/ is absent or empty) but the instance's own directory does,
+    // the stored value is stale — e.g. an instance installed before
+    // per-instance isolation existed, or one where the metadata was saved
+    // with the wrong path.  Correct it on the fly so this launch works, and
+    // persist the fix to instances.json so future launches and the
+    // verify-on-launch pass are both corrected automatically.
+    let minecraft_dir = {
+        // Count how many .jar files exist under each candidate libraries/ dir.
+        // We only need to know "at least one exists" — stop immediately.
+        let has_any_jar = |root: &std::path::Path| -> bool {
+            let lib_dir = root.join("libraries");
+            if !lib_dir.is_dir() {
+                return false;
+            }
+            // Walk at most a few levels deep; libraries are always nested
+            // (e.g. libraries/org/lwjgl/lwjgl/3.2.2/lwjgl-3.2.2.jar).
+            fn walk(dir: &std::path::Path, depth: u8) -> bool {
+                if depth == 0 { return false; }
+                let Ok(rd) = std::fs::read_dir(dir) else { return false; };
+                for entry in rd.flatten() {
+                    let path = entry.path();
+                    if path.extension().is_some_and(|e| e == "jar") {
+                        return true;
+                    }
+                    if path.is_dir() && walk(&path, depth - 1) {
+                        return true;
+                    }
+                }
+                false
+            }
+            walk(&lib_dir, 6)
+        };
+
+        let stored_has_libs = has_any_jar(&minecraft_dir);
+        let game_dir_has_libs = has_any_jar(&game_dir);
+
+        if !stored_has_libs && game_dir_has_libs && minecraft_dir != game_dir {
+            logger::info(&app, &state, "LAUNCHER", &format!(
+                "Auto-correcting minecraft_directory for '{}': stored path '{}' has no libraries; \
+                 using instance directory '{}' instead and persisting the fix.",
+                version_id,
+                minecraft_dir.display(),
+                game_dir.display(),
+            ));
+            // Persist the correction so the next launch and the verify pass
+            // both use the right path without needing a reinstall.
+            {
+                let mut instances = state.instances.lock().unwrap();
+                if let Some(inst) = instances.iter_mut().find(|i| i.version_id == version_id) {
+                    inst.minecraft_directory = game_dir.to_string_lossy().to_string();
+                }
+            }
+            state.save_instances();
+            game_dir.clone()
+        } else {
+            minecraft_dir
+        }
+    };
+
+
     // If this instance isn't in our tracked list yet (e.g. it was installed
     // by another launcher, dropped into `versions/` manually, or otherwise
     // only ever showed up via the on-disk scan), register it now so it

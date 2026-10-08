@@ -219,8 +219,23 @@ enum Msg {
 /// Returns [`crate::LauncherError`] for network, filesystem, or checksum
 /// failures.
 pub fn execute_plan(plan: &DownloadPlan, reporter: &mut dyn ProgressReporter) -> Result<()> {
+    // Deduplicate tasks by destination path. Some version manifests (e.g.
+    // 1.18) contain duplicate library entries that produce two DownloadTasks
+    // pointing at the same destination. Without deduplication, two worker
+    // threads would both create the same `.part` file and race to rename it,
+    // causing a `NotFound` IO error on the second rename.
+    let mut seen_destinations = std::collections::HashSet::new();
     let mut pending: Vec<&DownloadTask> = Vec::with_capacity(plan.tasks.len());
     for task in &plan.tasks {
+        if !seen_destinations.insert(task.destination.clone()) {
+            // Duplicate destination — treat as skipped; the first occurrence
+            // will handle the actual download.
+            reporter.report(ProgressEvent::TaskSkipped {
+                label: task.label.clone(),
+                reason: SkipReason::FileExistsWithoutChecksum,
+            });
+            continue;
+        }
         if should_skip_existing(task)? {
             reporter.report(ProgressEvent::TaskSkipped {
                 label: task.label.clone(),

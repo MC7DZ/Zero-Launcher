@@ -17,6 +17,14 @@ pub enum LauncherError {
         #[from]
         source: reqwest::Error,
     },
+    /// Filesystem failure with path context.
+    #[error("io error at {path}: {source}")]
+    IoPath {
+        /// Path that failed.
+        path: PathBuf,
+        /// Original IO error.
+        source: std::io::Error,
+    },
     /// Filesystem failure.
     #[error("io error: {source}")]
     Io {
@@ -150,7 +158,7 @@ impl LauncherError {
                     || msg.contains("tls")
                     || msg.contains("ssl")
             }
-            LauncherError::Io { source } => {
+            LauncherError::Io { source } | LauncherError::IoPath { source, .. } => {
                 use std::io::ErrorKind;
                 match source.kind() {
                     ErrorKind::TimedOut
@@ -196,7 +204,7 @@ impl LauncherError {
             LauncherError::UnsupportedPlatform { .. } => true,
             LauncherError::UnsafePath { .. } => true,
             LauncherError::InvalidMavenCoordinate { .. } => true,
-            LauncherError::Io { source } => {
+            LauncherError::Io { source } | LauncherError::IoPath { source, .. } => {
                 use std::io::ErrorKind;
                 if source.kind() == ErrorKind::PermissionDenied {
                     return true;
