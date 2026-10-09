@@ -1,3 +1,5 @@
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+
 slint::include_modules!();
 
 mod deps;
@@ -30,7 +32,9 @@ fn default_install_dir() -> PathBuf {
 fn spawn_target_executable(target: &Path) {
     #[cfg(target_os = "windows")]
     {
-        let _ = Command::new(target).spawn();
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = Command::new(target).creation_flags(CREATE_NO_WINDOW).spawn();
     }
 
     #[cfg(target_os = "linux")]
@@ -45,6 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let weak_window = main_window.as_weak();
 
     // Default configuration values
+    main_window.set_is_windows(cfg!(target_os = "windows"));
     main_window.set_install_appimage(true);
     main_window.set_create_desktop_shortcut(true);
     main_window.set_create_menu_shortcut(true);

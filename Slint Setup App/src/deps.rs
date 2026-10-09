@@ -227,7 +227,7 @@ pub fn check_webview2_installed() -> bool {
     // Check user-level install via registry (HKCU)
     // The key: HKCU\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}
     // We probe it via reg.exe to avoid pulling in a winreg crate
-    let reg_query = Command::new("reg")
+    let reg_query = hidden(Command::new("reg"))
         .args([
             "query",
             r"HKCU\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
@@ -247,7 +247,7 @@ pub fn check_webview2_installed() -> bool {
     }
 
     // Check machine-level registry (HKLM)
-    let reg_query_lm = Command::new("reg")
+    let reg_query_lm = hidden(Command::new("reg"))
         .args([
             "query",
             r"HKLM\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
@@ -319,7 +319,7 @@ where
     ));
 
     // Run the bootstrapper silently — /install /quiet /norestart
-    let status = Command::new(&bootstrapper_path)
+    let status = hidden(Command::new(&bootstrapper_path))
         .args(["/install", "/quiet", "/norestart"])
         .status()
         .map_err(|e| format!("Failed to run WebView2 bootstrapper: {e}"))?;
@@ -342,4 +342,13 @@ where
             ))
         }
     }
+}
+
+/// Prevents a console window from flashing up when spawning child processes on Windows.
+#[cfg(target_os = "windows")]
+fn hidden(mut cmd: Command) -> Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
 }

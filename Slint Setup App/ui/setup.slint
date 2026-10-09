@@ -24,6 +24,7 @@ export component AppWindow inherits Window {
     // Bound properties
     in-out property <int> current_step: 0; // 0: Config, 1: Installing, 2: Done, 3: Error
     in-out property <bool> install_appimage: true;
+    in-out property <bool> is_windows: false;
     in-out property <bool> create_desktop_shortcut: true;
     in-out property <bool> create_menu_shortcut: true;
     in-out property <bool> check_system_deps: true;
@@ -228,7 +229,7 @@ export component AppWindow inherits Window {
                                     color: #e2e2ea;
                                 }
                                 Text {
-                                    text: "If missing system packages are required, your system authentication dialog will prompt you safely.";
+                                    text: is_windows ? "If the WebView2 Runtime is missing, setup will ask for your confirmation before installing it." : "If missing system packages are required, your system authentication dialog will prompt you safely.";
                                     font-size: 10px;
                                     color: rgba(226, 226, 234, 0.55);
                                     wrap: word-wrap;
@@ -279,7 +280,7 @@ export component AppWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 6px;
                                     Text {
-                                        text: "Install latest Zero Launcher AppImage";
+                                        text: is_windows ? "Install latest Zero Launcher.exe" : "Install latest Zero Launcher AppImage";
                                         font-size: 12px;
                                         color: #e2e2ea;
                                         vertical-alignment: center;
@@ -324,7 +325,7 @@ export component AppWindow inherits Window {
                                     }
                                 }
                                 Text {
-                                    text: "Install required packages if missing (WebKitGTK, libfuse2, etc.)";
+                                    text: is_windows ? "Install required components if missing (WebView2 Runtime)" : "Install required packages if missing (WebKitGTK, libfuse2, etc.)";
                                     font-size: 12px;
                                     color: #e2e2ea;
                                     vertical-alignment: center;
@@ -398,7 +399,7 @@ export component AppWindow inherits Window {
                                     }
                                 }
                                 Text {
-                                    text: "Add to Applications / Start Menu";
+                                    text: is_windows ? "Add to Start Menu" : "Add to Applications / Start Menu";
                                     font-size: 12px;
                                     color: #e2e2ea;
                                     vertical-alignment: center;
