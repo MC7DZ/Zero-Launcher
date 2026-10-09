@@ -412,6 +412,7 @@ const api = {
   openCurrentExeFolder: () => invoke('open_current_exe_folder'),
   getAvailableVersions: () => invoke('get_available_versions'),
   getCachedVersions: () => invoke('get_cached_versions'),
+  getLoaderVersions: (loader, minecraftVersion) => invoke('get_loader_versions', { loader, minecraftVersion }),
   installVersion: (minecraftVersion, loader, loaderVersion, directory, name, oldVersionId) =>
     invoke('install_minecraft', {
       payload: {
@@ -6014,7 +6015,14 @@ function initInstanceActions() {
     if (instLoaderVersionTile) {
       instLoaderVersionTile.classList.toggle('hidden', isVanilla);
     }
+    refreshNewLoaderVersions('');
   }
+
+  function refreshNewLoaderVersions(preferred) {
+    const mcSel = document.getElementById('inst-mc-version');
+    return loadLoaderVersions(instLoaderVersionInput, instLoaderInput ? instLoaderInput.value : '', mcSel ? mcSel.value : '', preferred);
+  }
+  document.getElementById('inst-mc-version')?.addEventListener('change', () => refreshNewLoaderVersions(instLoaderVersionInput ? instLoaderVersionInput.value : ''));
 
   const newLoaderBtns = document.querySelectorAll('#new-inst-loader-buttons .hypr-loader-btn');
   newLoaderBtns.forEach(btn => {
@@ -6059,7 +6067,7 @@ function initInstanceActions() {
   document.getElementById('btn-new-instance').addEventListener('click', async () => {
     if (instNameInput) instNameInput.value = '';
     setNewInstanceLoader('Fabric');
-    if (instLoaderVersionInput) instLoaderVersionInput.value = '';
+    if (instLoaderVersionInput) instLoaderVersionInput.value = 'latest';
     if (instMinRamInput) instMinRamInput.value = '';
     if (instMaxRamInput) instMaxRamInput.value = '';
     if (instJvmArgsInput) instJvmArgsInput.value = '';
@@ -6070,6 +6078,7 @@ function initInstanceActions() {
     populateNewJavaDropdown();
     overlay.classList.remove('hidden');
     await loadMcVersions();
+    refreshNewLoaderVersions('latest');
     await initInstanceDirField();
   });
   document.getElementById('btn-cancel-new-instance').addEventListener('click', () => overlay.classList.add('hidden'));
@@ -6132,7 +6141,19 @@ function initInstanceActions() {
     if (editLoaderVersionTile) {
       editLoaderVersionTile.classList.toggle('hidden', isVanilla);
     }
+    // A different loader means a different version list — reset to latest
+    // (the open handler re-applies the instance's own version afterwards).
+    refreshEditLoaderVersions('');
   }
+
+  function refreshEditLoaderVersions(preferred) {
+    const el = document.getElementById('edit-inst-loader-version');
+    return loadLoaderVersions(el, editLoaderInput ? editLoaderInput.value : '', editMcVersionSelect ? editMcVersionSelect.value : '', preferred);
+  }
+  editMcVersionSelect?.addEventListener('change', () => {
+    const el = document.getElementById('edit-inst-loader-version');
+    refreshEditLoaderVersions(el ? el.value : '');
+  });
 
   const editLoaderBtns = document.querySelectorAll('#edit-inst-loader-buttons .hypr-loader-btn');
   editLoaderBtns.forEach(btn => {
@@ -6211,7 +6232,8 @@ function initInstanceActions() {
       editInstSubtitle.textContent = inst.name || inst.version_id;
     }
     setEditLoader(loaderLabel(inst.loader));
-    document.getElementById('edit-inst-loader-version').value = (inst.loader_version && inst.loader_version !== 'latest') ? inst.loader_version : '';
+    const editLoaderVersionSel = document.getElementById('edit-inst-loader-version');
+    renderLoaderVersionOptions(editLoaderVersionSel, [], new Set(), inst.loader_version);
     document.getElementById('edit-inst-dir').textContent = formatDirectoryForDisplay(inst.directory || (settings ? settings.game_directory : '—'));
     
     // Per-instance advanced options
@@ -6236,6 +6258,8 @@ function initInstanceActions() {
     const initialMcVer = (inst.minecraft_version && isLikelyMcVersion(inst.minecraft_version)) ? inst.minecraft_version : (isLikelyMcVersion(inst.version_id) ? inst.version_id : null);
     loadMcVersions(editMcVersionSelect, initialMcVer).catch(e => {
       console.error('Failed to load MC versions for edit overlay:', e);
+    }).finally(() => {
+      refreshEditLoaderVersions(inst.loader_version);
     });
   });
   function closeEditInstanceOverlay() { editOverlay.classList.add('hidden'); }
@@ -6256,7 +6280,8 @@ function initInstanceActions() {
     let rawLoader = (editLoaderInput ? editLoaderInput.value : 'Vanilla') || 'Vanilla';
     let newLoader = rawLoader.trim().toLowerCase();
     if (!newLoader || newLoader === 'unknown') newLoader = 'vanilla';
-    const loaderVersion = document.getElementById('edit-inst-loader-version').value.trim() || 'latest';
+    const loaderVersion = normalizeLoaderVersionValue(document.getElementById('edit-inst-loader-version').value);
+    const currentLoaderVersion = normalizeLoaderVersionValue(inst.loader_version);
     
     const javaPath = editJavaSelect ? editJavaSelect.value : '';
     const minRamMb = editMinRamInput && editMinRamInput.value ? parseInt(editMinRamInput.value) : null;
@@ -6269,6 +6294,7 @@ function initInstanceActions() {
     const versionOrLoaderChanged =
       (currentMc !== null && newMcVersion !== currentMc) ||
       (currentLoader !== null && newLoader !== currentLoader) ||
+      (newLoader !== 'vanilla' && loaderVersion !== currentLoaderVersion) ||
       (currentLoader === null);
 
     const saveBtn = document.getElementById('btn-save-edit-instance');
@@ -6743,17 +6769,26 @@ function renderMcVersionOptions(sel, versionList, cachedSet, selectedValue) {
   if (selectedValue && seen.has(selectedValue)) sel.value = selectedValue;
 }
 
-async function loadMcVersions(selectEl, selectedValue) {
+async function loadMcVersions(selectEl, selectedValue, attempt = 0) {
   const sel = selectEl || document.getElementById('inst-mc-version');
+  const reqId = String((Number(sel.dataset.mcReq) || 0) + 1);
+  sel.dataset.mcReq = reqId;
+  const stale = () => sel.dataset.mcReq !== reqId;
 
   // Step 1 — show already-downloaded versions immediately. This needs no
   // network round trip, so it renders right away (and still works with no
   // internet connection at all).
   const cachedSet = await getCachedMcVersionSet();
-  if (cachedSet.size > 0) {
-    renderMcVersionOptions(sel, [], cachedSet, selectedValue);
-  } else {
-    sel.innerHTML = '<option>Fetching versions…</option>';
+  if (stale()) return;
+  if (!mcVersionsCache) {
+    if (cachedSet.size > 0) {
+      renderMcVersionOptions(sel, [], cachedSet, selectedValue);
+      setSelectStatus(sel, '⟳ Fetching more versions…', 'Fetching…');
+    } else {
+      sel.innerHTML = '<option>Fetching versions…</option>';
+    }
+  } else if (attempt === 0) {
+    // already have the list in memory; rendered below without a fetch
   }
 
   // Step 2 — fetch (or reuse) the full Mojang manifest and merge it in,
@@ -6769,13 +6804,10 @@ async function loadMcVersions(selectEl, selectedValue) {
       } else {
         versionList = [];
       }
+      if (versionList.length === 0) throw new Error('empty version list');
       mcVersionsCache = versionList;
     }
-
-    if (!versionList || versionList.length === 0) {
-      if (cachedSet.size === 0) sel.innerHTML = '<option>No versions found</option>';
-      return;
-    }
+    if (stale()) return;
 
     const releases = versionList.filter(v => v.type === 'release' || !v.type);
     const listToRender = (releases.length > 0 ? releases : versionList).slice(0, 100);
@@ -6784,24 +6816,223 @@ async function loadMcVersions(selectEl, selectedValue) {
     // that isn't in the trimmed/release list (an old snapshot, for
     // example), add it so the select doesn't silently jump to a different
     // version than what's actually installed.
-    if (selectedValue && isLikelyMcVersion(selectedValue) && !listToRender.some(v => v.id === selectedValue) && !cachedSet.has(selectedValue)) {
-      listToRender.unshift({ id: selectedValue });
+    const wanted = (sel.value && isLikelyMcVersion(sel.value) && attempt > 0) ? sel.value : selectedValue;
+    if (wanted && isLikelyMcVersion(wanted) && !listToRender.some(v => v.id === wanted) && !cachedSet.has(wanted)) {
+      listToRender.unshift({ id: wanted });
     }
 
-    renderMcVersionOptions(sel, listToRender, cachedSet, selectedValue);
+    renderMcVersionOptions(sel, listToRender, cachedSet, wanted);
     mcVersionsLoaded = true;
+    sel.dispatchEvent(new Event('change'));
   } catch (e) {
     console.error('Error fetching Minecraft versions:', e);
+    if (stale()) return;
+    const keep = (sel.value && isLikelyMcVersion(sel.value)) ? sel.value : selectedValue;
+    const retrying = scheduleDropdownRetry(sel, attempt, stale, (n) => {
+      loadMcVersions(sel, keep, n);
+    });
     if (cachedSet.size === 0) {
-      sel.innerHTML = `<option>Failed to load (${e})</option>`;
+      sel.innerHTML = retrying
+        ? '<option>⚠ Couldn\'t fetch versions — retrying…</option>'
+        : '<option>⚠ Failed to load versions (check your connection)</option>';
+      if (!retrying) {
+        showToast('Could not load the Minecraft version list', 'error', null,
+          [{ label: 'Retry', onClick: () => loadMcVersions(sel, selectedValue) }]);
+      }
     } else {
-      showToast(
-        'Could not reach the version list — showing already-downloaded versions only',
-        'error',
-        null,
-        [{ label: 'Refresh', onClick: () => { mcVersionsCache = null; loadMcVersions(sel, selectedValue); } }]
+      setSelectStatus(
+        sel,
+        retrying ? '⚠ Couldn\'t fetch versions — retrying…' : '⚠ Offline — showing downloaded versions only',
+        retrying ? 'Retrying…' : null
       );
+      if (!retrying) {
+        showToast('Could not reach the version list — showing already-downloaded versions only', 'error', null,
+          [{ label: 'Retry', onClick: () => loadMcVersions(sel, selectedValue) }]);
+      }
     }
+  }
+}
+
+
+// ── Loader version dropdown ────────────────────────────────────────────────
+// Same idea as the Minecraft version dropdown: "Latest (Recommended)" is the
+// default, already-downloaded loader versions are grouped at the top with a
+// checkmark, and the rest come from the network. Works offline: the list is
+// remembered in localStorage and merged with installed instances' versions.
+const loaderVersionsMemCache = new Map();
+const LOADER_VERSIONS_LS_KEY = 'loaderVersionsCache.v1';
+
+function loaderVersionsLsGet(key) {
+  try {
+    const all = JSON.parse(localStorage.getItem(LOADER_VERSIONS_LS_KEY) || '{}');
+    return Array.isArray(all[key]) ? all[key] : null;
+  } catch (_) { return null; }
+}
+function loaderVersionsLsSet(key, list) {
+  try {
+    const all = JSON.parse(localStorage.getItem(LOADER_VERSIONS_LS_KEY) || '{}');
+    all[key] = list;
+    localStorage.setItem(LOADER_VERSIONS_LS_KEY, JSON.stringify(all));
+  } catch (_) {}
+}
+
+
+// ── Dropdown status + auto-retry helpers ───────────────────────────────────
+// Shows a disabled status row at the top of the list and tags the currently
+// selected entry (so it's visible while the dropdown is closed too).
+function setSelectStatus(sel, text, suffix) {
+  if (!sel) return;
+  const keep = sel.value;
+  sel.querySelectorAll('option[data-status]').forEach(o => o.remove());
+  sel.querySelectorAll('option[data-base-text]').forEach(o => {
+    o.textContent = o.dataset.baseText;
+    delete o.dataset.baseText;
+  });
+  if (!text) return;
+  const note = document.createElement('option');
+  note.disabled = true;
+  note.dataset.status = '1';
+  note.textContent = text;
+  sel.insertBefore(note, sel.firstChild);
+  sel.value = keep;
+  const cur = sel.options[sel.selectedIndex];
+  if (cur && !cur.disabled && suffix) {
+    cur.dataset.baseText = cur.textContent;
+    cur.textContent = `${cur.textContent} · ${suffix}`;
+  }
+}
+
+const AUTO_RETRY_DELAYS_MS = [2000, 4000, 8000, 15000, 30000];
+
+// Run `fn` again after a backoff delay unless the dropdown went stale, was
+// hidden (overlay closed) or removed. Also retries right away when the
+// network comes back.
+function scheduleDropdownRetry(sel, attempt, isStale, fn) {
+  if (!sel || attempt >= AUTO_RETRY_DELAYS_MS.length) return false;
+  let done = false;
+  const run = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    window.removeEventListener('online', run);
+    if (isStale() || !sel.isConnected || sel.offsetParent === null) return;
+    fn(attempt + 1);
+  };
+  const timer = setTimeout(run, AUTO_RETRY_DELAYS_MS[attempt]);
+  window.addEventListener('online', run);
+  return true;
+}
+
+function normalizeLoaderVersionValue(v) {
+  const t = (v || '').trim();
+  return (!t || t.toLowerCase() === 'latest') ? 'latest' : t;
+}
+
+function renderLoaderVersionOptions(sel, versions, downloadedSet, selectedValue, statusNote) {
+  const want = normalizeLoaderVersionValue(selectedValue);
+  sel.innerHTML = '';
+
+  const latestOpt = document.createElement('option');
+  latestOpt.value = 'latest';
+  latestOpt.textContent = 'Latest (Recommended)';
+  sel.appendChild(latestOpt);
+
+  const downloadedGroup = document.createElement('optgroup');
+  downloadedGroup.label = '✓ Already Downloaded';
+  const remainingGroup = document.createElement('optgroup');
+  remainingGroup.label = 'Available to Download';
+  const seen = new Set(['latest']);
+
+  const makeOption = (id, isCached) => {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = isCached ? `✓ ${id}` : id;
+    if (isCached) {
+      opt.style.color = 'var(--accent, #6ee7b7)';
+      opt.style.fontWeight = '600';
+    }
+    return opt;
+  };
+
+  (versions || []).forEach(id => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    const isCached = downloadedSet.has(id);
+    (isCached ? downloadedGroup : remainingGroup).appendChild(makeOption(id, isCached));
+  });
+  downloadedSet.forEach(id => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    downloadedGroup.appendChild(makeOption(id, true));
+  });
+  // Keep a pinned version selectable even if it isn't in the list (e.g.
+  // offline, or an older build that dropped out of the metadata).
+  if (want !== 'latest' && !seen.has(want)) {
+    seen.add(want);
+    remainingGroup.insertBefore(makeOption(want, false), remainingGroup.firstChild);
+  }
+
+  if (downloadedGroup.childElementCount) sel.appendChild(downloadedGroup);
+  if (remainingGroup.childElementCount) sel.appendChild(remainingGroup);
+  sel.value = seen.has(want) ? want : 'latest';
+}
+
+async function loadLoaderVersions(selectEl, loader, mcVersion, selectedValue, attempt = 0) {
+  const sel = selectEl;
+  if (!sel) return;
+  const l = (loader || '').toLowerCase();
+  const mc = (mcVersion || '').trim();
+  const reqId = String((Number(sel.dataset.reqId) || 0) + 1);
+  sel.dataset.reqId = reqId;
+  const stale = () => sel.dataset.reqId !== reqId;
+
+  if (!l || l === 'vanilla' || l === 'unknown' || !mc || !isLikelyMcVersion(mc)) {
+    renderLoaderVersionOptions(sel, [], new Set(), selectedValue);
+    return;
+  }
+
+  const key = `${l}|${mc}`;
+
+  // Step 1 — instant, no network: installed versions + last known list.
+  const downloaded = new Set();
+  try {
+    const cached = await api.getCachedVersions();
+    (cached || []).forEach(c => {
+      if ((c.loader || '').toLowerCase() === l && c.minecraft_version === mc) {
+        const v = (c.loader_version || '').trim();
+        if (v && v.toLowerCase() !== 'latest') downloaded.add(v);
+      }
+    });
+  } catch (_) {}
+  if (stale()) return;
+  const remembered = loaderVersionsMemCache.get(key) || loaderVersionsLsGet(key) || [];
+  renderLoaderVersionOptions(sel, remembered, downloaded, selectedValue);
+
+  if (loaderVersionsMemCache.has(key)) return;
+
+  // Step 2 — refresh from the network, with a visible status; retry on failure.
+  setSelectStatus(sel, '⟳ Fetching loader versions…', 'Fetching…');
+  try {
+    const list = await api.getLoaderVersions(l, mc);
+    if (!Array.isArray(list)) throw new Error('bad response');
+    loaderVersionsMemCache.set(key, list);
+    loaderVersionsLsSet(key, list);
+    if (stale()) return;
+    // Keep whatever the user picked in the meantime.
+    const current = sel.value && sel.value !== 'latest' ? sel.value : selectedValue;
+    renderLoaderVersionOptions(sel, list, downloaded, current);
+    if (list.length === 0) setSelectStatus(sel, 'No loader versions found for this Minecraft version', null);
+  } catch (e) {
+    console.warn('Could not fetch loader versions (offline?):', e);
+    if (stale()) return;
+    const retrying = scheduleDropdownRetry(sel, attempt, stale, (n) => {
+      loadLoaderVersions(sel, l, mc, sel.value, n);
+    });
+    setSelectStatus(
+      sel,
+      retrying ? '⚠ Couldn\'t fetch versions — retrying…' : '⚠ Offline — showing saved versions',
+      retrying ? 'Retrying…' : null
+    );
   }
 }
 
@@ -6957,7 +7188,7 @@ async function installInstance() {
   try {
     const mcVersion = document.getElementById('inst-mc-version')?.value;
     let loader = document.getElementById('inst-loader')?.value || 'vanilla';
-    let loaderVersion = document.getElementById('inst-loader-version')?.value?.trim() || 'latest';
+    let loaderVersion = normalizeLoaderVersionValue(document.getElementById('inst-loader-version')?.value);
     if (!mcVersion) {
       showToast('Version required', 'error');
       if (btn) btn.disabled = false;

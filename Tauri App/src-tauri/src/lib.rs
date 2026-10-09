@@ -359,6 +359,7 @@ pub fn run() {
             commands::updater::open_current_exe_folder,
             // Minecraft
             commands::minecraft::get_available_versions,
+            commands::minecraft::get_loader_versions,
             commands::minecraft::get_cached_versions,
             commands::minecraft::scan_minecraft_versions,
             commands::minecraft::install_minecraft,

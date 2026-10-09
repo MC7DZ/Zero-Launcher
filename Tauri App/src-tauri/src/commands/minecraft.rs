@@ -246,6 +246,122 @@ pub async fn get_available_versions() -> Result<Vec<VersionInfo>, String> {
     Ok(manifest.versions)
 }
 
+/// List the loader versions available for a loader + Minecraft version,
+/// newest first. Returns bare loader version strings (what the install
+/// command accepts as `loader_version`). Fails when offline; the frontend
+/// falls back to cached/installed versions in that case.
+#[tauri::command]
+pub async fn get_loader_versions(loader: String, minecraft_version: String) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(8))
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let loader = loader.trim().to_lowercase();
+    let mc = minecraft_version.trim().to_string();
+
+    async fn get_text(client: &reqwest::Client, url: &str) -> Result<String, String> {
+        client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch loader versions: {e}"))?
+            .error_for_status()
+            .map_err(|e| format!("Failed to fetch loader versions: {e}"))?
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read loader versions: {e}"))
+    }
+
+    fn maven_versions(xml: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut rest = xml;
+        while let Some(i) = rest.find("<version>") {
+            let after = &rest[i + 9..];
+            if let Some(j) = after.find("</version>") {
+                out.push(after[..j].trim().to_string());
+                rest = &after[j + 10..];
+            } else {
+                break;
+            }
+        }
+        out
+    }
+
+    match loader.as_str() {
+        "fabric" | "quilt" => {
+            let base = if loader == "fabric" {
+                "https://meta.fabricmc.net/v2"
+            } else {
+                "https://meta.quiltmc.org/v3"
+            };
+            let url = if mc.is_empty() {
+                format!("{base}/versions/loader")
+            } else {
+                format!("{base}/versions/loader/{mc}")
+            };
+            let text = get_text(&client, &url).await?;
+            let json: serde_json::Value =
+                serde_json::from_str(&text).map_err(|e| format!("Failed to parse loader versions: {e}"))?;
+            let mut out = Vec::new();
+            if let Some(arr) = json.as_array() {
+                for item in arr {
+                    let v = item
+                        .get("loader")
+                        .and_then(|l| l.get("version"))
+                        .or_else(|| item.get("version"))
+                        .and_then(|v| v.as_str());
+                    if let Some(v) = v {
+                        out.push(v.to_string());
+                    }
+                }
+            }
+            Ok(out)
+        }
+        "forge" => {
+            let text = get_text(
+                &client,
+                "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml",
+            )
+            .await?;
+            let prefix = format!("{mc}-");
+            let mut out: Vec<String> = maven_versions(&text)
+                .into_iter()
+                .filter(|v| v.starts_with(&prefix))
+                .map(|v| v[prefix.len()..].to_string())
+                .collect();
+            out.reverse();
+            Ok(out)
+        }
+        "neoforge" => {
+            let text = get_text(
+                &client,
+                "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml",
+            )
+            .await?;
+            let prefix = if let Some(legacy) = mc.strip_prefix("1.") {
+                let mut c = legacy.split('.');
+                let rel = c.next().unwrap_or("");
+                let patch = c.next().unwrap_or("0");
+                format!("{rel}.{patch}.")
+            } else {
+                let mut c = mc.split('.');
+                let y = c.next().unwrap_or("");
+                let r = c.next().unwrap_or("");
+                let p = c.next().unwrap_or("0");
+                format!("{y}.{r}.{p}.")
+            };
+            let mut out: Vec<String> = maven_versions(&text)
+                .into_iter()
+                .filter(|v| v.starts_with(&prefix))
+                .collect();
+            out.reverse();
+            Ok(out)
+        }
+        _ => Ok(Vec::new()),
+    }
+}
+
 /// Check if a string looks like a real Minecraft version (e.g. 1.20.1, 24w40a, b1.7.3)
 /// rather than a custom instance name (e.g. "Survival", "My Modpack").
 pub fn is_likely_mc_version(s: &str) -> bool {
