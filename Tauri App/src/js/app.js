@@ -49,6 +49,20 @@ function playClickSound() {
   } catch (_) {}
 }
 
+// Selector-style controls (tabs, nav items, segmented buttons) where only one
+// option is "on" at a time. Re-clicking the active one does nothing, so it
+// should stay silent. Toggles, accordions and cards are intentionally excluded.
+const SELECTOR_CONTROLS =
+  '.settings-nav-btn, .pill-tab, .dressing-room-tab, .modpack-view-tab, ' +
+  '.discover-loader-pill, .hypr-loader-btn, .skin-speed-btn, [role="tab"]';
+
+function isAlreadySelected(el) {
+  if (!el) return false;
+  if (el.matches('input[type="radio"]') && el.checked) return true;
+  if (el.getAttribute && el.getAttribute('aria-selected') === 'true') return true;
+  return el.matches(SELECTOR_CONTROLS) && el.classList.contains('active');
+}
+
 function initClickSoundListener() {
   const handleInteraction = (e) => {
     const target = e.target;
@@ -64,6 +78,9 @@ function initClickSoundListener() {
       'a[href], .tab-page nav button, [role="button"], [role="tab"], [role="checkbox"]'
     );
     if (interactive && !interactive.disabled && !interactive.classList.contains('disabled')) {
+      // Quality of life: no click sound when pressing something that is
+      // already the selected one (current settings section, tab, loader pill…).
+      if (isAlreadySelected(interactive)) return;
       playClickSound();
     }
   };
@@ -830,6 +847,9 @@ window.showToast = showToast;
 // network response land on top of tab 4 a second later, it just quietly
 // no-ops instead.
 let latestTabToken = 0;
+let pendingTabSwitchTimer = null;
+// Delay between the tab button changing and the page content actually switching.
+const TAB_PAGE_SWITCH_DELAY_MS = 300;
 
 function initTabs() {
   const tabBar = document.getElementById('tab-bar');
@@ -870,60 +890,97 @@ function initTabs() {
       btn.classList.add('active');
       updateIndicator(btn);
 
-      // Instant page switch — no delay
-      document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
-      const page = document.getElementById('tab-' + tabId);
-      if (page) {
-        page.classList.add('active');
-        refreshCardCullingIn(page);
-      }
-      // Lazy-load data when switching
-      if (tabId === 'instances') {
-        if (!skinMiniPreviewInstance) {
-          initSkinMiniPreview();
-        } else {
-          skinMiniPreviewInstance.renderPaused = false;
-          resizeSkinMiniPreview();
-          updateSkinMiniPreview();
+      // The tab button + sliding indicator move right away; the page itself
+      // switches after a short delay (TAB_PAGE_SWITCH_DELAY_MS) so the
+      // button feedback is seen before the content changes. A newer click
+      // cancels the pending switch of the previous one.
+      if (pendingTabSwitchTimer) clearTimeout(pendingTabSwitchTimer);
+
+      // Direction of travel follows the tab order (moving right → content
+      // slides left, and vice versa).
+      const tabOrder = Array.from(document.querySelectorAll('.pill-tab')).map(b => b.dataset.tab);
+      const visiblePage = document.querySelector('.tab-page.active');
+      const fromTab = visiblePage ? visiblePage.id.replace(/^tab-/, '') : null;
+      const dirRight = fromTab == null || tabOrder.indexOf(tabId) >= tabOrder.indexOf(fromTab);
+      const clearTabAnimClasses = (el) => el && el.classList.remove('tab-leave-l', 'tab-leave-r', 'tab-enter-l', 'tab-enter-r');
+      const targetPage = document.getElementById('tab-' + tabId);
+
+      // While the 0.3s wait runs, the current page eases out sideways.
+      if (visiblePage && visiblePage !== targetPage) {
+        if (!visiblePage.classList.contains('tab-leave-l') && !visiblePage.classList.contains('tab-leave-r')) {
+          visiblePage.classList.add(dirRight ? 'tab-leave-l' : 'tab-leave-r');
         }
-      } else {
-        // Pause 3D WebGL render loop when not viewing Instances tab to ensure silky smooth scrolling
-        if (skinMiniPreviewInstance) {
-          skinMiniPreviewInstance.renderPaused = true;
-        }
-      }
-      if (tabId === 'mods') {
-        if (window.refreshContentTypeIndicator) {
-          requestAnimationFrame(() => window.refreshContentTypeIndicator(true));
-        }
-        // Keeps the currently selected content type active when switching back
-        if (['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world'].includes(activeContentType)) {
-          showModsTabLoading();
-          loadModInstances().then(() => {
-            // Bail if the user has already switched to another tab since
-            // this chain started — don't render mod data into a tab that
-            // isn't (or is no longer) the one being looked at.
-            if (myToken !== latestTabToken) return;
-            return loadMods();
-          }).catch(() => {}).finally(() => {
-            if (myToken !== latestTabToken) return;
-            hideModsTabLoading();
-          });
-        } else {
-          setContentType(activeContentType);
-        }
-      }
-      if (tabId === 'discover') {
-        initDiscoverTabIfNeeded();
+      } else if (visiblePage) {
+        // Clicked back to the page that's still showing — just undo the exit.
+        clearTabAnimClasses(visiblePage);
       }
 
-      if (tabId === 'presets') initPresetsTabIfNeeded();
+      pendingTabSwitchTimer = setTimeout(() => {
+        pendingTabSwitchTimer = null;
+        if (myToken !== latestTabToken) return;
+        document.querySelectorAll('.tab-page').forEach(p => {
+          clearTabAnimClasses(p);
+          p.classList.remove('active');
+        });
+        const page = targetPage;
+        if (page) {
+          page.classList.add('active');
+          // New page glides in from the direction of travel.
+          if (page !== visiblePage) {
+            const cls = dirRight ? 'tab-enter-r' : 'tab-enter-l';
+            page.classList.add(cls);
+            setTimeout(() => page.classList.remove(cls), 450);
+          }
+          refreshCardCullingIn(page);
+        }
+        // Lazy-load data when switching
+        if (tabId === 'instances') {
+          if (!skinMiniPreviewInstance) {
+            initSkinMiniPreview();
+          } else {
+            skinMiniPreviewInstance.renderPaused = false;
+            resizeSkinMiniPreview();
+            updateSkinMiniPreview();
+          }
+        } else {
+          // Pause 3D WebGL render loop when not viewing Instances tab to ensure silky smooth scrolling
+          if (skinMiniPreviewInstance) {
+            skinMiniPreviewInstance.renderPaused = true;
+          }
+        }
+        if (tabId === 'mods') {
+          if (window.refreshContentTypeIndicator) {
+            requestAnimationFrame(() => window.refreshContentTypeIndicator(true));
+          }
+          // Keeps the currently selected content type active when switching back
+          if (['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world'].includes(activeContentType)) {
+            showModsTabLoading();
+            loadModInstances().then(() => {
+              // Bail if the user has already switched to another tab since
+              // this chain started — don't render mod data into a tab that
+              // isn't (or is no longer) the one being looked at.
+              if (myToken !== latestTabToken) return;
+              return loadMods();
+            }).catch(() => {}).finally(() => {
+              if (myToken !== latestTabToken) return;
+              hideModsTabLoading();
+            });
+          } else {
+            setContentType(activeContentType);
+          }
+        }
+        if (tabId === 'discover') {
+          initDiscoverTabIfNeeded();
+        }
 
-      // Update Discord RPC — skip if superseded by a later switch already.
-      if (myToken === latestTabToken) {
-        const tabName = tabId.charAt(0).toUpperCase() + tabId.slice(1);
-        api.updateDiscordPresence(tabName, null, null).catch(() => { });
-      }
+        if (tabId === 'presets') initPresetsTabIfNeeded();
+
+        // Update Discord RPC — skip if superseded by a later switch already.
+        if (myToken === latestTabToken) {
+          const tabName = tabId.charAt(0).toUpperCase() + tabId.slice(1);
+          api.updateDiscordPresence(tabName, null, null).catch(() => { });
+        }
+      }, TAB_PAGE_SWITCH_DELAY_MS);
     });
   });
 
@@ -6429,6 +6486,17 @@ async function openCreateShortcutModal() {
   if (destAppMenu) destAppMenu.checked = true;
   if (offlineToggle) offlineToggle.checked = false;
 
+  // Advanced Options always starts collapsed
+  const advPanel = document.getElementById('shortcut-advanced-panel');
+  const advBtn = document.getElementById('btn-toggle-shortcut-advanced');
+  if (advPanel) advPanel.classList.add('hidden');
+  if (advBtn) advBtn.setAttribute('aria-expanded', 'false');
+
+  if (_shortcutCloseTimer) { clearTimeout(_shortcutCloseTimer); _shortcutCloseTimer = null; }
+  overlay.classList.remove('closing');
+  // Show right away (animates in); accounts load in the background below.
+  overlay.classList.remove('hidden');
+
   if (accountSelect) {
     accountSelect.innerHTML = '<option value="">Loading accounts…</option>';
     try {
@@ -6447,13 +6515,20 @@ async function openCreateShortcutModal() {
     });
     accountSelect.innerHTML = html;
   }
-
-  overlay.classList.remove('hidden');
 }
+
+let _shortcutCloseTimer = null;
 
 function closeCreateShortcutModal() {
   const overlay = document.getElementById('create-shortcut-overlay');
-  if (overlay) overlay.classList.add('hidden');
+  if (!overlay || overlay.classList.contains('hidden') || overlay.classList.contains('closing')) return;
+  overlay.classList.add('closing');
+  if (_shortcutCloseTimer) clearTimeout(_shortcutCloseTimer);
+  _shortcutCloseTimer = setTimeout(() => {
+    _shortcutCloseTimer = null;
+    overlay.classList.add('hidden');
+    overlay.classList.remove('closing');
+  }, 210);
 }
 
 function initCreateShortcutModal() {
@@ -6464,6 +6539,36 @@ function initCreateShortcutModal() {
 
   closeBtn?.addEventListener('click', closeCreateShortcutModal);
   cancelBtn?.addEventListener('click', closeCreateShortcutModal);
+
+  // Advanced Options: smooth height expand/collapse (Web Animations API, so
+  // it isn't affected by the Linux transition restrictions).
+  const advBtn = document.getElementById('btn-toggle-shortcut-advanced');
+  const advPanel = document.getElementById('shortcut-advanced-panel');
+  advBtn?.addEventListener('click', () => {
+    if (!advPanel) return;
+    const expanding = advBtn.getAttribute('aria-expanded') !== 'true';
+    advBtn.setAttribute('aria-expanded', String(expanding));
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (advPanel._anim) { advPanel._anim.cancel(); advPanel._anim = null; }
+    if (expanding) {
+      advPanel.classList.remove('hidden');
+      if (reduce || !advPanel.animate) return;
+      const h = advPanel.scrollHeight;
+      advPanel._anim = advPanel.animate(
+        [{ height: '0px', opacity: 0 }, { height: h + 'px', opacity: 1 }],
+        { duration: 280, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }
+      );
+      advPanel._anim.onfinish = () => { advPanel._anim = null; };
+    } else {
+      if (reduce || !advPanel.animate) { advPanel.classList.add('hidden'); return; }
+      const h = advPanel.offsetHeight;
+      advPanel._anim = advPanel.animate(
+        [{ height: h + 'px', opacity: 1 }, { height: '0px', opacity: 0 }],
+        { duration: 200, easing: 'cubic-bezier(0.4, 0, 1, 1)' }
+      );
+      advPanel._anim.onfinish = () => { advPanel._anim = null; advPanel.classList.add('hidden'); };
+    }
+  });
 
   overlay?.addEventListener('click', (e) => {
     if (e.target === overlay) closeCreateShortcutModal();
@@ -14915,6 +15020,7 @@ function initSettings() {
 
   navBtns.forEach(btn => {
     btn.addEventListener('click', () => {
+      if (btn.classList.contains('active')) return; // already on this section
       const targetSection = btn.dataset.section;
       if (targetSection) {
         switchSettingsSection(targetSection);
@@ -14925,16 +15031,15 @@ function initSettings() {
   initSettingsSearch();
 }
 
+let _settingsCloseTimer = null;
+
 function openSettingsModal(targetSection) {
   const overlay = document.getElementById('settings-modal-overlay');
   if (!overlay) return;
-  overlay.classList.remove('hidden');
-  document.body.classList.add('settings-modal-active');
 
-  // Pause heavy background systems (Canvas particle loop, WebGL 3D skin viewers)
-  // to give 100% CPU and GPU priority to the Settings UI on WebKitGTK
-  if (typeof BG !== 'undefined' && BG.pause) BG.pause();
-  if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
+  // Cancel any pending close from a quick close → reopen.
+  if (_settingsCloseTimer) { clearTimeout(_settingsCloseTimer); _settingsCloseTimer = null; }
+  overlay.classList.remove('closing');
 
   // Reset search state on modal open
   const searchInput = document.getElementById('settings-search-input');
@@ -14946,26 +15051,43 @@ function openSettingsModal(targetSection) {
     resultsDropdown.classList.add('hidden');
     resultsDropdown.innerHTML = '';
   }
+  if (targetSection) switchSettingsSection(targetSection);
 
+  // Fill in the controls first so nothing visibly flips while animating in.
   loadSettings();
-  renderHiddenInstancesSettings();
-  renderJavaManager();
-  updateAboutSystemInfo();
-  if (targetSection) {
-    switchSettingsSection(targetSection);
-  }
+
+  overlay.classList.remove('hidden');
+  document.body.classList.add('settings-modal-active');
+
+  // Heavier work runs after the first frames have painted so it doesn't
+  // compete with the opening animation.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (overlay.classList.contains('hidden') || overlay.classList.contains('closing')) return;
+    // Pause heavy background systems (Canvas particle loop, WebGL 3D skin viewers)
+    if (typeof BG !== 'undefined' && BG.pause) BG.pause();
+    if (skinMiniPreviewInstance) skinMiniPreviewInstance.renderPaused = true;
+    renderHiddenInstancesSettings();
+    renderJavaManager();
+    updateAboutSystemInfo();
+  }));
 }
 
 function closeSettingsModal() {
   const overlay = document.getElementById('settings-modal-overlay');
-  if (overlay) overlay.classList.add('hidden');
+  if (!overlay || overlay.classList.contains('hidden') || overlay.classList.contains('closing')) return;
   document.body.classList.remove('settings-modal-active');
+  overlay.classList.add('closing');
 
-  // Resume background engine
-  if (typeof BG !== 'undefined' && BG.resume) BG.resume();
-
-  // Fully resume and refresh the 3D player skin preview immediately
-  showSkinMiniPreview();
+  if (_settingsCloseTimer) clearTimeout(_settingsCloseTimer);
+  _settingsCloseTimer = setTimeout(() => {
+    _settingsCloseTimer = null;
+    overlay.classList.add('hidden');
+    overlay.classList.remove('closing');
+    // Resume background engine
+    if (typeof BG !== 'undefined' && BG.resume) BG.resume();
+    // Fully resume and refresh the 3D player skin preview
+    showSkinMiniPreview();
+  }, 210);
 }
 
 function switchSettingsSection(sectionName) {
@@ -14986,9 +15108,30 @@ function switchSettingsSection(sectionName) {
     sectionName = navBtns[0].dataset.section;
   }
 
+  // Which section was showing before, and which way are we moving through
+  // the sidebar? (Used to slide the new panel in from that direction.)
+  const prevPanel = Array.from(panels).find(p => p.classList.contains('active'));
+  const prevName = prevPanel ? prevPanel.id.replace(/^settings-panel-/, '') : null;
+  const order = Array.from(navBtns).map(b => b.dataset.section);
+  const goingDown = prevName == null || order.indexOf(sectionName) >= order.indexOf(prevName);
+
   panels.forEach(panel => {
+    panel.classList.remove('panel-enter-down', 'panel-enter-up');
     panel.classList.toggle('active', panel.id === `settings-panel-${sectionName}`);
   });
+
+  if (prevName && prevName !== sectionName) {
+    const targetPanel = document.getElementById(`settings-panel-${sectionName}`);
+    const settingsOverlay = document.getElementById('settings-modal-overlay');
+    const visible = settingsOverlay && !settingsOverlay.classList.contains('hidden');
+    if (targetPanel && visible) {
+      const cls = goingDown ? 'panel-enter-down' : 'panel-enter-up';
+      // Reflow so the animation restarts even on quick repeated switches.
+      void targetPanel.offsetWidth;
+      targetPanel.classList.add(cls);
+      setTimeout(() => targetPanel.classList.remove(cls), 700);
+    }
+  }
 
   if (sectionName === 'java-manager' || sectionName === 'java') {
     renderJavaManager();

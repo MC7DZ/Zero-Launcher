@@ -9708,6 +9708,7 @@ body.screenshot-lightbox-open {
   color: #fff;
   font-weight: 600;
   border-color: rgba(255, 255, 255, 0.08);
+  cursor: default;
 }
 
 .settings-nav-icon {
@@ -10899,4 +10900,213 @@ body.screenshot-lightbox-open {
 /* Dressing room snaps open instantly with no slide when animations are disabled */
 .no-ui-animations .dressing-room-modal {
   transform: translate3d(0, 0, 0) !important;
+}
+
+/* ═══ Header hover feedback (tabs + settings button) ═══
+   Subtle, standard hover states: a soft background on inactive tabs and a
+   lifted look on the settings button. The active tab keeps its sliding
+   indicator, so it isn't given a hover background. */
+.pill-tab {
+  transition: color 0.18s ease, background-color 0.18s ease, transform var(--transition-fast);
+}
+.pill-tab:not(.active):hover {
+  color: #fff;
+  background-color: rgba(var(--overlay-rgb), 0.08);
+}
+.pill-tab:not(.active):active {
+  background-color: rgba(var(--overlay-rgb), 0.12);
+}
+
+.header-icon-btn {
+  transition: background-color var(--transition), color var(--transition),
+              border-color var(--transition), transform var(--transition);
+}
+.header-icon-btn svg {
+  transition: transform 0.35s var(--ease-out-spring);
+}
+.header-icon-btn:hover {
+  background: rgba(var(--overlay-rgb), 0.1);
+  border-color: rgba(var(--overlay-rgb), 0.18);
+  color: #fff;
+}
+.header-icon-btn:hover svg {
+  transform: rotate(45deg);
+}
+.header-icon-btn:active {
+  background: rgba(var(--overlay-rgb), 0.14);
+  transform: scale(0.95);
+}
+.header-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 16, 185, 129), 0.5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .header-icon-btn svg { transition: none; }
+  .header-icon-btn:hover svg { transform: none; }
+}
+
+/* ═══ Settings modal open/close animation ═══
+   Keyframe based (works reliably on WebKitGTK / Linux): the window rises and
+   settles in on open, and sinks away on close. The overlay gets a
+   `.closing` class for the exit, then `.hidden` once it has finished. */
+@keyframes settings-win-in {
+  0%   { opacity: 0; transform: translate3d(0, 28px, 0) scale(0.96); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes settings-win-out {
+  0%   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  100% { opacity: 0; transform: translate3d(0, 18px, 0) scale(0.975); }
+}
+@keyframes settings-backdrop-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes settings-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+
+#settings-modal-overlay {
+  transition: none;
+}
+#settings-modal-overlay:not(.hidden) {
+  animation: settings-backdrop-in 0.25s ease both;
+}
+#settings-modal-overlay.closing {
+  animation: settings-backdrop-out 0.2s ease both;
+  pointer-events: none;
+}
+#settings-modal-overlay:not(.hidden) .settings-modal-window {
+  opacity: 1;
+  transform: none;
+  will-change: transform, opacity;
+  animation: settings-win-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+#settings-modal-overlay.closing .settings-modal-window {
+  animation: settings-win-out 0.2s cubic-bezier(0.4, 0, 1, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  #settings-modal-overlay:not(.hidden),
+  #settings-modal-overlay.closing,
+  #settings-modal-overlay:not(.hidden) .settings-modal-window,
+  #settings-modal-overlay.closing .settings-modal-window {
+    animation-duration: 0.01s;
+  }
+}
+
+/* ═══ Reset-settings / generic confirm dialog must sit above the Settings window ═══ */
+#instance-confirm-overlay {
+  z-index: 10300;
+}
+
+/* ═══ Tab page transition ═══
+   Sideways "push": the page that's leaving eases away during the short
+   switch delay, then the new page glides in from the direction of travel.
+   Transform-only (no fading), so it's cheap. The doubled selectors are
+   needed because the WebKitGTK rules above turn animations off for pages. */
+@keyframes tab-leave-l { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(-34px, 0, 0) scale(0.985); } }
+@keyframes tab-leave-r { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(34px, 0, 0) scale(0.985); } }
+@keyframes tab-enter-r { from { transform: translate3d(34px, 0, 0) scale(0.985); } to { transform: translate3d(0, 0, 0) scale(1); } }
+@keyframes tab-enter-l { from { transform: translate3d(-34px, 0, 0) scale(0.985); } to { transform: translate3d(0, 0, 0) scale(1); } }
+
+.tab-page.tab-leave-l, .is-webkit-gtk .tab-page.tab-leave-l {
+  animation: tab-leave-l 0.3s cubic-bezier(0.4, 0, 0.9, 0.5) both !important;
+  pointer-events: none;
+}
+.tab-page.tab-leave-r, .is-webkit-gtk .tab-page.tab-leave-r {
+  animation: tab-leave-r 0.3s cubic-bezier(0.4, 0, 0.9, 0.5) both !important;
+  pointer-events: none;
+}
+.tab-page.tab-enter-r, .is-webkit-gtk .tab-page.tab-enter-r {
+  animation: tab-enter-r 0.4s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+}
+.tab-page.tab-enter-l, .is-webkit-gtk .tab-page.tab-enter-l {
+  animation: tab-enter-l 0.4s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-page.tab-leave-l, .tab-page.tab-leave-r, .tab-page.tab-enter-l, .tab-page.tab-enter-r,
+  .is-webkit-gtk .tab-page.tab-leave-l, .is-webkit-gtk .tab-page.tab-leave-r,
+  .is-webkit-gtk .tab-page.tab-enter-l, .is-webkit-gtk .tab-page.tab-enter-r {
+    animation: none !important;
+  }
+}
+
+/* ═══ Create Shortcut window: open/close animation (same feel as Settings) ═══
+   Doubled .is-webkit-gtk selectors + !important override the rule that
+   disables overlay-card animations on Linux. */
+#create-shortcut-overlay:not(.hidden) {
+  animation: settings-backdrop-in 0.25s ease both;
+}
+#create-shortcut-overlay.closing {
+  animation: settings-backdrop-out 0.2s ease both;
+  pointer-events: none;
+}
+#create-shortcut-overlay:not(.hidden) .overlay-card,
+.is-webkit-gtk #create-shortcut-overlay:not(.hidden) .overlay-card {
+  animation: settings-win-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+}
+#create-shortcut-overlay.closing .overlay-card,
+.is-webkit-gtk #create-shortcut-overlay.closing .overlay-card {
+  animation: settings-win-out 0.2s cubic-bezier(0.4, 0, 1, 1) both !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  #create-shortcut-overlay:not(.hidden),
+  #create-shortcut-overlay.closing,
+  #create-shortcut-overlay:not(.hidden) .overlay-card,
+  #create-shortcut-overlay.closing .overlay-card,
+  .is-webkit-gtk #create-shortcut-overlay:not(.hidden) .overlay-card,
+  .is-webkit-gtk #create-shortcut-overlay.closing .overlay-card {
+    animation-duration: 0.01s !important;
+  }
+}
+
+/* Settings → Storage "coming soon" placeholder */
+.settings-coming-soon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 56px 24px;
+  border: 1px dashed rgba(var(--overlay-rgb), 0.16);
+  border-radius: var(--radius);
+  background: rgba(var(--overlay-rgb), 0.03);
+  color: var(--text-muted);
+}
+.settings-coming-soon svg { opacity: 0.7; margin-bottom: 4px; }
+.settings-coming-soon-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.settings-coming-soon p { margin: 0; font-size: 12.5px; max-width: 340px; }
+
+/* ═══ Settings section switch animation ═══
+   The incoming panel's blocks glide in one after another from the direction
+   of travel (down the sidebar → up from below, and vice versa). Short,
+   transform-led and light. Doubled .is-webkit-gtk selectors keep it working
+   on Linux. */
+@keyframes settings-panel-in-down {
+  from { opacity: 0; transform: translate3d(0, 16px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes settings-panel-in-up {
+  from { opacity: 0; transform: translate3d(0, -16px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+.settings-tab-panel.panel-enter-down > *,
+.is-webkit-gtk .settings-tab-panel.panel-enter-down > * {
+  animation: settings-panel-in-down 0.38s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+}
+.settings-tab-panel.panel-enter-up > *,
+.is-webkit-gtk .settings-tab-panel.panel-enter-up > * {
+  animation: settings-panel-in-up 0.38s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+}
+.settings-tab-panel.panel-enter-down > *:nth-child(2), .settings-tab-panel.panel-enter-up > *:nth-child(2) { animation-delay: 0.04s !important; }
+.settings-tab-panel.panel-enter-down > *:nth-child(3), .settings-tab-panel.panel-enter-up > *:nth-child(3) { animation-delay: 0.08s !important; }
+.settings-tab-panel.panel-enter-down > *:nth-child(4), .settings-tab-panel.panel-enter-up > *:nth-child(4) { animation-delay: 0.12s !important; }
+.settings-tab-panel.panel-enter-down > *:nth-child(5), .settings-tab-panel.panel-enter-up > *:nth-child(5) { animation-delay: 0.16s !important; }
+.settings-tab-panel.panel-enter-down > *:nth-child(n+6), .settings-tab-panel.panel-enter-up > *:nth-child(n+6) { animation-delay: 0.2s !important; }
+@media (prefers-reduced-motion: reduce) {
+  .settings-tab-panel.panel-enter-down > *, .settings-tab-panel.panel-enter-up > *,
+  .is-webkit-gtk .settings-tab-panel.panel-enter-down > *,
+  .is-webkit-gtk .settings-tab-panel.panel-enter-up > * {
+    animation: none !important;
+  }
 }

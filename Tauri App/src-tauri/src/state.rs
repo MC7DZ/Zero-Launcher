@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use tauri::Manager;
 use std::sync::{Arc, Mutex};
 use crate::models::{AccountInfo, LauncherSettings, LogEntry, InstalledInstance, RunningInstanceInfo};
 
@@ -65,6 +66,10 @@ pub struct AppState {
     /// starts" → "Make it smart" to wait until the user has actually
     /// stepped away before closing the window out from under them.
     pub last_activity_at: Mutex<std::time::Instant>,
+    /// Number of library/asset/install downloads currently in flight. "Close
+    /// launcher when game starts" waits for this to hit zero so the window
+    /// is never closed out from under an active download.
+    pub active_downloads: AtomicUsize,
     /// Last advancement/goal/challenge log line seen per running instance
     /// (version_id -> (line, when)), used to dedupe the `game-advancement`
     /// event. Some mod loaders and singleplayer setups print the same
@@ -142,6 +147,7 @@ impl AppState {
             msa_session_cache: Mutex::new(HashMap::new()),
             msa_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
             last_activity_at: Mutex::new(std::time::Instant::now()),
+            active_downloads: AtomicUsize::new(0),
             recent_advancement_lines: Mutex::new(HashMap::new()),
             cli_launch_args: Mutex::new(crate::commands::shortcuts::parse_cli_launch_args(&std::env::args().collect::<Vec<_>>())),
         }
@@ -405,5 +411,23 @@ impl AppState {
     /// run, or the file was deleted).
     pub fn load_global_stats(&self) -> Option<crate::models::GlobalStats> {
         Self::load_json(&self.data_dir, "stats.json")
+    }
+}
+
+/// RAII marker for "a download is in progress" — bumps the counter on
+/// creation and releases it on drop (including early returns and errors).
+pub struct ActiveDownloadGuard(tauri::AppHandle);
+
+impl ActiveDownloadGuard {
+    pub fn new(app: &tauri::AppHandle) -> Self {
+        app.state::<AppState>().active_downloads.fetch_add(1, Ordering::SeqCst);
+        Self(app.clone())
+    }
+}
+
+impl Drop for ActiveDownloadGuard {
+    fn drop(&mut self) {
+        let st = self.0.state::<AppState>();
+        let _ = st.active_downloads.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| Some(n.saturating_sub(1)));
     }
 }

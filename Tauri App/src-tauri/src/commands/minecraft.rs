@@ -611,6 +611,7 @@ pub async fn install_minecraft(
 ) -> Result<InstalledInstance, String> {
     use mc_launcher_core::prelude::*;
 
+    let _download_guard = crate::state::ActiveDownloadGuard::new(&app);
     let mc_version = payload.minecraft_version.clone();
     let loader_type = payload.loader.clone();
     let loader_ver = payload.loader_version.clone();
@@ -1844,6 +1845,9 @@ pub async fn launch_minecraft(
     // needed. `install_version_files` is the same pass the installer runs,
     // so anything already valid is skipped instantly; only missing/broken
     // files actually hit the network.
+    // Held for the whole verify/download pass (dropped at the end of this
+    // block) so "Close launcher when game starts" can't fire mid-download.
+    let mut _verify_guard = if !offline { Some(crate::state::ActiveDownloadGuard::new(&app)) } else { None };
     if !offline {
         logger::info_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
             "Verifying libraries/assets for {} before launch...", vid
@@ -2007,6 +2011,8 @@ pub async fn launch_minecraft(
             active: false,
             message: String::new(),
         });
+        // Verify/download pass is over — release the "downloading" marker.
+        _verify_guard = None;
         if downloading_started {
             logger::info_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
                 "Downloaded {} bytes of missing/updated libraries & assets", downloaded_bytes
@@ -2390,59 +2396,56 @@ pub async fn launch_minecraft(
             (s.close_after_launch, s.minimize_on_launch, s.smart_close_on_launch)
         };
         if close_on_launch {
-            if smart_close {
-                // "Make it smart": don't yank the window away immediately —
-                // wait until the user has actually stepped away from the
-                // launcher (no mouse/keyboard activity in it for a bit)
-                // before closing it. If they're mid-launch already idle,
-                // this closes almost right away; if they're still Browse
-                // mods or editing an instance, it waits for them to finish.
-                const IDLE_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(2);
-                const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
-                // Safety net: never wait forever on a launcher that's kept
-                // "busy" indefinitely (e.g. activity pings still coming in
-                // from some other window/tab) — close it anyway after this
-                // much time so the setting doesn't silently stop doing
-                // anything.
-                const MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
-                let app_smart = app.clone();
-                let vid_smart = version_id.clone();
-                tokio::spawn(async move {
-                    let waited_since = std::time::Instant::now();
-                    loop {
-                        tokio::time::sleep(POLL_INTERVAL).await;
-                        let state_smart = app_smart.state::<AppState>();
-                        // If the game already exited before the launcher
-                        // ever got a chance to close, there's nothing left
-                        // to protect the user's session from — stop.
-                        let still_running = state_smart
-                            .running_instances
-                            .lock()
-                            .unwrap()
-                            .get(&vid_smart)
-                            .map(|r| r.running)
-                            .unwrap_or(false);
-                        if !still_running {
+            // Never close while libraries/assets (or any install) are still
+            // downloading — wait for them to finish, then apply the close.
+            // Gives up after a long safety timeout so the setting can't
+            // silently stop working.
+            const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+            const DOWNLOAD_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+            // Smart mode: wait until the user has stepped away from the
+            // launcher (no mouse/keyboard activity for a bit), capped so a
+            // perpetually "busy" launcher still closes eventually.
+            const IDLE_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(2);
+            const SMART_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+            let app_close = app.clone();
+            let vid_close = version_id.clone();
+            tokio::spawn(async move {
+                let started = std::time::Instant::now();
+                let mut smart_started: Option<std::time::Instant> = None;
+                loop {
+                    let state_c = app_close.state::<AppState>();
+                    // If the game already exited, there's nothing to close for.
+                    let still_running = state_c
+                        .running_instances
+                        .lock()
+                        .unwrap()
+                        .get(&vid_close)
+                        .map(|r| r.running)
+                        .unwrap_or(false);
+                    if !still_running {
+                        return;
+                    }
+                    let downloading = state_c.active_downloads.load(std::sync::atomic::Ordering::SeqCst) > 0
+                        && started.elapsed() < DOWNLOAD_MAX_WAIT;
+                    if !downloading {
+                        if !smart_close {
+                            if let Some(window) = app_close.get_webview_window("main") {
+                                let _ = window.close();
+                            }
                             return;
                         }
-                        let idle_for = state_smart.last_activity_at.lock().unwrap().elapsed();
-                        if idle_for >= IDLE_THRESHOLD || waited_since.elapsed() >= MAX_WAIT {
-                            if let Some(window) = app_smart.get_webview_window("main") {
+                        let since = *smart_started.get_or_insert_with(std::time::Instant::now);
+                        let idle_for = state_c.last_activity_at.lock().unwrap().elapsed();
+                        if idle_for >= IDLE_THRESHOLD || since.elapsed() >= SMART_MAX_WAIT {
+                            if let Some(window) = app_close.get_webview_window("main") {
                                 let _ = window.close();
                             }
                             return;
                         }
                     }
-                });
-            } else {
-                // "Close" here means the launcher's own window goes away,
-                // same as the user closing it themselves — so it's still
-                // governed by the On Launcher Close setting (hide to tray
-                // vs. quit outright) rather than always force-quitting.
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.close();
+                    tokio::time::sleep(POLL_INTERVAL).await;
                 }
-            }
+            });
         } else if minimize_on_launch {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.minimize();
