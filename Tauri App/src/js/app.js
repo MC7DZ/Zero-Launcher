@@ -226,6 +226,8 @@ let javaInstallInProgress = false;
 // (re-downloading a broken library, say) is never mistaken for a hung
 // launch — the timeout only starts counting once this goes back to false.
 let launchVerifyInProgress = false;
+let activeDownloadInProgress = false;
+let lastDownloadActivityTime = 0;
 
 function loaderIcon(loader) {
   const key = (loader || 'vanilla').toLowerCase();
@@ -2712,6 +2714,13 @@ function initDownloadWidget() {
     }
     const r = card.refs;
     const paused = p.status === 'paused';
+    const isFinished = p.status === 'completed' || p.status === 'cancelled' || p.status === 'error';
+    if (!isFinished) {
+      activeDownloadInProgress = true;
+      lastDownloadActivityTime = Date.now();
+    } else {
+      activeDownloadInProgress = false;
+    }
     card.status = paused ? 'paused'
       : p.status === 'completed' ? 'completed'
       : p.status === 'cancelled' ? 'cancelled'
@@ -5763,21 +5772,32 @@ function initInstanceActions() {
         }
       }).catch(() => { });
 
-      const TIMEOUT_MS = 20000;
+      // Mark launch verify as starting immediately so the timeout window
+      // doesn't start prematurely before the first backend event arrives
+      launchVerifyInProgress = true;
+      lastDownloadActivityTime = Date.now();
+
+      const CHECK_INTERVAL_MS = 3000;
+      const IDLE_TIMEOUT_MS = 60000; // 60s without any download/verify activity before timing out
+      let idleStart = Date.now();
+
       const timeoutPromise = new Promise((_, reject) => {
         const check = () => {
           setTimeout(() => {
-            if (javaInstallInProgress || launchVerifyInProgress) {
-              // Still downloading/extracting Java, or still checking/
-              // repairing libraries & assets — don't give up, just keep
-              // waiting and re-check shortly. The 20s window itself only
-              // starts being "spent" once both of these clear.
+            const now = Date.now();
+            const hasRecentActivity = (now - lastDownloadActivityTime) < 15000;
+            if (javaInstallInProgress || launchVerifyInProgress || activeDownloadInProgress || hasRecentActivity) {
+              idleStart = now;
+              check();
+              return;
+            }
+            if (now - idleStart < IDLE_TIMEOUT_MS) {
               check();
               return;
             }
             timedOut = true;
-            reject(new Error('Launch timed out after 20 seconds'));
-          }, TIMEOUT_MS);
+            reject(new Error('Launch timed out: no process detected and no active downloads'));
+          }, CHECK_INTERVAL_MS);
         };
         check();
       });
@@ -7453,6 +7473,13 @@ function renderModCardContent(card) {
   if (!mod || card._isRendered) return;
   card._isRendered = true;
   card.classList.remove('is-unloaded');
+  // Play the fade-in animation only on the very first render of this card —
+  // not when the virtual scroll re-renders it after scrolling back to it.
+  if (!card._hasEverRendered) {
+    card._hasEverRendered = true;
+    card.classList.add('card-appear');
+    card.addEventListener('animationend', () => card.classList.remove('card-appear'), { once: true });
+  }
 
   const isModpackMod = !!mod._isModpackMod;
   const modpackBadge = isModpackMod ? '<span class="modpack-subpanel-badge" style="font-size:9px; padding:1px 6px; margin-left:4px;">Modpack Built-in</span>' : '';
@@ -10600,14 +10627,15 @@ function buildPresetCard(preset) {
 
 async function loadPresetIconInto(container, presetId) {
   try {
-    const path = await api.getPresetIconPath(presetId);
-    if (!path) return;
-    const convert = window.__TAURI__.core.convertFileSrc;
-    const src = convert ? convert(path) : path;
+    // Backend now returns a base64 data URL (data:image/png;base64,…) directly
+    // so no convertFileSrc is needed — raw asset:// paths broke on preset
+    // folder names that contain '&' or spaces.
+    const dataUrl = await api.getPresetIconPath(presetId);
+    if (!dataUrl) return;
     const img = document.createElement('img');
     img.alt = '';
     img.loading = 'lazy';
-    img.src = src;
+    img.src = dataUrl;
     container.innerHTML = '';
     container.appendChild(img);
   } catch (e) {
@@ -10760,10 +10788,9 @@ function initApplyPresetOverlayEvents() {
       // Swap the flat preset glyph for the preset's own icon once it
       // resolves, if it has one — same lookup the preset cards themselves
       // use, so this stays visually consistent with the rest of the app.
-      api.getPresetIconPath(preset.id).then((path) => {
-        if (!path) return;
-        const convert = window.__TAURI__.core.convertFileSrc;
-        dlWidgetGeneric.setIcon(dlId, convert ? convert(path) : path, 'preset');
+      api.getPresetIconPath(preset.id).then((dataUrl) => {
+        if (!dataUrl) return;
+        dlWidgetGeneric.setIcon(dlId, dataUrl, 'preset');
       }).catch(() => {});
     }
     const cancelled = () => dlWidgetGeneric && dlWidgetGeneric.isCancelled(dlId);
@@ -17797,6 +17824,9 @@ function initLaunchVerifyStatus() {
   api.onLaunchVerifyStatus((event) => {
     const p = event.payload;
     launchVerifyInProgress = !!p.active;
+    if (p.active) {
+      lastDownloadActivityTime = Date.now();
+    }
     // Only show the line while it's for whichever instance is currently
     // selected — a verify pass for a different (background) launch
     // shouldn't repaint text next to a Play button for something else.

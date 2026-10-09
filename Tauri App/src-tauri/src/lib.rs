@@ -55,12 +55,25 @@ pub fn run() {
         };
 
         if hw_accel {
-            // Force hardware accelerated compositing and zero-copy DMA-BUF GPU rendering
-            std::env::set_var("WEBKIT_FORCE_COMPOSITING_MODE", "1");
+            // Hardware acceleration enabled:
+            // Do NOT set WEBKIT_FORCE_COMPOSITING_MODE=1. Forcing compositing mode
+            // bypasses partial-damage checks and forces full buffer swaps on every
+            // frame, which causes aggressive flickering on transparent Wayland windows.
+            std::env::remove_var("WEBKIT_FORCE_COMPOSITING_MODE");
             std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "0");
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "0");
+
+            // On Wayland with transparent windows, WebKitGTK's DMA-BUF buffer exchange
+            // causes flickering on partial-damage updates (e.g. tabs, drawers, buttons).
+            // Forcing SHM transport keeps GPU acceleration (WebGL, compositing, shaders) active
+            // inside the web process while preventing buffer swap tearing with the compositor.
+            if std::env::var("WAYLAND_DISPLAY").is_ok() {
+                std::env::set_var("WEBKIT_DMABUF_RENDERER_FORCE_SHM", "1");
+            }
         } else {
             // Software rendering fallback if user opts out in Settings
+            std::env::remove_var("WEBKIT_FORCE_COMPOSITING_MODE");
+            std::env::remove_var("WEBKIT_DMABUF_RENDERER_FORCE_SHM");
             std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }

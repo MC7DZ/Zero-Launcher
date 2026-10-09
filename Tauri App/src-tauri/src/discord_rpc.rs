@@ -6,6 +6,9 @@ use crate::models::LauncherSettings;
 pub struct DiscordRpcManager {
     client: Option<DiscordIpcClient>,
     start_time: i64,
+    /// The app_id the current client was connected with — used to detect
+    /// when the user changes the App ID in settings so we can reconnect.
+    connected_app_id: String,
 }
 
 impl DiscordRpcManager {
@@ -18,6 +21,7 @@ impl DiscordRpcManager {
         Self {
             client: None,
             start_time,
+            connected_app_id: String::new(),
         }
     }
 
@@ -32,6 +36,7 @@ impl DiscordRpcManager {
             let _ = client.close();
         }
         self.client = None;
+        self.connected_app_id.clear();
     }
 
     pub fn update_presence(&mut self, settings: &LauncherSettings, tab: &str, playing_instance: Option<&str>, mc_version: Option<&str>) {
@@ -40,6 +45,7 @@ impl DiscordRpcManager {
                 let _ = client.close();
             }
             self.client = None;
+            self.connected_app_id.clear();
             return;
         }
 
@@ -49,9 +55,18 @@ impl DiscordRpcManager {
             settings.rpc_app_id.as_str()
         };
 
+        // If the App ID changed (user updated it in Settings), drop the old
+        // client so we reconnect with the new one below.
+        if self.client.is_some() && self.connected_app_id != app_id {
+            if let Some(ref mut c) = self.client { let _ = c.close(); }
+            self.client = None;
+            self.connected_app_id.clear();
+        }
+
         if self.client.is_none() {
             let mut client = DiscordIpcClient::new(app_id);
             if client.connect().is_ok() {
+                self.connected_app_id = app_id.to_string();
                 self.client = Some(client);
             }
         }
@@ -102,9 +117,17 @@ impl DiscordRpcManager {
                 activity = activity.state(&state);
             }
 
-            let _ = client.set_activity(activity);
+            // If set_activity fails the connection dropped (Discord closed /
+            // restarted). Tear down the dead client so the next update_presence
+            // call will reconnect from scratch.
+            if client.set_activity(activity).is_err() {
+                let _ = client.close();
+                self.client = None;
+                self.connected_app_id.clear();
+            }
         }
     }
 }
 
 pub struct DiscordRpcState(pub Mutex<DiscordRpcManager>);
+
