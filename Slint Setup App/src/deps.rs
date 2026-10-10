@@ -7,82 +7,185 @@ pub struct DepCheckResult {
     pub package_name: String,
 }
 
-/// Detects the Linux distribution package manager
+/// Returns true if `bin` can be found on PATH (or in the usual sbin dirs).
+#[cfg(target_os = "linux")]
+fn have(bin: &str) -> bool {
+    let mut dirs: Vec<std::path::PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    for extra in ["/usr/sbin", "/sbin", "/usr/local/bin", "/usr/bin", "/bin"] {
+        dirs.push(extra.into());
+    }
+    dirs.iter().any(|d| d.join(bin).is_file())
+}
+
+/// Detects the Linux distribution package manager.
+/// Uses /etc/os-release (ID / ID_LIKE) as a hint first, then falls back to whatever is installed.
 #[cfg(target_os = "linux")]
 pub fn detect_package_manager() -> Option<&'static str> {
-    if Command::new("apt-get").arg("--version").output().is_ok() {
-        Some("apt")
-    } else if Command::new("pacman").arg("--version").output().is_ok() {
-        Some("pacman")
-    } else if Command::new("dnf").arg("--version").output().is_ok() {
-        Some("dnf")
-    } else if Command::new("zypper").arg("--version").output().is_ok() {
-        Some("zypper")
-    } else {
-        None
+    let release = std::fs::read_to_string("/etc/os-release")
+        .or_else(|_| std::fs::read_to_string("/usr/lib/os-release"))
+        .unwrap_or_default()
+        .to_lowercase();
+
+    let hinted = |ids: &[&str]| {
+        release
+            .lines()
+            .filter(|l| l.starts_with("id=") || l.starts_with("id_like="))
+            .any(|l| {
+                l.split(|c: char| c == '=' || c == '"' || c == ' ' || c == '\'')
+                    .any(|w| ids.contains(&w))
+            })
+    };
+
+    let candidates: [(&'static str, &str, &[&str]); 6] = [
+        ("apt", "apt-get", &["debian", "ubuntu", "linuxmint", "pop", "elementary", "kali", "raspbian", "zorin"]),
+        ("dnf", "dnf", &["fedora", "rhel", "centos", "rocky", "almalinux", "nobara"]),
+        ("pacman", "pacman", &["arch", "manjaro", "endeavouros", "cachyos", "garuda", "steamos"]),
+        ("zypper", "zypper", &["suse", "opensuse", "opensuse-leap", "opensuse-tumbleweed", "sles"]),
+        ("xbps", "xbps-install", &["void"]),
+        ("apk", "apk", &["alpine", "postmarketos"]),
+    ];
+
+    // Prefer the manager that matches the distro family
+    for (name, bin, ids) in candidates.iter() {
+        if hinted(*ids) && have(bin) {
+            return Some(*name);
+        }
+    }
+    // Otherwise whatever exists
+    for (name, bin, _) in candidates.iter() {
+        if have(bin) {
+            return Some(*name);
+        }
+    }
+    None
+}
+
+/// One logical dependency with the package names used by each package manager.
+/// Names are listed in order of preference; the first one the repo actually offers is used.
+#[cfg(target_os = "linux")]
+struct Dep {
+    name: &'static str,
+    libs: &'static [&'static str],
+    apt: &'static [&'static str],
+    dnf: &'static [&'static str],
+    pacman: &'static [&'static str],
+    zypper: &'static [&'static str],
+    xbps: &'static [&'static str],
+    apk: &'static [&'static str],
+}
+
+#[cfg(target_os = "linux")]
+const LINUX_DEPS: &[Dep] = &[
+    Dep {
+        name: "WebKitGTK (Webview Runtime)",
+        libs: &[
+            "libwebkit2gtk-4.1.so", "libwebkit2gtk-4.1.so.0",
+            "libwebkit2gtk-4.0.so", "libwebkit2gtk-4.0.so.37",
+        ],
+        apt: &["libwebkit2gtk-4.1-0", "libwebkit2gtk-4.0-37"],
+        dnf: &["webkit2gtk4.1", "webkit2gtk4.0"],
+        pacman: &["webkit2gtk-4.1", "webkit2gtk"],
+        zypper: &["libwebkit2gtk-4_1-0", "libwebkit2gtk-4_0-37"],
+        xbps: &["webkit2gtk"],
+        apk: &["webkit2gtk-4.1", "webkit2gtk"],
+    },
+    Dep {
+        name: "libfuse2 (AppImage Runtime)",
+        libs: &["libfuse.so.2", "libfuse.so"],
+        apt: &["libfuse2t64", "libfuse2"],
+        dnf: &["fuse-libs", "fuse2"],
+        pacman: &["fuse2"],
+        zypper: &["libfuse2", "fuse-libs"],
+        xbps: &["fuse"],
+        apk: &["fuse"],
+    },
+    Dep {
+        name: "libappindicator (System Tray)",
+        libs: &["libayatana-appindicator3.so.1", "libappindicator3.so.1"],
+        apt: &["libayatana-appindicator3-1", "libappindicator3-1"],
+        dnf: &["libayatana-appindicator-gtk3", "libappindicator-gtk3"],
+        pacman: &["libayatana-appindicator", "libappindicator-gtk3"],
+        zypper: &["libayatana-appindicator3-1", "libappindicator3-1"],
+        xbps: &["libayatana-appindicator"],
+        apk: &["libayatana-appindicator"],
+    },
+    Dep {
+        name: "GTK3 Runtime",
+        libs: &["libgtk-3.so.0", "libgtk-3.so"],
+        apt: &["libgtk-3-0t64", "libgtk-3-0"],
+        dnf: &["gtk3"],
+        pacman: &["gtk3"],
+        zypper: &["libgtk-3-0", "gtk3"],
+        xbps: &["gtk+3"],
+        apk: &["gtk+3.0"],
+    },
+];
+
+#[cfg(target_os = "linux")]
+fn names_for<'a>(dep: &'a Dep, pm: &str) -> &'a [&'static str] {
+    match pm {
+        "apt" => dep.apt,
+        "dnf" => dep.dnf,
+        "pacman" => dep.pacman,
+        "zypper" => dep.zypper,
+        "xbps" => dep.xbps,
+        "apk" => dep.apk,
+        _ => &[],
+    }
+}
+
+/// Picks the first candidate package that the repositories actually provide
+/// (falls back to the first name if nothing could be verified).
+#[cfg(target_os = "linux")]
+fn pick_package(dep: &Dep, pm: Option<&str>) -> String {
+    let Some(pm) = pm else {
+        return dep.apt[0].to_string();
+    };
+    let names = names_for(dep, pm);
+    for n in names {
+        if is_package_available(pm, n) {
+            return (*n).to_string();
+        }
+    }
+    names.first().copied().unwrap_or("").to_string()
+}
+
+#[cfg(target_os = "linux")]
+fn is_package_available(pm: &str, pkg: &str) -> bool {
+    let ok = |c: &mut Command| c.output().map(|o| o.status.success()).unwrap_or(false);
+    match pm {
+        "apt" => ok(Command::new("apt-cache").args(["show", pkg])),
+        "dnf" => ok(Command::new("dnf").args(["-q", "info", pkg])),
+        "pacman" => ok(Command::new("pacman").args(["-Si", pkg])),
+        "zypper" => ok(Command::new("zypper").args(["--non-interactive", "-q", "info", pkg])),
+        "xbps" => ok(Command::new("xbps-query").args(["-R", pkg])),
+        "apk" => ok(Command::new("apk").args(["search", "-e", pkg])),
+        _ => false,
     }
 }
 
 /// Checks required runtime libraries on Linux (WebKitGTK, libfuse2, libappindicator, etc.)
 #[cfg(target_os = "linux")]
 pub fn check_linux_dependencies() -> Vec<DepCheckResult> {
+    let pm = detect_package_manager();
     let mut results = Vec::new();
 
-    // 1. WebKitGTK (required by Tauri wry)
-    let has_webkit = check_library_exists(&[
-        "libwebkit2gtk-4.1.so",
-        "libwebkit2gtk-4.1.so.0",
-        "libwebkit2gtk-4.0.so",
-        "libwebkit2gtk-4.0.so.37",
-    ]);
-    results.push(DepCheckResult {
-        name: "WebKitGTK (Webview Runtime)".into(),
-        installed: has_webkit,
-        package_name: if is_apt_package_available("libwebkit2gtk-4.1-0") {
-            "libwebkit2gtk-4.1-0".into()
-        } else {
-            "libwebkit2gtk-4.0-37".into()
-        },
-    });
+    for dep in LINUX_DEPS {
+        let installed = check_library_exists(dep.libs);
+        results.push(DepCheckResult {
+            name: dep.name.into(),
+            installed,
+            // Only query the repos for packages that are actually missing (it can be slow)
+            package_name: if installed { String::new() } else { pick_package(dep, pm) },
+        });
+    }
 
-    // 2. FUSE / libfuse2 (Required for AppImages to mount and execute)
-    let has_fuse = check_library_exists(&[
-        "libfuse.so.2",
-        "libfuse.so",
-    ]);
-    results.push(DepCheckResult {
-        name: "libfuse2 (AppImage Runtime)".into(),
-        installed: has_fuse,
-        package_name: "libfuse2".into(),
-    });
-
-    // 3. AppIndicator / Ayatana (For system tray icon)
-    let has_indicator = check_library_exists(&[
-        "libayatana-appindicator3.so.1",
-        "libappindicator3.so.1",
-    ]);
-    results.push(DepCheckResult {
-        name: "libappindicator (System Tray)".into(),
-        installed: has_indicator,
-        package_name: "libayatana-appindicator3-1".into(),
-    });
-
-    // 4. GTK 3
-    let has_gtk = check_library_exists(&[
-        "libgtk-3.so.0",
-        "libgtk-3.so",
-    ]);
-    results.push(DepCheckResult {
-        name: "GTK3 Runtime".into(),
-        installed: has_gtk,
-        package_name: "libgtk-3-0".into(),
-    });
-
-    // 5. curl / wget
-    let has_curl = Command::new("curl").arg("--version").output().is_ok();
+    // curl
     results.push(DepCheckResult {
         name: "curl (HTTP tool)".into(),
-        installed: has_curl,
+        installed: have("curl"),
         package_name: "curl".into(),
     });
 
@@ -94,6 +197,8 @@ fn check_library_exists(lib_names: &[&str]) -> bool {
     let search_paths = [
         "/usr/lib/x86_64-linux-gnu",
         "/lib/x86_64-linux-gnu",
+        "/usr/lib/aarch64-linux-gnu",
+        "/lib/aarch64-linux-gnu",
         "/usr/lib64",
         "/usr/lib",
         "/lib64",
@@ -102,19 +207,20 @@ fn check_library_exists(lib_names: &[&str]) -> bool {
 
     for path in &search_paths {
         for name in lib_names {
-            let full_path = std::path::Path::new(path).join(name);
-            if full_path.exists() {
+            if std::path::Path::new(path).join(name).exists() {
                 return true;
             }
         }
     }
 
-    // Fallback: test ldconfig -p
-    if let Ok(output) = Command::new("ldconfig").arg("-p").output() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for name in lib_names {
-            if stdout.contains(name) {
-                return true;
+    // Fallback: ldconfig -p (often lives in /sbin, which may not be on a normal user's PATH)
+    for ldconfig in ["ldconfig", "/sbin/ldconfig", "/usr/sbin/ldconfig"] {
+        if let Ok(output) = Command::new(ldconfig).arg("-p").output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if lib_names.iter().any(|n| stdout.contains(n)) {
+                    return true;
+                }
             }
         }
     }
@@ -122,13 +228,18 @@ fn check_library_exists(lib_names: &[&str]) -> bool {
     false
 }
 
+/// The command a user can run by hand if automatic installation is not possible.
 #[cfg(target_os = "linux")]
-fn is_apt_package_available(pkg: &str) -> bool {
-    Command::new("apt-cache")
-        .args(["show", pkg])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+fn manual_command(pm: &str, pkgs: &str) -> String {
+    match pm {
+        "apt" => format!("sudo apt-get update && sudo apt-get install {pkgs}"),
+        "dnf" => format!("sudo dnf install {pkgs}"),
+        "pacman" => format!("sudo pacman -S --needed {pkgs}"),
+        "zypper" => format!("sudo zypper install {pkgs}"),
+        "xbps" => format!("sudo xbps-install -S {pkgs}"),
+        "apk" => format!("doas apk add {pkgs}   (or: sudo apk add {pkgs})"),
+        _ => pkgs.to_string(),
+    }
 }
 
 /// Runs package installation via system policykit (pkexec) just like the launcher
@@ -137,45 +248,45 @@ pub fn install_missing_linux_packages<F>(packages: &[String], mut logger: F) -> 
 where
     F: FnMut(&str),
 {
+    let packages: Vec<&String> = packages.iter().filter(|p| !p.is_empty()).collect();
     if packages.is_empty() {
         return Ok(());
     }
 
-    let pm = detect_package_manager().ok_or("Unsupported package manager. Please install dependencies manually.")?;
+    let Some(pm) = detect_package_manager() else {
+        let list = packages.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ");
+        return Err(format!(
+            "No supported package manager found (apt, dnf, pacman, zypper, xbps, apk). \
+             Immutable/atomic distros (Silverblue, SteamOS, NixOS…) need these installed another way: {list}"
+        ));
+    };
     logger(&format!("Detected package manager: {}", pm));
 
-    let pkgs_joined = packages.join(" ");
+    let pkgs_joined = packages.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(" ");
     logger(&format!("Invoking system authorization to install: {}", pkgs_joined));
 
-    let has_pkexec = Command::new("which").arg("pkexec").output().map(|o| o.status.success()).unwrap_or(false);
-    if !has_pkexec {
-        return Err("pkexec (PolicyKit) was not found on your system. Please install the packages manually: sudo ".to_string() + pm + " install " + &pkgs_joined);
+    if !have("pkexec") {
+        return Err(format!(
+            "pkexec (PolicyKit) was not found on your system. Please install the packages manually: {}",
+            manual_command(pm, &pkgs_joined)
+        ));
     }
 
-    let (bin, args) = match pm {
+    let mut cmd = Command::new("pkexec");
+    match pm {
         "apt" => {
-            ("apt-get", vec!["install", "-y"])
+            let script = format!("apt-get update -qq; apt-get install -y {pkgs_joined}");
+            cmd.args(["env", "DEBIAN_FRONTEND=noninteractive", "sh", "-c", script.as_str()]);
         }
-        "pacman" => {
-            ("pacman", vec!["-S", "--noconfirm", "--needed"])
-        }
-        "dnf" => {
-            ("dnf", vec!["install", "-y"])
-        }
-        "zypper" => {
-            ("zypper", vec!["install", "-y"])
-        }
+        "pacman" => { cmd.args(["pacman", "-S", "--noconfirm", "--needed"]).args(&packages); }
+        "dnf" => { cmd.args(["dnf", "install", "-y"]).args(&packages); }
+        "zypper" => { cmd.args(["zypper", "--non-interactive", "install"]).args(&packages); }
+        "xbps" => { cmd.args(["xbps-install", "-Sy"]).args(&packages); }
+        "apk" => { cmd.args(["apk", "add"]).args(&packages); }
         _ => return Err("Unsupported package manager".into()),
-    };
-
-    let mut full_args = vec![bin];
-    full_args.extend(args);
-    for pkg in packages {
-        full_args.push(pkg);
     }
 
-    let output = Command::new("pkexec")
-        .args(&full_args)
+    let output = cmd
         .output()
         .map_err(|e| format!("Failed to launch pkexec: {e}"))?;
 
@@ -191,7 +302,10 @@ where
         } else {
             combined
         };
-        Err(format!("Installation failed: {msg} (You can run 'sudo {pm} install {pkgs_joined}' manually)"))
+        Err(format!(
+            "Installation failed: {msg} (You can run '{}' manually)",
+            manual_command(pm, &pkgs_joined)
+        ))
     }
 }
 

@@ -17379,10 +17379,17 @@ function initCustomTitlebar() {
     }
   };
 
+  // Guard against double-toggles (double-click on the titlebar fires both
+  // Tauri's own drag-region handler and our dblclick handler, which used to
+  // maximize and instantly restore the window → flicker / vanishing window).
+  let toggleMaxBusy = false;
   const doToggleMaximize = async () => {
+    if (toggleMaxBusy) return;
+    toggleMaxBusy = true;
     try { await invoke('window_toggle_maximize'); } catch (_) {
       try { await window.__TAURI__?.window?.getCurrentWindow?.()?.toggleMaximize(); } catch (_) {}
     }
+    setTimeout(() => { toggleMaxBusy = false; }, 400);
   };
 
   const doClose = async () => {
@@ -17414,38 +17421,41 @@ function initCustomTitlebar() {
   window.addEventListener('resize', updateMaximizeState, { passive: true });
   setTimeout(updateMaximizeState, 50);
 
-  // Drag via startDragging (works reliably in WebKitGTK where data-tauri-drag-region can be flaky)
-  if (dragArea) {
-    dragArea.addEventListener('mousedown', (e) => {
+  // Window dragging.
+  //  • Windows / macOS: Tauri's built-in `data-tauri-drag-region` handling is
+  //    reliable and also handles double-click-to-maximize natively. Adding our
+  //    own startDragging()/dblclick handlers on top of it made BOTH fire,
+  //    which broke dragging on Windows and toggled maximize twice.
+  //  • Linux (WebKitGTK): the attribute can be flaky, so we drive
+  //    startDragging() ourselves and strip the attribute from those elements
+  //    so the two never run together.
+  const isLinuxWebview = /Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent);
+  if (isLinuxWebview) {
+    const manualDragTargets = [dragArea, document.querySelector('.sl-drag')].filter(Boolean);
+    manualDragTargets.forEach(el => {
+      el.removeAttribute('data-tauri-drag-region');
+      el.querySelectorAll('[data-tauri-drag-region]').forEach(c => c.removeAttribute('data-tauri-drag-region'));
+    });
+
+    const startNativeDrag = (e) => {
       if (e.button !== 0) return; // only left button drags
       if (e.target.closest('.titlebar-controls')) return;
+      if (e.detail > 1) return;   // second click of a double-click: let dblclick handle it
       e.preventDefault();
       try {
         const win = window.__TAURI__?.window?.getCurrentWindow?.();
         if (win?.startDragging) win.startDragging();
       } catch (_) {}
-    });
-  }
+    };
+    manualDragTargets.forEach(el => el.addEventListener('mousedown', startNativeDrag));
 
-  // Double click drag area to toggle maximize
-  if (dragArea) {
-    dragArea.addEventListener('dblclick', (e) => {
-      if (e.target.closest('.titlebar-controls')) return;
-      doToggleMaximize();
-    });
-  }
-
-  // Support dragging window during splash screen
-  const splashDrag = document.querySelector('.sl-drag');
-  if (splashDrag) {
-    splashDrag.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      try {
-        const win = window.__TAURI__?.window?.getCurrentWindow?.();
-        if (win?.startDragging) win.startDragging();
-      } catch (_) {}
-    });
+    // Double click drag area to toggle maximize
+    if (dragArea) {
+      dragArea.addEventListener('dblclick', (e) => {
+        if (e.target.closest('.titlebar-controls')) return;
+        doToggleMaximize();
+      });
+    }
   }
 
   // Native window edge / corner resize dragging (WebKitGTK frameless)

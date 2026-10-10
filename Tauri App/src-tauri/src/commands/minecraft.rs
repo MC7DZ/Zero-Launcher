@@ -2292,6 +2292,37 @@ pub async fn launch_minecraft(
     // saves/, resourcepacks/, mods/, logs/, config/, etc. relative to the
     // process's current directory, and those belong alongside `versions/`
     // at the instance root, not inside `versions/<id>/`.
+    // Windows' CreateProcess caps the whole command line at 32,767 chars.
+    // Big modded instances (long classpath) can exceed it and fail with
+    // "filename or extension is too long" (os error 206). Java 9+ supports
+    // `@argfile`, so spill the arguments into a file when we're close to
+    // the limit. (Java 8 doesn't understand @argfile, but it also can't be
+    // helped there — and the limit is rarely hit with those older versions.)
+    #[cfg(target_os = "windows")]
+    {
+        let total_len: usize = args.iter().map(|a| a.len() + 3).sum::<usize>()
+            + launch_cmd.executable.to_string_lossy().len();
+        if total_len > 30_000 {
+            let mut content = String::new();
+            for a in &args {
+                content.push('"');
+                for ch in a.chars() {
+                    match ch {
+                        '\\' => content.push_str("\\\\"),
+                        '"' => content.push_str("\\\""),
+                        '\n' => content.push_str("\\n"),
+                        '\r' => {}
+                        c => content.push(c),
+                    }
+                }
+                content.push_str("\"\n");
+            }
+            let argfile = game_dir.join(".zero_launch_args.txt");
+            if std::fs::write(&argfile, content).is_ok() {
+                args = vec![format!("@{}", argfile.to_string_lossy())];
+            }
+        }
+    }
     let mut launch_command = tokio::process::Command::new(&launch_cmd.executable);
     launch_command
         .args(&args)
@@ -2346,9 +2377,21 @@ pub async fn launch_minecraft(
         "version_id": &version_id,
         "message": "Spawning game process…"
     }));
-    let mut child = launch_command
-        .spawn()
-        .map_err(|e| { fail_cleanup(); format!("Failed to start game: {e}") })?;
+    let mut child = match launch_command.spawn() {
+        Ok(c) => c,
+        // ERROR_ACCESS_DENIED: the launcher's Job Object doesn't allow
+        // breakaway, so CREATE_BREAKAWAY_FROM_JOB makes CreateProcess fail.
+        // Retry without it rather than refusing to start the game.
+        #[cfg(target_os = "windows")]
+        Err(e) if e.raw_os_error() == Some(5) => {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            launch_command.creation_flags(CREATE_NO_WINDOW);
+            launch_command
+                .spawn()
+                .map_err(|e| { fail_cleanup(); format!("Failed to start game: {e}") })?
+        }
+        Err(e) => { fail_cleanup(); return Err(format!("Failed to start game: {e}")); }
+    };
 
     // Trim launcher heap memory immediately so Minecraft gets maximum free RAM
     crate::commands::trim_memory();

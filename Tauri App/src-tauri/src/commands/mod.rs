@@ -402,11 +402,23 @@ pub fn window_minimize(window: tauri::Window) -> Result<(), String> {
 
 #[tauri::command]
 pub fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
-    if window.is_maximized().unwrap_or(false) {
+    // Can't maximize/restore while minimized or fullscreen — doing so on
+    // Windows leaves a borderless transparent window in a broken state.
+    if window.is_fullscreen().unwrap_or(false) {
+        return Ok(());
+    }
+    if window.is_minimized().unwrap_or(false) {
+        let _ = window.unminimize();
+    }
+    let result = if window.is_maximized().unwrap_or(false) {
         window.unmaximize().map_err(|e| e.to_string())
     } else {
         window.maximize().map_err(|e| e.to_string())
-    }
+    };
+    // Make sure the window is never left hidden/unfocused after the toggle.
+    let _ = window.show();
+    let _ = window.set_focus();
+    result
 }
 
 #[tauri::command]
