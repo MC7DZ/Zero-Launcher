@@ -1058,6 +1058,7 @@ pub async fn import_modpack(
         directory: Some(game_dir.to_string_lossy().to_string()),
         name: Some(instance_name.to_string()),
         old_version_id: None,
+        download_id: None,
     };
     let instance = install_minecraft(app.clone(), state.clone(), install_payload).await?;
     logger::info(&app, &state, "MODPACK", "Base game + loader installed, laying pack content on top…");

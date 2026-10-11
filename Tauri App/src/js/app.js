@@ -434,7 +434,7 @@ const api = {
   getAvailableVersions: () => invoke('get_available_versions'),
   getCachedVersions: () => invoke('get_cached_versions'),
   getLoaderVersions: (loader, minecraftVersion) => invoke('get_loader_versions', { loader, minecraftVersion }),
-  installVersion: (minecraftVersion, loader, loaderVersion, directory, name, oldVersionId) =>
+  installVersion: (minecraftVersion, loader, loaderVersion, directory, name, oldVersionId, downloadId) =>
     invoke('install_minecraft', {
       payload: {
         minecraft_version: minecraftVersion || '',
@@ -443,6 +443,7 @@ const api = {
         directory: directory || null,
         name: name || null,
         old_version_id: oldVersionId || null,
+        download_id: downloadId || null,
       }
     }),
   launchGame: (versionId, offline, quickPlaySingleplayer, quickPlayMultiplayer) =>
@@ -551,9 +552,11 @@ const api = {
   getModpackInfo: (directory) => invoke('get_modpack_info', { directory: directory || null }),
   onModpackImportProgress: (cb) => listen('modpack-import-progress', cb),
   onGenericDownloadProgress: (cb) => listen('generic-download-progress', cb),
-  pauseDownload: () => invoke('pause_download'),
-  resumeDownload: () => invoke('resume_download'),
-  cancelDownload: () => invoke('cancel_download'),
+  // Each instance install has its own id, so several can run at once and be
+  // paused / resumed / cancelled independently.
+  pauseDownload: (id) => invoke('pause_download', { id: id || null }),
+  resumeDownload: (id) => invoke('resume_download', { id: id || null }),
+  cancelDownload: (id) => invoke('cancel_download', { id: id || null }),
   // Cancels a "generic" download (mod download/update, dependency install,
   // Java runtime download, etc.) by the id its card was given.
   cancelGenericDownload: (downloadId) => invoke('cancel_generic_download', { downloadId }),
@@ -2231,7 +2234,18 @@ function initHiddenWindowsWidget() {
 // permanent card id and is wired up inside initDownloadWidget() itself.
 let dlWidgetGeneric = null;
 
-const INSTANCE_INSTALL_CARD_ID = '__instance-install__';
+// Every instance install gets its own id (used for its download card and
+// sent to the backend), so several instances can download at the same time.
+let _installIdCounter = 0;
+function newInstallDownloadId() {
+  _installIdCounter += 1;
+  return `install-${Date.now().toString(36)}-${_installIdCounter}-${Math.random().toString(36).slice(2, 7)}`;
+}
+// Names / folders of installs currently in flight, so two parallel installs
+// can't be pointed at the same instance folder.
+const activeInstallKeys = new Set();
+// Download ids of installs currently running (drives activeDownloadInProgress).
+const activeInstallIds = new Set();
 
 function initDownloadWidget() {
   const widget = document.getElementById('dl-widget');
@@ -2924,10 +2938,10 @@ function initDownloadWidget() {
     if (!card) {
       card = createCard(id);
       card.onPause = async () => {
-        if (card.status === 'paused') await api.resumeDownload();
-        else await api.pauseDownload();
+        if (card.status === 'paused') await api.resumeDownload(id);
+        else await api.pauseDownload(id);
       };
-      card.onCancel = async () => { await api.cancelDownload(); };
+      card.onCancel = async () => { await api.cancelDownload(id); };
     }
     setDlCardIcon(card.refs.icon, { icon: 'loader', loaderIconUrl: loaderIcon(loader) });
     card.status = 'downloading';
@@ -2980,24 +2994,37 @@ function initDownloadWidget() {
 
   api.onDownloadProgress((event) => {
     const p = event.payload;
-    let card = cards.get(INSTANCE_INSTALL_CARD_ID);
+    const cardId = p.id;
+    if (!cardId) return;
+    let card = cards.get(cardId);
     if (!card) {
-      card = createCard(INSTANCE_INSTALL_CARD_ID);
-      card.onPause = async () => {
-        if (card.status === 'paused') await api.resumeDownload();
-        else await api.pauseDownload();
-      };
-      card.onCancel = async () => { await api.cancelDownload(); };
+      card = createCard(cardId);
+      // Launch-time verification reports through the same event but is
+      // cancelled via the generic-download flag and can't be paused.
+      const isLaunchVerify = String(cardId).startsWith('launch-verify-');
+      if (isLaunchVerify) {
+        card.el.classList.add('dl-card-no-pause');
+        card.onPause = null;
+        card.onCancel = async () => { await api.cancelGenericDownload(cardId); };
+      } else {
+        card.onPause = async () => {
+          if (card.status === 'paused') await api.resumeDownload(cardId);
+          else await api.pauseDownload(cardId);
+        };
+        card.onCancel = async () => { await api.cancelDownload(cardId); };
+      }
     }
     const r = card.refs;
     const paused = p.status === 'paused';
     const isFinished = p.status === 'completed' || p.status === 'cancelled' || p.status === 'error';
     if (!isFinished) {
-      activeDownloadInProgress = true;
+      activeInstallIds.add(cardId);
       lastDownloadActivityTime = Date.now();
     } else {
-      activeDownloadInProgress = false;
+      activeInstallIds.delete(cardId);
     }
+    // Only "idle" once *every* running install has finished.
+    activeDownloadInProgress = activeInstallIds.size > 0;
     card.status = paused ? 'paused'
       : p.status === 'completed' ? 'completed'
       : p.status === 'cancelled' ? 'cancelled'
@@ -3048,9 +3075,9 @@ function initDownloadWidget() {
     // listener below (see reconcileActiveFiles) so both read this exactly
     // the same way.
     if (p.status === 'downloading') {
-      reconcileActiveFiles(INSTANCE_INSTALL_CARD_ID, activeFiles);
+      reconcileActiveFiles(cardId, activeFiles);
     } else {
-      refreshFilesWindowIfOpen(INSTANCE_INSTALL_CARD_ID);
+      refreshFilesWindowIfOpen(cardId);
     }
 
     if (p.status === 'completed') {
@@ -3058,17 +3085,17 @@ function initDownloadWidget() {
       card.titleText = 'Installed!';
       card.subText = p.label;
       card.files.forEach(f => { if (f.status === 'downloading') f.status = 'completed'; });
-      removeCard(INSTANCE_INSTALL_CARD_ID, 1800);
+      removeCard(cardId, 1800);
     } else if (p.status === 'cancelled') {
       r.pill.textContent = 'Cancelled';
       card.titleText = 'Cancelled';
-      removeCard(INSTANCE_INSTALL_CARD_ID, 1500);
+      removeCard(cardId, 1500);
     } else if (p.status === 'error') {
       r.pill.textContent = 'Error';
       card.titleText = 'Install failed';
       card.subText = p.message || 'Unknown error';
       card.files.forEach(f => { if (f.status === 'downloading') f.status = 'failed'; });
-      removeCard(INSTANCE_INSTALL_CARD_ID, 3000);
+      removeCard(cardId, 3000);
     }
     refreshSummary();
   });
@@ -5929,7 +5956,8 @@ async function troubleshootReinstallInstance(id) {
   if (!zlibOk) return;
   showToast(`Reinstalling ${inst.name || inst.version_id}…`, 'info');
   const targetLoader = (inst.loader && inst.loader.toLowerCase() !== 'unknown') ? inst.loader : 'vanilla';
-  if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, inst.minecraft_version, targetLoader);
+  const dlId = newInstallDownloadId();
+  if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(dlId, inst.minecraft_version, targetLoader);
   try {
     const newInstance = await api.installVersion(
       inst.minecraft_version,
@@ -5937,14 +5965,15 @@ async function troubleshootReinstallInstance(id) {
       inst.loader_version || 'latest',
       inst.directory,
       inst.name,
-      inst.version_id
+      inst.version_id,
+      dlId
     );
     await refreshInstances();
     renderInstanceList();
     selectInstance(newInstance.version_id);
     showToast('Instance reinstalled — try launching it again', 'success');
   } catch (e) {
-    if (dlWidgetGeneric) dlWidgetGeneric.failInstanceInstall(INSTANCE_INSTALL_CARD_ID, String(e));
+    if (dlWidgetGeneric) dlWidgetGeneric.failInstanceInstall(dlId, String(e));
     showToast('Reinstall failed: ' + e, 'error');
   }
 }
@@ -6576,6 +6605,7 @@ function initInstanceActions() {
     const saveBtn = document.getElementById('btn-save-edit-instance');
     saveBtn.disabled = true;
 
+    let reinstallDlId = null;
     try {
       if (!versionOrLoaderChanged) {
         // Nothing that requires a reinstall changed — update metadata & advanced settings
@@ -6584,8 +6614,9 @@ function initInstanceActions() {
         // Minecraft version and/or loader changed — reinstall with new version
         closeEditInstanceOverlay();
         showToast(`Reinstalling ${name || inst.name} as ${newMcVersion} (${loaderLabel(newLoader)})…`, 'info');
-        if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, newMcVersion, newLoader);
-        const newInstance = await api.installVersion(newMcVersion, newLoader, loaderVersion, inst.directory, name || inst.name, inst.version_id);
+        reinstallDlId = newInstallDownloadId();
+        if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(reinstallDlId, newMcVersion, newLoader);
+        const newInstance = await api.installVersion(newMcVersion, newLoader, loaderVersion, inst.directory, name || inst.name, inst.version_id, reinstallDlId);
         // Persist advanced settings onto the newly created instance record
         try {
           await api.updateInstance(newInstance.version_id, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs, newLoader, newMcVersion);
@@ -6605,7 +6636,7 @@ function initInstanceActions() {
       closeEditInstanceOverlay();
       showToast('Instance updated', 'success');
     } catch (e) {
-      if (dlWidgetGeneric) dlWidgetGeneric.failInstanceInstall(INSTANCE_INSTALL_CARD_ID, String(e));
+      if (dlWidgetGeneric && reinstallDlId) dlWidgetGeneric.failInstanceInstall(reinstallDlId, String(e));
       showToast('Failed to update instance: ' + e, 'error');
     } finally {
       saveBtn.disabled = false;
@@ -7554,14 +7585,27 @@ async function installInstance() {
     const maxRamMb = maxRamVal ? parseInt(maxRamVal, 10) : null;
     const jvmArgs = document.getElementById('inst-jvm-args')?.value?.trim() || '';
 
+    // Several installs can run at once, but two of them must never write
+    // into the same instance folder.
+    const installKey = (directory || name).toLowerCase();
+    if (activeInstallKeys.has(installKey)) {
+      showToast(`"${name}" is already being installed — pick a different name or folder`, 'error');
+      if (btn) btn.disabled = false;
+      return;
+    }
+    activeInstallKeys.add(installKey);
+    const dlId = newInstallDownloadId();
+
     // Close the form right away — the floating download widget (bottom-left)
-    // tracks progress from here, so the user is free to keep using the app.
+    // tracks progress from here, so the user is free to keep using the app
+    // and to start another install while this one downloads.
     document.getElementById('new-instance-overlay')?.classList.add('hidden');
+    if (btn) btn.disabled = false;
     showToast(`Installing ${name}…`, 'info');
-    if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(INSTANCE_INSTALL_CARD_ID, mcVersion, loader);
+    if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(dlId, mcVersion, loader);
 
     try {
-      const result = await api.installVersion(mcVersion, loader, loaderVersion, directory, name);
+      const result = await api.installVersion(mcVersion, loader, loaderVersion, directory, name, null, dlId);
 
       // A brand-new instance should never come up hidden — but its
       // version_id can coincide with an entry that was previously hidden
@@ -7590,9 +7634,11 @@ async function installInstance() {
       if (String(e).toLowerCase().includes('cancel')) {
         showToast('Installation cancelled', 'info');
       } else {
-        if (dlWidgetGeneric) dlWidgetGeneric.failInstanceInstall(INSTANCE_INSTALL_CARD_ID, String(e));
+        if (dlWidgetGeneric) dlWidgetGeneric.failInstanceInstall(dlId, String(e));
         showToast('Install failed: ' + e, 'error');
       }
+    } finally {
+      activeInstallKeys.delete(installKey);
     }
   } catch (err) {
     console.error('Error in installInstance:', err);

@@ -28,10 +28,11 @@ pub struct AppState {
     /// Per-instance console output, keyed by version_id.
     pub instance_logs: Mutex<HashMap<String, Vec<LogEntry>>>,
     pub data_dir: PathBuf,
-    /// Set while the user has paused the in-progress download/install.
-    pub download_paused: AtomicBool,
-    /// Set when the user requests the in-progress download/install to stop.
-    pub download_cancelled: AtomicBool,
+    /// Pause/cancel flags for every instance install currently running,
+    /// keyed by that install's download id. Each install gets its own
+    /// entry, so several instances can download at the same time and be
+    /// paused / resumed / cancelled independently.
+    pub install_controls: Mutex<HashMap<String, Arc<InstallControl>>>,
     /// Cancellation flags for "generic" downloads that aren't the single
     /// tracked instance install — mod downloads/updates, dependency
     /// installs, discover-tab downloads, Java runtime downloads, etc.
@@ -138,8 +139,7 @@ impl AppState {
             running_instances: Mutex::new(HashMap::new()),
             instance_logs: Mutex::new(HashMap::new()),
             data_dir,
-            download_paused: AtomicBool::new(false),
-            download_cancelled: AtomicBool::new(false),
+            install_controls: Mutex::new(HashMap::new()),
             generic_cancels: Mutex::new(HashMap::new()),
             log_file: Mutex::new(log_file),
             device_code_session: Mutex::new(None),
@@ -183,6 +183,31 @@ impl AppState {
         }
         recent.insert(version_id.to_string(), (line.to_string(), now));
         true
+    }
+
+    /// Register a fresh pause/cancel control for one instance install.
+    pub fn register_install_control(&self, id: &str) -> Arc<InstallControl> {
+        let control = Arc::new(InstallControl::default());
+        self.install_controls
+            .lock()
+            .unwrap()
+            .insert(id.to_string(), control.clone());
+        control
+    }
+
+    /// Forget an install's control once it has finished (any outcome).
+    pub fn remove_install_control(&self, id: &str) {
+        self.install_controls.lock().unwrap().remove(id);
+    }
+
+    /// Controls matching `id`, or every running install when `id` is None
+    /// (keeps older callers that don't pass an id working).
+    pub fn install_controls_for(&self, id: Option<&str>) -> Vec<Arc<InstallControl>> {
+        let map = self.install_controls.lock().unwrap();
+        match id.filter(|i| !i.is_empty()) {
+            Some(id) => map.get(id).cloned().into_iter().collect(),
+            None => map.values().cloned().collect(),
+        }
     }
 
     /// Get (or create) the cancellation flag for a generic download id.
@@ -411,6 +436,32 @@ impl AppState {
     /// run, or the file was deleted).
     pub fn load_global_stats(&self) -> Option<crate::models::GlobalStats> {
         Self::load_json(&self.data_dir, "stats.json")
+    }
+}
+
+/// Pause / cancel flags for a single instance install.
+#[derive(Default)]
+pub struct InstallControl {
+    pub paused: AtomicBool,
+    pub cancelled: AtomicBool,
+}
+
+/// Removes an install's control entry when the install ends, including on
+/// early returns and errors.
+pub struct InstallControlGuard {
+    app: tauri::AppHandle,
+    id: String,
+}
+
+impl InstallControlGuard {
+    pub fn new(app: &tauri::AppHandle, id: &str) -> Self {
+        Self { app: app.clone(), id: id.to_string() }
+    }
+}
+
+impl Drop for InstallControlGuard {
+    fn drop(&mut self) {
+        self.app.state::<AppState>().remove_install_control(&self.id);
     }
 }
 

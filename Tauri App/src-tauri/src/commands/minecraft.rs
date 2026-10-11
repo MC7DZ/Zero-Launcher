@@ -738,11 +738,17 @@ pub async fn install_minecraft(
     let mc_version_outer = mc_version.clone();
     let loader_type_outer = loader_type.clone();
 
-    // Reset any stale pause/cancel flags from a previous run before we start.
-    state.download_paused.store(false, Ordering::Relaxed);
-    state.download_cancelled.store(false, Ordering::Relaxed);
-
-    let download_id = uuid::Uuid::new_v4().to_string();
+    // Each install owns its pause/cancel flags, registered under its
+    // download id, so installs never interfere with each other.
+    let download_id = payload
+        .download_id
+        .clone()
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let control = state.register_install_control(&download_id);
+    let _control_guard = crate::state::InstallControlGuard::new(&app, &download_id);
+    let control_for_progress = control.clone();
+    let control_for_retry = control.clone();
     let label = if loader_type == "vanilla" || loader_type.is_empty() {
         mc_version.clone()
     } else {
@@ -977,15 +983,13 @@ pub async fn install_minecraft(
         let mut reporter = move |event: mc_launcher_core::progress::ProgressEvent| {
             use mc_launcher_core::progress::ProgressEvent as PE;
 
-            let app_state = app_for_progress.state::<AppState>();
-
             // Cancellation check (also unblocks a paused download).
-            if app_state.download_cancelled.load(Ordering::Relaxed) {
+            if control_for_progress.cancelled.load(Ordering::Relaxed) {
                 std::panic::panic_any(CANCEL_MARKER.to_string());
             }
             // Genuine pause: block this thread (the library's own download
             // loop) until resumed or cancelled, so no bytes move while paused.
-            while app_state.download_paused.load(Ordering::Relaxed) {
+            while control_for_progress.paused.load(Ordering::Relaxed) {
                 let active_files_display: Vec<ActiveFileProgress> = active_labels
                     .iter()
                     .map(|l| {
@@ -1026,7 +1030,7 @@ pub async fn install_minecraft(
                 };
                 let _ = app_for_progress.emit("download-progress", &info);
                 std::thread::sleep(std::time::Duration::from_millis(250));
-                if app_state.download_cancelled.load(Ordering::Relaxed) {
+                if control_for_progress.cancelled.load(Ordering::Relaxed) {
                     std::panic::panic_any(CANCEL_MARKER.to_string());
                 }
             }
@@ -1187,7 +1191,7 @@ pub async fn install_minecraft(
                         let is_retryable = !e.is_fatal();
                         if is_retryable && attempt < MAX_ATTEMPTS {
                             let app_state = app_for_retry.state::<AppState>();
-                            if app_state.download_cancelled.load(Ordering::Relaxed) {
+                            if control_for_retry.cancelled.load(Ordering::Relaxed) {
                                 std::panic::panic_any(CANCEL_MARKER.to_string());
                             }
                             logger::warn(
@@ -1224,7 +1228,7 @@ pub async fn install_minecraft(
 
                             let sleep_secs = (attempt as u64).min(4);
                             for _ in 0..(sleep_secs * 4) {
-                                if app_state.download_cancelled.load(Ordering::Relaxed) {
+                                if control_for_retry.cancelled.load(Ordering::Relaxed) {
                                     std::panic::panic_any(CANCEL_MARKER.to_string());
                                 }
                                 std::thread::sleep(std::time::Duration::from_millis(250));
@@ -2998,24 +3002,30 @@ pub async fn get_instance_console_logs(
 
 /// Pause the currently running download/install, if any.
 #[tauri::command]
-pub async fn pause_download(state: State<'_, AppState>) -> Result<(), String> {
-    state.download_paused.store(true, Ordering::Relaxed);
+pub async fn pause_download(state: State<'_, AppState>, id: Option<String>) -> Result<(), String> {
+    for control in state.install_controls_for(id.as_deref()) {
+        control.paused.store(true, Ordering::Relaxed);
+    }
     Ok(())
 }
 
 /// Resume a previously paused download/install.
 #[tauri::command]
-pub async fn resume_download(state: State<'_, AppState>) -> Result<(), String> {
-    state.download_paused.store(false, Ordering::Relaxed);
+pub async fn resume_download(state: State<'_, AppState>, id: Option<String>) -> Result<(), String> {
+    for control in state.install_controls_for(id.as_deref()) {
+        control.paused.store(false, Ordering::Relaxed);
+    }
     Ok(())
 }
 
 /// Cancel the currently running download/install, if any.
 #[tauri::command]
-pub async fn cancel_download(state: State<'_, AppState>) -> Result<(), String> {
-    state.download_cancelled.store(true, Ordering::Relaxed);
-    // Unblock a paused loop so it can observe the cancellation immediately.
-    state.download_paused.store(false, Ordering::Relaxed);
+pub async fn cancel_download(state: State<'_, AppState>, id: Option<String>) -> Result<(), String> {
+    for control in state.install_controls_for(id.as_deref()) {
+        control.cancelled.store(true, Ordering::Relaxed);
+        // Unblock a paused loop so it can observe the cancellation immediately.
+        control.paused.store(false, Ordering::Relaxed);
+    }
     Ok(())
 }
 
