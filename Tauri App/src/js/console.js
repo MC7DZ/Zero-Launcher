@@ -40,6 +40,7 @@ async function applyTheme() {
   // Console window background is fixed (not user-customizable via
   // bg_color).
   root.style.setProperty('--console-window-bg', '#141416');
+  root.classList.toggle('no-ui-animations', !!settings && settings.enable_ui_animations === false);
   root.style.setProperty('--accent', accent);
   root.style.setProperty('--accent-dim', hexToRgba(accent, 0.15));
   root.style.setProperty('--accent-glow', hexToRgba(accent, 0.35));

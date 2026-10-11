@@ -2,7 +2,7 @@
 
 #  THE WEBSIE
 
-https://zerolauncher.github.io/Website/
+https://zerolauncher.github.io/page/
 
 <p align="center">
   <img src="assets/banner.png" alt="Zero Launcher Banner">

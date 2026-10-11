@@ -93,3 +93,39 @@ pub async fn report_activity(state: State<'_, AppState>) -> Result<(), String> {
     *state.last_activity_at.lock().unwrap() = std::time::Instant::now();
     Ok(())
 }
+
+
+/// Reads a wallpaper image from disk and returns it as a `data:` URL.
+/// Used as a fallback when the webview can't load the file through Tauri's
+/// asset protocol (scope/path quirks on some platforms).
+#[tauri::command]
+pub async fn read_background_image(path: String) -> Result<String, String> {
+    use base64::Engine;
+    const MAX_BYTES: u64 = 40 * 1024 * 1024;
+
+    let p = std::path::Path::new(&path);
+    let meta = std::fs::metadata(p).map_err(|e| format!("Cannot open image: {e}"))?;
+    if !meta.is_file() {
+        return Err("Not a file".to_string());
+    }
+    if meta.len() > MAX_BYTES {
+        return Err("Image is larger than 40 MB".to_string());
+    }
+    let bytes = std::fs::read(p).map_err(|e| format!("Cannot read image: {e}"))?;
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
+        _ => "application/octet-stream",
+    };
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{mime};base64,{encoded}"))
+}

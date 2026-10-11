@@ -419,7 +419,11 @@ const api = {
   syncPresets: () => invoke('sync_presets'),
   getSettings: () => invoke('get_settings'),
   updateSettings: (settings) => invoke('save_settings', { settings }),
+  readBackgroundImage: (path) => invoke('read_background_image', { path }),
   openLauncherFolder: () => invoke('open_launcher_folder'),
+  getStorageUsage: () => invoke('get_storage_usage'),
+  openStorageFolder: (id) => invoke('open_storage_folder', { id }),
+  clearStorageItem: (id) => invoke('clear_storage_item', { id }),
   openInstanceFolder: (directory) => invoke('open_instance_folder', { directory: directory || null }),
   getLauncherVersion: () => invoke('get_launcher_version'),
   getSystemInfo: () => invoke('get_system_info'),
@@ -644,12 +648,18 @@ let selectedInstanceId = null;
 
 // ── Toast ──
 // ── Toast / Notification System (matches Zero-Launcher NotificationPanel) ──
-const TOAST_DURATION = 5000;
-const TOAST_ERROR_DURATION = 8000;
 // Toasts with an action button (e.g. "Retry") stay up longer so there's
 // actually time to click before it auto-dismisses.
-const TOAST_ACTION_DURATION = 12000;
-const TOAST_MAX_VISIBLE = 4;
+const TOAST_MAX_LIMIT = 10;
+// User-configurable (Settings → Appearance → Notifications).
+function toastMaxVisible() {
+  const n = Math.round(Number(settings && settings.notification_max));
+  return Number.isFinite(n) ? Math.min(TOAST_MAX_LIMIT, Math.max(1, n)) : TOAST_MAX_LIMIT;
+}
+function toastBaseDuration() {
+  const sec = Number(settings && settings.notification_duration);
+  return (Number.isFinite(sec) ? Math.min(20, Math.max(2, sec)) : 5) * 1000;
+}
 const toastQueue = [];
 let activeToasts = [];
 
@@ -674,7 +684,7 @@ function drainToastQueue() {
   // toast while the window is unfocused rather than stopping at it — a
   // success/info toast queued behind a held-back error should still show.
   let i = 0;
-  while (activeToasts.length < TOAST_MAX_VISIBLE && i < toastQueue.length) {
+  while (activeToasts.length < toastMaxVisible() && i < toastQueue.length) {
     const next = toastQueue[i];
     if (next.type === 'error' && !windowHasFocus) {
       i += 1;
@@ -696,39 +706,54 @@ function showToast(message, type = 'info', title, actions) {
     toastQueue.push({ message, type, title, actions });
     return;
   }
-  if (activeToasts.length >= TOAST_MAX_VISIBLE) {
+  if (activeToasts.length >= toastMaxVisible()) {
     toastQueue.push({ message, type, title, actions });
     return;
   }
   spawnToast(message, type, title, actions);
 }
 
+// ── Notification looks ─────────────────────────────────────────────
+// Single source of truth for every selectable notification style. `name` is
+// what gets stored in settings.notification_style; `cls` is the CSS class;
+// `aliases` keep older saved values (incl. the old Rust default
+// "Minimal Outline") working.
+const NOTIF_STYLES = [
+  { name: 'Glass',      cls: 'toast-style-glass',      tag: 'Default · soft card',      aliases: ['frosted glass'] },
+  { name: 'Neon',       cls: 'toast-style-neon',       tag: 'Dark · glowing outline',   aliases: [] },
+  { name: 'Solid Card', cls: 'toast-style-solid-card', tag: 'Opaque · top accent',      aliases: ['solid'] },
+  { name: 'Pill',       cls: 'toast-style-pill',       tag: 'Rounded capsule',          aliases: [] },
+  { name: 'Minimal',    cls: 'toast-style-minimal',    tag: 'Thin · understated',       aliases: ['minimal outline'] },
+  { name: 'Outline',    cls: 'toast-style-outline',    tag: 'Transparent · bold border', aliases: [] },
+  { name: 'Tinted',     cls: 'toast-style-tinted',     tag: 'Filled with type color',   aliases: ['accent fill'] },
+  { name: 'Compact',    cls: 'toast-style-compact',    tag: 'Slim · dense',             aliases: [] },
+  { name: 'Terminal',   cls: 'toast-style-terminal',   tag: 'Monospace · sharp',        aliases: [] },
+  { name: 'Banner',     cls: 'toast-style-banner',     tag: 'Thick top bar',            aliases: [] },
+];
+
+function normalizeNotifStyleName(raw) {
+  const key = String(raw || '').trim().toLowerCase();
+  const hit = NOTIF_STYLES.find(st => st.name.toLowerCase() === key || st.aliases.includes(key));
+  return hit ? hit.name : 'Glass';
+}
+
+function notifStyleClass(raw) {
+  const name = normalizeNotifStyleName(raw);
+  return (NOTIF_STYLES.find(st => st.name === name) || NOTIF_STYLES[0]).cls;
+}
+
 function spawnToast(message, type, title, actions) {
   const c = document.getElementById('toast-container');
   // Give toasts with an action button extra time so there's a real chance
   // to click it before the auto-dismiss timer fires.
-  const duration = (actions && actions.length) ? TOAST_ACTION_DURATION
-    : type === 'error' ? TOAST_ERROR_DURATION : TOAST_DURATION;
+  const baseMs = toastBaseDuration();
+  const duration = (actions && actions.length) ? Math.round(baseMs * 2.4)
+    : type === 'error' ? Math.round(baseMs * 1.6) : baseMs;
 
   const iconMap = { success: '\u2714', error: '\u2715', warning: '\u26A0', info: '\u2139' };
   const icon = iconMap[type] || iconMap.info;
 
-  // Notification Style setting — same 5 looks as before, remapped onto the
-  // lightweight base markup (no icon badge, no progress bar element, no
-  // animation): the class only ever changes flat background/border/radius.
-  const styleMap = {
-    'glass':      'toast-style-glass',
-    'neon':       'toast-style-neon',
-    'solid card': 'toast-style-solid-card',
-    'pill':       'toast-style-pill',
-    'minimal':    'toast-style-minimal',
-    // legacy compat
-    'minimal outline': 'toast-style-minimal',
-    'frosted glass':   'toast-style-glass',
-    'solid':           'toast-style-solid-card',
-  };
-  const rawStyle = (settings && settings.notification_style) ? settings.notification_style.toLowerCase() : 'glass';
-  const styleClass = styleMap[rawStyle] || 'toast-style-glass';
+  const styleClass = notifStyleClass(settings && settings.notification_style);
 
   const t = document.createElement('div');
   t.className = `toast toast-${type} ${styleClass}`;
@@ -848,6 +873,195 @@ window.showToast = showToast;
 // no-ops instead.
 let latestTabToken = 0;
 let pendingTabSwitchTimer = null;
+let lastTabClickAt = 0;
+// Per-animation exit time (ms) before the new page is shown. Must match the
+// leave durations in main.css ("Selectable tab animations").
+const TAB_ANIM_DELAYS = { slide: 300, fade: 160, zoom: 170, rise: 170, swing: 200, swipe: 180, none: 0 };
+const TAB_ANIM_NAMES = Object.keys(TAB_ANIM_DELAYS);
+// Spam protection: clicks closer together than TAB_SPAM_WINDOW_MS count as
+// spamming; the page then only switches after TAB_SPAM_QUIET_MS without clicks.
+const TAB_SPAM_WINDOW_MS = 450;
+const TAB_SPAM_QUIET_MS = 350;
+function getTabAnimation() {
+  const v = document.documentElement.dataset.tabAnim;
+  return TAB_ANIM_NAMES.includes(v) ? v : 'swipe';
+}
+// ── Tab animation picker (animated preview cards, like the theme palettes) ──
+const TAB_ANIM_OPTIONS = [
+  { id: 'swipe', name: 'Swipe',  desc: 'Fast, wide swipe' , badge: 'Default' },
+  { id: 'slide', name: 'Slide',  desc: 'Gentle push' },
+  { id: 'fade',  name: 'Fade',   desc: 'Soft cross-fade' },
+  { id: 'zoom',  name: 'Zoom',   desc: 'Scale in / out' },
+  { id: 'rise',  name: 'Rise',   desc: 'Float up' },
+  { id: 'swing', name: 'Swing',  desc: '3D tilt' },
+  { id: 'none',  name: 'None',   desc: 'Instant' },
+];
+function renderTabAnimPicker() {
+  const grid = document.getElementById('tab-anim-grid');
+  const input = document.getElementById('setting-tab-animation');
+  if (!grid || !input) return;
+  const current = TAB_ANIM_NAMES.includes(input.value) ? input.value : 'swipe';
+  grid.innerHTML = '';
+  TAB_ANIM_OPTIONS.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `tab-anim-card${opt.id === current ? ' active' : ''}`;
+    btn.dataset.anim = opt.id;
+    btn.innerHTML = `
+      <div class="tab-anim-preview">
+        <div class="tap-header">
+          <span class="tap-brand">ZERO</span>
+          <div class="tap-tabs">
+            <span class="tap-ind"></span>
+            <span class="tap-lbl tap-lbl-1">Instances</span>
+            <span class="tap-lbl tap-lbl-2">Manage</span>
+            <span class="tap-lbl">Discover</span>
+            <span class="tap-lbl">Presets</span>
+          </div>
+          <span class="tap-gear"></span>
+        </div>
+        <div class="tap-content">
+          <div class="tab-anim-page tab-anim-page-a">
+            <div class="tap-grid"><b></b><b></b><b></b><b></b><b></b><b></b></div>
+          </div>
+          <div class="tab-anim-page tab-anim-page-b">
+            <div class="tap-list"><b></b><b></b><b></b><b></b></div>
+          </div>
+        </div>
+      </div>
+      <div class="tab-anim-info">
+        <span class="tab-anim-name">${opt.name}</span>
+        <span class="tab-anim-desc">${opt.badge || opt.desc}</span>
+      </div>`;
+    btn.onclick = () => {
+      if (input.value === opt.id) return;
+      input.value = opt.id;
+      document.documentElement.dataset.tabAnim = opt.id;
+      grid.querySelectorAll('.tab-anim-card').forEach(c => c.classList.toggle('active', c === btn));
+      input.dispatchEvent(new Event('change'));
+    };
+    grid.appendChild(btn);
+  });
+}
+// ── Background animation picker (live mini previews, pure CSS) ──
+const BG_ANIM_OPTIONS = [
+  { id: 'Starfield', name: 'Starfield', desc: 'Default', },
+  { id: 'Waves',     name: 'Waves',     desc: 'Flowing waves' },
+  { id: 'Particles', name: 'Particles', desc: 'Floating dots' },
+  { id: 'Fireflies', name: 'Fireflies', desc: 'Glowing wander' },
+  { id: 'Nothing',   name: 'None',      desc: 'No animation' },
+];
+function _bgaStars(count, size, seed) {
+  // Deterministic pseudo-random star field as one box-shadow list (1 element, very cheap).
+  let x = seed; const rnd = () => (x = (x * 16807) % 2147483647) / 2147483647;
+  const out = [];
+  for (let i = 0; i < count; i++) out.push(`${Math.round(rnd() * 190)}px ${Math.round(rnd() * 100)}px 0 ${size > 1 ? 0 : 0}px rgba(255,255,255,${(0.35 + rnd() * 0.55).toFixed(2)})`);
+  return out.join(',');
+}
+function bgAnimPreviewHtml(id) {
+  let layers = '';
+  if (id === 'Starfield') {
+    layers = `<div class="bga-stars bga-stars-far" style="box-shadow:${_bgaStars(22, 1, 7)}"></div>
+              <div class="bga-stars bga-stars-near" style="box-shadow:${_bgaStars(9, 2, 31)}"></div>`;
+  } else if (id === 'Waves') {
+    const wave = (cls) => `<svg class="bga-wave ${cls}" viewBox="0 0 400 100" preserveAspectRatio="none"><path d="M0 30 Q50 0 100 30 T200 30 T300 30 T400 30 V100 H0Z"/></svg>`;
+    layers = wave('bga-wave-1') + wave('bga-wave-2') + wave('bga-wave-3');
+  } else if (id === 'Particles') {
+    const xs = [8, 20, 33, 46, 58, 70, 82, 92, 14, 64];
+    layers = xs.map((x, i) => `<i class="bga-dot" style="--x:${x}%;--d:${(i * 0.37).toFixed(2)}s;--t:${(2.6 + (i % 4) * 0.5).toFixed(1)}s;--s:${3 + (i % 3)}px"></i>`).join('');
+  } else if (id === 'Fireflies') {
+    const pts = [[12, 62], [28, 30], [44, 70], [58, 40], [72, 66], [86, 34], [38, 52]];
+    layers = pts.map((p, i) => `<i class="bga-fly" style="--x:${p[0]}%;--y:${p[1]}%;--d:${(i * 0.45).toFixed(2)}s;--t:${(3 + (i % 3) * 0.8).toFixed(1)}s"></i>`).join('');
+  } else {
+    layers = `<span class="bga-none-label">No animation</span>`;
+  }
+  return `<div class="bga-scene">${layers}</div>
+          <div class="bga-ui"><div class="bga-ui-head"><b></b><span><i></i><i></i><i></i></span></div>
+            <div class="bga-ui-tiles"><b></b><b></b><b></b></div></div>`;
+}
+function renderBgAnimPicker() {
+  const grid = document.getElementById('bg-anim-grid');
+  const input = document.getElementById('setting-bg-anim-style');
+  if (!grid || !input) return;
+  const valid = BG_ANIM_OPTIONS.map(o => o.id);
+  const current = valid.includes(input.value) ? input.value : 'Starfield';
+  grid.innerHTML = '';
+  BG_ANIM_OPTIONS.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `tab-anim-card bga-card${opt.id === current ? ' active' : ''}`;
+    btn.dataset.bga = opt.id;
+    btn.innerHTML = `
+      <div class="tab-anim-preview bga-preview">${bgAnimPreviewHtml(opt.id)}</div>
+      <div class="tab-anim-info">
+        <span class="tab-anim-name">${opt.name}</span>
+        <span class="tab-anim-desc">${opt.desc}</span>
+      </div>`;
+    btn.onclick = () => {
+      if (input.value === opt.id) return;
+      input.value = opt.id;
+      grid.querySelectorAll('.bga-card').forEach(c => c.classList.toggle('active', c === btn));
+      input.dispatchEvent(new Event('change'));
+    };
+    grid.appendChild(btn);
+  });
+}
+
+// ── Background style picker (static previews — no running animations) ──
+const BG_STYLE_OPTIONS = [
+  { id: 'Default',     name: 'Default',     desc: 'Soft top glow',     glows: [[0.18, -0.05, 0.9, 0.18]] },
+  { id: 'Midnight',    name: 'Midnight',    desc: 'Deep corner glow',  glows: [[0.82, 1.05, 0.8, 0.21]] },
+  { id: 'Sunset',      name: 'Sunset',      desc: 'Two warm glows',    glows: [[0.05, 0.15, 0.7, 0.22], [0.95, 0.85, 0.7, 0.16]] },
+  { id: 'Forest',      name: 'Forest',      desc: 'Rising from below', glows: [[0.5, 1.0, 1.1, 0.19]] },
+  { id: 'Ocean',       name: 'Ocean',       desc: 'Light from above',  glows: [[0.5, -0.1, 1.3, 0.18]] },
+  { id: 'Monochrome',  name: 'Monochrome',  desc: 'No glow',           glows: [] },
+  { id: 'Accent Glow', name: 'Accent Glow', desc: 'Strong center',     glows: [[0.5, 0.4, 1.4, 0.32]] },
+  { id: 'Nothing',     name: 'Nothing',     desc: 'Flat gray',         glows: [], flat: true },
+];
+function bgStylePreviewCss(opt) {
+  if (opt.flat) return 'background: var(--bg, #0a0a0f);';
+  const layers = opt.glows.map(([xr, yr, rr, a]) => {
+    const alpha = Math.min(100, Math.round(a * 1.7 * 100));
+    return `radial-gradient(circle ${Math.round(rr * 120)}px at ${Math.round(xr * 100)}% ${Math.round(yr * 100)}%, color-mix(in srgb, var(--accent) ${alpha}%, transparent), transparent)`;
+  });
+  layers.push('linear-gradient(180deg, var(--bg, #0a0a0f), var(--bg-darker, #060609))');
+  return `background: ${layers.join(', ')};`;
+}
+function renderBgStylePicker() {
+  const grid = document.getElementById('bg-style-grid');
+  const input = document.getElementById('setting-bg-style');
+  if (!grid || !input) return;
+  const valid = BG_STYLE_OPTIONS.map(o => o.id);
+  const current = valid.includes(input.value) ? input.value : 'Default';
+  grid.innerHTML = '';
+  BG_STYLE_OPTIONS.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `tab-anim-card bgs-card${opt.id === current ? ' active' : ''}`;
+    btn.dataset.bgs = opt.id;
+    btn.innerHTML = `
+      <div class="tab-anim-preview bgs-preview" style="${bgStylePreviewCss(opt)}">
+        <div class="bga-ui"><div class="bga-ui-head"><b></b><span><i></i><i></i><i></i></span></div>
+          <div class="bga-ui-tiles"><b></b><b></b><b></b></div></div>
+      </div>
+      <div class="tab-anim-info">
+        <span class="tab-anim-name">${opt.name}</span>
+        <span class="tab-anim-desc">${opt.desc}</span>
+      </div>`;
+    btn.onclick = () => {
+      if (input.value === opt.id) return;
+      input.value = opt.id;
+      grid.querySelectorAll('.bgs-card').forEach(c => c.classList.toggle('active', c === btn));
+      input.dispatchEvent(new Event('change'));
+    };
+    grid.appendChild(btn);
+  });
+}
+
+function getTabSwitchDelay() {
+  if (document.documentElement.classList.contains('no-ui-animations')) return 0;
+  return TAB_ANIM_DELAYS[getTabAnimation()];
+}
 // Delay between the tab button changing and the page content actually switching.
 const TAB_PAGE_SWITCH_DELAY_MS = 300;
 
@@ -885,6 +1099,9 @@ function initTabs() {
       if (btn.classList.contains('active')) return;
 
       const myToken = ++latestTabToken;
+      const nowTs = performance.now();
+      const isSpamming = (nowTs - lastTabClickAt) < TAB_SPAM_WINDOW_MS;
+      lastTabClickAt = nowTs;
 
       document.querySelectorAll('.pill-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -907,7 +1124,7 @@ function initTabs() {
 
       // While the 0.3s wait runs, the current page eases out sideways.
       if (visiblePage && visiblePage !== targetPage) {
-        if (!visiblePage.classList.contains('tab-leave-l') && !visiblePage.classList.contains('tab-leave-r')) {
+        if (getTabSwitchDelay() > 0 && !visiblePage.classList.contains('tab-leave-l') && !visiblePage.classList.contains('tab-leave-r')) {
           visiblePage.classList.add(dirRight ? 'tab-leave-l' : 'tab-leave-r');
         }
       } else if (visiblePage) {
@@ -928,8 +1145,10 @@ function initTabs() {
           // New page glides in from the direction of travel.
           if (page !== visiblePage) {
             const cls = dirRight ? 'tab-enter-r' : 'tab-enter-l';
-            page.classList.add(cls);
-            setTimeout(() => page.classList.remove(cls), 450);
+            if (getTabAnimation() !== 'none' && !document.documentElement.classList.contains('no-ui-animations')) {
+              page.classList.add(cls);
+              setTimeout(() => page.classList.remove(cls), 600);
+            }
           }
           refreshCardCullingIn(page);
         }
@@ -980,7 +1199,7 @@ function initTabs() {
           const tabName = tabId.charAt(0).toUpperCase() + tabId.slice(1);
           api.updateDiscordPresence(tabName, null, null).catch(() => { });
         }
-      }, TAB_PAGE_SWITCH_DELAY_MS);
+      }, isSpamming ? Math.max(getTabSwitchDelay(), TAB_SPAM_QUIET_MS) : getTabSwitchDelay());
     });
   });
 
@@ -6548,7 +6767,8 @@ function initCreateShortcutModal() {
     if (!advPanel) return;
     const expanding = advBtn.getAttribute('aria-expanded') !== 'true';
     advBtn.setAttribute('aria-expanded', String(expanding));
-    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduce = (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+      || document.documentElement.classList.contains('no-ui-animations');
     if (advPanel._anim) { advPanel._anim.cancel(); advPanel._anim = null; }
     if (expanding) {
       advPanel.classList.remove('hidden');
@@ -13437,8 +13657,14 @@ function renderQuickThemePalettes() {
   ];
   const quickList = THEME_PALETTES.slice(0, 4);
 
+  // Rebuilding these skeletons on every theme tick is wasteful — only redo
+  // the DOM when the active palette (or the accent/bg it depends on) changed.
+  const sig = quickList.map(pal => `${pal.name}:${isPaletteActive(pal) ? 1 : 0}`).join('|')
+    + `|${currentAccentColor()}|${(settings && settings.bg_color) || ''}`;
   containers.forEach(container => {
     if (!container) return;
+    if (container.dataset.sig === sig && container.childElementCount) return;
+    container.dataset.sig = sig;
     container.innerHTML = '';
     quickList.forEach(pal => {
       const active = isPaletteActive(pal);
@@ -13493,6 +13719,117 @@ function openThemePalettesModal() {
   const doneBtn = document.getElementById('btn-done-palettes-modal');
   if (closeBtn) closeBtn.onclick = close;
   if (doneBtn) doneBtn.onclick = close;
+}
+
+// ── Notification looks UI ───────────────────────────────────────────
+function updateNotifSliderOutputs() {
+  const m = document.getElementById('setting-notif-max');
+  const d = document.getElementById('setting-notif-duration');
+  const om = document.getElementById('out-notif-max');
+  const od = document.getElementById('out-notif-duration');
+  if (m && om) om.textContent = m.value;
+  if (d && od) od.textContent = d.value + 's';
+}
+
+function populateNotifStyleSelects() {
+  ['setting-notif-style', 'setup-notif-style'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel || sel.dataset.populated === '1') return;
+    sel.innerHTML = NOTIF_STYLES
+      .map(st => `<option value="${st.name}">${st.name}${st.name === 'Glass' ? ' (Default)' : ''}</option>`)
+      .join('');
+    sel.dataset.populated = '1';
+  });
+}
+
+function renderNotifMiniHtml(st) {
+  // Reuses the real toast classes so previews are faithful to the live look.
+  const row = (type, icon, title, msg) => `
+    <div class="toast toast-${type} ${st.cls}">
+      <span class="toast-icon">${icon}</span>
+      <div class="toast-content">
+        <div class="toast-title">${title}</div>
+        ${msg ? `<div class="toast-message">${msg}</div>` : ''}
+      </div>
+    </div>`;
+  return `<div class="notif-mini-stage">
+    ${row('success', '\u2714', 'Download complete', 'Fabric 1.21 is ready')}
+    ${row('error', '\u2715', 'Launch failed', 'Java not found')}
+  </div>`;
+}
+
+function currentNotifStyleName() {
+  return normalizeNotifStyleName(settings && settings.notification_style);
+}
+
+function applyNotifStyle(name, announce = true) {
+  const styleName = normalizeNotifStyleName(name);
+  if (settings) settings.notification_style = styleName;
+  ['setting-notif-style', 'setup-notif-style'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = styleName;
+  });
+  renderNotifPlates();
+  renderNotifGallery();
+  saveSettingsNow();
+  if (announce) showToast(`Notifications will now look like this (${styleName}).`, 'success', 'Notification style changed');
+}
+
+function renderNotifPlates() {
+  const container = document.getElementById('quick-notif-container');
+  if (!container) return;
+  const active = currentNotifStyleName();
+  container.innerHTML = '';
+  NOTIF_STYLES.slice(0, 5).forEach(st => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `notif-plate ${st.name === active ? 'active' : ''}`;
+    btn.title = `${st.name} (${st.tag})`;
+    btn.innerHTML = `
+      ${renderNotifMiniHtml(st)}
+      <span class="notif-plate-name">${st.name}</span>`;
+    btn.onclick = () => applyNotifStyle(st.name);
+    container.appendChild(btn);
+  });
+}
+
+function renderNotifGallery() {
+  const grid = document.getElementById('full-notif-grid');
+  if (!grid) return;
+  const active = currentNotifStyleName();
+  grid.innerHTML = '';
+  NOTIF_STYLES.forEach(st => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = `notif-plate ${st.name === active ? 'active' : ''}`;
+    card.innerHTML = `
+      ${renderNotifMiniHtml(st)}
+      <div>
+        <div class="notif-plate-name">${st.name}${st.name === active ? ' \u2713' : ''}</div>
+        <div class="notif-plate-tag" style="margin-top:2px;">${st.tag}</div>
+      </div>`;
+    card.onclick = () => applyNotifStyle(st.name, false);
+    grid.appendChild(card);
+  });
+}
+
+function openNotifGallery() {
+  const overlay = document.getElementById('notif-gallery-overlay');
+  if (!overlay) return;
+  renderNotifGallery();
+  overlay.classList.remove('hidden');
+  const close = () => overlay.classList.add('hidden');
+  const closeBtn = document.getElementById('btn-close-notif-gallery');
+  const doneBtn = document.getElementById('btn-done-notif-gallery');
+  if (closeBtn) closeBtn.onclick = close;
+  if (doneBtn) doneBtn.onclick = close;
+}
+
+function fireTestNotifications() {
+  showToast('Everything finished successfully.', 'success', 'Success');
+  showToast('Something went wrong while launching.', 'error', 'Error');
+  showToast('Java 8 is outdated for this version.', 'warning', 'Warning');
+  showToast('A new launcher version is available.', 'info', 'Info');
 }
 
 function getRecentColors(type) {
@@ -13710,21 +14047,31 @@ function populateSettingsUI() {
 
   ensureAccentFields();
 
-  document.getElementById('setting-notif-style').value = settings.notification_style || 'Glass';
+  populateNotifStyleSelects();
+  const notifMaxEl = document.getElementById('setting-notif-max');
+  const notifDurEl = document.getElementById('setting-notif-duration');
+  if (notifMaxEl) notifMaxEl.value = settings.notification_max ?? 5;
+  if (notifDurEl) notifDurEl.value = settings.notification_duration ?? 5;
+  updateNotifSliderOutputs();
+  renderNotifPlates();
 
   // Background & Animation
   document.getElementById('setting-bg-style').value = settings.background_style || 'Default';
+  renderBgStylePicker();
   document.getElementById('setting-bg-anim-style').value = settings.background_animation_style || 'Starfield';
+  renderBgAnimPicker();
   document.getElementById('setting-bg-anim-speed').value = settings.background_animation_speed || 1.0;
   document.getElementById('setting-bg-anim-fps').value = settings.background_animation_fps || 60;
   document.getElementById('setting-transparency').checked = settings.enable_transparency !== false;
   document.getElementById('setting-ui-animations-enable').checked = settings.enable_ui_animations !== false;
+  document.getElementById('setting-tab-animation').value = TAB_ANIM_NAMES.includes(settings.tab_animation) ? settings.tab_animation : 'swipe';
+  renderTabAnimPicker();
 
   // Background Image
   document.getElementById('setting-use-bg-image').checked = !!settings.use_background_image;
   document.getElementById('setting-bg-image-path').value = settings.background_image_path || '';
   document.getElementById('setting-bg-image-fit').value = settings.background_image_fit || 'Cover';
-  document.getElementById('setting-bg-image-dim').value = settings.background_image_dim ?? 20;
+  document.getElementById('setting-bg-image-dim').value = settings.background_image_dim ?? 35;
   document.getElementById('setting-bg-image-brightness').value = settings.background_image_brightness ?? 100;
   document.getElementById('setting-bg-image-blur').value = settings.background_image_blur ?? 0;
   document.getElementById('setting-bg-image-tint').checked = !!settings.background_image_tint;
@@ -13901,6 +14248,7 @@ function applyThemeFromSettings() {
   // UI animations toggle (decorative transitions / slide-ins)
   const uiAnimEnabled = settings && settings.enable_ui_animations !== false;
   root.classList.toggle('no-ui-animations', !uiAnimEnabled);
+  root.dataset.tabAnim = TAB_ANIM_NAMES.includes(settings && settings.tab_animation) ? settings.tab_animation : 'swipe';
 
   if (isTransparent) {
     root.style.setProperty('--panel', 'linear-gradient(180deg, rgba(34, 34, 34, 0.65) 0%, rgba(20, 20, 20, 0.45) 100%)');
@@ -13945,43 +14293,156 @@ function applyThemeFromSettings() {
   }
 }
 
-function updateBackgroundImagePreview(path) {
-  const img = document.getElementById('setting-bg-image-thumbnail');
-  const label = document.getElementById('setting-bg-image-name');
-  const preview = document.getElementById('setting-bg-image-preview');
-  if (!img || !label || !preview) return;
+// Resolve a stored wallpaper path/URL into something the webview can load.
+// Local paths must go through Tauri's asset protocol (bare file:// is blocked).
+function bgImageUrl(path) {
+  if (!path) return '';
+  if (/^(https?|data|blob|asset|http\+asset):/i.test(path)) return path;
+  try {
+    const convert = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.convertFileSrc;
+    if (convert) return convert(path);
+  } catch (e) {
+    console.error('Failed to convert background image path', e);
+  }
+  return path;
+}
 
-  const selectedText = document.getElementById('setting-bg-image-selected-text');
+const BG_FIT_CSS = {
+  Cover:   { size: 'cover',     repeat: 'no-repeat', pos: 'center' },
+  Contain: { size: 'contain',   repeat: 'no-repeat', pos: 'center' },
+  Stretch: { size: '100% 100%', repeat: 'no-repeat', pos: 'center' },
+  Center:  { size: 'auto',      repeat: 'no-repeat', pos: 'center' },
+  Tile:    { size: 'auto',      repeat: 'repeat',    pos: 'top left' },
+};
+
+// Resolve a wallpaper path to a URL that actually loads. First try Tauri's
+// asset protocol; if the webview refuses it (scope / path quirks), fall back
+// to reading the file in Rust and using a data: URL. Cached per path.
+const _bgResolve = { path: '', url: null, pending: null };
+function testImageUrl(url) {
+  return new Promise(resolve => {
+    if (!url) return resolve(false);
+    const im = new Image();
+    im.onload = () => resolve(true);
+    im.onerror = () => resolve(false);
+    im.src = url;
+  });
+}
+function cachedBgUrl(path) {
+  return (_bgResolve.path === path && _bgResolve.url) ? _bgResolve.url : null;
+}
+function resolveBgImage(path) {
+  if (!path) return Promise.resolve(null);
+  if (_bgResolve.path === path) {
+    if (_bgResolve.url) return Promise.resolve(_bgResolve.url);
+    if (_bgResolve.pending) return _bgResolve.pending;
+  }
+  _bgResolve.path = path;
+  _bgResolve.url = null;
+  const job = (async () => {
+    let url = null;
+    if (/^(https?|data|blob):/i.test(path)) {
+      url = (await testImageUrl(path)) ? path : null;
+    } else {
+      const assetUrl = bgImageUrl(path);
+      if (await testImageUrl(assetUrl)) {
+        url = assetUrl;
+      } else {
+        try {
+          const dataUrl = await api.readBackgroundImage(path);
+          if (await testImageUrl(dataUrl)) url = dataUrl;
+        } catch (e) {
+          console.error('Background image fallback failed:', e);
+        }
+      }
+    }
+    if (_bgResolve.path === path) {
+      _bgResolve.url = url;
+      _bgResolve.pending = null;
+    }
+    return url;
+  })();
+  _bgResolve.pending = job;
+  // A failed result must not be cached forever (file may be restored/replaced).
+  job.then(u => { if (!u && _bgResolve.path === path) _bgResolve.path = ''; });
+  return job;
+}
+
+function updateBgSliderOutputs() {
+  const set = (id, suffix) => {
+    const input = document.getElementById('setting-bg-image-' + id);
+    const out = document.getElementById('out-bg-image-' + id);
+    if (input && out) out.textContent = input.value + suffix;
+  };
+  set('dim', '%');
+  set('brightness', '%');
+  set('blur', 'px');
+}
+
+// Rebuilds the live preview card in Settings → Appearance → Image so it
+// mirrors exactly what the launcher background will look like.
+async function updateBackgroundImagePreview(path) {
+  const stage = document.getElementById('bgimg-stage');
+  if (!stage) return;
+  const imgEl = document.getElementById('bgimg-stage-img');
+  const tintEl = document.getElementById('bgimg-stage-tint');
+  const dimEl = document.getElementById('bgimg-stage-dim');
+  const vigEl = document.getElementById('bgimg-stage-vig');
+  const nameEl = document.getElementById('setting-bg-image-selected-text');
+  const statusEl = document.getElementById('setting-bg-image-name');
+  const controls = document.querySelector('.bgimg-controls-col');
+  const emptyLabel = document.querySelector('#bgimg-stage-empty span');
+
+  const val = id => document.getElementById(id);
+  const fit = (val('setting-bg-image-fit') || {}).value || 'Cover';
+  const dim = parseInt((val('setting-bg-image-dim') || {}).value, 10);
+  const brightness = parseInt((val('setting-bg-image-brightness') || {}).value, 10);
+  const blur = parseInt((val('setting-bg-image-blur') || {}).value, 10);
+  const tint = !!(val('setting-bg-image-tint') || {}).checked;
+  const vignette = !!(val('setting-bg-image-vignette') || {}).checked;
+  updateBgSliderOutputs();
+
+  if (controls) controls.classList.toggle('is-disabled', !path);
 
   if (!path) {
-    label.textContent = '';
-    img.src = '';
-    img.style.filter = 'none';
-    preview.classList.add('hidden');
-    if (selectedText) selectedText.textContent = 'No image selected';
+    stage.classList.add('empty');
+    stage.classList.remove('broken');
+    imgEl.style.backgroundImage = 'none';
+    if (nameEl) { nameEl.textContent = 'No image selected'; nameEl.title = ''; }
+    if (statusEl) { statusEl.textContent = ''; statusEl.classList.remove('error'); }
+    if (emptyLabel) emptyLabel.textContent = 'Click to choose an image';
+    tintEl.style.opacity = '0'; dimEl.style.opacity = '0'; vigEl.style.opacity = '0';
     return;
   }
 
   const filename = path.replace(/^.*[\\/]/, '');
-  label.textContent = filename;
-  if (selectedText) selectedText.textContent = filename;
-  let url = path;
-  if (!/^(https?|data|blob):/.test(url)) {
-    try {
-      const convert = window.__TAURI__.core.convertFileSrc;
-      if (convert) url = convert(url);
-    } catch (e) {
-      console.error('Failed to convert background image preview path', e);
-    }
+  if (nameEl) { nameEl.textContent = filename; nameEl.title = path; }
+
+  const f = BG_FIT_CSS[fit] || BG_FIT_CSS.Cover;
+  const quickUrl = cachedBgUrl(path);
+  imgEl.style.backgroundImage = quickUrl ? `url("${quickUrl}")` : 'none';
+  imgEl.style.backgroundSize = f.size;
+  imgEl.style.backgroundRepeat = f.repeat;
+  imgEl.style.backgroundPosition = f.pos;
+  imgEl.style.filter = `brightness(${Number.isFinite(brightness) ? brightness : 100}%) blur(${(Number.isFinite(blur) ? blur : 0) / 3}px)`;
+  imgEl.style.transform = blur > 0 ? 'scale(1.08)' : 'none';
+  tintEl.style.opacity = tint ? '0.28' : '0';
+  dimEl.style.opacity = String((Number.isFinite(dim) ? dim : 35) / 100);
+  vigEl.style.opacity = vignette ? '1' : '0';
+
+  stage.classList.remove('empty');
+  if (!quickUrl && statusEl) { statusEl.textContent = 'Loading…'; statusEl.classList.remove('error'); }
+  const resolved = await resolveBgImage(path);
+  // Ignore stale results if the selection changed while loading.
+  if ((document.getElementById('setting-bg-image-path') || {}).value !== path) return;
+  const ok = !!resolved;
+  if (ok) imgEl.style.backgroundImage = `url("${resolved}")`;
+  stage.classList.toggle('broken', !ok);
+  if (statusEl) {
+    statusEl.textContent = ok ? '' : 'Could not load this image. The file may have been moved, deleted or is not a supported format.';
+    statusEl.classList.toggle('error', !ok);
   }
-  img.src = url;
-  const brightness = document.getElementById('setting-bg-image-brightness')?.value || 100;
-  const blur = document.getElementById('setting-bg-image-blur')?.value || 0;
-  const tint = document.getElementById('setting-bg-image-tint')?.checked;
-  const styleParts = [`brightness(${brightness}%)`, `blur(${blur}px)`];
-  if (tint) styleParts.push('sepia(0.35) hue-rotate(120deg) saturate(1.35)');
-  img.style.filter = styleParts.join(' ');
-  preview.classList.remove('hidden');
+  if (emptyLabel) emptyLabel.textContent = ok ? 'Click to choose an image' : 'Image not found — click to choose another';
 }
 
 // Color utility: hex -> rgba string
@@ -14058,11 +14519,16 @@ function collectSettingsFromUI() {
     const setupNotif = document.getElementById('setup-notif-style');
     const setupBgStyle = document.getElementById('setup-bg-style');
     const setupBgAnim = document.getElementById('setup-bg-anim-style');
-    if (setupNotif) settings.notification_style = setupNotif.value;
+    if (setupNotif) settings.notification_style = normalizeNotifStyleName(setupNotif.value);
     if (setupBgStyle) settings.background_style = setupBgStyle.value;
     if (setupBgAnim) settings.background_animation_style = setupBgAnim.value;
   } else {
-    settings.notification_style = document.getElementById('setting-notif-style').value;
+    const notifSel = document.getElementById('setting-notif-style');
+    if (notifSel) settings.notification_style = normalizeNotifStyleName(notifSel.value);
+    const nMax = parseInt((document.getElementById('setting-notif-max') || {}).value, 10);
+    const nDur = parseInt((document.getElementById('setting-notif-duration') || {}).value, 10);
+    if (Number.isFinite(nMax)) settings.notification_max = Math.min(10, Math.max(1, nMax));
+    if (Number.isFinite(nDur)) settings.notification_duration = Math.min(20, Math.max(2, nDur));
     // Appearance: Background & Animation
     settings.background_style = document.getElementById('setting-bg-style').value;
     settings.background_animation_style = document.getElementById('setting-bg-anim-style').value;
@@ -14072,13 +14538,14 @@ function collectSettingsFromUI() {
   settings.background_animation_fps = parseInt(document.getElementById('setting-bg-anim-fps').value) || 60;
   settings.enable_transparency = document.getElementById('setting-transparency').checked;
   settings.enable_ui_animations = document.getElementById('setting-ui-animations-enable').checked;
+  settings.tab_animation = document.getElementById('setting-tab-animation').value || 'swipe';
 
   // Appearance: Background Image
   settings.use_background_image = document.getElementById('setting-use-bg-image').checked;
   settings.background_image_path = document.getElementById('setting-bg-image-path').value;
   settings.background_image_fit = document.getElementById('setting-bg-image-fit').value;
   const imageDim = parseInt(document.getElementById('setting-bg-image-dim').value);
-  settings.background_image_dim = Number.isFinite(imageDim) ? imageDim : 20;
+  settings.background_image_dim = Number.isFinite(imageDim) ? imageDim : 35;
   const imageBrightness = parseInt(document.getElementById('setting-bg-image-brightness').value);
   settings.background_image_brightness = Number.isFinite(imageBrightness) ? imageBrightness : 100;
   const imageBlur = parseInt(document.getElementById('setting-bg-image-blur').value);
@@ -14484,9 +14951,9 @@ async function populateJavaDropdown(currentValue, showFeedback) {
 function initSettings() {
   // All checkboxes and selects save immediately on change
   const immediateIds = [
-    'setting-bg-style', 'setting-bg-anim-style', 'setting-notif-style',
+    'setting-bg-style', 'setting-bg-anim-style', 'setting-notif-max', 'setting-notif-duration',
     'setting-bg-anim-speed', 'setting-bg-anim-intensity', 'setting-bg-anim-fps',
-    'setting-transparency', 'setting-ui-animations-enable',
+    'setting-transparency', 'setting-ui-animations-enable', 'setting-tab-animation',
     'setting-use-bg-image', 'setting-bg-image-fit',
     'setting-bg-image-dim', 'setting-bg-image-brightness', 'setting-bg-image-blur',
     'setting-bg-image-tint', 'setting-bg-image-vignette',
@@ -14528,14 +14995,17 @@ function initSettings() {
   // Notification style gets its own live preview: fire a toast in the new
   // style right away so the change is obvious without waiting for some
   // other action to trigger a notification later.
-  const notifStyleEl = document.getElementById('setting-notif-style');
-  if (notifStyleEl) {
-    notifStyleEl.addEventListener('change', () => {
-      const styleName = notifStyleEl.value;
-      if (settings) settings.notification_style = styleName;
-      showToast(`Notifications will now look like this (${styleName}).`, 'success', 'Notification style changed');
+  ['setting-notif-max', 'setting-notif-duration'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      updateNotifSliderOutputs();
+      if (settings) {
+        settings.notification_max = parseInt(document.getElementById('setting-notif-max').value, 10);
+        settings.notification_duration = parseInt(document.getElementById('setting-notif-duration').value, 10);
+      }
     });
-  }
+  });
 
   // Text, number, and range inputs use debounced save
   const debouncedIds = [
@@ -14721,61 +15191,91 @@ function initSettings() {
   // Background image file picker
   const bgImageBrowseBtn = document.getElementById('btn-browse-bg-image');
   const bgImageClearBtn = document.getElementById('btn-clear-bg-image');
-  if (bgImageBrowseBtn) {
-    bgImageBrowseBtn.addEventListener('click', async () => {
-      try {
-        const picked = await window.__TAURI__.dialog.open({
-          multiple: false,
-          filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }],
-        });
-        if (picked) {
-          const path = Array.isArray(picked) ? picked[0] : picked;
-          document.getElementById('setting-bg-image-path').value = path;
-          document.getElementById('setting-use-bg-image').checked = true;
-          updateBackgroundImagePreview(path);
-          collectSettingsFromUI();
-          applyThemeFromSettings();
-          saveSettingsNow();
-        }
-      } catch (e) {
-        showToast('Could not open image picker: ' + e, 'error');
-      }
+  const bgImageStage = document.getElementById('bgimg-stage');
+  const bgPathEl = () => document.getElementById('setting-bg-image-path');
+
+  const browseBgImage = async () => {
+    try {
+      const dialog = window.__TAURI__ && window.__TAURI__.dialog;
+      if (!dialog || !dialog.open) throw new Error('file dialog unavailable');
+      const picked = await dialog.open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'] }],
+      });
+      if (!picked) return;
+      const path = Array.isArray(picked) ? picked[0] : (picked.path || picked);
+      if (!path) return;
+      bgPathEl().value = path;
+      document.getElementById('setting-use-bg-image').checked = true;
+      await updateBackgroundImagePreview(path);
+      await saveSettingsNow();
+    } catch (e) {
+      showToast('Could not open image picker: ' + e, 'error');
+    }
+  };
+  if (bgImageBrowseBtn) bgImageBrowseBtn.addEventListener('click', browseBgImage);
+  if (bgImageStage) {
+    bgImageStage.addEventListener('click', browseBgImage);
+    bgImageStage.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); browseBgImage(); }
     });
   }
   if (bgImageClearBtn) {
-    bgImageClearBtn.addEventListener('click', () => {
-      document.getElementById('setting-bg-image-path').value = '';
+    bgImageClearBtn.addEventListener('click', async () => {
+      bgPathEl().value = '';
       document.getElementById('setting-use-bg-image').checked = false;
-      updateBackgroundImagePreview('');
-      collectSettingsFromUI();
-      applyThemeFromSettings();
-      saveSettingsNow();
+      await updateBackgroundImagePreview('');
+      await saveSettingsNow();
     });
   }
 
-  const bgPreviewInputs = [
+  // Sliders / toggles: update the preview + live background while dragging.
+  // Persisting happens on `change` (via immediateIds above), not on every tick.
+  let _bgLiveRaf = 0;
+  const bgLive = () => {
+    if (_bgLiveRaf) return;
+    _bgLiveRaf = requestAnimationFrame(() => {
+      _bgLiveRaf = 0;
+      collectSettingsFromUI();
+      updateBackgroundImagePreview(bgPathEl().value || '');
+      if (typeof BG !== 'undefined') BG.applyBackgroundImage();
+    });
+  };
+  [
+    'setting-use-bg-image',
     'setting-bg-image-fit',
     'setting-bg-image-dim',
     'setting-bg-image-brightness',
     'setting-bg-image-blur',
     'setting-bg-image-tint',
     'setting-bg-image-vignette',
-  ];
-  bgPreviewInputs.forEach(id => {
+  ].forEach(id => {
     const el = document.getElementById(id);
-    if (el) {
-      el.addEventListener('change', () => {
-        updateBackgroundImagePreview(document.getElementById('setting-bg-image-path').value || '');
-        collectSettingsFromUI();
-        applyThemeFromSettings();
-      });
-      el.addEventListener('input', () => {
-        updateBackgroundImagePreview(document.getElementById('setting-bg-image-path').value || '');
-        collectSettingsFromUI();
-        applyThemeFromSettings();
-      });
-    }
+    if (!el) return;
+    el.addEventListener('input', bgLive);
+    el.addEventListener('change', bgLive);
   });
+
+  document.getElementById('btn-reset-bg-image')?.addEventListener('click', async () => {
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    setVal('setting-bg-image-fit', 'Cover');
+    setVal('setting-bg-image-dim', 35);
+    setVal('setting-bg-image-brightness', 100);
+    setVal('setting-bg-image-blur', 0);
+    document.getElementById('setting-bg-image-tint').checked = false;
+    document.getElementById('setting-bg-image-vignette').checked = true;
+    bgLive();
+    await saveSettingsNow();
+  });
+  updateBgSliderOutputs();
+
+  // ── Notification looks: quick plates, gallery, test button ──
+  populateNotifStyleSelects();
+  renderNotifPlates();
+  document.getElementById('btn-browse-all-notif')?.addEventListener('click', openNotifGallery);
+  document.getElementById('btn-test-notif')?.addEventListener('click', fireTestNotifications);
+  document.getElementById('btn-gallery-test-notif')?.addEventListener('click', fireTestNotifications);
 
   // Color pickers in Settings: Accent Color & Background Base Color
   document.getElementById('btn-open-accent-picker')?.addEventListener('click', () => {
@@ -14924,6 +15424,8 @@ function initSettings() {
           background_animation_intensity: 1.0,
           background_animation_fps: 60,
           enable_transparency: true,
+          enable_ui_animations: true,
+          tab_animation: 'swipe',
           use_background_image: false,
           background_image_path: '',
           background_image_fit: 'Cover',
@@ -15137,23 +15639,177 @@ function switchSettingsSection(sectionName) {
     renderJavaManager();
   }
 
+  if (sectionName === 'storage') {
+    renderStoragePanel();
+  }
+
   if (sectionName) {
     localStorage.setItem('zero_settings_last_section', sectionName);
   }
 }
 
+// ── Storage panel ──
+// Muted, earthy palette — each folder keeps the same colour in the top bar and in its own row.
+const STORAGE_COLORS = ['#7aa2c9', '#8fb996', '#d6a86a', '#c58b9b', '#9a8fc4', '#d08a6a', '#6fb3b0', '#b5b06a'];
+
+function formatStorageBytes(n) {
+  if (!n) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return (v >= 100 || i === 0 ? v.toFixed(0) : v.toFixed(1)) + ' ' + units[i];
+}
+
+// Counts the headline number up to its value (skipped when UI animations are off).
+function animateStorageTotal(el, target) {
+  cancelAnimationFrame(animateStorageTotal._raf);
+  const off = document.documentElement.classList.contains('no-ui-animations') ||
+    (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if (off || !target) { el.textContent = formatStorageBytes(target); return; }
+  const start = performance.now();
+  const dur = 700;
+  const tick = (now) => {
+    const t = Math.min((now - start) / dur, 1);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = formatStorageBytes(Math.round(target * eased));
+    if (t < 1) animateStorageTotal._raf = requestAnimationFrame(tick);
+  };
+  animateStorageTotal._raf = requestAnimationFrame(tick);
+}
+
+let storageLoading = false;
+async function renderStoragePanel() {
+  const list = document.getElementById('storage-list');
+  const bar = document.getElementById('storage-bar');
+  const totalEl = document.getElementById('storage-total-value');
+  const refreshBtn = document.getElementById('btn-storage-refresh');
+  const refreshIcon = document.getElementById('btn-storage-refresh-icon');
+  if (!list || !bar || !totalEl || storageLoading) return;
+
+  if (refreshBtn && !refreshBtn.dataset.ready) {
+    refreshBtn.dataset.ready = '1';
+    refreshBtn.addEventListener('click', () => renderStoragePanel());
+  }
+
+  storageLoading = true;
+  if (refreshIcon) refreshIcon.classList.add('is-spinning');
+  if (refreshBtn) refreshBtn.disabled = true;
+  try {
+    const usage = await api.getStorageUsage();
+    const entries = (usage.entries || []).slice().sort((a, b) => b.bytes - a.bytes);
+    const total = usage.total || 0;
+    const biggest = entries.length ? Math.max(entries[0].bytes, 1) : 1;
+    animateStorageTotal(totalEl, total);
+
+    bar.innerHTML = '';
+    list.innerHTML = '';
+    entries.forEach((e, idx) => {
+      const color = STORAGE_COLORS[idx % STORAGE_COLORS.length];
+      const pct = total > 0 ? (e.bytes / total) * 100 : 0;
+
+      if (pct > 0) {
+        const seg = document.createElement('div');
+        seg.className = 'storage-bar-seg';
+        seg.style.background = color;
+        seg.style.flexGrow = String(Math.max(pct, 0.6));
+        seg.style.animationDelay = (idx * 70) + 'ms';
+        seg.title = `${e.label}: ${formatStorageBytes(e.bytes)}`;
+        bar.appendChild(seg);
+      }
+
+      const row = document.createElement('div');
+      row.className = 'storage-row';
+      row.style.setProperty('--row-delay', (idx * 55) + 'ms');
+      row.style.setProperty('--row-color', color);
+
+      const text = document.createElement('div');
+      text.className = 'storage-row-text';
+      const head = document.createElement('div');
+      head.className = 'storage-row-head';
+      const title = document.createElement('span');
+      title.className = 'storage-row-title';
+      title.textContent = e.label;
+      const size = document.createElement('span');
+      size.className = 'storage-row-size';
+      size.textContent = formatStorageBytes(e.bytes);
+      const pctEl = document.createElement('em');
+      pctEl.textContent = pct >= 0.1 ? pct.toFixed(pct >= 10 ? 0 : 1) + '%' : '';
+      size.appendChild(pctEl);
+      head.append(title, size);
+
+      const track = document.createElement('div');
+      track.className = 'storage-row-track';
+      const fill = document.createElement('div');
+      fill.className = 'storage-row-fill';
+      fill.style.width = Math.max((e.bytes / biggest) * 100, e.bytes > 0 ? 1.5 : 0) + '%';
+      track.appendChild(fill);
+
+      const sub = document.createElement('div');
+      sub.className = 'storage-row-sub';
+      sub.textContent = e.description;
+      text.append(head, track, sub);
+
+      const actions = document.createElement('div');
+      actions.className = 'storage-row-actions';
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'about-action-btn';
+      openBtn.innerHTML = '<span>Open</span>';
+      openBtn.addEventListener('click', () => {
+        api.openStorageFolder(e.id).catch(err => showToast('Could not open folder: ' + err, 'error'));
+      });
+      actions.appendChild(openBtn);
+      if (e.clearable) {
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'about-action-btn storage-clear-btn';
+        clearBtn.disabled = e.bytes === 0;
+        clearBtn.innerHTML = '<span>Clear</span>';
+        clearBtn.addEventListener('click', async () => {
+          clearBtn.disabled = true;
+          try {
+            const freed = await api.clearStorageItem(e.id);
+            showToast(`Freed ${formatStorageBytes(freed)} from ${e.label.toLowerCase()}.`, 'success');
+          } catch (err) {
+            showToast('Could not clear: ' + err, 'error');
+          }
+          storageLoading = false;
+          renderStoragePanel();
+        });
+        actions.appendChild(clearBtn);
+      }
+      row.append(text, actions);
+      list.appendChild(row);
+    });
+    if (!entries.length) list.innerHTML = '<div class="storage-empty">Nothing to show yet.</div>';
+  } catch (err) {
+    list.innerHTML = '';
+    const msg = document.createElement('div');
+    msg.className = 'storage-empty';
+    msg.textContent = 'Could not measure storage: ' + err;
+    list.appendChild(msg);
+  } finally {
+    storageLoading = false;
+    if (refreshIcon) refreshIcon.classList.remove('is-spinning');
+    if (refreshBtn) refreshBtn.disabled = false;
+  }
+}
+
 // ── Settings Search Engine ──
 const SETTINGS_SEARCH_CATALOG = [
+  { label: 'Storage usage', keywords: 'storage disk space size usage cache clear logs java instances assets free up', section: 'storage', sectionLabel: 'Storage', targetId: 'storage-group' },
   // Appearance
   { label: 'Theme Palettes (Quick Presets)', keywords: 'theme palette preset color plate dark catppuccin nord dracula midnight', section: 'appearance', sectionLabel: 'Appearance', targetId: 'quick-palettes-container' },
   { label: 'Accent Color', keywords: 'accent color hex tint primary silver custom color picker', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-accent-hex-input' },
   { label: 'Background Base Color', keywords: 'background base color dark shade hex palette', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-hex-input' },
-  { label: 'Background Style', keywords: 'background gradient theme midnight sunset forest ocean monochrome glow', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-style' },
-  { label: 'Animation Style', keywords: 'animation style waves particles fireflies starfield stars space galaxy canvas background', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-style' },
+  { label: 'Background Style', keywords: 'background gradient theme midnight sunset forest ocean monochrome glow', section: 'appearance', sectionLabel: 'Appearance', targetId: 'bg-style-grid' },
+  { label: 'Animation Style', keywords: 'animation style waves particles fireflies starfield stars space galaxy canvas background', section: 'appearance', sectionLabel: 'Appearance', targetId: 'bg-anim-grid' },
   { label: 'Animation Speed', keywords: 'animation speed velocity fast slow rate', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-speed' },
   { label: 'Animation FPS', keywords: 'animation fps framerate 60 120 30 performance hz', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-fps' },
   { label: 'Animation Intensity', keywords: 'animation intensity brightness glow opacity', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-intensity' },
   { label: 'Transparent UI Cards', keywords: 'transparent ui cards high performance opacity glass acrylic', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-transparency' },
+  { label: 'Tab Switch Animation', keywords: 'tab switch page transition animation slide fade zoom rise swing swipe instances presets manage discover', section: 'appearance', sectionLabel: 'Appearance', targetId: 'tab-anim-grid' },
   { label: 'UI Animations', keywords: 'ui animations transitions slide enable disable decorative effects smooth', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-ui-animations-enable' },
   { label: 'Use Background Image', keywords: 'custom wallpaper background image photo wallpaper picture', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-use-bg-image' },
   { label: 'Background Image File', keywords: 'browse background image file wallpaper photo', section: 'appearance', sectionLabel: 'Appearance', targetId: 'btn-browse-bg-image' },
@@ -15162,7 +15818,9 @@ const SETTINGS_SEARCH_CATALOG = [
   { label: 'Background Image Brightness', keywords: 'image brightness contrast light dark wallpaper', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-brightness' },
   { label: 'Background Image Blur', keywords: 'image blur radius gaussian wallpaper frosted glass', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-blur' },
   { label: 'UI Font Family', keywords: 'font typography text typeface font-family noto sans system default minecraft', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-font-family' },
-  { label: 'Notification Style', keywords: 'notification toast alert style modern classic minimal pill', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-notif-style' },
+  { label: 'Notification Style', keywords: 'notification toast alert style look gallery modern classic minimal pill neon glass outline banner terminal', section: 'appearance', sectionLabel: 'Appearance', targetId: 'btn-browse-all-notif' },
+  { label: 'Max Notifications', keywords: 'notification toast limit maximum on screen at once', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-notif-max' },
+  { label: 'Notification Display Time', keywords: 'notification toast duration how long stay timeout seconds', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-notif-duration' },
 
   // Behavior & Window
   { label: 'Check Mod Updates on Startup', keywords: 'mod updates check startup launch automatically notify', section: 'behavior', sectionLabel: 'Behavior & Window', targetId: 'setting-mod-updates-startup' },
@@ -15322,7 +15980,7 @@ function navigateToSetting(item) {
     const targetEl = document.getElementById(item.targetId) || document.querySelector(`[data-target="${item.targetId}"]`);
     if (targetEl) {
       const container = targetEl.closest('.form-group') || targetEl.closest('.toggle-row') || targetEl.closest('.form-row') || targetEl;
-      container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      container.scrollIntoView({ behavior: document.documentElement.classList.contains('no-ui-animations') ? 'auto' : 'smooth', block: 'center' });
       container.classList.remove('setting-highlight-pulse');
       void container.offsetWidth; // trigger reflow for animation restart
       container.classList.add('setting-highlight-pulse');
@@ -16339,7 +16997,10 @@ const BG = {
     }
 
     // FPS throttle
-    const targetFps = s.background_animation_fps || 60;
+    // While the Settings window is open the animation is mostly hidden behind
+    // it, so cap it — frees the main thread for scrolling / dragging sliders.
+    const settingsOpen = document.body.classList.contains('settings-modal-active');
+    const targetFps = settingsOpen ? Math.min(s.background_animation_fps || 60, 20) : (s.background_animation_fps || 60);
     const interval = 1000 / targetFps;
     if (this.lastTime) {
       const dt = timestamp - this.lastTime;
@@ -16812,45 +17473,51 @@ const BG = {
   applyBackgroundImage() {
     const s = settings || {};
     const imgLayer = document.getElementById('bg-image-layer');
+    const tintLayer = document.getElementById('bg-overlay-tint');
     const dimLayer = document.getElementById('bg-overlay-dim');
     const vigLayer = document.getElementById('bg-overlay-vignette');
 
+    const active = !!(s.use_background_image && s.background_image_path);
+    const clamp = (v, lo, hi, d) => { v = Number(v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
+    const brightness = clamp(s.background_image_brightness, 50, 150, 100);
+    const blur = clamp(s.background_image_blur, 0, 20, 0);
+    const dim = clamp(s.background_image_dim, 0, 100, 35);
+
     if (imgLayer) {
-      if (s.use_background_image && s.background_image_path) {
-        let url = s.background_image_path;
-        // Local filesystem paths need to go through Tauri's asset protocol —
-        // a bare file:// URL is blocked by the webview in production builds.
-        if (!/^(https?|data|blob):/.test(url)) {
-          try {
-            const convert = window.__TAURI__.core.convertFileSrc;
-            if (convert) url = convert(url);
-          } catch (e) {
-            console.error('Failed to convert background image path', e);
+      if (active) {
+        const imgPath = s.background_image_path;
+        const f = BG_FIT_CSS[s.background_image_fit] || BG_FIT_CSS.Cover;
+        const showUrl = (u) => { imgLayer.style.backgroundImage = `url("${u}")`; imgLayer.style.opacity = '1'; };
+        const quick = cachedBgUrl(imgPath);
+        if (quick) showUrl(quick); else imgLayer.style.opacity = '0';
+        imgLayer.style.backgroundSize = f.size;
+        imgLayer.style.backgroundRepeat = f.repeat;
+        imgLayer.style.backgroundPosition = f.pos;
+        imgLayer.style.filter = `brightness(${brightness}%)${blur > 0 ? ` blur(${blur}px)` : ''}`;
+        // Blur pulls transparent edge pixels in; scale up slightly to hide them.
+        imgLayer.style.transform = blur > 0 ? `scale(${1 + blur * 0.006})` : 'none';
+        // If the file is truly gone, fall back to the normal animated
+        // background instead of showing a black/empty window.
+        resolveBgImage(imgPath).then(u => {
+          if (!settings || settings.background_image_path !== imgPath) return;
+          if (u) {
+            showUrl(u);
+          } else {
+            imgLayer.style.opacity = '0';
+            if (dimLayer) dimLayer.style.opacity = '0';
+            if (vigLayer) vigLayer.style.opacity = '0';
+            if (tintLayer) tintLayer.style.opacity = '0';
           }
-        }
-        imgLayer.style.backgroundImage = `url("${url}")`;
-        const fitMap = { Cover: 'cover', Contain: 'contain', Stretch: '100% 100%', Center: 'auto', Tile: 'auto' };
-        imgLayer.style.backgroundSize = fitMap[s.background_image_fit] || 'cover';
-        imgLayer.style.backgroundRepeat = s.background_image_fit === 'Tile' ? 'repeat' : 'no-repeat';
-        imgLayer.style.backgroundPosition = s.background_image_fit === 'Center' ? 'center center' : 'center';
-        const brightness = s.background_image_brightness ?? 100;
-        const blur = s.background_image_blur ?? 0;
-        const tint = s.background_image_tint ? 'sepia(0.5) hue-rotate(120deg) saturate(1.5)' : '';
-        imgLayer.style.filter = `brightness(${brightness}%) blur(${blur}px) ${tint}`.trim();
-        imgLayer.style.opacity = '1';
+        });
       } else {
         imgLayer.style.backgroundImage = 'none';
         imgLayer.style.opacity = '0';
       }
     }
 
-    if (dimLayer) {
-      dimLayer.style.opacity = (s.use_background_image) ? ((s.background_image_dim ?? 35) / 100).toString() : '0';
-    }
-
-    if (vigLayer) {
-      vigLayer.style.opacity = (s.use_background_image && s.background_image_vignette) ? '1' : '0';
-    }
+    if (tintLayer) tintLayer.style.opacity = (active && s.background_image_tint) ? '0.28' : '0';
+    if (dimLayer) dimLayer.style.opacity = active ? (dim / 100).toString() : '0';
+    if (vigLayer) vigLayer.style.opacity = (active && s.background_image_vignette) ? '1' : '0';
 
     // Every settings/theme change routes through here, so this is the one
     // place that needs to nudge the canvas loop awake if it had gone idle
@@ -17227,7 +17894,8 @@ async function openSetupWizard(force = false) {
   // Populate current settings into step 1 inputs
   if (settings) {
     const notifSel = document.getElementById('setup-notif-style');
-    if (notifSel) notifSel.value = settings.notification_style || 'Minimal Outline';
+    populateNotifStyleSelects();
+    if (notifSel) notifSel.value = normalizeNotifStyleName(settings.notification_style);
     const accentCol = document.getElementById('setup-accent-hex-input');
     if (accentCol) accentCol.value = (settings.accent_color || ACCENT_DEFAULT).toUpperCase();
     const accentPrev = document.getElementById('setup-accent-preview');
@@ -17363,6 +18031,7 @@ async function finishSetupWizard() {
   if (instTabBtn) instTabBtn.classList.add('active');
   if (instPage) instPage.classList.add('active');
 
+  playUiReveal();
   showToast('Setup complete! Welcome to Zero Launcher.', 'success');
 }
 
@@ -17612,10 +18281,24 @@ function setStartupSplashProgress(percent, message) {
   if (text && message) text.textContent = message;
 }
 
+// Plays the one-shot "panels slide in" animation (see body.zl-reveal in main.css).
+function playUiReveal() {
+  try {
+    if (document.documentElement.classList.contains('no-ui-animations')) return;
+    const b = document.body;
+    b.classList.remove('zl-reveal');
+    void b.offsetWidth; // restart the animation if it's triggered twice
+    b.classList.add('zl-reveal');
+    clearTimeout(playUiReveal._t);
+    playUiReveal._t = setTimeout(() => b.classList.remove('zl-reveal'), 1300);
+  } catch (_) { /* cosmetic only */ }
+}
+
 function hideStartupSplashScreen(immediate = false) {
   const splash = document.getElementById('startup-splash-screen');
   if (!splash) return;
   if (immediate) {
+    playUiReveal();
     splash.classList.add('splash-hidden');
     setTimeout(() => {
       try { splash.remove(); } catch (_) { splash.style.display = 'none'; }
@@ -17625,6 +18308,7 @@ function hideStartupSplashScreen(immediate = false) {
   setStartupSplashProgress(100, 'Welcome to Zero Launcher');
   setTimeout(() => {
     splash.classList.add('splash-hidden');
+    playUiReveal();
     setTimeout(() => {
       try { splash.remove(); } catch (_) { splash.style.display = 'none'; }
     }, 250);
@@ -18052,13 +18736,18 @@ function initAutoUpdate() {
 
 function updateAboutSystemInfo() {
   const versionEl = document.getElementById('about-info-version');
+  const heroVer = document.getElementById('about-hero-version');
   const osEl = document.getElementById('about-info-os');
   const archEl = document.getElementById('about-info-arch');
+  const setVersion = (v) => {
+    if (versionEl) versionEl.textContent = v ? `v${v}` : 'Unknown';
+    if (heroVer) heroVer.textContent = v ? `v${v}` : '';
+  };
 
   api.getSystemInfo()
     .then((info) => {
       if (info) {
-        if (versionEl) versionEl.textContent = `Zero Launcher (v${info.launcher_version})`;
+        setVersion(info.launcher_version);
         if (osEl) osEl.textContent = info.os_name || 'Linux';
         if (archEl) archEl.textContent = info.arch || 'x64 (Linux)';
       }
@@ -18074,23 +18763,59 @@ function updateAboutSystemInfo() {
       else if (ua.includes('Linux') || platform.includes('Linux')) osName = 'Linux';
 
       let archName = `x64 (${osName})`;
-      if (ua.includes('x86_64') || ua.includes('x64') || ua.includes('Win64') || platform.includes('64')) {
-        archName = `x64 (${osName})`;
-      } else if (ua.includes('aarch64') || ua.includes('arm64') || platform.includes('arm')) {
+      if (ua.includes('aarch64') || ua.includes('arm64') || platform.includes('arm')) {
         archName = `ARM64 (${osName})`;
       }
 
       if (osEl) osEl.textContent = osName;
       if (archEl) archEl.textContent = archName;
-      if (versionEl) {
-        api.getLauncherVersion()
-          .then(v => { versionEl.textContent = `Zero Launcher (v${v})`; })
-          .catch(() => { versionEl.textContent = 'Zero Launcher'; });
-      }
+      api.getLauncherVersion().then(setVersion).catch(() => setVersion(''));
     });
 }
 
+// "Copy info" + "Website" buttons on the About panel.
+function initAboutExtras() {
+  const copyBtn = document.getElementById('btn-copy-system-info');
+  if (copyBtn && !copyBtn.dataset.ready) {
+    copyBtn.dataset.ready = '1';
+    copyBtn.addEventListener('click', async () => {
+      const get = id => ((document.getElementById(id) || {}).textContent || '').trim();
+      const text = `Zero Launcher ${get('about-info-version')}\nOS: ${get('about-info-os')}\nArchitecture: ${get('about-info-arch')}`;
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('Version and system info copied to the clipboard.', 'success', 'Copied');
+        const label = copyBtn.querySelector('span');
+        copyBtn.classList.add('is-done');
+        if (label) label.textContent = 'Copied!';
+        clearTimeout(copyBtn._doneTimer);
+        copyBtn._doneTimer = setTimeout(() => {
+          copyBtn.classList.remove('is-done');
+          if (label) label.textContent = 'Copy info';
+        }, 1500);
+      } catch (_) {
+        showToast('Could not copy to the clipboard.', 'warning');
+      }
+    });
+  }
+  const webBtn = document.getElementById('btn-open-website');
+  if (webBtn && !webBtn.dataset.ready) {
+    webBtn.dataset.ready = '1';
+    const openWebsite = () => {
+      const url = webBtn.dataset.url || 'https://zerolauncher.github.io/page/';
+      invoke('open_url_in_browser', { url })
+        .catch(e => showToast('Could not open the website: ' + e, 'error'));
+    };
+    webBtn.addEventListener('click', (e) => { e.stopPropagation(); openWebsite(); });
+    const webRow = webBtn.closest('.about-row');
+    if (webRow) {
+      webRow.classList.add('is-link');
+      webRow.addEventListener('click', openWebsite);
+    }
+  }
+}
+
 function initUpdateChecker() {
+  initAboutExtras();
   // Check on startup if enabled in settings
   if (settings && settings.auto_check_launcher_updates === true) {
     api.checkForUpdate()
@@ -18124,7 +18849,11 @@ function initUpdateChecker() {
   const setStatusLine = (type, msg) => {
     if (!statusLine || !statusMsg) return;
     statusLine.classList.remove('hidden', 'is-checking', 'is-uptodate', 'is-available', 'is-error');
-    statusLine.classList.add(`is-${type}`);
+    statusLine.classList.add(`is-${String(type).replace(/^is-/, '')}`);
+    // Restart the slide-in so every new result animates, not just the first.
+    statusLine.style.animation = 'none';
+    void statusLine.offsetWidth;
+    statusLine.style.animation = '';
     statusMsg.textContent = msg;
   };
 

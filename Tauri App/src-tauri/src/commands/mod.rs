@@ -464,3 +464,158 @@ pub fn trim_memory() {
         malloc_trim(0);
     }
 }
+
+
+// ─────────────────────────────────────────────────────────────────────
+// Storage (Settings → Storage)
+// ─────────────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct StorageEntry {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    pub path: String,
+    pub bytes: u64,
+    pub clearable: bool,
+}
+
+#[derive(serde::Serialize)]
+pub struct StorageUsage {
+    pub total: u64,
+    pub entries: Vec<StorageEntry>,
+}
+
+/// (id, label, description, path, clearable)
+fn storage_locations(state: &AppState) -> Vec<(&'static str, &'static str, &'static str, std::path::PathBuf, bool)> {
+    let game_dir = state.settings.lock().unwrap().resolved_game_directory();
+    vec![
+        ("versions", "Game files", "Versions and shared libraries", game_dir.join("versions"), false),
+        ("assets", "Assets", "Sounds, languages and textures", game_dir.join("assets"), false),
+        ("java", "Java runtimes", "Runtimes downloaded by the launcher", java::managed_java_root(), false),
+        ("skins", "Skins", "Imported and cached skins", state.data_dir.join("skins"), false),
+        ("cache", "Cache", "Mod icons and temporary downloads", state.data_dir.join("cache"), true),
+        ("logs", "Old logs", "Archived launcher logs (.gz)", crate::logger::logs_dir(&state.data_dir), true),
+        ("updates", "Update downloads", "Installers fetched by the updater", state.data_dir.join("updates"), true),
+    ]
+}
+
+/// Size of every launcher-managed folder, plus instance data folders that
+/// live outside the shared game directory.
+#[tauri::command]
+pub async fn get_storage_usage(state: State<'_, AppState>) -> Result<StorageUsage, String> {
+    let locations = storage_locations(&state);
+    let game_dir = state.settings.lock().unwrap().resolved_game_directory();
+    let instance_dirs: Vec<std::path::PathBuf> = state
+        .instances
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|i| std::path::PathBuf::from(&i.directory))
+        .collect();
+    let state_game_dir = game_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut entries: Vec<StorageEntry> = Vec::new();
+        // Instance data: every distinct instance folder (the shared game
+        // directory is already covered by the versions/libraries/assets rows
+        // so its own size is counted once as "Instance data" minus those).
+        let mut seen = std::collections::HashSet::new();
+        let mut instance_bytes = 0u64;
+        for d in &instance_dirs {
+            if !seen.insert(d.clone()) { continue; }
+            let size = minecraft::dir_size_bytes(d);
+            if *d == game_dir {
+                let shared: u64 = ["versions", "libraries", "assets"]
+                    .iter()
+                    .map(|n| minecraft::dir_size_bytes(&game_dir.join(n)))
+                    .sum::<u64>();
+                instance_bytes = instance_bytes.saturating_add(size.saturating_sub(shared));
+            } else {
+                instance_bytes = instance_bytes.saturating_add(size);
+            }
+        }
+        entries.push(StorageEntry {
+            id: "instances".into(),
+            label: "Instance data".into(),
+            description: "Worlds, mods, configs and resource packs".into(),
+            path: game_dir.to_string_lossy().to_string(),
+            bytes: instance_bytes,
+            clearable: false,
+        });
+        for (id, label, description, path, clearable) in locations {
+            let bytes = if id == "logs" {
+                // Only archived logs count as "old logs".
+                std::fs::read_dir(&path)
+                    .map(|rd| rd.flatten()
+                        .filter(|e| e.path().extension().map(|x| x == "gz").unwrap_or(false))
+                        .filter_map(|e| e.metadata().ok().map(|m| m.len()))
+                        .sum::<u64>())
+                    .unwrap_or(0)
+            } else if id == "versions" {
+                // Shared libraries are folded into "Game files".
+                let libs = state_game_dir.join("libraries");
+                minecraft::dir_size_bytes(&path).saturating_add(minecraft::dir_size_bytes(&libs))
+            } else {
+                minecraft::dir_size_bytes(&path)
+            };
+            entries.push(StorageEntry {
+                id: id.into(),
+                label: label.into(),
+                description: description.into(),
+                path: path.to_string_lossy().to_string(),
+                bytes,
+                clearable,
+            });
+        }
+        let total: u64 = entries.iter().map(|e| e.bytes).sum();
+        StorageUsage { total, entries }
+    })
+    .await
+    .map_err(|e| format!("Failed to measure storage: {e}"))
+}
+
+/// Open one of the storage folders in the system file manager.
+#[tauri::command]
+pub fn open_storage_folder(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let path = if id == "instances" {
+        state.settings.lock().unwrap().resolved_game_directory()
+    } else {
+        storage_locations(&state)
+            .into_iter()
+            .find(|(i, ..)| *i == id)
+            .map(|(_, _, _, p, _)| p)
+            .ok_or_else(|| "Unknown storage item".to_string())?
+    };
+    let _ = std::fs::create_dir_all(&path);
+    open_folder_in_file_manager(&path)
+}
+
+/// Delete the contents of a *clearable* storage item (cache, old logs,
+/// update downloads). Returns the number of bytes freed.
+#[tauri::command]
+pub async fn clear_storage_item(id: String, state: State<'_, AppState>) -> Result<u64, String> {
+    let (path, only_gz) = match id.as_str() {
+        "cache" => (state.data_dir.join("cache"), false),
+        "updates" => (state.data_dir.join("updates"), false),
+        "logs" => (crate::logger::logs_dir(&state.data_dir), true),
+        _ => return Err("This item can't be cleared".into()),
+    };
+    tokio::task::spawn_blocking(move || {
+        let mut freed = 0u64;
+        let rd = match std::fs::read_dir(&path) { Ok(r) => r, Err(_) => return 0 };
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if only_gz && p.extension().map(|x| x != "gz").unwrap_or(true) { continue; }
+            if p.is_dir() {
+                let size = minecraft::dir_size_bytes(&p);
+                if std::fs::remove_dir_all(&p).is_ok() { freed = freed.saturating_add(size); }
+            } else {
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                if std::fs::remove_file(&p).is_ok() { freed = freed.saturating_add(size); }
+            }
+        }
+        freed
+    })
+    .await
+    .map_err(|e| format!("Failed to clear storage: {e}"))
+}

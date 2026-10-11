@@ -217,6 +217,7 @@
   <!-- Unified Background System -->
   <div id="bg-container">
     <div id="bg-image-layer"></div>
+    <div id="bg-overlay-tint"></div>
     <div id="bg-overlay-dim"></div>
     <div id="bg-overlay-vignette"></div>
     <canvas id="bg-canvas"></canvas>
@@ -1211,6 +1212,27 @@
 
         <div class="palettes-gallery-footer">
           <button id="btn-done-palettes-modal" class="btn-accent" style="padding:7px 28px; border-radius:8px;">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Looks Gallery Modal -->
+    <div id="notif-gallery-overlay" class="overlay hidden">
+      <div class="palettes-gallery-panel">
+        <div class="palettes-gallery-header">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+            <div>
+              <h3 style="margin:0; font-size:16px; font-weight:800; color:var(--text);">Notification Gallery</h3>
+              <p style="margin:0; font-size:11px; color:var(--text-muted);">Click any look to apply it live</p>
+            </div>
+          </div>
+          <button class="overlay-close" id="btn-close-notif-gallery">✕</button>
+        </div>
+        <div id="full-notif-grid" class="full-notif-grid"></div>
+        <div class="palettes-gallery-footer" style="gap:8px;">
+          <button id="btn-gallery-test-notif" class="btn-secondary" style="padding:7px 18px; border-radius:8px;">Send test</button>
+          <button id="btn-done-notif-gallery" class="btn-accent" style="padding:7px 28px; border-radius:8px;">Done</button>
         </div>
       </div>
     </div>
@@ -2275,6 +2297,7 @@
             </div>
 
             <div class="settings-sidebar-nav-list">
+              <div class="settings-nav-group-label">Personalize</div>
               <button class="settings-nav-btn active" data-section="appearance">
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z"/><circle cx="7.5" cy="10.5" r="1.3" fill="currentColor"/><circle cx="11.5" cy="7" r="1.3" fill="currentColor"/><circle cx="16" cy="8.5" r="1.3" fill="currentColor"/><circle cx="17" cy="13" r="1.3" fill="currentColor"/></svg>
               <span>Appearance</span>
@@ -2283,7 +2306,8 @@
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="4.5" rx="2.25"/><circle cx="8" cy="8.25" r="1.4" fill="currentColor"/><rect x="3" y="13.5" width="18" height="4.5" rx="2.25"/><circle cx="16" cy="15.75" r="1.4" fill="currentColor"/></svg>
               <span>Behavior &amp; Window</span>
             </button>
-            <button class="settings-nav-btn" data-section="performance">
+            <div class="settings-nav-group-label">Game</div>
+              <button class="settings-nav-btn" data-section="performance">
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 21a9 9 0 1 1 9-9"/><path d="M12 12 8.5 8.5"/><path d="M12 12 15 6"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>
               <span>Performance &amp; Advanced</span>
             </button>
@@ -2301,7 +2325,8 @@
               <svg class="settings-nav-icon" viewBox="0 -28.5 256 256" fill="currentColor"><path d="M216.856339,16.5966031 C200.285002,8.84328665 182.566144,3.2084988 164.041564,0 C161.766523,4.11318106 159.108624,9.64549908 157.276099,14.0464379 C137.583995,11.0849896 118.072967,11.0849896 98.7430163,14.0464379 C96.9108417,9.64549908 94.1925838,4.11318106 91.8971895,0 C73.3526068,3.2084988 55.6133949,8.86399117 39.0420583,16.6376612 C5.61752293,67.146514 -3.4433191,116.400813 1.08711069,164.955721 C23.2560196,181.510915 44.7403634,191.567697 65.8621325,198.148576 C71.0772151,190.971126 75.7283628,183.341335 79.7352139,175.300261 C72.104019,172.400575 64.7949724,168.822202 57.8887866,164.667963 C59.7209612,163.310589 61.5131304,161.891452 63.2445898,160.431257 C105.36741,180.133187 151.134928,180.133187 192.754523,160.431257 C194.506336,161.891452 196.298154,163.310589 198.110326,164.667963 C191.183787,168.842556 183.854737,172.420929 176.223542,175.320965 C180.230393,183.341335 184.861538,190.991831 190.096624,198.16893 C211.238746,191.588051 232.743023,181.531619 254.911949,164.955721 C260.227747,108.668201 245.831087,59.8662432 216.856339,16.5966031 Z M85.4738752,135.09489 C72.8290281,135.09489 62.4592217,123.290155 62.4592217,108.914901 C62.4592217,94.5396472 72.607595,82.7145587 85.4738752,82.7145587 C98.3405064,82.7145587 108.709962,94.5189427 108.488529,108.914901 C108.508531,123.290155 98.3405064,135.09489 85.4738752,135.09489 Z M170.525237,135.09489 C157.88039,135.09489 147.510584,123.290155 147.510584,108.914901 C147.510584,94.5396472 157.658606,82.7145587 170.525237,82.7145587 C183.391518,82.7145587 193.761324,94.5189427 193.539891,108.914901 C193.539891,123.290155 183.391518,135.09489 170.525237,135.09489 Z"/></svg>
               <span>Discord RPC</span>
             </button>
-            <button class="settings-nav-btn" data-section="privacy">
+            <div class="settings-nav-group-label">System</div>
+              <button class="settings-nav-btn" data-section="privacy">
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3 4.5 5.6V11c0 5 3.2 8.4 7.5 10 4.3-1.6 7.5-5 7.5-10V5.6L12 3Z"/><path d="M9 12.2 11.2 14.3 15.3 9.8" stroke-linecap="round"/></svg>
               <span>Privacy &amp; Dev</span>
             </button>
@@ -2317,7 +2342,8 @@
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M9.5 3h5" stroke-linecap="round"/><path d="M10.3 3.3v5.4L5.6 17a2 2 0 0 0 1.75 3h9.3a2 2 0 0 0 1.75-3l-4.7-8.3V3.3"/><path d="M7.6 14.5h8.8" stroke-linecap="round"/></svg>
               <span>Experimental</span>
             </button>
-            <button class="settings-nav-btn" data-section="about">
+            <div class="settings-nav-divider"></div>
+              <button class="settings-nav-btn" data-section="about">
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01" stroke-linecap="round"/></svg>
               <span>About &amp; Updates</span>
             </button>
@@ -2330,9 +2356,12 @@
             <div id="settings-panel-appearance" class="settings-tab-panel active">
               <div class="settings-panel-heading">
                 <h3>Appearance Settings</h3>
-                <p>Customize the colors, theme palettes, background animations, and UI fonts.</p>
+                <p>Customize the colors, animations, background image, and notifications.</p>
               </div>
 
+              <!-- ═══ Colors ═══ -->
+              <section class="appearance-group" id="appearance-group-colors">
+                <div class="appearance-group-head"><h4>Colors</h4><p>Theme palettes, accent, background and typography.</p></div>
               <!-- Theme Palettes Quick Row -->
               <div class="form-row" style="margin-bottom: 16px;">
                 <div style="display:flex; flex-direction:column; gap:8px; width:100%;">
@@ -2353,6 +2382,7 @@
                 </div>
               </div>
 
+
               <div class="dropdown-divider" style="margin: 12px 0 14px 0;"></div>
 
               <!-- Accent Color Setting -->
@@ -2372,6 +2402,7 @@
                 </div>
               </div>
 
+
               <!-- Background Base Color Setting -->
               <div class="form-row" style="margin-bottom: 14px;">
                 <div class="form-group" style="display: flex; flex-direction: column; gap: 4px;">
@@ -2389,37 +2420,48 @@
                 </div>
               </div>
 
-              <div class="dropdown-divider" style="margin: 16px 0;"></div>
 
-              <!-- Background Style & Animation -->
+              <div class="form-group" style="margin-bottom:14px;">
+                <label>Background Style</label>
+                <input type="hidden" id="setting-bg-style" value="Default" />
+                <div id="bg-style-grid" class="tab-anim-grid bg-style-grid"></div>
+                <p class="settings-hint">The atmospheric gradient displayed behind the launcher windows. Click a style to apply it live.</p>
+              </div>
+
               <div class="form-row">
                 <div class="form-group">
-                  <label>Background Style</label>
-                  <select id="setting-bg-style" class="input-field">
-                    <option value="Default">Default</option>
-                    <option value="Midnight">Midnight</option>
-                    <option value="Sunset">Sunset</option>
-                    <option value="Forest">Forest</option>
-                    <option value="Ocean">Ocean</option>
-                    <option value="Monochrome">Monochrome</option>
-                    <option value="Accent Glow">Accent Glow</option>
-                    <option value="Nothing">Nothing (flat gray)</option>
+                  <label>Font Family</label>
+                  <select id="setting-font-family" class="input-field">
+                    <option value="Noto Sans" selected>Noto Sans (Default)</option>
+                    <option value="System Default">System Default</option>
+                    <option value="Minecraft">Minecraft</option>
                   </select>
-                  <p class="settings-hint">Select the atmospheric gradient styling displayed behind the launcher windows.</p>
-                </div>
-                <div class="form-group">
-                  <label>Animation Style</label>
-                  <select id="setting-bg-anim-style" class="input-field">
-                    <option value="Starfield" selected>Starfield</option>
-                    <option value="Waves">Waves</option>
-                    <option value="Particles">Particles</option>
-                    <option value="Fireflies">Fireflies</option>
-                    <option value="Nothing">Nothing (no animation)</option>
-                  </select>
-                  <p class="settings-hint">Animated visual canvas particle effects rendered in the background.</p>
+                  <p class="settings-hint">Primary typeface family applied across launcher menus, buttons, and headings. "System Default" uses your OS's native UI font instead of a bundled one.</p>
                 </div>
               </div>
 
+              <div style="display:flex; flex-direction:column; gap:10px; margin-top:4px;">
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-transparency" />
+                    <span class="toggle-slider"></span>
+                    <span>Transparent UI Cards (High Performance)</span>
+                  </label>
+                  <p class="settings-hint">Renders translucent glass cards using lightweight CSS layers without slow backdrop filters.</p>
+                </div>
+              </div>
+              </section>
+
+              <!-- ═══ Animation ═══ -->
+              <section class="appearance-group" id="appearance-group-animation">
+                <div class="appearance-group-head"><h4>Animation</h4><p>Live background effects and interface transitions.</p></div>
+
+                <div class="appearance-sublabel">Background Animation</div>
+                <div class="form-group">
+                  <input type="hidden" id="setting-bg-anim-style" value="Starfield" />
+                  <div id="bg-anim-grid" class="tab-anim-grid bg-anim-grid"></div>
+                  <p class="settings-hint">Animated canvas effect rendered behind the launcher. Previews play live.</p>
+                </div>
               <div class="form-row">
                 <div class="form-group">
                   <label>Animation Speed</label>
@@ -2440,15 +2482,9 @@
                 </div>
               </div>
 
-              <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
-                <div>
-                  <label class="toggle-row">
-                    <input type="checkbox" id="setting-transparency" />
-                    <span class="toggle-slider"></span>
-                    <span>Transparent UI Cards (High Performance)</span>
-                  </label>
-                  <p class="settings-hint">Renders translucent glass cards using lightweight CSS layers without slow backdrop filters.</p>
-                </div>
+
+                <div class="appearance-sublabel">Interface Animation</div>
+              <div style="display:flex; flex-direction:column; gap:10px;">
                 <div>
                   <label class="toggle-row">
                     <input type="checkbox" id="setting-ui-animations-enable" />
@@ -2457,109 +2493,132 @@
                   </label>
                   <p class="settings-hint">Enable smooth transitions and slide animations across the interface. Disable to keep only essential functional animations.</p>
                 </div>
+                <div class="form-group" id="setting-tab-animation-group">
+                  <label>Tab Switch Animation</label>
+                  <input type="hidden" id="setting-tab-animation" value="swipe" />
+                  <div id="tab-anim-grid" class="tab-anim-grid"></div>
+                  <p class="settings-hint">Pick the animation played when switching between Instances, Presets, Manage and Discover. All options only use transform + opacity, so they stay light. When you switch tabs rapidly, the page only changes once you stop.</p>
+                </div>
               </div>
+              </section>
 
-              <div class="dropdown-divider" style="margin: 16px 0;"></div>
+              <!-- ═══ Image ═══ -->
+              <section class="appearance-group" id="appearance-group-image">
+                <div class="appearance-group-head"><h4>Image</h4><p>Use your own wallpaper behind the launcher.</p></div>
 
-              <!-- Background Image -->
-              <label class="toggle-row" style="margin-bottom:4px;">
-                <input type="checkbox" id="setting-use-bg-image" />
-                <span class="toggle-slider"></span>
-                <span>Use Background Image</span>
-              </label>
-              <p class="settings-hint">Replaces canvas gradient animations with your own custom wallpaper or screenshot.</p>
+                <label class="toggle-row" style="margin-bottom:4px;">
+                  <input type="checkbox" id="setting-use-bg-image" />
+                  <span class="toggle-slider"></span>
+                  <span>Use Background Image</span>
+                </label>
+                <p class="settings-hint">Replaces the animated background with your own wallpaper.</p>
 
-              <div class="form-group" style="margin-top:12px;">
-                <label>Background Image</label>
-                <div style="display:flex; gap:8px; align-items:center;">
-                  <input type="hidden" id="setting-bg-image-path" />
-                  <div id="setting-bg-image-selected" class="input-field" style="flex:1; min-height:40px; display:flex; align-items:center; padding:0 12px; border-radius:14px; overflow:hidden; background: rgba(var(--overlay-rgb),0.08); border:1px solid rgba(var(--overlay-rgb),0.12); color: var(--text);">
-                    <span id="setting-bg-image-selected-text" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">No image selected</span>
+                <input type="hidden" id="setting-bg-image-path" />
+
+                <div class="bgimg-layout">
+                  <!-- Live preview (click to pick an image) -->
+                  <div class="bgimg-preview-col">
+                    <div id="bgimg-stage" class="bgimg-stage empty" role="button" tabindex="0" title="Click to choose an image">
+                      <div id="bgimg-stage-img" class="bgimg-stage-img"></div>
+                      <div id="bgimg-stage-tint" class="bgimg-stage-layer"></div>
+                      <div id="bgimg-stage-dim" class="bgimg-stage-layer bgimg-stage-dim"></div>
+                      <div id="bgimg-stage-vig" class="bgimg-stage-layer bgimg-stage-vig"></div>
+                      <div class="bgimg-stage-ui">
+                        <div class="bgimg-fake-side"></div>
+                        <div class="bgimg-fake-main"><span></span><span></span><span></span></div>
+                      </div>
+                      <div id="bgimg-stage-empty" class="bgimg-stage-empty">
+                        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-8 8"/></svg>
+                        <span>Click to choose an image</span>
+                      </div>
+                    </div>
+                    <div class="bgimg-file-row">
+                      <span id="setting-bg-image-selected-text" class="bgimg-file-name">No image selected</span>
+                      <button id="btn-browse-bg-image" type="button" class="btn-pill">Browse…</button>
+                      <button id="btn-clear-bg-image" type="button" class="btn-secondary btn-pill">Clear</button>
+                    </div>
+                    <div id="setting-bg-image-name" class="bgimg-status"></div>
+                    <!-- kept for backwards compatibility with older code paths -->
+                    <div id="setting-bg-image-preview" class="hidden" style="display:none;"><img id="setting-bg-image-thumbnail" alt="" /></div>
                   </div>
-                  <button id="btn-browse-bg-image" type="button" class="btn-pill" style="flex-shrink:0;">⌗ Browse…</button>
-                  <button id="btn-clear-bg-image" type="button" class="btn-secondary btn-pill" style="flex-shrink:0;">Clear</button>
-                </div>
-                <div id="setting-bg-image-name" style="margin-top:8px; font-size:12px; color: var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Select an image to show a screenshot preview.</div>
-                <div id="setting-bg-image-preview" class="image-preview hidden" style="margin-top:10px; max-width:240px; border-radius:14px; overflow:hidden; border:1px solid rgba(var(--overlay-rgb),0.12); background:rgba(var(--overlay-rgb),0.08);">
-                  <img id="setting-bg-image-thumbnail" alt="Background preview" style="width:100%; height:100%; object-fit:cover; display:block;" />
-                </div>
-              </div>
 
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Image Fit</label>
-                  <select id="setting-bg-image-fit" class="input-field">
-                    <option value="Cover">Cover</option>
-                    <option value="Contain">Contain</option>
-                    <option value="Stretch">Stretch</option>
-                    <option value="Center">Center</option>
-                    <option value="Tile">Tile</option>
-                  </select>
-                  <p class="settings-hint">Determines how your wallpaper scales or repeats across the launcher window.</p>
-                </div>
-                <div class="form-group">
-                  <label>Dim Overlay (0-100)</label>
-                  <input type="range" min="0" max="100" id="setting-bg-image-dim" class="input-range" />
-                  <p class="settings-hint">Darkens the wallpaper background so that text, icons, and menus remain easy to read.</p>
-                </div>
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Image Brightness</label>
-                  <input type="range" min="50" max="150" id="setting-bg-image-brightness" class="input-range" />
-                  <p class="settings-hint">Fine-tunes the brightness of the loaded background wallpaper.</p>
-                </div>
-                <div class="form-group">
-                  <label>Image Blur</label>
-                  <input type="range" min="0" max="20" id="setting-bg-image-blur" class="input-range" />
-                  <p class="settings-hint">Applies a soft gaussian blur to keep visual focus on launcher cards and content.</p>
-                </div>
-              </div>
+                  <!-- Controls -->
+                  <div class="bgimg-controls-col">
+                    <div class="form-group">
+                      <label>Image Fit</label>
+                      <select id="setting-bg-image-fit" class="input-field">
+                        <option value="Cover">Cover</option>
+                        <option value="Contain">Contain</option>
+                        <option value="Stretch">Stretch</option>
+                        <option value="Center">Center</option>
+                        <option value="Tile">Tile</option>
+                      </select>
+                    </div>
 
-              <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
-                <div>
-                  <label class="toggle-row">
-                    <input type="checkbox" id="setting-bg-image-tint" />
-                    <span class="toggle-slider"></span>
-                    <span>Tint with Accent Color</span>
-                  </label>
-                  <p class="settings-hint">Blends a slight wash of your chosen accent color onto the wallpaper.</p>
-                </div>
-                <div>
-                  <label class="toggle-row">
-                    <input type="checkbox" id="setting-bg-image-vignette" />
-                    <span class="toggle-slider"></span>
-                    <span>Vignette Effect</span>
-                  </label>
-                  <p class="settings-hint">Darkens the window edges and corners for a clean framed presentation.</p>
-                </div>
-              </div>
+                    <div class="bgimg-slider">
+                      <div class="bgimg-slider-head"><label for="setting-bg-image-dim">Dim Overlay</label><output id="out-bg-image-dim">35%</output></div>
+                      <input type="range" min="0" max="100" step="1" id="setting-bg-image-dim" class="input-range" />
+                    </div>
+                    <div class="bgimg-slider">
+                      <div class="bgimg-slider-head"><label for="setting-bg-image-brightness">Brightness</label><output id="out-bg-image-brightness">100%</output></div>
+                      <input type="range" min="50" max="150" step="1" id="setting-bg-image-brightness" class="input-range" />
+                    </div>
+                    <div class="bgimg-slider">
+                      <div class="bgimg-slider-head"><label for="setting-bg-image-blur">Blur</label><output id="out-bg-image-blur">0px</output></div>
+                      <input type="range" min="0" max="20" step="1" id="setting-bg-image-blur" class="input-range" />
+                    </div>
 
-              <div class="dropdown-divider" style="margin: 16px 0;"></div>
+                    <label class="toggle-row">
+                      <input type="checkbox" id="setting-bg-image-tint" />
+                      <span class="toggle-slider"></span>
+                      <span>Tint with Accent Color</span>
+                    </label>
+                    <label class="toggle-row">
+                      <input type="checkbox" id="setting-bg-image-vignette" />
+                      <span class="toggle-slider"></span>
+                      <span>Vignette Effect</span>
+                    </label>
 
-              <!-- Notification Style & Font -->
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Notification Style</label>
-                  <select id="setting-notif-style" class="input-field">
-                    <option value="Glass" selected>Glass (Default)</option>
-                    <option value="Neon">Neon</option>
-                    <option value="Solid Card">Solid Card</option>
-                    <option value="Pill">Pill</option>
-                    <option value="Minimal">Minimal</option>
-                  </select>
-                  <p class="settings-hint">Styling used for toast notifications, download alerts, and status banners.</p>
+                    <button id="btn-reset-bg-image" type="button" class="btn-ghost btn-sm bgimg-reset">Reset adjustments</button>
+                  </div>
                 </div>
-                <div class="form-group">
-                  <label>Font Family</label>
-                  <select id="setting-font-family" class="input-field">
-                    <option value="Noto Sans" selected>Noto Sans (Default)</option>
-                    <option value="System Default">System Default</option>
-                    <option value="Minecraft">Minecraft</option>
-                  </select>
-                  <p class="settings-hint">Primary typeface family applied across launcher menus, buttons, and headings. "System Default" uses your OS's native UI font instead of a bundled one.</p>
+              </section>
+
+              <!-- ═══ Notifications ═══ -->
+              <section class="appearance-group" id="appearance-group-notifications">
+                <div class="appearance-group-head"><h4>Notifications</h4><p>How toasts, download alerts and status banners look.</p></div>
+
+                <div style="display:flex; flex-direction:column; gap:8px; width:100%;">
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <label style="margin:0; font-size:13px; font-weight:700;">Notification Style</label>
+                      <span style="font-size:11px; color:var(--text-muted);">(Quick Presets)</span>
+                    </div>
+                    <button type="button" id="btn-browse-all-notif" class="btn-ghost btn-sm" style="display:flex; align-items:center; gap:5px; font-size:12px; padding:3px 10px; color:var(--accent);">
+                      <span>More Looks</span>
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </button>
+                  </div>
+                  <div id="quick-notif-container" class="quick-notif-grid"></div>
+                  <div style="display:flex; gap:8px; align-items:center; margin-top:2px;">
+                    <button type="button" id="btn-test-notif" class="btn-pill">Send test notifications</button>
+                    <span class="settings-hint" style="margin:0;">Fires one of each type using the current look.</span>
+                  </div>
                 </div>
-              </div>
+
+                <div class="bgimg-controls-col" style="margin-top:16px; max-width:460px;">
+                  <div class="bgimg-slider">
+                    <div class="bgimg-slider-head"><label for="setting-notif-max">Max Notifications</label><output id="out-notif-max">5</output></div>
+                    <input type="range" min="1" max="10" step="1" id="setting-notif-max" class="input-range" />
+                    <p class="settings-hint" style="margin:0;">How many notifications can be on screen at once (max 10). Extras wait in a queue.</p>
+                  </div>
+                  <div class="bgimg-slider">
+                    <div class="bgimg-slider-head"><label for="setting-notif-duration">Display Time</label><output id="out-notif-duration">5s</output></div>
+                    <input type="range" min="2" max="20" step="1" id="setting-notif-duration" class="input-range" />
+                    <p class="settings-hint" style="margin:0;">How long a notification stays on screen. Errors stay 1.6× longer and ones with buttons 2.4× longer.</p>
+                  </div>
+                </div>
+              </section>
 
             </div>
 
@@ -2570,8 +2629,9 @@
                 <p>Configure launcher interactions, updates, click sounds, confirmations, and window lifecycle.</p>
               </div>
 
-              <!-- Section 1: Launcher Interactions -->
-              <div style="font-size:12px; opacity:0.85; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:var(--accent);">Launcher Interactions</div>
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Launcher Interactions</h4><p>Updates, sounds, confirmations and Discover behavior.</p></div>
+
               <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px;">
                 <div>
                   <label class="toggle-row">
@@ -2622,13 +2682,12 @@
                   <p class="settings-hint">Periodically inspects GitHub for newer versions of Zero Launcher and provides one-click updates.</p>
                 </div>
               </div>
+              </section>
 
-              <div class="dropdown-divider" style="margin: 16px 0;"></div>
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Window &amp; Game Lifecycle</h4><p>What the launcher does when a game starts, stops, or the window is closed.</p></div>
 
-              <!-- Section 2: Window & Game Lifecycle -->
-              <div style="font-size:12px; opacity:0.85; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:var(--accent);">Window &amp; Game Lifecycle</div>
-              
-              <div style="font-size:11.5px; opacity:0.7; margin-bottom:8px; font-weight:600;">When launching a game</div>
+<div class="appearance-sublabel">When launching a game</div>
               <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:18px;">
                 <div>
                   <label class="toggle-row">
@@ -2656,7 +2715,7 @@
                 </div>
               </div>
 
-              <div style="font-size:11.5px; opacity:0.7; margin-bottom:8px; font-weight:600;">When a Minecraft instance closes</div>
+              <div class="appearance-sublabel">When a Minecraft instance closes</div>
               <div class="form-group" style="margin-bottom:18px;">
                 <select id="setting-on-game-close" class="input-field">
                   <option value="show">Show &amp; focus the launcher</option>
@@ -2666,7 +2725,7 @@
                 <p class="settings-hint">Action to execute when your Minecraft window is closed or exits.</p>
               </div>
 
-              <div style="font-size:11.5px; opacity:0.7; margin-bottom:8px; font-weight:600;">When you close the launcher window</div>
+              <div class="appearance-sublabel">When you close the launcher window</div>
               <div style="display:flex; flex-direction:column; gap:10px;">
                 <div>
                   <label class="toggle-row">
@@ -2692,6 +2751,7 @@
                   <p class="settings-hint">Directs the close button to always minimize to system tray regardless of running games.</p>
                 </div>
               </div>
+              </section>
             </div>
 
             <!-- Performance & Advanced Panel -->
@@ -2701,7 +2761,9 @@
                 <p>Manage hardware acceleration, RAM allocation, JVM flags, game directory, and background instances.</p>
               </div>
 
-              <!-- Hardware Acceleration Setting -->
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Rendering</h4><p>How the launcher draws its interface.</p></div>
+
               <div style="margin-bottom:18px;">
                 <label class="toggle-row">
                   <input type="checkbox" id="setting-hardware-acceleration" />
@@ -2711,8 +2773,10 @@
                 <p class="settings-hint">Uses your graphics card for UI rendering. Turn OFF if the launcher stutters under heavy GPU load (e.g. shaders on Linux WebKitGTK). Requires launcher restart.</p>
               </div>
 
-              <div class="dropdown-divider" style="margin: 16px 0;"></div>
+                            </section>
 
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Game &amp; Memory</h4><p>Game folder, RAM allocation, Java version and JVM flags.</p></div>
               <div class="form-group" style="margin-bottom:14px;">
                 <label>Minecraft Game Directory</label>
                 <input type="text" id="setting-game-dir" class="input-field" placeholder="Default (~/.minecraft)" autocomplete="off" />
@@ -2743,8 +2807,10 @@
                 <p class="settings-hint">Custom JVM arguments appended to every game launch (e.g. garbage collector flags or memory tweaks).</p>
               </div>
 
-              <div class="dropdown-divider" style="margin: 16px 0;"></div>
+                            </section>
 
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Downloads</h4><p>Parallel download streams for assets, libraries and mods.</p></div>
               <div class="form-group" style="margin-bottom:18px;">
                 <label>Concurrent Downloads</label>
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:8px;">
@@ -2758,15 +2824,18 @@
                 <p class="settings-hint">The number of parallel file download streams when fetching Minecraft assets, libraries, and mods.</p>
               </div>
 
-              <div class="dropdown-divider" style="margin: 16px 0;"></div>
+                            </section>
 
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Hidden Instances</h4><p>Instances hidden from your library.</p></div>
               <div class="form-group">
-                <label>Hidden Instances</label>
+                
                 <p id="hidden-instances-status" class="settings-hint" style="margin-bottom:10px;">Instances you have hidden from your library. They remain safely installed on disk.</p>
                 <div id="hidden-instances-list" class="instance-list hidden-instances-list">
                   <div class="empty-state"><span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 12C3 9 7 5 12 5s9 4 10.5 7c-1.5 3-5.5 7-10.5 7S3 15 1.5 12Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.6"/></svg></span><span>No hidden instances</span></div>
                 </div>
               </div>
+              </section>
             </div>
 
             <!-- Java Manager Panel -->
@@ -2788,10 +2857,9 @@
                 </div>
               </div>
 
-              <!-- Official Runtimes Section -->
-              <div style="font-size:12px; opacity:0.85; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:var(--accent);">
-                Official Runtimes
-              </div>
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Official Runtimes</h4><p>Java builds downloaded and managed by the launcher.</p></div>
+
               <div class="java-managed-list" id="java-managed-cards-container">
                 <!-- Cards for Java 25, 21, 17, 16, 8 rendered by JS -->
               </div>
@@ -2806,14 +2874,11 @@
                   <button type="button" id="btn-open-java-dir-link" class="btn-secondary btn-sm" style="font-size:11px; padding:4px 10px; border-radius:6px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); flex-shrink:0;">Open Folder</button>
                 </div>
               </div>
+              </section>
 
-              <div class="dropdown-divider" style="margin: 20px 0;"></div>
-
-              <!-- Custom & System Installations Section -->
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                <div style="font-size:12px; opacity:0.85; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:var(--accent);">
-                  Custom &amp; System Installations
-                </div>
+              <section class="appearance-group">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                  <div class="appearance-group-head" style="margin:0;"><h4>Custom &amp; System Installations</h4><p>Your own Java installs and ones detected on this system.</p></div>
                 <button type="button" id="btn-add-custom-java" class="btn-secondary btn-sm" style="font-size:12px; padding:5px 14px; border-radius:6px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); display:inline-flex; align-items:center; gap:6px;">
                   <span>➕</span> Browse for Java…
                 </button>
@@ -2825,10 +2890,11 @@
               </div>
 
               <!-- Detected System Runtimes List -->
-              <div style="font-size:11.5px; opacity:0.7; font-weight:600; margin-bottom:8px;">System Javas</div>
+              <div class="appearance-sublabel">System Javas</div>
               <div id="java-system-list-container" class="java-system-list">
                 <!-- Populated dynamically -->
               </div>
+              </section>
             </div>
 
             <!-- Discord RPC Panel -->
@@ -2838,7 +2904,9 @@
                 <p>Show what you're playing and browsing in Discord.</p>
               </div>
 
-              <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;">
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Rich Presence</h4><p>Master switch for Discord activity.</p></div>
+              <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:10px;">
                 <div>
                   <label class="toggle-row">
                     <input type="checkbox" id="setting-enable-discord-rpc" />
@@ -2848,10 +2916,11 @@
                   <p class="settings-hint">Shows your active Minecraft game, instance name, and launcher status on your Discord profile.</p>
                 </div>
               </div>
+              </section>
 
-              <div class="dropdown-divider" style="margin: 14px 0;"></div>
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>General</h4><p>What is shown on your Discord profile.</p></div>
 
-              <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">General</h4>
               <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:14px;">
                 <div>
                   <label class="toggle-row">
@@ -2917,10 +2986,11 @@
                 <input type="text" id="setting-rpc-custom-state" class="input-field" placeholder="In Zero Launcher" />
                 <p class="settings-hint">Custom text subtitle shown on Discord when idling in Zero Launcher.</p>
               </div>
+              </section>
 
-              <div class="dropdown-divider" style="margin: 14px 0;"></div>
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Launcher Activity</h4><p>Show which launcher tab you are browsing.</p></div>
 
-              <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px;">Launcher — Tab Activity on Discord</h4>
               <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
                 <div>
                   <label class="toggle-row">
@@ -2953,10 +3023,10 @@
                   </label>
                 </div>
               </div>
+              </section>
 
-              <div class="dropdown-divider" style="margin: 14px 0;"></div>
-
-              <h4 style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:6px;">In-Game — Game States on Discord</h4>
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>In-Game States</h4><p>Game states shown on Discord while playing.</p></div>
               <p class="settings-hint" style="margin-bottom:10px;">⚠️ Not recommended — game states are detected from log output, which may be inaccurate or delayed.</p>
               <div style="display:flex; flex-direction:column; gap:10px;">
                 <label class="toggle-row">
@@ -2980,6 +3050,7 @@
                   <span>Multiplayer</span>
                 </label>
               </div>
+              </section>
             </div>
 
             <!-- Privacy Panel -->
@@ -2989,9 +3060,10 @@
                 <p>Manage account masking, log sanitization, session security, and debugging options.</p>
               </div>
 
-              <div style="display:flex; flex-direction:column; gap:12px;">
-
-                <div>
+                            <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Log Privacy</h4><p>Keep sensitive data out of logs and console output.</p></div>
+              <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:8px;">
+<div>
                   <label class="toggle-row">
                     <input type="checkbox" id="setting-redact-tokens" />
                     <span class="toggle-slider"></span>
@@ -2999,8 +3071,7 @@
                   </label>
                   <p class="settings-hint">Masks authorization tokens, session keys, and Microsoft OAuth credentials in game and launcher logs.</p>
                 </div>
-
-                <div>
+<div>
                   <label class="toggle-row">
                     <input type="checkbox" id="setting-redact-paths" />
                     <span class="toggle-slider"></span>
@@ -3008,17 +3079,7 @@
                   </label>
                   <p class="settings-hint">Replaces your home directory and username paths in logs with generic placeholders.</p>
                 </div>
-
-                <div>
-                  <label class="toggle-row">
-                    <input type="checkbox" id="setting-redact-user-paths" />
-                    <span class="toggle-slider"></span>
-                    <span>Mask Username in Game Directory</span>
-                  </label>
-                  <p class="settings-hint">Replaces the system username with &ldquo;User&rdquo; in directory paths displayed in the launcher UI.</p>
-                </div>
-
-                <div>
+<div>
                   <label class="toggle-row">
                     <input type="checkbox" id="setting-hide-launch-command" />
                     <span class="toggle-slider"></span>
@@ -3026,8 +3087,27 @@
                   </label>
                   <p class="settings-hint">Omits full Java launch command strings and JVM arguments from the console and log files.</p>
                 </div>
+              </div>
+              </section>
 
-                <div>
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Interface Privacy</h4><p>What the launcher shows on screen.</p></div>
+              <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:8px;">
+<div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-redact-user-paths" />
+                    <span class="toggle-slider"></span>
+                    <span>Mask Username in Game Directory</span>
+                  </label>
+                  <p class="settings-hint">Replaces the system username with &ldquo;User&rdquo; in directory paths displayed in the launcher UI.</p>
+                </div>
+              </div>
+              </section>
+
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Developer</h4><p>Extra detail for troubleshooting.</p></div>
+              <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:8px;">
+<div>
                   <label class="toggle-row">
                     <input type="checkbox" id="setting-debug-mode" />
                     <span class="toggle-slider"></span>
@@ -3036,6 +3116,7 @@
                   <p class="settings-hint">Adds verbose DEBUG-level entries to the log and console windows for detailed troubleshooting.</p>
                 </div>
               </div>
+              </section>
             </div>
 
             <!-- Network Panel -->
@@ -3045,6 +3126,8 @@
                 <p>Controls which IP protocol the launcher's own network requests use (update checks/downloads, mod &amp; skin downloads, Java downloads, sign-in). Does not affect the Minecraft game process itself.</p>
               </div>
 
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>IP Protocol</h4><p>Which IP version the launcher uses for its own requests.</p></div>
               <div class="form-group" style="margin-bottom:18px;">
                 <select id="setting-network-mode" class="input-field">
                   <option value="automatic">Automatic (try IPv4 first, then IPv6)</option>
@@ -3056,6 +3139,7 @@
                   Pick <strong>IPv4 only</strong> or <strong>IPv6 only</strong> if you know your network only has one of the two, so requests don't waste time on an attempt that can't succeed.
                 </p>
               </div>
+              </section>
             </div>
 
             <!-- Storage Panel (coming soon) -->
@@ -3064,11 +3148,19 @@
                 <h3>Storage</h3>
                 <p>Manage the space used by instances, mods, Java runtimes and cached files.</p>
               </div>
-              <div class="settings-coming-soon">
-                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6.5c0 1.66 3.58 3 8 3s8-1.34 8-3V5.5"/><path d="M4 12v6.5c0 1.66 3.58 3 8 3s8-1.34 8-3V12"/></svg>
-                <div class="settings-coming-soon-title">Coming soon</div>
-                <p>Storage tools are on the way. Check back in a future update.</p>
-              </div>
+              <section class="appearance-group" id="storage-group">
+                <div class="appearance-group-head"><h4>Disk usage</h4><p>Space used by the launcher, game files and instances.</p></div>
+                <div class="storage-summary">
+                  <div class="storage-total"><span id="storage-total-value">—</span><small>used in total</small></div>
+                  <button type="button" id="btn-storage-refresh" class="about-action-btn" title="Measure again">
+                    <svg id="btn-storage-refresh-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3.5-7.1"></path><path d="M21 3v6h-6"></path></svg><span>Refresh</span>
+                  </button>
+                </div>
+                <div class="storage-bar" id="storage-bar"></div>
+                <div class="storage-list" id="storage-list">
+                  <div class="storage-empty">Measuring…</div>
+                </div>
+              </section>
             </div>
 
             <!-- Experimental Panel -->
@@ -3078,25 +3170,25 @@
                 <p>Early-access and developer features for crash troubleshooting.</p>
               </div>
 
-              <div style="display:flex; flex-direction:column; gap:12px;">
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-crash-analysis" />
-                  <span class="toggle-slider"></span>
-                  <span>Analyze crash logs automatically</span>
-                </label>
-                <p class="settings-hint" style="margin:0 0 4px; opacity:0.7; font-size:12px; line-height:1.5;">
-                  Shows a "likely cause" suggestion after an instance crash.
-                </p>
+                            <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Crash Troubleshooting</h4><p>Help working out why an instance crashed.</p></div>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-crash-analysis" />
+                <span class="toggle-slider"></span>
+                <span>Analyze crash logs automatically</span>
+              </label>
+              <p class="settings-hint">Shows a "likely cause" suggestion after an instance crash.</p>
+              </section>
 
-                <label class="toggle-row">
-                  <input type="checkbox" id="setting-auto-open-console" />
-                  <span class="toggle-slider"></span>
-                  <span>Auto-open console when launching</span>
-                </label>
-                <p class="settings-hint" style="margin:0; opacity:0.7; font-size:12px; line-height:1.5;">
-                  Opens the instance console the moment you hit Play.
-                </p>
-              </div>
+              <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Console</h4><p>Console window behavior when launching.</p></div>
+              <label class="toggle-row">
+                <input type="checkbox" id="setting-auto-open-console" />
+                <span class="toggle-slider"></span>
+                <span>Auto-open console when launching</span>
+              </label>
+              <p class="settings-hint">Opens the instance console the moment you hit Play.</p>
+              </section>
             </div>
 
             <!-- About & Updates Panel (App System Info & Updates) -->
@@ -3106,83 +3198,84 @@
                 <p>System details, launcher version, update checker, and installation directories.</p>
               </div>
 
-              <!-- Section 1: Application -->
-              <div class="about-section-wrap">
-                <div class="about-section-header">Application</div>
-                <div class="about-card about-app-card">
-                  <div class="about-metadata-grid">
-                    <div class="about-meta-item">
-                      <span class="about-meta-label">Version</span>
-                      <span class="about-meta-val" id="about-info-version">Zero Launcher (Loading…)</span>
-                    </div>
-                    <div class="about-meta-item">
-                      <span class="about-meta-label">Operating system</span>
-                      <span class="about-meta-val" id="about-info-os">Linux</span>
-                    </div>
-                    <div class="about-meta-item" style="grid-column: 1 / -1;">
-                      <span class="about-meta-label">Architecture</span>
-                      <span class="about-meta-val" id="about-info-arch">x64 (Linux)</span>
-                    </div>
+              <!-- ═══ Application ═══ -->
+              <section class="appearance-group" id="about-group-app">
+                <div class="about-hero">
+                  <div class="about-hero-logo"><img src="/src/assets/logo.png" alt="Zero Launcher Logo" class="about-app-logo" /></div>
+                  <div class="about-hero-text">
+                    <div class="about-hero-name">Zero Launcher <span id="about-hero-version" class="about-badge">v—</span></div>
+                    <div class="about-hero-tag">A lightweight, customizable Minecraft launcher built with Rust &amp; Tauri.</div>
                   </div>
-                  <div class="about-logo-container">
-                    <img src="/src/assets/logo.png" alt="Zero Launcher Logo" class="about-app-logo" />
+                  <button type="button" id="btn-copy-system-info" class="about-action-btn" title="Copy version and system details for bug reports">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg><span>Copy info</span>
+                  </button>
+                </div>
+                <div class="about-chips">
+                  <div class="about-chip">
+                    <span class="about-meta-label">Version</span>
+                    <span class="about-meta-val" id="about-info-version">Loading…</span>
+                  </div>
+                  <div class="about-chip">
+                    <span class="about-meta-label">Operating system</span>
+                    <span class="about-meta-val" id="about-info-os">Linux</span>
+                  </div>
+                  <div class="about-chip">
+                    <span class="about-meta-label">Architecture</span>
+                    <span class="about-meta-val" id="about-info-arch">x64 (Linux)</span>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              <!-- Section 2: Updates -->
-              <div class="about-section-wrap">
-                <div class="about-section-header">Updates</div>
-                <div class="about-card about-update-card">
-                  <div class="about-update-left">
-                    <div class="about-update-title">Check for updates</div>
-                    <div class="about-update-subtext" id="about-update-subtext">You're up to date</div>
-                    <div class="about-update-meta" id="about-update-last-checked">Last checked: Today</div>
-                    <div class="about-update-status-line hidden" id="about-update-status-line">
-                      <span class="about-update-status-msg" id="about-update-status-msg">Checking for updates…</span>
-                    </div>
+              <!-- ═══ Updates ═══ -->
+              <section class="appearance-group" id="about-group-updates">
+                <div class="appearance-group-head"><h4>Updates</h4><p>Check whether a newer version of the launcher is available.</p></div>
+                <div class="about-row">
+                  <div class="about-status-icon-wrap" id="about-status-icon-wrap">
+                    <svg class="about-status-check-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                   </div>
-                  <div class="about-update-right">
-                    <div class="about-status-icon-wrap" id="about-status-icon-wrap">
-                      <svg class="about-status-check-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                      </svg>
-                    </div>
-                    <button type="button" id="btn-check-for-updates" class="about-check-now-btn" title="Check for launcher updates">
-                      <svg id="btn-check-for-updates-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 12a9 9 0 1 1-3.5-7.1"></path>
-                        <path d="M21 3v6h-6"></path>
-                      </svg>
-                      <span>Check now</span>
-                    </button>
+                  <div class="about-row-text">
+                    <div class="about-row-title">Check for updates</div>
+                    <div class="about-row-sub" id="about-update-subtext">You're up to date</div>
+                    <div class="about-update-meta" id="about-update-last-checked">Not checked yet this session</div>
                   </div>
+                  <button type="button" id="btn-check-for-updates" class="about-check-now-btn" title="Check for launcher updates">
+                    <svg id="btn-check-for-updates-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3.5-7.1"></path><path d="M21 3v6h-6"></path></svg>
+                    <span>Check now</span>
+                  </button>
                 </div>
-              </div>
+                <div class="about-update-status-line hidden" id="about-update-status-line">
+                  <span class="about-update-status-msg" id="about-update-status-msg">Checking for updates…</span>
+                </div>
+              </section>
 
-              <!-- Section 3: Launcher Folder -->
-              <div class="about-section-wrap">
-                <div class="about-section-header">Launcher Folder</div>
-                <div class="about-card about-folders-card">
-                  <div class="about-folders-left">
-                    <div style="font-size:13.5px; font-weight:600; color:#fff;">Launcher Installation Directories</div>
-                    <div style="font-size:12px; color:#a1a1aa;">Access local launcher configuration, mod caches, and logs.</div>
+              <!-- ═══ Launcher ═══ -->
+              <section class="appearance-group" id="about-group-launcher">
+                <div class="appearance-group-head"><h4>Launcher</h4><p>Files, setup and links.</p></div>
+                <div class="about-row">
+                  <div class="about-row-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg></div>
+                  <div class="about-row-text">
+                    <div class="about-row-title">Launcher folder</div>
+                    <div class="about-row-sub">Local configuration, mod caches and logs.</div>
                   </div>
-                  <div class="about-folders-actions">
-                    <button type="button" id="btn-open-launcher-folder" class="about-action-btn">
-                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
-                      </svg>
-                      <span>Open Launcher Folder</span>
-                    </button>
-                    <button type="button" id="btn-reopen-setup" class="about-action-btn">
-                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-                      </svg>
-                      <span>Reopen Setup Wizard</span>
-                    </button>
-                  </div>
+                  <button type="button" id="btn-open-launcher-folder" class="about-action-btn"><span>Open folder</span></button>
                 </div>
-              </div>
+                <div class="about-row">
+                  <div class="about-row-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
+                  <div class="about-row-text">
+                    <div class="about-row-title">Setup wizard</div>
+                    <div class="about-row-sub">Run the first-time setup again.</div>
+                  </div>
+                  <button type="button" id="btn-reopen-setup" class="about-action-btn"><span>Reopen</span></button>
+                </div>
+                <div class="about-row">
+                  <div class="about-row-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18"/></svg></div>
+                  <div class="about-row-text">
+                    <div class="about-row-title">Website</div>
+                    <div class="about-row-sub">https://zerolauncher.github.io/page/</div>
+                  </div>
+                  <button type="button" id="btn-open-website" class="about-action-btn" data-url="https://zerolauncher.github.io/page/"><span>Open</span></button>
+                </div>
+              </section>
             </div>
           </div>
         </div>
@@ -3248,13 +3341,7 @@
                 <div class="setup-form-grid">
                   <div class="form-group">
                     <label>Notification Style</label>
-                    <select id="setup-notif-style" class="input-field">
-                      <option value="Glass" selected>Glass (Default)</option>
-                      <option value="Neon">Neon</option>
-                      <option value="Solid Card">Solid Card</option>
-                      <option value="Pill">Pill</option>
-                      <option value="Minimal">Minimal</option>
-                    </select>
+                    <select id="setup-notif-style" class="input-field"></select>
                   </div>
 
                   <!-- Theme Palettes Quick Row -->

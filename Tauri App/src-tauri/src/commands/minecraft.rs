@@ -3680,7 +3680,7 @@ pub async fn install_linux_package(package_type: String) -> Result<(), String> {
 /// Recursively sum the size in bytes of every file under `path`. Best-effort:
 /// unreadable entries (permissions, races with the game writing files) are
 /// skipped rather than failing the whole walk.
-fn dir_size_bytes(path: &std::path::Path) -> u64 {
+pub(crate) fn dir_size_bytes(path: &std::path::Path) -> u64 {
     let mut total = 0u64;
     let entries = match std::fs::read_dir(path) {
         Ok(e) => e,

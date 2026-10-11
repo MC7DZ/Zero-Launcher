@@ -239,6 +239,10 @@ pub struct LauncherSettings {
     pub notification_bg_color: String,
     #[serde(default = "default_notif_style")]
     pub notification_style: String,
+    #[serde(default = "default_notif_max")]
+    pub notification_max: u32,
+    #[serde(default = "default_notif_duration")]
+    pub notification_duration: u32,
     #[serde(default)]
     pub use_background_image: bool,
     #[serde(default)]
@@ -247,12 +251,20 @@ pub struct LauncherSettings {
     pub background_image_fit: String,
     #[serde(default = "default_bg_dim")]
     pub background_image_dim: u32,
+    #[serde(default = "default_bg_brightness")]
+    pub background_image_brightness: u32,
+    #[serde(default)]
+    pub background_image_blur: u32,
     #[serde(default)]
     pub background_image_tint: bool,
     #[serde(default = "default_true")]
     pub background_image_vignette: bool,
     #[serde(default = "default_true")]
     pub enable_transparency: bool,
+    #[serde(default = "default_true")]
+    pub enable_ui_animations: bool,
+    #[serde(default = "default_tab_animation")]
+    pub tab_animation: String,
     #[serde(default)]
     pub enable_blur_effect: bool,
     #[serde(default = "default_blur_strength")]
@@ -503,14 +515,18 @@ fn default_log_bg_color() -> String { "#060608".to_string() }
 fn default_font_family() -> String { "Noto Sans".to_string() }
 fn default_background_style() -> String { "Default".to_string() }
 fn default_bg_anim_style() -> String { "Starfield".to_string() }
+fn default_tab_animation() -> String { "swipe".to_string() }
 fn default_speed() -> f64 { 1.0 }
 fn default_fps() -> u32 { 60 }
 fn default_header_bg() -> String { "#111116".to_string() }
 fn default_search_bg() -> String { "#1a1a24".to_string() }
 fn default_notif_bg() -> String { "#13131a".to_string() }
+fn default_notif_max() -> u32 { 5 }
+fn default_notif_duration() -> u32 { 5 }
 fn default_notif_style() -> String { "Minimal Outline".to_string() }
 fn default_bg_fit() -> String { "Cover".to_string() }
 fn default_bg_dim() -> u32 { 35 }
+fn default_bg_brightness() -> u32 { 100 }
 fn default_bg_anim_intensity() -> f64 { 1.0 }
 fn default_blur_strength() -> u32 { 10 }
 fn default_ram_gb() -> u32 { 3 }
@@ -590,13 +606,19 @@ impl Default for LauncherSettings {
             search_bg_color: default_search_bg(),
             notification_bg_color: default_notif_bg(),
             notification_style: default_notif_style(),
+            notification_max: default_notif_max(),
+            notification_duration: default_notif_duration(),
             use_background_image: false,
             background_image_path: String::new(),
             background_image_fit: default_bg_fit(),
             background_image_dim: 35,
+            background_image_brightness: 100,
+            background_image_blur: 0,
             background_image_tint: false,
             background_image_vignette: true,
             enable_transparency: true,
+            enable_ui_animations: true,
+            tab_animation: default_tab_animation(),
             enable_blur_effect: false,
             blur_strength: 10,
 

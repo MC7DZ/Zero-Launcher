@@ -348,6 +348,9 @@ pub fn run() {
             commands::cancel_generic_download,
             commands::open_launcher_folder,
             commands::open_instance_folder,
+            commands::get_storage_usage,
+            commands::open_storage_folder,
+            commands::clear_storage_item,
             commands::open_url_in_browser,
             commands::get_launcher_version,
             commands::get_system_info,
@@ -474,6 +477,7 @@ pub fn run() {
             // Settings
             commands::settings::get_settings,
             commands::settings::save_settings,
+            commands::settings::read_background_image,
             commands::settings::update_discord_presence,
             commands::settings::get_default_minecraft_dir,
             commands::settings::report_activity,
