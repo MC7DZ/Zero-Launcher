@@ -11539,9 +11539,13 @@ body.settings-modal-active .settings-modal-content .input-range { will-change: a
 @keyframes about-float { 0%, 100% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(0, -3px, 0); } }
 @keyframes about-shine { from { transform: translate3d(-120%, 0, 0) skewX(-18deg); } to { transform: translate3d(320%, 0, 0) skewX(-18deg); } }
 
-#settings-panel-about .appearance-group { animation: about-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
-#about-group-updates  { animation-delay: 0.08s !important; }
-#about-group-launcher { animation-delay: 0.16s !important; }
+/* About & Updates plays only its own per-item entrance above. The generic
+   section-switch slide (whole blocks gliding in) is switched off here so the
+   two don't stack. */
+#settings-panel-about.panel-enter-down > *,
+#settings-panel-about.panel-enter-up > *,
+.is-webkit-gtk #settings-panel-about.panel-enter-down > *,
+.is-webkit-gtk #settings-panel-about.panel-enter-up > * { animation: none !important; }
 
 .about-row, .about-chip { position: relative; overflow: hidden; }
 .about-row::after {                    /* soft shine sweep on hover */
@@ -11648,3 +11652,68 @@ body.zl-reveal .tab-page.active:not(:has(.instances-layout)) { animation: zl-rev
 #btn-storage-refresh-icon.is-spinning { animation: about-spin 0.8s linear infinite; }
 
 @media (prefers-reduced-motion: reduce) { .storage-bar-seg, .storage-row, .storage-row-fill { animation: none !important; } }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   ACCENT-TINTED PANELS
+   Every main surface picks up the user's accent colour: a faint tint
+   fading in from the top edge, an accent-toned border, and accent
+   section headings. Built from var(--accent) so it follows the colour
+   picker / palettes live. Backgrounds are layered with background-image
+   so existing (including transparent-UI) fills are left untouched.
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --panel-tint:        linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%);
+  --panel-tint-soft:   linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%);
+  --panel-edge:        color-mix(in srgb, var(--accent) 24%, transparent);
+  --panel-edge-strong: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* Large surfaces */
+#top-bar,
+.instance-sidebar,
+.hero-island,
+.hypr-island,
+.mods-type-island,
+.mods-content-island,
+.discover-content-island,
+.discover-filter-island,
+.bento-tile,
+.glass-card,
+.settings-modal-window {
+  background-image: var(--panel-tint);
+  border-color: var(--panel-edge);
+}
+
+/* Floating windows & menus */
+.overlay-card,
+.dropdown-panel,
+.ri-dropdown {
+  background-image: var(--panel-tint);
+  border-color: var(--panel-edge);
+}
+
+/* Settings: header, sidebar and grouped blocks */
+.settings-modal-header { background-image: var(--panel-tint-soft); border-bottom-color: var(--panel-edge); }
+.settings-modal-sidebar { background-image: var(--panel-tint-soft); border-right-color: var(--panel-edge); }
+.appearance-group {
+  background-image: var(--panel-tint-soft);
+  border-color: var(--panel-edge);
+}
+.settings-panel-heading { border-bottom-color: var(--panel-edge); }
+.appearance-group-head h4 { display: flex; align-items: center; gap: 8px; }
+.appearance-group-head h4::before {
+  content: ''; width: 3px; height: 14px; border-radius: 2px; background: var(--accent); flex-shrink: 0;
+}
+
+/* Cards that carry their own imagery: border tint only, accent on hover */
+.mod-card, .discover-card, .preset-card, .instance-card {
+  border-color: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.mod-card:hover, .discover-card:hover, .preset-card:hover, .instance-card:hover {
+  border-color: var(--panel-edge-strong);
+}
+.instance-card.selected { border-color: var(--accent); background-image: var(--panel-tint-soft); }
+
+/* Panel titles pick up the accent */
+.mods-panel-title, .bento-tile-label { color: var(--accent); }
