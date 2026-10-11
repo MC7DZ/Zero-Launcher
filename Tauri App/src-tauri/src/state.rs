@@ -33,6 +33,10 @@ pub struct AppState {
     /// entry, so several instances can download at the same time and be
     /// paused / resumed / cancelled independently.
     pub install_controls: Mutex<HashMap<String, Arc<InstallControl>>>,
+    /// One lock per install target folder, so installs that share a folder
+    /// (the default .minecraft) run one at a time instead of racing on the
+    /// same libraries / assets / version files.
+    pub install_dir_locks: Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>,
     /// Cancellation flags for "generic" downloads that aren't the single
     /// tracked instance install — mod downloads/updates, dependency
     /// installs, discover-tab downloads, Java runtime downloads, etc.
@@ -140,6 +144,7 @@ impl AppState {
             instance_logs: Mutex::new(HashMap::new()),
             data_dir,
             install_controls: Mutex::new(HashMap::new()),
+            install_dir_locks: Mutex::new(HashMap::new()),
             generic_cancels: Mutex::new(HashMap::new()),
             log_file: Mutex::new(log_file),
             device_code_session: Mutex::new(None),
@@ -193,6 +198,17 @@ impl AppState {
             .unwrap()
             .insert(id.to_string(), control.clone());
         control
+    }
+
+    /// The lock guarding installs into `dir`.
+    pub fn install_dir_lock(&self, dir: &std::path::Path) -> Arc<tokio::sync::Mutex<()>> {
+        let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+        self.install_dir_locks
+            .lock()
+            .unwrap()
+            .entry(key)
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
     }
 
     /// Forget an install's control once it has finished (any outcome).

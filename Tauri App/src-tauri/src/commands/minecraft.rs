@@ -616,6 +616,18 @@ pub async fn install_minecraft(
     let loader_type = payload.loader.clone();
     let loader_ver = payload.loader_version.clone();
 
+    // Each install owns its pause/cancel flags, registered under its
+    // download id, so installs never interfere with each other.
+    let download_id = payload
+        .download_id
+        .clone()
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let control = state.register_install_control(&download_id);
+    let _control_guard = crate::state::InstallControlGuard::new(&app, &download_id);
+    let control_for_progress = control.clone();
+    let control_for_retry = control.clone();
+
     // Root directory for this instance. Each instance maintains its own
     // isolated `libraries/`, `assets/`, `versions/`, `mods/`, and configs
     // to avoid inter-instance conflicts and version collision issues.
@@ -632,10 +644,79 @@ pub async fn install_minecraft(
     let game_dir = if let Some(ref dir) = payload.directory {
         PathBuf::from(crate::models::sanitize_user_path(dir))
     } else {
-        default_minecraft_dir.join("!Instances").join(sanitize_instance_folder_name(&display_name))
+        // No directory chosen = "Shared Default": use the default
+        // .minecraft folder itself. (Separated instances are sent from the
+        // frontend with an explicit `<default>/!Instances/<name>` path.)
+        default_minecraft_dir.clone()
     };
 
     let minecraft_dir = game_dir.clone();
+
+    // Installs that target the *same* folder (e.g. two "Shared Default"
+    // installs into .minecraft) would otherwise write the same
+    // libraries / assets / version jars at the same time and can corrupt
+    // each other, so those run one after another. Installs into different
+    // folders (Separated / Custom) are unaffected and run in parallel.
+    let dir_lock = state.install_dir_lock(&minecraft_dir);
+    let _dir_guard = {
+        let mut announced = false;
+        loop {
+            if control.cancelled.load(Ordering::Relaxed) {
+                let wait_label = if loader_type == "vanilla" || loader_type.is_empty() {
+                    mc_version.clone()
+                } else {
+                    format!("{mc_version} ({loader_type})")
+                };
+                let _ = app.emit("download-progress", &DownloadProgressInfo {
+                    id: download_id.clone(),
+                    label: wait_label,
+                    minecraft_version: mc_version.clone(),
+                    loader: loader_type.clone(),
+                    stage: "Cancelled".to_string(),
+                    current_file: String::new(),
+                    active_files: Vec::new(),
+                    downloaded_bytes: 0,
+                    total_bytes: None,
+                    percent: 0.0,
+                    speed_bps: 0.0,
+                    eta_seconds: None,
+                    status: "cancelled".to_string(),
+                    message: Some("Installation cancelled".to_string()),
+                });
+                return Err("Installation cancelled".to_string());
+            }
+            match dir_lock.clone().try_lock_owned() {
+                Ok(guard) => break guard,
+                Err(_) => {
+                    if !announced {
+                        announced = true;
+                        let wait_label = if loader_type == "vanilla" || loader_type.is_empty() {
+                            mc_version.clone()
+                        } else {
+                            format!("{mc_version} ({loader_type})")
+                        };
+                        let _ = app.emit("download-progress", &DownloadProgressInfo {
+                            id: download_id.clone(),
+                            label: wait_label,
+                            minecraft_version: mc_version.clone(),
+                            loader: loader_type.clone(),
+                            stage: "Waiting for another install in this folder…".to_string(),
+                            current_file: String::new(),
+                            active_files: Vec::new(),
+                            downloaded_bytes: 0,
+                            total_bytes: None,
+                            percent: 0.0,
+                            speed_bps: 0.0,
+                            eta_seconds: None,
+                            status: "downloading".to_string(),
+                            message: None,
+                        });
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                }
+            }
+        }
+    };
 
     // Create the instance directory.
     std::fs::create_dir_all(&game_dir)
@@ -738,17 +819,6 @@ pub async fn install_minecraft(
     let mc_version_outer = mc_version.clone();
     let loader_type_outer = loader_type.clone();
 
-    // Each install owns its pause/cancel flags, registered under its
-    // download id, so installs never interfere with each other.
-    let download_id = payload
-        .download_id
-        .clone()
-        .filter(|d| !d.trim().is_empty())
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let control = state.register_install_control(&download_id);
-    let _control_guard = crate::state::InstallControlGuard::new(&app, &download_id);
-    let control_for_progress = control.clone();
-    let control_for_retry = control.clone();
     let label = if loader_type == "vanilla" || loader_type.is_empty() {
         mc_version.clone()
     } else {
