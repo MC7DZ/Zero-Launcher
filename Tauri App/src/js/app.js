@@ -1483,6 +1483,10 @@ async function refreshAccountUI(isBackgroundRefresh = false) {
     const countEl = document.getElementById('account-list-count');
     if (countEl) countEl.textContent = accounts.length;
 
+    // The choices screen doubles as the empty state; only offer "Back"
+    // when there's a profile list to go back to.
+    document.getElementById('am-choice-back')?.classList.toggle('hidden', accounts.length === 0);
+
     if (accounts.length === 0) {
       if (!isBackgroundRefresh || currentAccountView === 'list') {
         showAccountView('empty');
@@ -1513,27 +1517,28 @@ async function refreshAccountUI(isBackgroundRefresh = false) {
 
       item.classList.toggle('account-item-reauth', needsReauth);
       item.dataset.id = acc.id;
+      const TRASH_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>';
       item.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px; min-width:0; position:relative; z-index:1;">
+        <div class="am-item-main">
           <div class="account-avatar">
             <span class="account-avatar-fallback${useUnknownPic ? ' account-avatar-fallback-mc' : ''}">${useUnknownPic ? '?' : initial}</span>
             ${useUnknownPic ? '' : `<img src="${headUrl}" alt="" loading="lazy" onerror="this.remove()" onload="this.previousElementSibling.style.display='none'" />`}
           </div>
-          <div style="min-width:0;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-weight:600; font-size:13.5px; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${shownName}</span>
+          <div class="am-item-info">
+            <div class="am-item-name">
+              <span class="am-item-nick">${shownName}</span>
               ${needsReauth ? '<span class="account-reauth-tag">⚠ Needs Re-auth</span>' : ''}
-              ${(!needsReauth && acc.is_active) ? '<span style="font-size:10px; font-weight:700; color:var(--text); background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.14); padding:1px 6px; border-radius:3px; text-transform:uppercase; letter-spacing:0.4px;">Active</span>' : ''}
+              ${(!needsReauth && acc.is_active) ? '<span class="am-pill">Active</span>' : ''}
             </div>
-            <div style="display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-muted); margin-top:2px;">
+            <div class="am-item-meta">
               ${isMsa ? ACCOUNT_TYPE_ICON_MICROSOFT : (isElyby ? ACCOUNT_TYPE_ICON_ELYBY : ACCOUNT_TYPE_ICON_OFFLINE)}
-              <span>${isMsa ? 'Microsoft' : (isElyby ? 'Ely.by' : 'Free Offline')}</span>
+              <span>${isMsa ? 'Microsoft' : (isElyby ? 'Ely.by' : 'Free/Offline')}</span>
             </div>
           </div>
         </div>
-        <div style="display:flex; align-items:center; gap:6px; position:relative; z-index:1; flex-shrink:0;">
-          ${!acc.is_active ? `<button class="btn-switch-account" data-id="${acc.id}">Use</button>` : ''}
-          <button class="btn-ghost btn-sm btn-delete-account" data-id="${acc.id}" title="Remove Profile" style="padding:4px 8px; border-radius:4px; color:var(--text-muted); font-size:13px; line-height:1;">✕</button>
+        <div class="am-item-actions">
+          ${!acc.is_active ? `<button type="button" class="btn-switch-account" data-id="${acc.id}">Use</button>` : ''}
+          <button type="button" class="am-icon-btn btn-delete-account" data-id="${acc.id}" title="Remove profile" aria-label="Remove profile">${TRASH_ICON}</button>
         </div>
       `;
       list.appendChild(item);
@@ -1662,7 +1667,7 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
     if (!deviceStatusEl) return;
     deviceStatusEl.innerHTML = isError
       ? escapeHtml(text)
-      : `<span class="msa-device-spinner" style="width:10px; height:10px; border-radius:50%; border:2px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span> ${escapeHtml(text)}`;
+      : `<span class="am-spinner"></span>${escapeHtml(text)}`;
     deviceStatusEl.style.color = isError ? 'var(--danger, #ef4444)' : 'var(--text-muted)';
   }
 
@@ -1820,6 +1825,14 @@ function initAccountDropdown() {
     },
   });
 
+  // Dim the code until Microsoft hands one back.
+  const amCodeEl = document.getElementById('msa-device-code');
+  if (amCodeEl) {
+    const mark = () => amCodeEl.classList.toggle('ready', !amCodeEl.textContent.includes('—'));
+    new MutationObserver(mark).observe(amCodeEl, { childList: true, characterData: true, subtree: true });
+    mark();
+  }
+
   function startDeviceCodeSignIn() {
     return deviceFlow.start();
   }
@@ -1830,6 +1843,8 @@ function initAccountDropdown() {
   // Open modal on account top-bar button click
   if (accountBtn && modalOverlay) {
     accountBtn.addEventListener('click', () => {
+      const card = modalOverlay.querySelector('.account-overlay-card');
+      if (card) card.style.setProperty('--am-on-accent', wzOnAccent(currentAccentColor()));
       modalOverlay.classList.remove('hidden');
       refreshAccountUI();
       startAccountManagerAutoRefresh();
@@ -17980,7 +17995,7 @@ function wzStepNotif(dir) {
 
 // ── Account step ───────────────────────────────────────────────────
 function showSetupAccountView(view) {
-  const map = { choice: 'setup-account-choice', msa: 'setup-account-msa-section', offline: 'setup-account-offline-section' };
+  const map = { choice: 'setup-account-choice', msa: 'setup-account-msa-section', offline: 'setup-account-offline-section', elyby: 'setup-account-elyby-section' };
   Object.entries(map).forEach(([k, id]) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -18001,7 +18016,7 @@ async function updateSetupAccountExistingMsg() {
   const list = document.getElementById('wz-acc-list');
   if (list) {
     list.innerHTML = accounts.map(a => {
-      const kind = a.account_type === 'microsoft' ? 'Microsoft' : a.account_type === 'elyby' ? 'Ely.by' : 'Offline';
+      const kind = a.account_type === 'microsoft' ? 'Microsoft' : a.account_type === 'elyby' ? 'Ely.by' : 'Free/Offline';
       const init = wzEsc((a.username || '?').charAt(0).toUpperCase());
       return `<div class="wz-acc">
         <span class="wz-acc-av"><b>${init}</b><img src="${wzEsc(wzHeadUrl(a))}" alt="" onerror="this.remove()"></span>
@@ -18077,7 +18092,7 @@ async function wzFillSummary() {
   let accounts = [];
   try { accounts = (await api.getAccounts()) || []; } catch (_) {}
   const a = accounts.find(x => x.is_active) || accounts[0];
-  acc.textContent = a ? `${a.username} · ${a.account_type === 'microsoft' ? 'Microsoft' : a.account_type === 'elyby' ? 'Ely.by' : 'Offline'}` : 'None yet. Add one from the account menu.';
+  acc.textContent = a ? `${a.username} · ${a.account_type === 'microsoft' ? 'Microsoft' : a.account_type === 'elyby' ? 'Ely.by' : 'Free/Offline'}` : 'None yet. Add one from the account menu.';
   acc.classList.toggle('dim', !a);
 }
 
@@ -18089,6 +18104,7 @@ function showSetupStep(step, instant) {
   const target = document.getElementById('wz-step-' + step);
   if (!sheet || !target) return;
 
+  if (from === 3 && step !== 3) wzElybyCancel();
   currentSetupStep = step;
   sheet.dataset.step = step;
   document.querySelectorAll('.wz-step-btn').forEach(b => {
@@ -18131,6 +18147,7 @@ function showSetupStep(step, instant) {
 async function handleSetupStepSubmit(step) {
   if (step === 3) {
     if (setupDeviceFlow) setupDeviceFlow.stopDevicePolling();
+    wzElybyCancel();
     if (!wzAccountCount) {
       showToast('Add an account first, or skip this step', 'warning');
       return false;
@@ -18153,6 +18170,67 @@ async function wzNext() {
     console.error('Setup error:', err);
     showToast('Setup error: ' + (err.message || err), 'error');
   }
+}
+
+// ── Ely.by sign-in (browser OAuth) for the Account step ─────────────
+let wzElybyTimer = null;
+
+function wzElybyReset() {
+  if (wzElybyTimer) { clearInterval(wzElybyTimer); wzElybyTimer = null; }
+  document.getElementById('setup-elyby-idle')?.classList.remove('hidden');
+  document.getElementById('setup-elyby-waiting')?.classList.add('hidden');
+  document.getElementById('setup-elyby-error')?.classList.add('hidden');
+}
+
+async function wzElybyCancel() {
+  const waiting = !document.getElementById('setup-elyby-waiting')?.classList.contains('hidden');
+  wzElybyReset();
+  if (waiting) { try { await api.elybyOauthCancel(); } catch (_) { /* best-effort */ } }
+}
+
+function wzElybyFail(err, fallback) {
+  const el = document.getElementById('setup-elyby-error');
+  if (!el) return;
+  el.textContent = typeof err === 'string' && err ? err : fallback;
+  el.classList.remove('hidden');
+}
+
+async function wzElybyStart() {
+  const $ = id => document.getElementById(id);
+  $('setup-elyby-error')?.classList.add('hidden');
+  let url;
+  try {
+    url = await api.elybyOauthStart();
+  } catch (err) {
+    wzElybyFail(err, 'Could not start Ely.by sign-in.');
+    return;
+  }
+  $('setup-elyby-idle')?.classList.add('hidden');
+  $('setup-elyby-waiting')?.classList.remove('hidden');
+  if (url) {
+    invoke('open_url_in_browser', { url }).catch(() => {
+      showToast('Could not open your browser. Use "Reopen browser tab" to try again.', 'warning');
+    });
+  }
+
+  if (wzElybyTimer) clearInterval(wzElybyTimer);
+  wzElybyTimer = setInterval(async () => {
+    try {
+      const account = await api.elybyOauthPoll();
+      if (!account) return;
+      clearInterval(wzElybyTimer); wzElybyTimer = null;
+      wzElybyReset();
+      await refreshAccountUI();
+      showToast(`Signed in as ${account.username || 'Ely.by account'}`, 'success');
+      showSetupAccountView('choice');
+      await updateSetupAccountExistingMsg();
+    } catch (err) {
+      clearInterval(wzElybyTimer); wzElybyTimer = null;
+      $('setup-elyby-waiting')?.classList.add('hidden');
+      $('setup-elyby-idle')?.classList.remove('hidden');
+      wzElybyFail(err, 'Ely.by sign-in failed.');
+    }
+  }, 2000);
 }
 
 function initSetupWizard() {
@@ -18192,6 +18270,23 @@ function initSetupWizard() {
   $('setup-btn-msa-device-login')?.addEventListener('click', () => setupDeviceFlow.start());
   $('setup-btn-msa-device-open')?.addEventListener('click', () => setupDeviceFlow.openVerificationLink());
   $('setup-btn-msa-device-cancel')?.addEventListener('click', () => { setupDeviceFlow.cancel(); showSetupAccountView('choice'); });
+
+  // Ely.by lives behind the Offline page, same as in the account manager.
+  $('setup-btn-choice-elyby')?.addEventListener('click', () => {
+    wzElybyReset();
+    showSetupAccountView('elyby');
+  });
+  $('setup-btn-elyby-back')?.addEventListener('click', async () => {
+    await wzElybyCancel();
+    showSetupAccountView('offline');
+    wzValidateUsername();
+  });
+  $('setup-btn-elyby-login')?.addEventListener('click', wzElybyStart);
+  $('setup-btn-elyby-cancel')?.addEventListener('click', wzElybyCancel);
+  $('setup-btn-elyby-again')?.addEventListener('click', async () => {
+    await wzElybyCancel();
+    wzElybyStart();
+  });
 
   const userInput = $('setup-username');
   async function createOffline() {
@@ -18314,6 +18409,7 @@ async function openSetupWizard(force = false) {
 
 async function finishSetupWizard(opts = {}) {
   if (setupDeviceFlow) setupDeviceFlow.cancel();
+  wzElybyCancel();
   try {
     if (!settings) settings = {};
     settings.Finished_setup = true;

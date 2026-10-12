@@ -2733,273 +2733,373 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .overlay-close:hover { background: rgba(var(--overlay-rgb),0.1); color: var(--text); }
 .overlay-actions { display: flex; gap: 10px; margin-top: 20px; }
 
-/* ── Accounts Manager overlay: sleek, human-crafted modern dark styling ── */
+/* ── Accounts Manager ─────────────────────────────────────────────────
+   Flat surfaces, hairline borders, accent for selection and primary
+   actions. Mirrors the setup wizard's language so both feel like one app. */
 .account-overlay-card {
+  --am-line: rgba(var(--overlay-rgb), 0.08);
+  --am-line-strong: rgba(var(--overlay-rgb), 0.18);
+  --am-surface: rgba(var(--overlay-rgb), 0.03);
+  --am-on-accent: #0b0b0f;
+  --am-ease: cubic-bezier(0.22, 1, 0.36, 1);
   position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  max-height: min(82vh, 680px);
+  padding: 0;
   overflow: hidden;
-  background: #161616;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
-}
-.account-overlay-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  z-index: 2;
-  pointer-events: none;
-}
-.account-overlay-card > * {
-  position: relative;
-  z-index: 1;
+  background: var(--panel-solid, #1b1b1b);
+  border: 1px solid var(--am-line);
+  border-radius: 16px;
 }
 
-.account-modal-header {
+.am-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  padding: 18px 24px;
-  margin: -28px -28px 20px -28px;
-  background: rgba(255, 255, 255, 0.02);
+  gap: 16px;
+  padding: 22px 22px 16px;
+  flex: none;
 }
-.account-modal-header-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.account-modal-header-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text);
-  flex-shrink: 0;
-}
-.account-modal-header h3 {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
-  color: #fff;
-  margin: 0;
-}
-.account-modal-subtitle {
-  font-size: 12px;
+.am-header h3 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+.am-header p { margin-top: 3px; font-size: 12.5px; color: var(--text-muted); }
+.am-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin: -4px -6px 0 0;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  border-radius: 9px;
   color: var(--text-muted);
-  margin-top: 1px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
+.am-close:hover { background: rgba(var(--overlay-rgb), 0.08); color: var(--text); }
+.am-close:focus-visible,
+.am-add:focus-visible,
+.am-choice:focus-visible,
+.am-alt:focus-visible,
+.am-back:focus-visible,
+.am-text-btn:focus-visible,
+.am-icon-btn:focus-visible,
+.btn-switch-account:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.account-section-tag {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: var(--text-muted);
+/* Content area: JS animates its height between views */
+.account-overlay-content {
+  flex: 1;
+  min-height: 0;
+  padding: 2px 22px 22px;
+  overflow-y: auto;
+  transition: height 0.32s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.acc-view-enter { opacity: 0; transform: translateY(8px); }
+.acc-view-enter-active { opacity: 1; transform: translateY(0); transition: opacity 0.22s ease, transform 0.22s ease; }
+
+.am-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
-}
-.account-section-count {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
+}
+.am-count {
+  min-width: 20px;
   padding: 1px 7px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  background: rgba(var(--overlay-rgb), 0.06);
 }
 
-/* Method choice cards (Microsoft vs Free Offline) */
-.acc-choice-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  background: #181818;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-  color: var(--text);
-  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
-}
-.acc-choice-card:hover {
-  background: #222222;
-  border-color: rgba(255, 255, 255, 0.18);
-}
-.acc-choice-card:active {
-  transform: translateY(1px);
-}
-.acc-choice-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.acc-choice-content {
-  flex: 1;
-  min-width: 0;
-}
-.acc-choice-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.acc-choice-badge {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  padding: 1px 6px;
-  border-radius: 3px;
-  letter-spacing: 0.4px;
-}
-.acc-choice-badge-official {
-  background: rgba(16, 185, 129, 0.12);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.25);
-}
-.acc-choice-badge-free {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e2e2ea;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-.acc-choice-desc {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  margin-top: 3px;
-  line-height: 1.4;
-}
-.acc-choice-arrow {
-  color: rgba(255, 255, 255, 0.25);
-  transition: transform 0.12s ease, color 0.12s ease;
-  flex-shrink: 0;
-}
-.acc-choice-card:hover .acc-choice-arrow {
-  color: #fff;
-  transform: translateX(2px);
-}
-
-#modal-account-list {
+/* ── Profile list ── */
+.am-list {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 272px;
+  margin-bottom: 12px;
+  padding-right: 2px;
+  overflow-y: auto;
 }
-
-/* Sliding active indicator for account item selection, matching tab-indicator */
 .acc-list-indicator {
   position: absolute;
   top: 0;
   left: 0;
   width: 0;
   height: 0;
-  background: #2a2a2a;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1);
-  z-index: 0;
-  pointer-events: none;
   box-sizing: border-box;
-  transition: transform 0.26s cubic-bezier(0.25, 1, 0.5, 1),
-              width    0.26s cubic-bezier(0.25, 1, 0.5, 1),
-              height   0.26s cubic-bezier(0.25, 1, 0.5, 1),
-              opacity  0.2s ease;
+  border-radius: 12px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  z-index: 0;
   opacity: 0;
+  pointer-events: none;
+  transition: transform 0.26s var(--am-ease), width 0.26s var(--am-ease), height 0.26s var(--am-ease), opacity 0.2s ease;
 }
-.acc-list-indicator.ready {
-  opacity: 1;
-}
+.acc-list-indicator.ready { opacity: 1; }
 
-/* Account items in the list */
 .acc-list-item {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  border-radius: 6px;
-  background: #181818;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  position: relative;
-  z-index: 1;
-  transition: background 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-              border-color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-              box-shadow 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+  gap: 12px;
+  padding: 10px 12px 10px 10px;
+  border-radius: 12px;
+  background: var(--am-surface);
+  border: 1px solid var(--am-line);
+  transition: background 0.2s, border-color 0.2s;
 }
-.acc-list-item.active {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-
-
-/* ── Account step-change: height resize → content appear ── */
-.account-overlay-content {
+.acc-list-item:hover { border-color: var(--am-line-strong); }
+.acc-list-item.active { background: transparent; border-color: transparent; }
+.am-item-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.am-item-info { min-width: 0; }
+.am-item-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.am-item-nick {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
   overflow: hidden;
-  transition: height 0.32s cubic-bezier(0.25, 1, 0.5, 1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.acc-view-enter {
-  opacity: 0;
-  transform: translateY(8px);
+.am-item-meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 11.5px; color: var(--text-muted); }
+.am-item-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.am-pill {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-dim);
 }
-.acc-view-enter-active {
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 0.22s ease, transform 0.22s ease;
+.am-icon-btn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
-
-/* ── "Use" Switch button with Content-Type style smooth transition ── */
+.am-icon-btn:hover { background: rgba(var(--overlay-rgb), 0.08); color: var(--text); }
+.am-icon-btn.btn-delete-account:hover { background: rgba(239, 68, 68, 0.12); color: var(--danger); }
 
 .btn-switch-account {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--text-muted);
-  font-family: var(--font);
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 5px 12px;
-  border-radius: 5px;
+  height: 28px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--am-line-strong, rgba(255, 255, 255, 0.18));
+  border-radius: 8px;
+  color: var(--text);
+  font: 600 12px var(--font);
   cursor: pointer;
-  outline: none;
-  position: relative;
-  transition: background 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-              border-color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-              color 0.18s ease,
-              transform var(--transition-fast),
-              box-shadow 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+  transition: background 0.18s, border-color 0.18s, color 0.18s, transform var(--transition-fast);
 }
-.btn-switch-account:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.22);
-  color: #fff;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-.btn-switch-account:active {
-  transform: translateY(0) scale(0.97);
-}
+.btn-switch-account:hover { background: var(--accent); border-color: var(--accent); color: var(--am-on-accent, #0b0b0f); }
+.btn-switch-account:active { transform: scale(0.96); }
 .btn-switch-account:disabled,
-.btn-switch-account.cooldown {
-  opacity: 0.45;
-  cursor: not-allowed;
-  pointer-events: none;
-  transform: none !important;
-  box-shadow: none !important;
+.btn-switch-account.cooldown { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+
+.am-add {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px;
+  background: transparent;
+  border: 1px dashed var(--am-line-strong);
+  border-radius: 12px;
+  color: var(--text-muted);
+  font: 600 13px var(--font);
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+}
+.am-add:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* ── Add-account choices ── */
+.am-intro { margin-bottom: 16px; }
+.am-intro h4 { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; color: var(--text); }
+.am-intro p { margin-top: 3px; font-size: 13px; line-height: 1.5; color: var(--text-muted); }
+.am-choices { display: flex; flex-direction: column; gap: 10px; }
+
+.am-choice,
+.am-alt {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--am-line);
+  border-radius: 12px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s, transform 0.18s var(--am-ease);
+}
+.am-choice:hover,
+.am-alt:hover { border-color: var(--am-line-strong); background: rgba(var(--overlay-rgb), 0.04); }
+.am-choice:active,
+.am-alt:active { transform: scale(0.99); }
+.am-choice-ico,
+.am-alt-ico {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(var(--overlay-rgb), 0.06);
+  color: var(--text-muted);
+}
+.am-choice-txt { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.am-choice-txt b { font-size: 14px; font-weight: 600; }
+.am-choice-txt em { margin-left: 8px; font: 600 10.5px var(--font); font-style: normal; color: var(--accent); }
+.am-choice-txt small { font-size: 12.5px; line-height: 1.4; color: var(--text-muted); }
+.am-chev { flex: none; color: var(--text-muted); transition: transform 0.2s var(--am-ease), color 0.2s; }
+.am-choice:hover .am-chev,
+.am-alt:hover .am-chev { transform: translateX(3px); color: var(--text); }
+.am-alt { padding: 10px 12px; }
+.am-alt-ico { width: 32px; height: 32px; border-radius: 8px; }
+.am-alt .am-choice-txt b { font-size: 13px; }
+.am-alt .am-choice-txt small { font-size: 12px; }
+
+/* ── Sub-views ── */
+.am-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 2px 6px 2px 0;
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  font: 600 12.5px var(--font);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.am-back:hover { color: var(--text); }
+.am-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--am-line);
+  border-radius: 14px;
+  background: rgba(var(--overlay-rgb), 0.025);
+}
+.am-panel-center { align-items: center; text-align: center; }
+.am-panel-head { display: flex; align-items: flex-start; gap: 14px; }
+.am-panel-head h4 { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; color: var(--text); }
+.am-panel-head p { margin-top: 4px; font-size: 12.5px; line-height: 1.55; color: var(--text-muted); }
+.am-panel-head p strong { color: var(--text); font-weight: 600; }
+.am-panel-head-plain { gap: 0; }
+
+.account-overlay-card .btn-accent {
+  color: var(--am-on-accent);
+  border-radius: 10px;
+  font-weight: 600;
+  box-shadow: none;
+}
+.account-overlay-card .btn-accent:hover { transform: none; filter: brightness(1.08); box-shadow: none; }
+.account-overlay-card .btn-accent:active { transform: scale(0.98); }
+.am-primary {
+  width: 100%;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+}
+.account-overlay-card .input-field {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.account-overlay-card .input-field:focus { box-shadow: none; border-color: var(--accent); }
+.am-field { display: flex; gap: 8px; }
+.am-field .btn-accent { height: 42px; padding: 0 20px; flex: none; }
+
+.am-or {
+  margin: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.am-or::before,
+.am-or::after { content: ""; flex: 1; border-bottom: 1px solid var(--am-line); }
+
+.am-code-label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.am-code {
+  align-self: stretch;
+  text-align: center;
+  padding: 16px 12px;
+  border-radius: 12px;
+  background: var(--field-bg);
+  border: 1px dashed var(--am-line-strong);
+  font: 600 28px ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
+  color: var(--text-muted);
+  cursor: default;
+  transition: color 0.3s, border-color 0.3s;
+}
+.am-code.ready { color: var(--text); border-style: solid; border-color: var(--accent); cursor: pointer; }
+.am-status { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px; line-height: 1.5; color: var(--text-muted); }
+.am-spinner {
+  flex: none;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  animation: msa-spin 0.8s linear infinite;
+}
+.am-text-btn {
+  align-self: center;
+  background: none;
+  border: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font: 600 12.5px var(--font);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.am-text-btn:hover { color: var(--text); }
+.am-cancel { display: block; margin: 12px auto 0; }
+.am-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.22);
 }
 
 /* ── Player-head avatars in the accounts list ───────────────────────── */
@@ -3062,66 +3162,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   border-radius: 4px;
 }
 
-/* Ely.by alternative box inside offline view */
-.acc-elyby-banner {
-  margin-top: 14px;
-  padding: 12px 14px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  transition: background 0.18s ease, border-color 0.18s ease, transform var(--transition-fast);
-}
-.acc-elyby-banner:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.18);
-  transform: translateY(-1px);
-}
-.acc-elyby-banner:active {
-  transform: translateY(0);
-}
-.acc-divider-or {
-  display: flex;
-  align-items: center;
-  text-align: center;
-  margin: 16px 0 12px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-}
-.acc-divider-or::before,
-.acc-divider-or::after {
-  content: '';
-  flex: 1;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-.acc-divider-or:not(:empty)::before {
-  margin-right: 12px;
-}
-.acc-divider-or:not(:empty)::after {
-  margin-left: 12px;
-}
-
-/* Action button overrides inside account modal */
-#account-modal-overlay .btn-accent,
-#account-modal-overlay .btn-secondary,
-#account-modal-overlay .btn-ghost {
-  border-radius: 6px;
-}
-#account-modal-overlay .input-field {
-  border-radius: 6px;
-  background: #121212;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-#account-modal-overlay .input-field:focus {
-  border-color: rgba(255, 255, 255, 0.3);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
-}
+/* List avatars: match the wizard's rounded tiles */
+.am-list .account-avatar { width: 36px; height: 36px; border-radius: 9px; background: rgba(var(--overlay-rgb), 0.08); border: 0; }
+.am-list .account-avatar .account-avatar-fallback { color: var(--text); font-size: 14px; }
 
 /* ── Update Available overlay ────────────────────────────────────────── */
 .update-overlay-card {
@@ -8466,6 +8509,14 @@ body.screenshot-lightbox-open {
 .wz-input:focus { border-color: var(--accent); }
 .wz-hint { font-size: 12px !important; transition: color 0.2s; }
 .wz-hint.bad { color: var(--danger) !important; }
+.wz-or { align-self: stretch; margin: 4px 0; display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.wz-or::before, .wz-or::after { content: ""; flex: 1; border-bottom: 1px solid var(--wz-line); }
+.wz-option-sm { padding: 10px 12px; }
+.wz-option-sm .wz-option-ico { width: 32px; height: 32px; border-radius: 8px; }
+.wz-option-sm .wz-option-txt b { font-size: 13px; }
+.wz-option-sm .wz-option-txt small { font-size: 12px; }
+.wz-row { display: flex; align-items: center; gap: 14px; }
+#setup-elyby-error { margin-top: 12px; max-width: 520px; }
 
 /* Ready */
 .wz-summary { margin-top: 26px; max-width: 520px; border: 1px solid var(--wz-line); border-radius: 12px; }
