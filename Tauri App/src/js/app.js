@@ -8538,6 +8538,13 @@ let activeContentType = 'mod';
 // grid with content nobody asked for anymore (was the "switch tabs fast
 // and the old list is still there" bug).
 let modsLoadGeneration = 0;
+// Fingerprint of what the mods/packs grid is currently showing. The background
+// refresh compares against it and skips the rebuild when nothing changed, so
+// the cards don't blink every refresh tick.
+let modsGridSignature = '';
+function modsListSignature(kind, directory, items) {
+  return kind + '|' + directory + '|' + items.map(m => `${m.path}|${m.enabled ? 1 : 0}|${m.version || ''}`).join('\n');
+}
 const CONTENT_TYPE_LABELS = {
   mod: 'Mods',
   resourcepack: 'Resource Packs',
@@ -8690,9 +8697,10 @@ function setContentType(type) {
 let currentModpackInfo = null;
 let activeModsView = 'normal'; // 'normal' | 'modpack'
 
-async function loadMods() {
+async function loadMods(opts) {
+  const auto = !!(opts && opts.auto === true);
   if (activeContentType === 'resourcepack' || activeContentType === 'shaderpack') {
-    return loadPacksGrid(activeContentType);
+    return loadPacksGrid(activeContentType, auto);
   }
   if (activeContentType === 'screenshot') {
     return loadScreenshotsGrid();
@@ -8819,6 +8827,10 @@ async function loadMods() {
 
     const displayedMods = isModpackView ? modpackMods : (isModpackInstance ? normalMods : allMods);
 
+    const sig = modsListSignature(`mod:${activeModsView}:${isModpackInstance ? 1 : 0}`, directory, displayedMods);
+    if (auto && sig === modsGridSignature && grid.querySelector('.mod-card')) return;
+    modsGridSignature = sig;
+
     const frag = document.createDocumentFragment();
     if (displayedMods.length === 0) {
       const empty = document.createElement('div');
@@ -8848,7 +8860,7 @@ async function loadMods() {
 // branch above, just against `list_packs`/the resourcepacks|shaderpacks
 // folder instead of `list_mods`/mods, and with no modpack-mods subpanel
 // (packs aren't split into "user" vs "modpack-managed").
-async function loadPacksGrid(type) {
+async function loadPacksGrid(type, auto) {
   if (!settings) return;
   const myGeneration = modsLoadGeneration;
   const grid = document.getElementById('mods-grid');
@@ -8882,6 +8894,9 @@ async function loadPacksGrid(type) {
     const items = await api.listPacks(directory, type);
     if (myGeneration !== modsLoadGeneration) return;
     const unit = contentKindLabel(type);
+    const sig = modsListSignature(`pack:${type}`, directory, items);
+    if (auto && sig === modsGridSignature && grid.querySelector('.mod-card')) return;
+    modsGridSignature = sig;
     const frag = document.createDocumentFragment();
     if (items.length === 0) {
       const empty = document.createElement('div');
@@ -10031,7 +10046,11 @@ function initMods() {
   // Replaces the old manual Refresh button — the mods/packs/worlds list now keeps
   // itself up to date on its own while the Mods tab is open.
   setInterval(() => {
-    if (getActiveTabId() === 'mods' && ['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world'].includes(activeContentType)) loadMods();
+    if (getActiveTabId() !== 'mods' || !['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world'].includes(activeContentType)) return;
+    // A rebuild throws away every card (and the user's selection), so never do
+    // it while something is selected.
+    if (document.querySelector('#mods-grid .selected')) return;
+    loadMods({ auto: true });
   }, MODS_AUTO_REFRESH_MS);
 
   initModsDragDrop();

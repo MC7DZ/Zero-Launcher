@@ -11733,3 +11733,91 @@ body.zl-reveal .tab-page.active:not(:has(.instances-layout)) { animation: zl-rev
 .wz-btn-quiet:hover { color: var(--accent); background: transparent; border-color: transparent; }
 .wz-btn-primary { box-shadow: 0 8px 22px -8px var(--accent-glow); }
 .wz-btn-primary:hover { background: var(--accent); border-color: var(--accent); box-shadow: 0 10px 28px -8px var(--accent-glow); }
+
+/* ═══ Soft shadows ════════════════════════════════════════════════════
+   One small scale instead of ad-hoc values. Every level is a tight "contact"
+   shadow plus a wide, faint ambient one with negative spread, so edges stay
+   light, blur radii stay small (cheaper to paint) and nothing looks heavy.
+   Selectors below match the originals; the higher-specificity transparent-ui
+   and WebKitGTK rules (which turn shadows off for perf) still win where they
+   did before. */
+:root {
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.16);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.12), 0 3px 8px -2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.1), 0 8px 18px -6px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.1), 0 18px 36px -14px rgba(0, 0, 0, 0.4);
+  --shadow-drawer-l: 8px 0 24px -10px rgba(0, 0, 0, 0.45);
+  --shadow-drawer-r: -8px 0 24px -10px rgba(0, 0, 0, 0.45);
+}
+
+/* Menus, popovers, tooltips */
+.dropdown-panel, .ri-dropdown, .ri-overflow-menu, .fix-mods-panel, .fix-mods-inline,
+.play-options-popover, .custom-context-menu, .settings-search-results, .dl-widget-panel { box-shadow: var(--shadow-md); }
+.playtime-bar-tooltip, .dl-edge-hint { box-shadow: var(--shadow-sm); }
+.palette-ui-skeleton { box-shadow: var(--shadow-xs); }
+.palettes-gallery-panel { box-shadow: var(--shadow-md); }
+
+/* Modals / windows */
+.overlay-card { box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+.account-overlay-card, .crash-window { box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255, 255, 255, 0.04); }
+.skin-viewer-modal, .settings-modal-window, .screenshot-lightbox-img { box-shadow: var(--shadow-lg); }
+.mods-drag-overlay-inner { box-shadow: 0 0 0 1px var(--accent-dim, var(--accent)), var(--shadow-lg), 0 0 24px -6px var(--accent-glow); }
+.wz-sheet { box-shadow: var(--shadow-lg), 0 0 48px -24px var(--accent-glow); }
+
+/* Side drawers */
+.discover-project-modal, #dl-files-panel, .dressing-room-modal { box-shadow: var(--shadow-drawer-r); }
+#dl-widget-panel { box-shadow: var(--shadow-drawer-l); }
+
+/* WebKitGTK solid-panel variant: single light layer */
+.is-webkit-gtk:not(.transparent-ui) .overlay-card,
+.is-webkit-gtk:not(.transparent-ui) .settings-modal-window,
+.is-webkit-gtk:not(.transparent-ui) .update-overlay-card,
+.is-webkit-gtk:not(.transparent-ui) .account-overlay-card,
+.is-webkit-gtk:not(.transparent-ui) .skin-viewer-modal,
+.is-webkit-gtk:not(.transparent-ui) .dressing-room-modal,
+.is-webkit-gtk:not(.transparent-ui) #dl-files-panel { box-shadow: 0 10px 22px -10px rgba(0, 0, 0, 0.45); }
+
+/* Top bar + panels */
+#top-bar { box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2), 0 6px 14px -8px rgba(0, 0, 0, 0.35); }
+.bento-tile, .bento-tile-header:hover { box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.06), 0 4px 12px -4px rgba(0, 0, 0, 0.2); }
+.bento-tile:hover { box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.08), 0 0 0 1px var(--accent-dim), 0 8px 18px -6px rgba(0, 0, 0, 0.3); }
+.bento-tile:focus-within { box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.08), 0 0 0 2px var(--accent-dim), 0 8px 18px -6px rgba(0, 0, 0, 0.3); }
+.hypr-island { box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.06), 0 4px 12px -4px rgba(0, 0, 0, 0.25); }
+.log-viewer { box-shadow: inset 0 0 0 1px rgba(var(--overlay-rgb), 0.04), 0 6px 16px -8px rgba(0, 0, 0, 0.25); }
+.settings-card.active { box-shadow: var(--shadow-sm); }
+.full-palette-card:hover { box-shadow: var(--shadow-md); }
+.full-palette-card.active { box-shadow: 0 0 0 1.5px var(--accent), var(--shadow-sm); }
+.content-type-indicator { box-shadow: var(--shadow-sm), inset 0 1px 1px rgba(255, 255, 255, 0.15); }
+
+/* Cards (solid mode) — soft lift on hover, lighter when selected */
+.mod-card:hover, .world-card:hover, .server-card:hover { box-shadow: var(--shadow-md); }
+.mod-card.selected, .world-card.selected { box-shadow: var(--shadow-sm); }
+.mods-two-pane-page.modpack-mods-active .mod-card:hover { box-shadow: 0 4px 12px -4px rgba(147, 51, 234, 0.25); }
+.fix-mods-inline .btn-ghost:hover { box-shadow: 0 3px 8px -2px rgba(0, 0, 0, 0.2); }
+
+/* Cards (default glass/transparent mode) are flat on purpose; give hover and
+   selection just a whisper of depth so they still feel responsive. */
+.transparent-ui .mod-card:hover,
+.transparent-ui .world-card:hover,
+.transparent-ui .server-card:hover,
+.transparent-ui .instance-card:hover,
+.transparent-ui .discover-card:hover,
+.transparent-ui .preset-card:hover { box-shadow: 0 6px 14px -6px rgba(0, 0, 0, 0.35) !important; }
+
+/* Buttons: tighter, tinted glow instead of a big halo */
+.btn-play { box-shadow: 0 3px 12px -3px var(--accent-glow); }
+.btn-play:hover:not(:disabled) { box-shadow: 0 6px 18px -4px var(--accent-glow); }
+.btn-play:active:not(:disabled) { box-shadow: 0 1px 4px var(--accent-glow); }
+.btn-play.is-running { box-shadow: 0 3px 12px -3px rgba(245, 166, 35, 0.45); }
+.btn-play.is-running:hover:not(:disabled) { box-shadow: 0 6px 18px -4px rgba(245, 166, 35, 0.55); }
+.btn-accent:hover { box-shadow: 0 3px 12px -3px var(--accent-glow); }
+.btn-danger { box-shadow: 0 3px 10px -3px rgba(239, 68, 68, 0.4); }
+.btn-danger:hover { box-shadow: 0 5px 14px -4px rgba(239, 68, 68, 0.5); }
+.skin-apply-btn:hover { box-shadow: 0 3px 12px -3px var(--accent-glow); }
+.about-check-now-btn:not(:disabled):hover, .about-action-btn:hover { box-shadow: var(--shadow-sm); }
+
+/* "Update available" pulse: same idea, smaller blur radii (it repaints every frame) */
+@keyframes mod-update-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--accent-dim), 0 0 8px 0 var(--accent-glow); }
+  50%      { box-shadow: 0 0 0 1px var(--accent), 0 0 12px 1px var(--accent-glow); }
+}
