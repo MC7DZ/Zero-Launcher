@@ -1033,6 +1033,25 @@
     </div>
 
     <!-- Linux zlib-ng Compatibility Warning Overlay -->
+    <!-- JVM Arguments manager -->
+    <div id="jvm-args-overlay" class="overlay hidden">
+      <div class="overlay-card jvm-args-card">
+        <div class="overlay-header">
+          <h3>JVM Arguments</h3>
+          <button class="overlay-close" id="btn-close-jvm-args">✕</button>
+        </div>
+        <div id="jvm-args-list" class="jvm-args-list"></div>
+        <div class="jvm-args-add">
+          <input type="text" id="jvm-args-new" class="input-field" placeholder="Add argument, e.g. -XX:+UseG1GC" spellcheck="false" />
+          <button type="button" id="btn-jvm-args-add" class="btn-secondary">Add</button>
+        </div>
+        <div class="overlay-actions" style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
+          <button id="btn-jvm-args-cancel" class="btn-ghost">Cancel</button>
+          <button id="btn-jvm-args-save" class="btn-accent">Save</button>
+        </div>
+      </div>
+    </div>
+
     <div id="zlib-warning-overlay" class="overlay hidden">
       <div class="overlay-card" style="max-width: 540px; width: 90%;">
         <div class="overlay-header">
@@ -1403,7 +1422,7 @@
           <!-- Custom JVM Arguments -->
           <div class="form-group" style="margin-bottom: 10px;">
             <label class="bento-tile-label" for="inst-jvm-args">Custom JVM Arguments</label>
-            <input type="text" id="inst-jvm-args" class="input-field" placeholder="-XX:+UseG1GC ... (leave blank to use Settings)" />
+            <input type="text" id="inst-jvm-args" class="input-field" placeholder="-XX:+UseZGC ... (leave blank to use Settings; ZGC is the default GC)" />
           </div>
         </div>
 
@@ -1533,7 +1552,7 @@
           <!-- Custom JVM Arguments -->
           <div class="form-group" style="margin-bottom: 14px;">
             <label class="bento-tile-label" for="edit-inst-jvm-args">Custom JVM Arguments</label>
-            <input type="text" id="edit-inst-jvm-args" class="input-field" placeholder="-XX:+UseG1GC ... (leave blank to use Settings)" />
+            <input type="text" id="edit-inst-jvm-args" class="input-field" placeholder="-XX:+UseZGC ... (leave blank to use Settings; ZGC is the default GC)" />
           </div>
 
           <!-- Game Directory Display -->
@@ -2803,8 +2822,12 @@
               </div>
               <div class="form-group" style="margin-bottom:18px;">
                 <label>Global JVM Arguments</label>
-                <input type="text" id="setting-jvm-args" class="input-field" placeholder="-XX:+UseG1GC" />
+                <input type="text" id="setting-jvm-args" class="input-field" placeholder="-XX:+UseZGC (blank = ZGC default; set another -XX:+Use…GC to override)" />
                 <p class="settings-hint">Custom JVM arguments appended to every game launch (e.g. garbage collector flags or memory tweaks).</p>
+                <button type="button" id="btn-open-jvm-args" class="btn-secondary" style="margin-top:8px; display:inline-flex; align-items:center; gap:6px; padding:6px 14px; font-size:12px;">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="8" cy="18" r="2" fill="currentColor"/></svg>
+                  Manage JVM Arguments…
+                </button>
               </div>
 
                             </section>

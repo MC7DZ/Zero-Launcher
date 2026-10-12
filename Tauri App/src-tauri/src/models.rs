@@ -183,6 +183,16 @@ pub struct LauncherSettings {
     #[serde(default)]
     pub update_prompt_dont_ask_again: bool,
     pub jvm_args: String,
+    /// Custom global JVM arguments the user has switched *off* in the JVM
+    /// Arguments window. Kept (not deleted) so they can be switched back on;
+    /// they are never passed to the game.
+    #[serde(default)]
+    pub jvm_args_disabled: Vec<String>,
+    /// Whether the launcher adds `-XX:+UseZGC` as the default garbage
+    /// collector (when the Java in use supports it and no other collector
+    /// was chosen). Switchable in the JVM Arguments window.
+    #[serde(default = "default_true")]
+    pub default_zgc_enabled: bool,
     pub max_ram_mb: u32,
     pub min_ram_mb: u32,
     /// Java selection for launching instances.
@@ -584,6 +594,8 @@ impl Default for LauncherSettings {
             auto_check_launcher_updates: false,
             update_prompt_dont_ask_again: false,
             jvm_args: String::new(),
+            jvm_args_disabled: Vec::new(),
+            default_zgc_enabled: true,
             max_ram_mb: 4096,
             min_ram_mb: 512,
             java_path: None,

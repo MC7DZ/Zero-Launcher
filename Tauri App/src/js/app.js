@@ -5978,6 +5978,194 @@ async function troubleshootReinstallInstance(id) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// JVM ARGUMENTS WINDOW
+// ══════════════════════════════════════════════════════════════════
+// Shows every JVM argument in effect, lets custom ones be switched
+// on/off (off ones are kept in settings.jvm_args_disabled so they can be
+// switched back on), edited, deleted or added. The enabled custom args are
+// what ends up in the "Global JVM Arguments" field / settings.jvm_args.
+let jvmWinEntries = [];   // [{ arg, enabled }]
+let jvmWinZgc = true;
+
+function splitJvmArgs(str) {
+  return String(str || '').split(/\s+/).map(s => s.trim()).filter(Boolean);
+}
+function isGcSelectionArg(a) {
+  return (a.startsWith('-XX:+Use') && a.endsWith('GC')) || a.startsWith('-XX:-UseZGC');
+}
+
+function openJvmArgsWindow() {
+  const overlay = document.getElementById('jvm-args-overlay');
+  if (!overlay || !settings) return;
+  const field = document.getElementById('setting-jvm-args');
+  const enabled = splitJvmArgs(field ? field.value : settings.jvm_args);
+  const disabled = (settings.jvm_args_disabled || []).filter(a => !enabled.includes(a));
+  jvmWinEntries = [
+    ...enabled.map(arg => ({ arg, enabled: true })),
+    ...disabled.map(arg => ({ arg, enabled: false })),
+  ];
+  jvmWinZgc = settings.default_zgc_enabled !== false;
+  document.getElementById('jvm-args-new').value = '';
+  renderJvmArgsWindow();
+  overlay.classList.remove('hidden');
+}
+
+function closeJvmArgsWindow() {
+  document.getElementById('jvm-args-overlay')?.classList.add('hidden');
+}
+
+function jvmToggleRow(checked, onChange) {
+  const label = document.createElement('label');
+  label.className = 'toggle-row';
+  label.style.margin = '0';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = checked;
+  input.addEventListener('change', () => onChange(input.checked));
+  const slider = document.createElement('span');
+  slider.className = 'toggle-slider';
+  label.append(input, slider);
+  return label;
+}
+
+function jvmRow(label, { on = true, onToggle = null, desc = '', input = null, onRemove = null } = {}) {
+  const row = document.createElement('div');
+  row.className = 'jvm-args-row' + (on ? '' : ' is-off');
+  const main = document.createElement('div');
+  main.className = 'jvm-arg-main';
+  if (input) {
+    main.appendChild(input);
+  } else {
+    const code = document.createElement('code');
+    code.textContent = label;
+    main.appendChild(code);
+  }
+  if (desc) {
+    const d = document.createElement('div');
+    d.className = 'jvm-arg-desc';
+    d.textContent = desc;
+    main.appendChild(d);
+  }
+  row.appendChild(main);
+  if (onToggle) {
+    row.appendChild(jvmToggleRow(on, onToggle));
+  } else {
+    const state = document.createElement('span');
+    state.className = 'jvm-arg-state';
+    state.textContent = 'Always on';
+    row.appendChild(state);
+  }
+  if (onRemove) {
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'jvm-arg-del';
+    del.textContent = '✕';
+    del.addEventListener('click', onRemove);
+    row.appendChild(del);
+  }
+  return row;
+}
+
+function renderJvmArgsWindow() {
+  const list = document.getElementById('jvm-args-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  // Built in — fixed ones can't be changed here, ZGC can be switched off.
+  const maxRam = parseInt(document.getElementById('setting-max-ram')?.value, 10) || settings.max_ram_mb || 4096;
+  const minRam = parseInt(document.getElementById('setting-min-ram')?.value, 10) || settings.min_ram_mb || 512;
+  list.appendChild(jvmRow(`-Xmx${maxRam}m`, { desc: 'Maximum memory the game can use. Set in the RAM settings.' }));
+  list.appendChild(jvmRow(`-Xms${minRam}m`, { desc: 'Memory the game starts with. Set in the RAM settings.' }));
+  list.appendChild(jvmRow('-Ddiscordfix=net.minecraft.client.main.Main', { desc: 'Lets Discord detect the game.' }));
+  const userChoseGc = jvmWinEntries.some(e => e.enabled && isGcSelectionArg(e.arg));
+  list.appendChild(jvmRow('-XX:+UseZGC', {
+    on: jvmWinZgc,
+    onToggle: (v) => { jvmWinZgc = v; renderJvmArgsWindow(); },
+    desc: userChoseGc
+      ? 'Default garbage collector. Not used while another collector is on below.'
+      : 'Default garbage collector. Only used on Java 15 and newer.',
+  }));
+
+  // Custom
+  jvmWinEntries.forEach((entry, idx) => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'jvm-arg-input';
+    input.value = entry.arg;
+    input.spellcheck = false;
+    input.addEventListener('change', () => {
+      const v = input.value.trim();
+      const dup = jvmWinEntries.some((x, i) => i !== idx && x.arg === v);
+      if (!v || /\s/.test(v) || !v.startsWith('-') || dup) {
+        showToast(dup ? 'That argument is already in the list' : 'A JVM argument must start with "-" and contain no spaces', 'error');
+        input.value = entry.arg;
+        return;
+      }
+      entry.arg = v;
+      renderJvmArgsWindow();
+    });
+    list.appendChild(jvmRow('', {
+      on: entry.enabled,
+      input,
+      onToggle: (v) => { entry.enabled = v; renderJvmArgsWindow(); },
+      onRemove: () => { jvmWinEntries.splice(idx, 1); renderJvmArgsWindow(); },
+    }));
+  });
+}
+
+function addJvmArgs(text) {
+  const tokens = splitJvmArgs(text);
+  if (!tokens.length) return false;
+  const bad = tokens.find(t => !t.startsWith('-'));
+  if (bad) {
+    showToast(`"${bad}" isn't a JVM argument — they must start with "-"`, 'error');
+    return false;
+  }
+  let added = 0;
+  for (const t of tokens) {
+    if (jvmWinEntries.some(e => e.arg === t)) continue;
+    jvmWinEntries.push({ arg: t, enabled: true });
+    added++;
+  }
+  if (!added) showToast('Already in the list', 'info');
+  renderJvmArgsWindow();
+  return added > 0;
+}
+
+async function saveJvmArgsWindow() {
+  // Anything still typed in the add box counts as "add it".
+  const pending = document.getElementById('jvm-args-new');
+  if (pending && pending.value.trim()) {
+    if (!addJvmArgs(pending.value)) return;
+    pending.value = '';
+  }
+  const field = document.getElementById('setting-jvm-args');
+  if (field) field.value = jvmWinEntries.filter(e => e.enabled).map(e => e.arg).join(' ');
+  settings.jvm_args_disabled = jvmWinEntries.filter(e => !e.enabled).map(e => e.arg);
+  settings.default_zgc_enabled = jvmWinZgc;
+  await saveSettingsNow();
+  closeJvmArgsWindow();
+  showToast('JVM arguments saved', 'success');
+}
+
+function initJvmArgsWindow() {
+  document.getElementById('btn-open-jvm-args')?.addEventListener('click', openJvmArgsWindow);
+  document.getElementById('btn-close-jvm-args')?.addEventListener('click', closeJvmArgsWindow);
+  document.getElementById('btn-jvm-args-cancel')?.addEventListener('click', closeJvmArgsWindow);
+  document.getElementById('btn-jvm-args-save')?.addEventListener('click', saveJvmArgsWindow);
+  document.getElementById('btn-jvm-args-add')?.addEventListener('click', () => {
+    const input = document.getElementById('jvm-args-new');
+    if (input && addJvmArgs(input.value)) input.value = '';
+  });
+  document.getElementById('jvm-args-new')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('btn-jvm-args-add')?.click();
+    }
+  });
+}
+
 function initCrashTroubleshootWindow() {
   const overlay = document.getElementById('crash-troubleshoot-overlay');
   if (!overlay) return;
@@ -15494,6 +15682,8 @@ function initSettings() {
           max_ram_mb: 4096,
           java_path: null,
           jvm_args: '',
+          jvm_args_disabled: [],
+          default_zgc_enabled: true,
           download_threads_auto: true,
           download_threads: 3,
           enable_discord_rpc: true,
@@ -15888,7 +16078,7 @@ const SETTINGS_SEARCH_CATALOG = [
   { label: 'Min RAM Allocation', keywords: 'min ram memory xms java megabytes mb allocation heap', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-min-ram' },
   { label: 'Max RAM Allocation', keywords: 'max ram memory xmx java megabytes mb gigabytes allocation heap', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-max-ram' },
   { label: 'Default Java Version', keywords: 'default java version runtime jre jdk smart detection auto pick override', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-java-select' },
-  { label: 'Global JVM Arguments', keywords: 'jvm args arguments flags options -XX:+UseG1GC garbage collector heap optimization', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-jvm-args' },
+  { label: 'Global JVM Arguments', keywords: 'jvm args arguments flags options -XX:+UseZGC -XX:+UseG1GC garbage collector zgc heap optimization', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-jvm-args' },
   { label: 'Concurrent Downloads', keywords: 'concurrent downloads parallel threads speed network bandwidth fast', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'setting-download-threads' },
   { label: 'Hidden Instances List', keywords: 'hidden instances unhide restore vanilla hidden list', section: 'performance', sectionLabel: 'Performance & Advanced', targetId: 'hidden-instances-list' },
 
@@ -18448,6 +18638,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setStartupSplashProgress(88, 'Pre-warming 3D player standee & shaders…');
   await initSkinMiniPreview().catch(() => {});
   initCrashTroubleshootWindow();
+  initJvmArgsWindow();
   initInstanceTroubleshootWindow();
   initCrashDialog();
   initLaunchVerifyStatus();

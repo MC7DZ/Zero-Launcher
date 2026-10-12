@@ -2244,6 +2244,7 @@ pub async fn launch_minecraft(
     logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
         "Using Java: {}", java_executable.display()
     ));
+    let java_exe_for_probe = java_executable.clone();
 
     let _ = app.emit("launch-status-update", &serde_json::json!({
         "version_id": &version_id,
@@ -2309,9 +2310,44 @@ pub async fn launch_minecraft(
             }
         }
     }
-    if !jvm_args_str.is_empty() {
-        args.extend(jvm_args_str.split_whitespace().map(String::from));
+    let mut user_jvm_args: Vec<String> = jvm_args_str.split_whitespace().map(String::from).collect();
+    // ZGC is the default garbage collector. It's skipped if the user already
+    // picked a collector (any -XX:+Use…GC flag) or switched ZGC off
+    // explicitly, and on Java older than 15, which doesn't support it and
+    // would refuse to start with an unrecognized-option error.
+    let user_chose_gc = user_jvm_args.iter().any(|a| {
+        (a.starts_with("-XX:+Use") && a.ends_with("GC")) || a.starts_with("-XX:-UseZGC")
+    });
+    let zgc_default_enabled = state.settings.lock().unwrap().default_zgc_enabled;
+    if !user_chose_gc && !zgc_default_enabled {
+        logger::info_for_instance(&app, &state, &version_id, "LAUNCHER",
+            "Default ZGC is switched off in JVM Arguments — using Java's default garbage collector");
     }
+    if !user_chose_gc && zgc_default_enabled {
+        let probe_exe = java_exe_for_probe.clone();
+        let java_major = tokio::task::spawn_blocking(move || crate::commands::java::probe_java_major(&probe_exe))
+            .await
+            .ok()
+            .flatten();
+        match java_major {
+            Some(m) if m >= 15 => {
+                user_jvm_args.insert(0, "-XX:+UseZGC".to_string());
+                logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
+                    "Using ZGC garbage collector by default (Java {m})"
+                ));
+            }
+            Some(m) => {
+                logger::info_for_instance(&app, &state, &version_id, "LAUNCHER", &format!(
+                    "Java {m} doesn't support ZGC — using its default garbage collector"
+                ));
+            }
+            None => {
+                logger::info_for_instance(&app, &state, &version_id, "LAUNCHER",
+                    "Couldn't detect the Java version — skipping the ZGC default");
+            }
+        }
+    }
+    args.extend(user_jvm_args);
     args.extend(launch_cmd.args.clone());
 
     // Quick Play: Direct join into a singleplayer world or multiplayer server

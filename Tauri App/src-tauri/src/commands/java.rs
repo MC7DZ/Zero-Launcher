@@ -91,6 +91,38 @@ pub fn managed_java_root() -> PathBuf {
     }
 }
 
+/// Runs `java -version` on the given executable and returns its major
+/// version, or `None` if it can't be determined. Blocking — call it from
+/// `spawn_blocking`.
+pub fn probe_java_major(executable: &Path) -> Option<i32> {
+    // javaw.exe (Windows launcher) prints nothing; ask its java.exe sibling.
+    let exe = match executable.file_name().and_then(|n| n.to_str()) {
+        Some(n) if n.eq_ignore_ascii_case("javaw.exe") => {
+            let sibling = executable.with_file_name("java.exe");
+            if sibling.is_file() { sibling } else { executable.to_path_buf() }
+        }
+        _ => executable.to_path_buf(),
+    };
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.arg("-version");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let out = cmd.output().ok()?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    );
+    // First line looks like: openjdk version "17.0.9" 2023-10-17
+    let start = text.find('"')? + 1;
+    let end = start + text[start..].find('"')?;
+    let major = parse_major(&text[start..end]);
+    if major > 0 { Some(major) } else { None }
+}
+
 /// Parses a Java version string into just its major version number.
 /// Handles both the old `1.8.0_392` style and the modern `17.0.9` style.
 fn parse_major(version: &str) -> i32 {
