@@ -3305,295 +3305,184 @@
       </div>
     </div>
 
-      <!-- ── Setup Wizard Tab (hidden from nav bar, opened programmatically) ── -->
+      <!-- ── Setup Wizard (hidden from nav bar, opened programmatically) ── -->
       <section id="tab-setup" class="tab-page">
-        <div class="setup-page-container">
+        <div class="wz-sheet" id="wz-sheet" data-step="1">
 
-          <!-- Hero Header -->
-          <div class="setup-hero">
-            <div class="setup-hero-icon">
-              <svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="24" cy="24" r="20" opacity="0.15" fill="var(--accent)"/>
-                <path d="M24 14v10l7 4"/>
-                <circle cx="24" cy="24" r="14"/>
-              </svg>
+          <aside class="wz-rail">
+            <div class="wz-rail-head">Setup</div>
+            <ol class="wz-steps" id="wz-steps">
+              <li><button type="button" class="wz-step-btn" data-step="1"><span class="wz-step-num"><i>1</i><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="wz-step-label">Welcome</span></button></li>
+              <li><button type="button" class="wz-step-btn" data-step="2"><span class="wz-step-num"><i>2</i><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="wz-step-label">Appearance</span></button></li>
+              <li><button type="button" class="wz-step-btn" data-step="3"><span class="wz-step-num"><i>3</i><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="wz-step-label">Account</span></button></li>
+              <li><button type="button" class="wz-step-btn" data-step="4"><span class="wz-step-num"><i>4</i><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="wz-step-label">Ready</span></button></li>
+            </ol>
+            <div class="wz-rail-foot">
+              <button type="button" id="btn-setup-skip-all" class="wz-link">Skip setup</button>
+              <p>You can reopen this from Settings at any time.</p>
             </div>
-            <h1 class="setup-hero-title">Welcome to <span class="setup-hero-brand">Zero Launcher</span></h1>
-            <p class="setup-hero-desc" id="setup-step-subtitle">Step 1 of 3 — Appearance</p>
-          </div>
+          </aside>
 
-          <!-- Stepper -->
-          <div class="setup-stepper-bar">
-            <div class="setup-stepper-track">
-              <div class="setup-stepper-fill" id="setup-stepper-fill"></div>
-            </div>
-            <div class="setup-stepper-dots">
-              <div class="setup-sdot active" data-step="1">
-                <div class="setup-sdot-circle">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z"/></svg>
+          <div class="wz-main">
+            <div class="wz-stage" id="wz-stage">
+
+              <!-- 1 · Welcome -->
+              <section class="wz-page active" id="wz-step-1">
+                <div class="wz-scroll">
+                  <p class="wz-eyebrow" id="wz-version">Zero Launcher</p>
+                  <h1 class="wz-title wz-title-xl" style="--i:1">Welcome.<br>Let's get you playing.</h1>
+                  <p class="wz-lead" style="--i:2">A quick setup, about a minute. Everything here can be changed later in Settings.</p>
+                  <ul class="wz-outline">
+                    <li style="--i:3"><span>Appearance</span><p>Pick a palette and background. It applies as you go.</p></li>
+                    <li style="--i:4"><span>Account</span><p>Sign in with Microsoft, or play offline.</p></li>
+                    <li style="--i:5"><span>Ready</span><p>A short map of the launcher, then your first instance.</p></li>
+                  </ul>
+                  <p class="wz-meta" id="wz-sysline"></p>
                 </div>
-                <span class="setup-sdot-label">Appearance</span>
-              </div>
-              <div class="setup-sdot" data-step="2">
-                <div class="setup-sdot-circle">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                </div>
-                <span class="setup-sdot-label">Account</span>
-              </div>
-              <div class="setup-sdot" data-step="3">
-                <div class="setup-sdot-circle">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.5 6.5L21 11l-6.5 2.5L12 20l-2.5-6.5L3 11l6.5-2.5L12 2Z"/></svg>
-                </div>
-                <span class="setup-sdot-label">Tour</span>
-              </div>
-            </div>
-          </div>
+              </section>
 
-          <!-- Step Pages -->
-          <div class="setup-step-pages">
+              <!-- 2 · Appearance -->
+              <section class="wz-page" id="wz-step-2">
+                <div class="wz-scroll">
+                  <p class="wz-eyebrow">Step 2 of 4</p>
+                  <h2 class="wz-title" style="--i:1">Make it yours</h2>
+                  <p class="wz-lead" style="--i:2">Changes apply live. Nothing here is permanent.</p>
 
-            <!-- Step 1: Appearance -->
-            <div class="setup-step-page active" id="setup-step-1">
-              <div class="setup-card setup-card-appear">
-                <h3 class="setup-card-title">
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.76 2.24 4 4 4h1.5a1.5 1.5 0 0 1 1.5 1.5c0 .55-.22 1-.5 1.4-.3.42-.5.9-.5 1.35 0 1.5 1.5 2.75 3 2.75 5 0 9-4.03 9-9s-4.03-9-9-9Z"/></svg>
-                  Customize Appearance
-                </h3>
-                <p class="setup-card-desc">Tweak your colors and background — changes apply live so you can see them instantly.</p>
-
-                <div class="setup-form-grid">
-                  <div class="form-group">
-                    <label>Notification Style</label>
-                    <select id="setup-notif-style" class="input-field"></select>
-                  </div>
-
-                  <!-- Theme Palettes Quick Row -->
-                  <div class="form-group" style="grid-column: span 2; margin-bottom: 2px;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-                      <div style="display:flex; align-items:center; gap:6px;">
-                        <label style="margin:0; font-size:13px; font-weight:700;">Theme Palettes</label>
-                        <span style="font-size:11px; color:var(--text-muted);">(Quick Presets)</span>
+                  <div class="wz-look">
+                    <div class="wz-look-side" style="--i:3">
+                      <div class="wz-preview" id="wz-preview" aria-hidden="true">
+                        <div class="pv-bar"><b>ZERO</b><span class="pv-dot"></span></div>
+                        <div class="pv-tabs"><span class="on"></span><span></span><span></span><span></span></div>
+                        <div class="pv-grid">
+                          <div class="pv-card"><i></i><u></u><u class="s"></u><em>Play</em></div>
+                          <div class="pv-card"><i></i><u></u><u class="s"></u><em class="off"></em></div>
+                        </div>
+                        <div class="pv-toast notif-mini-stage" id="wz-notif-stage"></div>
                       </div>
-                      <button type="button" id="setup-btn-browse-palettes" class="btn-ghost btn-sm" style="display:flex; align-items:center; gap:5px; font-size:12px; padding:3px 10px; color:var(--accent);">
-                        <span>More Palettes</span>
-                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                          <polyline points="9 18 15 12 9 6"></polyline>
-                        </svg>
-                      </button>
+                      <div class="wz-stepper" role="group" aria-label="Notification style">
+                        <button type="button" id="wz-notif-prev" aria-label="Previous notification style"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+                        <div><span class="wz-stepper-k">Notifications</span><span class="wz-stepper-v" id="wz-notif-name">Glass</span></div>
+                        <button type="button" id="wz-notif-next" aria-label="Next notification style"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+                      </div>
                     </div>
-                    <!-- 3 Quick Plates Grid -->
-                    <div id="setup-quick-palettes-container" class="quick-palettes-grid"></div>
-                  </div>
 
-                  <div class="dropdown-divider" style="grid-column: span 2; margin: 4px 0 8px 0;"></div>
+                    <div class="wz-look-main">
+                      <div class="wz-group" style="--i:3">
+                        <div class="wz-group-head"><span>Palette</span><button type="button" class="wz-link" id="setup-btn-browse-palettes">Browse all</button></div>
+                        <div class="wz-palettes" id="wz-palettes" role="radiogroup" aria-label="Palette"></div>
+                      </div>
 
-                  <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; grid-column: span 2;">
-                    <label style="margin:0;">Accent Color</label>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                      <input type="text" id="setup-accent-hex-input" class="input-field color-hex-box" maxlength="7" value="#B7B7B7" placeholder="#B7B7B7" style="width:85px; font-family:var(--font); font-size:12px; padding:5px 8px; text-transform:uppercase; text-align:center;" />
-                      <button type="button" id="setup-btn-accent-picker" class="color-picker-trigger-btn" title="Open Color Palette & Custom Picker">
-                        <span id="setup-accent-preview" class="color-swatch-circle" style="background:var(--accent);"></span>
-                      </button>
-                      <button type="button" id="setup-btn-reset-accent" class="btn-ghost btn-sm" title="Reset to default silver accent color" style="padding:4px 10px; font-size:12px;">Reset</button>
+                      <div class="wz-group wz-colors" style="--i:4">
+                        <label class="wz-field">
+                          <span>Accent</span>
+                          <div class="wz-hex"><button type="button" id="setup-btn-accent-picker" class="wz-sw" aria-label="Pick accent color"><i id="setup-accent-preview"></i></button><input id="setup-accent-hex-input" type="text" maxlength="7" spellcheck="false" autocomplete="off" value="#B7B7B7"><button type="button" id="setup-btn-reset-accent" class="wz-reset" title="Reset accent"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button></div>
+                        </label>
+                        <label class="wz-field">
+                          <span>Base</span>
+                          <div class="wz-hex"><button type="button" id="setup-btn-bg-color-picker" class="wz-sw" aria-label="Pick base color"><i id="setup-bg-color-preview"></i></button><input id="setup-bg-hex-input" type="text" maxlength="7" spellcheck="false" autocomplete="off" value="#0A0A0F"><button type="button" id="setup-btn-reset-bg-color" class="wz-reset" title="Reset base color"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button></div>
+                        </label>
+                      </div>
+
+                      <div class="wz-group" style="--i:5">
+                        <div class="wz-group-head"><span>Background</span></div>
+                        <div class="wz-chips" id="wz-bg-style" role="radiogroup" aria-label="Background style"></div>
+                      </div>
+                      <div class="wz-group" style="--i:6">
+                        <div class="wz-group-head"><span>Motion</span></div>
+                        <div class="wz-chips" id="wz-bg-anim" role="radiogroup" aria-label="Background animation"></div>
+                      </div>
                     </div>
-                  </div>
-
-                  <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; grid-column: span 2;">
-                    <div>
-                      <label style="margin:0;">Background Base Color</label>
-                      <div class="field-help" style="font-size:11px; color:var(--text-muted); margin-top:2px;">Base dark shade for the launcher theme</div>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                      <input type="text" id="setup-bg-hex-input" class="input-field color-hex-box" maxlength="7" value="#0A0A0F" placeholder="#0A0A0F" style="width:85px; font-family:var(--font); font-size:12px; padding:5px 8px; text-transform:uppercase; text-align:center;" />
-                      <button type="button" id="setup-btn-bg-color-picker" class="color-picker-trigger-btn" title="Open Color Palette & Custom Picker">
-                        <span id="setup-bg-color-preview" class="color-swatch-circle" style="background:var(--bg, #0a0a0f);"></span>
-                      </button>
-                      <button type="button" id="setup-btn-reset-bg-color" class="btn-ghost btn-sm" title="Reset to default dark background color" style="padding:4px 10px; font-size:12px;">Reset</button>
-                    </div>
-                  </div>
-
-                  <div class="form-group">
-                    <label>Background Style</label>
-                    <select id="setup-bg-style" class="input-field">
-                      <option value="Default" selected>Default</option>
-                      <option value="Midnight">Midnight</option>
-                      <option value="Sunset">Sunset</option>
-                      <option value="Forest">Forest</option>
-                      <option value="Ocean">Ocean</option>
-                      <option value="Monochrome">Monochrome</option>
-                      <option value="Accent Glow">Accent Glow</option>
-                      <option value="Nothing">Nothing (flat gray)</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label>Animation Style</label>
-                    <select id="setup-bg-anim-style" class="input-field">
-                      <option value="Starfield" selected>Starfield</option>
-                        <option value="Waves">Waves</option>
-                      <option value="Particles">Particles</option>
-                      <option value="Fireflies">Fireflies</option>
-                      <option value="Nothing">Nothing (no animation)</option>
-                    </select>
                   </div>
                 </div>
-              </div>
-            </div>
+              </section>
 
-            <!-- Step 2: Account -->
-            <div class="setup-step-page" id="setup-step-2">
-              <div class="setup-card setup-card-appear">
-                <h3 class="setup-card-title">
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                  Add First Account
-                </h3>
-                <p class="setup-card-desc">Add a Microsoft account or play offline for free — you can add more later from the top-right account menu.</p>
+              <!-- 3 · Account -->
+              <section class="wz-page" id="wz-step-3">
+                <div class="wz-scroll">
+                  <p class="wz-eyebrow">Step 3 of 4</p>
+                  <h2 class="wz-title" style="--i:1">Who's playing?</h2>
+                  <p class="wz-lead" style="--i:2">Add the account you'll launch with. You can add more later from the account menu.</p>
 
-                <div id="setup-account-existing-msg" class="hidden" style="margin-bottom:14px; padding:10px 14px; border-radius:8px; background:var(--accent-dim); border:1px solid var(--accent); font-size:13px; color:var(--accent); display:flex; align-items:center; gap:8px;">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg>
-                  An account is already set up! You can add another below, or just hit Next.
-                </div>
+                  <div class="wz-accounts" id="wz-acc-list" style="--i:3"></div>
 
-                <!-- Choice: Microsoft vs. Offline -->
-                <div id="setup-account-choice" style="display:flex; flex-direction:column; gap:10px;">
-                  <button id="setup-btn-choice-msa" type="button" class="btn-secondary" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; font-size:14px;">
-                    <svg viewBox="0 0 23 23" width="18" height="18"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>
-                    Sign in with Microsoft
-                  </button>
-                  <button id="setup-btn-choice-offline" type="button" class="btn-secondary" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; font-size:14px;">
-                    <span style="width:18px; height:18px; border-radius:50%; background:var(--accent-dim); border:1px solid var(--accent); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; flex-shrink:0;">?</span>
-                    Play Offline for Free
-                  </button>
-                </div>
-
-                <!-- Microsoft sign-in (device code) -->
-                <div id="setup-account-msa-section" class="hidden">
-                  <button type="button" class="btn-ghost btn-sm setup-btn-back-to-choices" style="margin-bottom:12px;">← Back</button>
-
-                  <div id="setup-msa-method-choice" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;">
-                    <button id="setup-btn-msa-device-login" type="button" class="btn-secondary" style="white-space:nowrap; display:flex; align-items:center; justify-content:center; gap:6px; width:100%; padding:12px;">
-                      <svg viewBox="0 0 23 23" width="14" height="14"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg>
-                      Sign In with Microsoft
+                  <div class="wz-view" id="setup-account-choice" style="--i:4">
+                    <button type="button" id="setup-btn-choice-msa" class="wz-option">
+                      <span class="wz-option-ico"><svg viewBox="0 0 23 23" width="20" height="20"><rect x="1" y="1" width="10" height="10" fill="#f25022"/><rect x="12" y="1" width="10" height="10" fill="#7fba00"/><rect x="1" y="12" width="10" height="10" fill="#00a4ef"/><rect x="12" y="12" width="10" height="10" fill="#ffb900"/></svg></span>
+                      <span class="wz-option-txt"><b>Microsoft account <em>Recommended</em></b><small>Online play, servers, and your real skin.</small></span>
+                      <svg class="wz-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                     </button>
-                    <p style="font-size:11px; line-height:1.5; color:var(--text-muted); margin:2px 0 0;">
-                      You'll get a short code to enter at microsoft.com/link in your normal browser — this plays nicer with 2FA, family/child accounts, and passkeys than an embedded sign-in window.
-                    </p>
+                    <button type="button" id="setup-btn-choice-offline" class="wz-option">
+                      <span class="wz-option-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                      <span class="wz-option-txt"><b>Offline</b><small>Just pick a name. No sign-in needed.</small></span>
+                      <svg class="wz-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    </button>
                   </div>
 
-                  <div id="setup-msa-device-panel" class="hidden">
-                    <div style="text-align:center; padding:16px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);">
-                      <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Your code <span style="font-size:10px; opacity:0.75; text-transform:none;">(Click to copy)</span></div>
-                      <div id="setup-msa-device-code" style="font-size:26px; font-weight:800; letter-spacing:3px; color:var(--accent); margin-bottom:12px; cursor:pointer;" title="Click to copy code">— — — — —</div>
-                      <button id="setup-btn-msa-device-open" type="button" class="btn-accent btn-sm" style="margin-bottom:8px;">Open microsoft.com/link</button>
-                      <div id="setup-msa-device-status" style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; gap:6px;">
-                        <span class="msa-device-spinner" style="width:10px; height:10px; border-radius:50%; border:2px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite;"></span>
-                        Waiting for you to sign in…
+                  <div class="wz-view hidden" id="setup-account-msa-section">
+                    <button type="button" class="wz-back setup-btn-back-to-choices"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</button>
+                    <div id="setup-msa-method-choice" class="wz-panel">
+                      <h3>Sign in with Microsoft</h3>
+                      <p>You'll get a short code to enter at microsoft.com/link in your normal browser. It works with 2FA, family accounts and passkeys.</p>
+                      <button type="button" id="setup-btn-msa-device-login" class="wz-btn wz-btn-primary">Get my code</button>
+                    </div>
+                    <div id="setup-msa-device-panel" class="wz-panel hidden">
+                      <ol class="wz-howto">
+                        <li><span>1</span><div>Open the sign-in page<button type="button" id="setup-btn-msa-device-open" class="wz-btn wz-btn-sm">Open microsoft.com/link</button></div></li>
+                        <li><span>2</span><div>Enter this code<small>Click it to copy</small></div></li>
+                      </ol>
+                      <div id="setup-msa-device-code" class="wz-code">— — — — —</div>
+                      <div id="setup-msa-device-status" class="wz-status"></div>
+                      <button type="button" id="setup-btn-msa-device-cancel" class="wz-link">Cancel</button>
+                    </div>
+                  </div>
+
+                  <div class="wz-view hidden" id="setup-account-offline-section">
+                    <button type="button" class="wz-back setup-btn-back-to-choices"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Back</button>
+                    <div class="wz-panel">
+                      <h3>Pick a name</h3>
+                      <div class="wz-user">
+                        <span class="wz-user-av" id="wz-user-av">?</span>
+                        <input id="setup-username" class="wz-input" type="text" maxlength="16" placeholder="Steve" spellcheck="false" autocomplete="off">
                       </div>
+                      <p class="wz-hint" id="wz-user-hint">3–16 characters. Letters, numbers and underscores.</p>
+                      <button type="button" id="setup-btn-offline-create" class="wz-btn wz-btn-primary" disabled>Add account</button>
                     </div>
-                    <button id="setup-btn-msa-device-cancel" type="button" class="btn-ghost btn-sm" style="width:100%; margin-top:10px;">Cancel</button>
                   </div>
                 </div>
+              </section>
 
-                <!-- Offline account -->
-                <div id="setup-account-offline-section" class="hidden">
-                  <button type="button" class="btn-ghost btn-sm setup-btn-back-to-choices" style="margin-bottom:12px;">← Back</button>
-                  <div class="setup-account-box">
-                    <div class="form-group">
-                      <label>Username</label>
-                      <input type="text" id="setup-username" class="input-field" placeholder="Player1" maxlength="16" />
-                    </div>
-                  </div>
-                  <button id="setup-btn-offline-create" type="button" class="btn-accent" style="width:100%; margin-top:12px;">Create Offline Account</button>
+              <!-- 4 · Ready -->
+              <section class="wz-page" id="wz-step-4">
+                <div class="wz-scroll">
+                  <p class="wz-eyebrow">Step 4 of 4</p>
+                  <h2 class="wz-title" style="--i:1">You're ready</h2>
+                  <p class="wz-lead" style="--i:2">Here's what you set up, and where everything lives.</p>
+
+                  <dl class="wz-summary" style="--i:3">
+                    <div><dt>Theme</dt><dd id="wz-sum-theme"></dd></div>
+                    <div><dt>Account</dt><dd id="wz-sum-acc"></dd></div>
+                  </dl>
+
+                  <ul class="wz-map" style="--i:4">
+                    <li><div><b>Instances</b><p>Separate installs, each with its own version, loader and saves.</p></div><kbd>Alt 1</kbd></li>
+                    <li><div><b>Mods</b><p>Install, toggle and update mods per instance.</p></div><kbd>Alt 2</kbd></li>
+                    <li><div><b>Discover</b><p>Modpacks, resource packs and shaders in one click.</p></div><kbd>Alt 3</kbd></li>
+                    <li><div><b>Presets</b><p>Save a mod bundle once, apply it anywhere.</p></div><kbd>Alt 4</kbd></li>
+                    <li><div><b>Settings</b><p>Java, directories, themes and everything else.</p></div><kbd>Alt S</kbd></li>
+                  </ul>
                 </div>
+              </section>
+            </div>
+
+            <footer class="wz-foot">
+              <p class="wz-foot-hint" id="wz-hint"></p>
+              <div class="wz-foot-btns">
+                <button type="button" id="btn-setup-prev" class="wz-btn hidden">Back</button>
+                <button type="button" id="btn-setup-skip-step" class="wz-btn wz-btn-quiet">Skip for now</button>
+                <button type="button" id="btn-setup-next" class="wz-btn wz-btn-primary">Get started</button>
               </div>
-            </div>
-
-            <!-- Step 3: Tour + Finish -->
-            <div class="setup-step-page" id="setup-step-3">
-              <div class="setup-card setup-card-appear setup-tour-card">
-                <h3 class="setup-card-title">
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.5 6.5L21 11l-6.5 2.5L12 20l-2.5-6.5L3 11l6.5-2.5L12 2Z"/></svg>
-                  Get to know Zero Launcher
-                </h3>
-                <p class="setup-card-desc">A quick look around before you jump in.</p>
-
-                <div class="setup-tour-grid">
-                  <div class="setup-tour-item" style="--tour-i: 0">
-                    <div class="setup-tour-icon">
-                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-                    </div>
-                    <div class="setup-tour-text">
-                      <h4>Instances</h4>
-                      <p>Create, launch, and manage separate Minecraft setups — each with its own version, mod loader, and save data.</p>
-                    </div>
-                  </div>
-
-                  <div class="setup-tour-item" style="--tour-i: 1">
-                    <div class="setup-tour-icon">
-                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7 12 3 4 7l8 4 8-4Z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/></svg>
-                    </div>
-                    <div class="setup-tour-text">
-                      <h4>Mods</h4>
-                      <p>Browse, install, enable, and update mods for any instance without leaving the launcher.</p>
-                    </div>
-                  </div>
-
-                  <div class="setup-tour-item" style="--tour-i: 2">
-                    <div class="setup-tour-icon">
-                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-                    </div>
-                    <div class="setup-tour-text">
-                      <h4>Discover</h4>
-                      <p>Search and explore modpacks, resource packs, and shaders to add to your instances in one click.</p>
-                    </div>
-                  </div>
-
-                  <div class="setup-tour-item" style="--tour-i: 3">
-                    <div class="setup-tour-icon">
-                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="4"/></svg>
-                    </div>
-                    <div class="setup-tour-text">
-                      <h4>Presets</h4>
-                      <p>Save a bundle of mods and settings as a preset, then apply it to any instance in seconds.</p>
-                    </div>
-                  </div>
-
-                  <div class="setup-tour-item setup-tour-item-wide" style="--tour-i: 4">
-                    <div class="setup-tour-icon">
-                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-                    </div>
-                    <div class="setup-tour-text">
-                      <h4>Settings</h4>
-                      <p>Fine-tune themes, accounts, install directories, Java, and everything else about how the launcher behaves.</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="setup-tour-finish">
-                  <div class="setup-tour-finish-icon">🎉</div>
-                  <h4>You're all set!</h4>
-                  <p>Head into Instances and create your first one whenever you're ready. Enjoy your play!</p>
-                </div>
-              </div>
-            </div>
-
+            </footer>
           </div>
-
-          <!-- Footer Buttons -->
-          <div class="setup-bottom-bar">
-            <button type="button" id="btn-setup-skip-all" class="btn-ghost btn-sm setup-btn-animate">Skip All Setup</button>
-            <div class="setup-bottom-right">
-              <button type="button" id="btn-setup-skip-step" class="btn-secondary btn-sm setup-btn-animate">Skip This Step</button>
-              <button type="button" id="btn-setup-prev" class="btn-secondary btn-sm setup-btn-animate hidden">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-                Back
-              </button>
-              <button type="button" id="btn-setup-next" class="btn-accent setup-btn-animate">
-                Next Step
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-              </button>
-            </div>
-          </div>
-
         </div>
       </section>
 

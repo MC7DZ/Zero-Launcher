@@ -1999,6 +1999,10 @@ function initAccountDropdown() {
       showToast('Username must be 16 characters or less', 'warning');
       return;
     }
+    if (isUsernameInappropriate(username)) {
+      showToast("That name isn't allowed. Please pick another.", 'warning');
+      return;
+    }
 
     try {
       await api.addOfflineAccount(username);
@@ -14461,16 +14465,8 @@ function applyThemeFromSettings() {
   if (bgPrev) bgPrev.style.backgroundColor = baseBg;
   if (bgHexInput && document.activeElement !== bgHexInput) bgHexInput.value = baseBg.toUpperCase();
 
-  // Sync previews & editable HEX inputs in Setup Wizard
-  const setupAccentPrev = document.getElementById('setup-accent-preview');
-  const setupAccentHexInput = document.getElementById('setup-accent-hex-input');
-  if (setupAccentPrev) setupAccentPrev.style.backgroundColor = accent;
-  if (setupAccentHexInput && document.activeElement !== setupAccentHexInput) setupAccentHexInput.value = accent.toUpperCase();
-
-  const setupBgPrev = document.getElementById('setup-bg-color-preview');
-  const setupBgHexInput = document.getElementById('setup-bg-hex-input');
-  if (setupBgPrev) setupBgPrev.style.backgroundColor = baseBg;
-  if (setupBgHexInput && document.activeElement !== setupBgHexInput) setupBgHexInput.value = baseBg.toUpperCase();
+  // Keep the setup wizard's preview, palettes and hex fields in step
+  if (typeof wzSyncAppearance === 'function') wzSyncAppearance();
 
   // Sync active states on Theme Palettes quick plates
   renderQuickThemePalettes();
@@ -14745,17 +14741,11 @@ function collectSettingsFromUI() {
   settings.accent_color = currentAccentColor();
   settings.bg_color = (settings && settings.bg_color) || '#0a0a0f';
 
-  // When the setup wizard is visible, its dropdowns are the source of truth
-  // for these three fields. The main settings modal dropdowns are hidden/unpopulated
-  // at that point and would silently reset user choices back to defaults.
+  // While the setup wizard is open it writes straight into `settings`; the
+  // settings-modal controls are unpopulated then and must not overwrite it.
   const setupTabActive = document.getElementById('tab-setup')?.classList.contains('active');
   if (setupTabActive) {
-    const setupNotif = document.getElementById('setup-notif-style');
-    const setupBgStyle = document.getElementById('setup-bg-style');
-    const setupBgAnim = document.getElementById('setup-bg-anim-style');
-    if (setupNotif) settings.notification_style = normalizeNotifStyleName(setupNotif.value);
-    if (setupBgStyle) settings.background_style = setupBgStyle.value;
-    if (setupBgAnim) settings.background_animation_style = setupBgAnim.value;
+    // nothing to collect
   } else {
     const notifSel = document.getElementById('setting-notif-style');
     if (notifSel) settings.notification_style = normalizeNotifStyleName(notifSel.value);
@@ -17821,292 +17811,463 @@ function initWindowBehaviorSettings() {
 // ══════════════════════════════════════════════════════════════════
 // FIRST-TIME SETUP WIZARD
 // ══════════════════════════════════════════════════════════════════
-let currentSetupStep = 1;
+// ── Username filter ────────────────────────────────────────────────
+// Best-effort block for names Mojang/servers would reject as offensive.
+// Mojang's real list isn't public, so this covers the obvious slurs and
+// profanity, including common leetspeak and separator tricks. Longer terms
+// match anywhere in the name; short/ambiguous ones only match as a whole
+// word, so innocent names ("grape", "Essex", "Scunthorpe"-style) pass.
+const BAD_NAME_SUBSTRINGS = [
+  'nigger', 'nigga', 'faggot', 'retard', 'tranny', 'wetback', 'beaner', 'cunt',
+  'fuck', 'shit', 'bitch', 'whore', 'slut', 'bastard', 'asshole', 'dickhead',
+  'cocksucker', 'motherfucker', 'bullshit', 'jizz', 'blowjob', 'handjob',
+  'pedophile', 'paedo', 'molest', 'nazi', 'hitler', 'kkk', 'cumshot',
+  'dildo', 'milf', 'hentai', 'porn',
+];
+const BAD_NAME_WORDS = new Set([
+  'ass', 'cum', 'sex', 'rape', 'raped', 'rapist', 'spic', 'kike', 'gook', 'chink', 'fag',
+  'dick', 'cock', 'tit', 'tits', 'anal', 'pussy', 'penis', 'vagina', 'nude',
+  'nudes', 'hoe', 'thot', 'coon', 'paki', 'pedo', 'dyke', 'homo', 'twat', 'wank',
+  'piss', 'damn', 'crap', 'nsfw', 'xxx', 'sperm', 'incest', 'suicide',
+]);
+const LEET_MAP = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '9': 'g', '@': 'a', '$': 's', '!': 'i', '+': 't' };
 
-// Shows one of the setup wizard's Account-step sub-views: the
-// Microsoft/Offline choice, the Microsoft device-code panel, or the
-// offline username form. Mirrors showAccountView() but for the wizard's
-// own element ids (it can't reuse the modal's ids directly since both
-// can theoretically exist in the DOM at once).
-function showSetupAccountView(view) {
-  const map = {
-    choice: 'setup-account-choice',
-    msa: 'setup-account-msa-section',
-    offline: 'setup-account-offline-section',
-  };
-  Object.values(map).forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.classList.add('hidden');
-  });
-  const target = document.getElementById(map[view]);
-  if (target) target.classList.remove('hidden');
+function isUsernameInappropriate(name) {
+  const raw = String(name || '');
+  const deLeet = t => t.toLowerCase().replace(/[01345789@$!+]/g, c => LEET_MAP[c]);
+  // Whole string with separators removed: catches "f_u_c_k", "sh1t", "n1gg3r".
+  const squashed = deLeet(raw).replace(/[^a-z]/g, '').replace(/scunthorpe/g, '');
+  if (BAD_NAME_SUBSTRINGS.some(w => squashed.includes(w))) return true;
+  if (BAD_NAME_WORDS.has(squashed)) return true;
+  // Word-level: split on separators, digits and camelCase boundaries.
+  const tokens = raw.replace(/([a-z])([A-Z])/g, '$1 $2').split(/[^A-Za-z0-9]+|_+/).filter(Boolean);
+  for (const t of tokens) {
+    const a = t.toLowerCase().replace(/[0-9]+$/g, '');
+    if (BAD_NAME_WORDS.has(a) || BAD_NAME_WORDS.has(deLeet(t).replace(/[^a-z]/g, ''))) return true;
+  }
+  return false;
 }
 
+const WZ_STEPS = 4;
+const WZ_BG_STYLES = ['Default', 'Midnight', 'Sunset', 'Forest', 'Ocean', 'Monochrome', 'Accent Glow', 'Nothing'];
+const WZ_BG_STYLE_LABELS = { 'Nothing': 'Flat' };
+const WZ_ANIMS = ['Starfield', 'Waves', 'Particles', 'Fireflies', 'Nothing'];
+const WZ_ANIM_LABELS = { 'Nothing': 'None' };
+const WZ_USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
+
+let currentSetupStep = 1;
 let setupDeviceFlow = null;
+let wzBusy = false;
+let wzAccountCount = 0;
+
+function wzMotionOn() {
+  return !document.documentElement.classList.contains('no-ui-animations')
+    && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+// Picks a readable foreground for text/icons sitting on the accent color.
+function wzOnAccent(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return '#0b0b0f';
+  const n = parseInt(m[1], 16);
+  const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  return L > 0.35 ? '#0b0b0f' : '#ffffff';
+}
+
+function wzEsc(s) { return typeof escapeHtml === 'function' ? escapeHtml(String(s)) : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ── Appearance sync (called from applyThemeFromSettings and on every change) ──
+function wzSyncAppearance() {
+  const sheet = document.getElementById('wz-sheet');
+  if (!sheet || !settings) return;
+  const accent = currentAccentColor();
+  const bg = (settings.bg_color || '#0A0A0F');
+  sheet.style.setProperty('--wz-on-accent', wzOnAccent(accent));
+
+  const pv = document.getElementById('wz-preview');
+  if (pv) {
+    pv.style.setProperty('--pv-accent', accent);
+    pv.style.setProperty('--pv-bg', bg);
+    pv.style.setProperty('--pv-on', wzOnAccent(accent));
+  }
+  const set = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v.toUpperCase(); };
+  set('setup-accent-hex-input', accent);
+  set('setup-bg-hex-input', bg);
+  const ap = document.getElementById('setup-accent-preview'); if (ap) ap.style.background = accent;
+  const bp = document.getElementById('setup-bg-color-preview'); if (bp) bp.style.background = bg;
+
+  // Palettes
+  const grid = document.getElementById('wz-palettes');
+  if (grid) {
+    const list = THEME_PALETTES.slice(0, 7);
+    const activeId = (THEME_PALETTES.find(isPaletteActive) || {}).id;
+    const sig = list.map(p => p.id).join() + '|' + (activeId || 'custom');
+    if (grid.dataset.sig !== sig) {
+      grid.dataset.sig = sig;
+      grid.innerHTML = list.map(p => `
+        <button type="button" class="wz-pal${p.id === activeId ? ' on' : ''}" role="radio" aria-checked="${p.id === activeId}" data-id="${p.id}" title="${wzEsc(p.name)}">
+          <span class="wz-pal-sw" style="--a:${p.accent};--b:${p.bg}"></span>
+          <span class="wz-pal-name">${wzEsc(p.name)}</span>
+        </button>`).join('') + `
+        <button type="button" class="wz-pal${activeId ? '' : ' on'}" role="radio" aria-checked="${!activeId}" data-id="custom">
+          <span class="wz-pal-sw custom" style="--a:${accent};--b:${bg}"></span>
+          <span class="wz-pal-name">Custom</span>
+        </button>`;
+    } else {
+      const cs = grid.querySelector('.custom');
+      if (cs) { cs.style.setProperty('--a', accent); cs.style.setProperty('--b', bg); }
+    }
+  }
+
+  // Chips
+  const bgStyle = settings.background_style || 'Default';
+  const anim = settings.background_animation_style || 'Starfield';
+  wzRenderChips('wz-bg-style', WZ_BG_STYLES, WZ_BG_STYLE_LABELS, bgStyle);
+  wzRenderChips('wz-bg-anim', WZ_ANIMS, WZ_ANIM_LABELS, anim);
+
+  // Notifications
+  const st = NOTIF_STYLES.find(s => s.name === normalizeNotifStyleName(settings.notification_style)) || NOTIF_STYLES[0];
+  const nm = document.getElementById('wz-notif-name'); if (nm) nm.textContent = st.name;
+  const stage = document.getElementById('wz-notif-stage');
+  if (stage && stage.dataset.style !== st.name) {
+    stage.dataset.style = st.name;
+    stage.innerHTML = `<div class="toast toast-success ${st.cls}"><span class="toast-icon">\u2714</span><div class="toast-content"><div class="toast-title">Download complete</div><div class="toast-message">Fabric 1.21 is ready</div></div></div>`;
+  }
+}
+
+function wzRenderChips(id, values, labels, current) {
+  const box = document.getElementById(id);
+  if (!box) return;
+  const sig = current;
+  if (box.dataset.sig === sig && box.childElementCount) return;
+  box.dataset.sig = sig;
+  box.innerHTML = values.map(v => `<button type="button" class="wz-chip${v === current ? ' on' : ''}" role="radio" aria-checked="${v === current}" data-v="${wzEsc(v)}">${wzEsc(labels[v] || v)}</button>`).join('');
+}
+
+function wzCommitTheme() {
+  applyThemeFromSettings();
+  saveSettingsDebounced();
+}
+
+function wzStepNotif(dir) {
+  const cur = NOTIF_STYLES.findIndex(s => s.name === normalizeNotifStyleName(settings && settings.notification_style));
+  const next = NOTIF_STYLES[(Math.max(cur, 0) + dir + NOTIF_STYLES.length) % NOTIF_STYLES.length];
+  if (!settings) settings = {};
+  settings.notification_style = next.name;
+  wzSyncAppearance();
+  saveSettingsDebounced();
+}
+
+// ── Account step ───────────────────────────────────────────────────
+function showSetupAccountView(view) {
+  const map = { choice: 'setup-account-choice', msa: 'setup-account-msa-section', offline: 'setup-account-offline-section' };
+  Object.entries(map).forEach(([k, id]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const show = k === view;
+    el.classList.toggle('hidden', !show);
+    if (show && wzMotionOn()) { el.classList.remove('wz-in'); void el.offsetWidth; el.classList.add('wz-in'); }
+  });
+}
+
+function wzHeadUrl(a) {
+  return `https://mc-heads.net/avatar/${encodeURIComponent(a.mc_uuid || a.username || 'MHF_Steve')}/64`;
+}
+
+async function updateSetupAccountExistingMsg() {
+  let accounts = [];
+  try { accounts = (await api.getAccounts()) || []; } catch (_) {}
+  wzAccountCount = accounts.length;
+  const list = document.getElementById('wz-acc-list');
+  if (list) {
+    list.innerHTML = accounts.map(a => {
+      const kind = a.account_type === 'microsoft' ? 'Microsoft' : a.account_type === 'elyby' ? 'Ely.by' : 'Offline';
+      const init = wzEsc((a.username || '?').charAt(0).toUpperCase());
+      return `<div class="wz-acc">
+        <span class="wz-acc-av"><b>${init}</b><img src="${wzEsc(wzHeadUrl(a))}" alt="" onerror="this.remove()"></span>
+        <span class="wz-acc-name">${wzEsc(a.username)}</span>
+        <span class="wz-acc-kind">${kind}</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      </div>`;
+    }).join('');
+    list.classList.toggle('hidden', !accounts.length);
+  }
+  const choice = document.getElementById('setup-account-choice');
+  if (choice) choice.dataset.more = accounts.length ? '1' : '';
+  wzUpdateFooter();
+}
+
+function wzValidateUsername() {
+  const input = document.getElementById('setup-username');
+  const btn = document.getElementById('setup-btn-offline-create');
+  const hint = document.getElementById('wz-user-hint');
+  const av = document.getElementById('wz-user-av');
+  const v = input ? input.value.trim() : '';
+  const blocked = WZ_USERNAME_RE.test(v) && isUsernameInappropriate(v);
+  const ok = WZ_USERNAME_RE.test(v) && !blocked;
+  if (btn) btn.disabled = !ok;
+  if (av) av.textContent = v ? v.charAt(0).toUpperCase() : '?';
+  if (hint) {
+    const bad = v && !ok;
+    hint.classList.toggle('bad', !!bad);
+    hint.textContent = !bad ? '3–16 characters. Letters, numbers and underscores.'
+      : blocked ? "That name isn't allowed. Please pick another."
+      : v.length < 3 ? 'A little longer. Names need at least 3 characters.'
+      : 'Only letters, numbers and underscores are allowed.';
+  }
+}
+
+// ── Footer / navigation ────────────────────────────────────────────
+function wzUpdateFooter() {
+  const step = currentSetupStep;
+  const prev = document.getElementById('btn-setup-prev');
+  const skip = document.getElementById('btn-setup-skip-step');
+  const next = document.getElementById('btn-setup-next');
+  const hint = document.getElementById('wz-hint');
+  if (!next) return;
+  prev.classList.toggle('hidden', step === 1);
+  skip.classList.add('hidden');
+  next.disabled = false;
+  next.classList.remove('wz-btn-quiet');
+  let hintText = '';
+  if (step === 1) next.textContent = 'Get started';
+  else if (step === 2) next.textContent = 'Continue';
+  else if (step === 3) {
+    next.textContent = 'Continue';
+    if (!wzAccountCount) {
+      next.disabled = true;
+      skip.classList.remove('hidden');
+      hintText = 'Add an account to continue, or skip for now.';
+    }
+  } else {
+    next.textContent = 'Create my first instance';
+    skip.textContent = 'Open launcher';
+    skip.classList.remove('hidden');
+  }
+  if (step !== 4) skip.textContent = 'Skip for now';
+  if (hint) hint.textContent = hintText;
+}
+
+async function wzFillSummary() {
+  const pal = THEME_PALETTES.find(isPaletteActive);
+  const theme = document.getElementById('wz-sum-theme');
+  if (theme) theme.innerHTML = `<span class="wz-pal-sw sm" style="--a:${currentAccentColor()};--b:${(settings && settings.bg_color) || '#0A0A0F'}"></span>${wzEsc(pal ? pal.name : 'Custom')}`;
+  const acc = document.getElementById('wz-sum-acc');
+  if (!acc) return;
+  let accounts = [];
+  try { accounts = (await api.getAccounts()) || []; } catch (_) {}
+  const a = accounts.find(x => x.is_active) || accounts[0];
+  acc.textContent = a ? `${a.username} · ${a.account_type === 'microsoft' ? 'Microsoft' : a.account_type === 'elyby' ? 'Ely.by' : 'Offline'}` : 'None yet. Add one from the account menu.';
+  acc.classList.toggle('dim', !a);
+}
+
+function showSetupStep(step, instant) {
+  step = Math.min(WZ_STEPS, Math.max(1, step));
+  const from = currentSetupStep;
+  const sheet = document.getElementById('wz-sheet');
+  const pages = [...document.querySelectorAll('.wz-page')];
+  const target = document.getElementById('wz-step-' + step);
+  if (!sheet || !target) return;
+
+  currentSetupStep = step;
+  sheet.dataset.step = step;
+  document.querySelectorAll('.wz-step-btn').forEach(b => {
+    const n = +b.dataset.step;
+    b.classList.toggle('active', n === step);
+    b.classList.toggle('done', n < step);
+    b.disabled = n > step;
+    b.setAttribute('aria-current', n === step ? 'step' : 'false');
+  });
+  sheet.style.setProperty('--wz-progress', ((step - 1) / (WZ_STEPS - 1)).toString());
+
+  if (step === 3) { updateSetupAccountExistingMsg(); }
+  if (step === 4) { wzFillSummary(); }
+  wzUpdateFooter();
+
+  const animate = !instant && from !== step && wzMotionOn();
+  const dir = step > from ? 'fwd' : 'back';
+  const current = pages.find(p => p.classList.contains('active'));
+
+  const reveal = () => {
+    pages.forEach(p => { p.classList.remove('active', 'wz-enter-fwd', 'wz-enter-back', 'wz-leave'); });
+    target.classList.add('active');
+    const sc = target.querySelector('.wz-scroll'); if (sc) sc.scrollTop = 0;
+    if (animate) {
+      target.classList.add('wz-enter-' + dir);
+      setTimeout(() => target.classList.remove('wz-enter-fwd', 'wz-enter-back'), 900);
+    }
+    wzBusy = false;
+  };
+
+  if (animate && current && current !== target) {
+    wzBusy = true;
+    current.classList.add('wz-leave');
+    setTimeout(reveal, 140);
+  } else {
+    reveal();
+  }
+}
+
+async function handleSetupStepSubmit(step) {
+  if (step === 3) {
+    if (setupDeviceFlow) setupDeviceFlow.stopDevicePolling();
+    if (!wzAccountCount) {
+      showToast('Add an account first, or skip this step', 'warning');
+      return false;
+    }
+  }
+  if (step === 2) {
+    if (!settings) settings = {};
+    await saveSettingsNow();
+  }
+  return true;
+}
+
+async function wzNext() {
+  if (wzBusy) return;
+  try {
+    if (!(await handleSetupStepSubmit(currentSetupStep))) return;
+    if (currentSetupStep < WZ_STEPS) showSetupStep(currentSetupStep + 1);
+    else await finishSetupWizard({ createInstance: true });
+  } catch (err) {
+    console.error('Setup error:', err);
+    showToast('Setup error: ' + (err.message || err), 'error');
+  }
+}
 
 function initSetupWizard() {
-  const prevBtn = document.getElementById('btn-setup-prev');
-  const nextBtn = document.getElementById('btn-setup-next');
-  const skipStepBtn = document.getElementById('btn-setup-skip-step');
-  const skipAllBtn = document.getElementById('btn-setup-skip-all');
-
-  // ── Account step: Microsoft sign-in + offline account ──────────────
-  const setupChoiceMsaBtn = document.getElementById('setup-btn-choice-msa');
-  const setupChoiceOfflineBtn = document.getElementById('setup-btn-choice-offline');
-  const setupBackBtns = document.querySelectorAll('.setup-btn-back-to-choices');
-  const setupDeviceLoginBtn = document.getElementById('setup-btn-msa-device-login');
-  const setupDeviceOpenBtn = document.getElementById('setup-btn-msa-device-open');
-  const setupDeviceCancelBtn = document.getElementById('setup-btn-msa-device-cancel');
-  const setupOfflineCreateBtn = document.getElementById('setup-btn-offline-create');
-  const setupUsernameInput = document.getElementById('setup-username');
+  const $ = id => document.getElementById(id);
 
   setupDeviceFlow = createDeviceSignInFlow({
-    methodChoiceEl: document.getElementById('setup-msa-method-choice'),
-    devicePanelEl: document.getElementById('setup-msa-device-panel'),
-    deviceCodeEl: document.getElementById('setup-msa-device-code'),
-    deviceStatusEl: document.getElementById('setup-msa-device-status'),
+    methodChoiceEl: $('setup-msa-method-choice'),
+    devicePanelEl: $('setup-msa-device-panel'),
+    deviceCodeEl: $('setup-msa-device-code'),
+    deviceStatusEl: $('setup-msa-device-status'),
     onSuccess: async (account) => {
       await refreshAccountUI();
-      showToast(`Signed in as ${account.username || 'Microsoft account'}!`, 'success');
+      showToast(`Signed in as ${account.username || 'Microsoft account'}`, 'success');
       showSetupAccountView('choice');
-      updateSetupAccountExistingMsg();
+      await updateSetupAccountExistingMsg();
     },
   });
 
-  if (setupChoiceMsaBtn) {
-    setupChoiceMsaBtn.addEventListener('click', () => {
-      showSetupAccountView('msa');
-    });
+  // Dim the code until Microsoft hands one back.
+  const codeEl = $('setup-msa-device-code');
+  if (codeEl) {
+    const mark = () => codeEl.classList.toggle('ready', !codeEl.textContent.includes('—'));
+    new MutationObserver(mark).observe(codeEl, { childList: true, characterData: true, subtree: true });
+    mark();
   }
 
-  if (setupChoiceOfflineBtn) {
-    setupChoiceOfflineBtn.addEventListener('click', () => {
-      showSetupAccountView('offline');
-      if (setupUsernameInput) setupUsernameInput.focus();
-    });
-  }
-
-  setupBackBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      setupDeviceFlow.cancel();
-      showSetupAccountView('choice');
-    });
+  $('setup-btn-choice-msa')?.addEventListener('click', () => showSetupAccountView('msa'));
+  $('setup-btn-choice-offline')?.addEventListener('click', () => {
+    showSetupAccountView('offline');
+    wzValidateUsername();
+    setTimeout(() => $('setup-username')?.focus(), 60);
   });
+  document.querySelectorAll('.setup-btn-back-to-choices').forEach(b => b.addEventListener('click', () => {
+    setupDeviceFlow.cancel();
+    showSetupAccountView('choice');
+  }));
+  $('setup-btn-msa-device-login')?.addEventListener('click', () => setupDeviceFlow.start());
+  $('setup-btn-msa-device-open')?.addEventListener('click', () => setupDeviceFlow.openVerificationLink());
+  $('setup-btn-msa-device-cancel')?.addEventListener('click', () => { setupDeviceFlow.cancel(); showSetupAccountView('choice'); });
 
-  if (setupDeviceLoginBtn) {
-    setupDeviceLoginBtn.addEventListener('click', () => setupDeviceFlow.start());
-  }
-
-  if (setupDeviceOpenBtn) {
-    setupDeviceOpenBtn.addEventListener('click', () => setupDeviceFlow.openVerificationLink());
-  }
-
-  if (setupDeviceCancelBtn) {
-    setupDeviceCancelBtn.addEventListener('click', () => {
-      setupDeviceFlow.cancel();
-      showSetupAccountView('choice');
-    });
-  }
-
-  async function createSetupOfflineAccount() {
-    const username = setupUsernameInput ? setupUsernameInput.value.trim() : '';
-    if (!username) {
-      showToast('Please enter a username', 'warning');
-      return;
-    }
-    if (username.length > 16) {
-      showToast('Username must be 16 characters or less', 'warning');
-      return;
-    }
+  const userInput = $('setup-username');
+  async function createOffline() {
+    const name = userInput ? userInput.value.trim() : '';
+    if (!WZ_USERNAME_RE.test(name) || isUsernameInappropriate(name)) return;
+    const btn = $('setup-btn-offline-create');
+    if (btn) btn.disabled = true;
     try {
-      await api.addOfflineAccount(username);
-      if (setupUsernameInput) setupUsernameInput.value = '';
+      await api.addOfflineAccount(name);
+      userInput.value = '';
       await refreshAccountUI();
-      showToast(`Account "${username}" created!`, 'success');
       showSetupAccountView('choice');
-      updateSetupAccountExistingMsg();
+      await updateSetupAccountExistingMsg();
     } catch (err) {
       showToast('Failed to create account: ' + err, 'error');
+      wzValidateUsername();
     }
   }
+  $('setup-btn-offline-create')?.addEventListener('click', createOffline);
+  userInput?.addEventListener('input', wzValidateUsername);
+  userInput?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); createOffline(); } });
 
-  if (setupOfflineCreateBtn) {
-    setupOfflineCreateBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      createSetupOfflineAccount();
-    });
-  }
+  // Navigation
+  $('btn-setup-prev')?.addEventListener('click', () => { if (!wzBusy && currentSetupStep > 1) showSetupStep(currentSetupStep - 1); });
+  $('btn-setup-next')?.addEventListener('click', wzNext);
+  $('btn-setup-skip-step')?.addEventListener('click', async () => {
+    if (wzBusy) return;
+    try {
+      if (currentSetupStep < WZ_STEPS) showSetupStep(currentSetupStep + 1);
+      else await finishSetupWizard({ createInstance: false });
+    } catch (err) { showToast('Setup error: ' + (err.message || err), 'error'); }
+  });
+  $('btn-setup-skip-all')?.addEventListener('click', async () => {
+    try { await finishSetupWizard({ createInstance: false }); }
+    catch (err) { showToast('Setup error: ' + (err.message || err), 'error'); }
+  });
+  document.querySelectorAll('.wz-step-btn').forEach(b => b.addEventListener('click', () => {
+    const n = +b.dataset.step;
+    if (!wzBusy && n < currentSetupStep) showSetupStep(n);
+  }));
 
-  if (setupUsernameInput) {
-    setupUsernameInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        createSetupOfflineAccount();
-      }
-    });
-  }
-
-  if (prevBtn) {
-    prevBtn.addEventListener('click', () => {
-      if (currentSetupStep > 1) {
-        showSetupStep(currentSetupStep - 1);
-      }
-    });
-  }
-
-  if (nextBtn) {
-    nextBtn.addEventListener('click', async () => {
-      try {
-        const success = await handleSetupStepSubmit(currentSetupStep);
-        if (success) {
-          if (currentSetupStep < 3) {
-            showSetupStep(currentSetupStep + 1);
-          } else {
-            await finishSetupWizard();
-          }
-        }
-      } catch (err) {
-        console.error('Setup error:', err);
-        showToast('Setup error: ' + (err.message || err), 'error');
-      }
-    });
-  }
-
-  if (skipStepBtn) {
-    skipStepBtn.addEventListener('click', async () => {
-      try {
-        if (currentSetupStep < 3) {
-          showSetupStep(currentSetupStep + 1);
-        } else {
-          await finishSetupWizard();
-        }
-      } catch (err) {
-        showToast('Setup error: ' + (err.message || err), 'error');
-      }
-    });
-  }
-
-  if (skipAllBtn) {
-    skipAllBtn.addEventListener('click', async () => {
-      try {
-        await finishSetupWizard();
-      } catch (err) {
-        showToast('Setup error: ' + (err.message || err), 'error');
-      }
-    });
-  }
-
-  // Live listeners for Step 1 Color Pickers
-  document.getElementById('setup-btn-accent-picker')?.addEventListener('click', () => {
-    openCustomColorPicker({
-      title: 'Accent Color',
-      type: 'accent',
-      initialColor: currentAccentColor(),
-      onLiveChange: (hex) => {
-        applyAccentColorLive(hex);
-        applyThemeFromSettings();
-      },
-      onApply: (hex) => {
-        applyAccentColorLive(hex);
-        applyThemeFromSettings();
-        saveSettingsDebounced();
-      }
-    });
+  // Enter advances unless the user is typing / pressing something else.
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || !$('tab-setup')?.classList.contains('active')) return;
+    if (e.target.closest('input, textarea, select, button, [role="radio"]')) return;
+    if (document.querySelector('.modal-overlay:not(.hidden), .overlay:not(.hidden)')) return;
+    const next = $('btn-setup-next');
+    if (next && !next.disabled) { e.preventDefault(); wzNext(); }
   });
 
-  // Theme Palettes "More Palettes" button in Setup Wizard
-  document.getElementById('setup-btn-browse-palettes')?.addEventListener('click', () => {
-    openThemePalettesModal();
+  // Appearance controls
+  $('wz-palettes')?.addEventListener('click', e => {
+    const btn = e.target.closest('.wz-pal'); if (!btn) return;
+    if (btn.dataset.id === 'custom') { $('setup-btn-accent-picker')?.click(); return; }
+    const pal = THEME_PALETTES.find(p => p.id === btn.dataset.id);
+    if (pal) applyThemePalette(pal, true);
   });
+  $('wz-bg-style')?.addEventListener('click', e => {
+    const c = e.target.closest('.wz-chip'); if (!c) return;
+    settings.background_style = c.dataset.v; wzCommitTheme();
+  });
+  $('wz-bg-anim')?.addEventListener('click', e => {
+    const c = e.target.closest('.wz-chip'); if (!c) return;
+    settings.background_animation_style = c.dataset.v; wzCommitTheme();
+  });
+  $('wz-notif-prev')?.addEventListener('click', () => wzStepNotif(-1));
+  $('wz-notif-next')?.addEventListener('click', () => wzStepNotif(1));
+  $('setup-btn-browse-palettes')?.addEventListener('click', () => openThemePalettesModal());
 
-  const setupAccentHexInput = document.getElementById('setup-accent-hex-input');
-  if (setupAccentHexInput) {
-    const handleHex = () => {
-      let val = setupAccentHexInput.value.trim();
-      if (!val.startsWith('#')) val = '#' + val;
-      if (/^#[0-9a-f]{6}$/i.test(val)) {
-        applyAccentColorLive(val);
-        applyThemeFromSettings();
-        saveSettingsDebounced();
-      }
+  const pick = (title, type, get, live, commit) => () => openCustomColorPicker({
+    title, type, initialColor: get(),
+    onLiveChange: hex => { live(hex); applyThemeFromSettings(); },
+    onApply: hex => { live(hex); applyThemeFromSettings(); saveSettingsDebounced(); },
+  });
+  $('setup-btn-accent-picker')?.addEventListener('click', pick('Accent Color', 'accent', currentAccentColor, applyAccentColorLive));
+  $('setup-btn-bg-color-picker')?.addEventListener('click', pick('Background Base Color', 'bg', () => (settings && settings.bg_color) || '#0A0A0F', applyBgColorLive));
+
+  const hexBind = (id, apply) => {
+    const el = $(id); if (!el) return;
+    const h = () => {
+      let v = el.value.trim(); if (!v.startsWith('#')) v = '#' + v;
+      if (/^#[0-9a-f]{6}$/i.test(v)) { apply(v); applyThemeFromSettings(); saveSettingsDebounced(); }
     };
-    setupAccentHexInput.addEventListener('input', handleHex);
-    setupAccentHexInput.addEventListener('change', handleHex);
-  }
+    el.addEventListener('input', h);
+    el.addEventListener('blur', () => { el.value = (id.includes('accent') ? currentAccentColor() : (settings.bg_color || '#0A0A0F')).toUpperCase(); });
+  };
+  hexBind('setup-accent-hex-input', applyAccentColorLive);
+  hexBind('setup-bg-hex-input', applyBgColorLive);
+  $('setup-btn-reset-accent')?.addEventListener('click', () => { applyAccentColorLive(ACCENT_DEFAULT); applyThemeFromSettings(); saveSettingsDebounced(); });
+  $('setup-btn-reset-bg-color')?.addEventListener('click', () => { applyBgColorLive('#0A0A0F'); applyThemeFromSettings(); saveSettingsDebounced(); });
 
-  document.getElementById('setup-btn-reset-accent')?.addEventListener('click', () => {
-    applyAccentColorLive(ACCENT_DEFAULT);
-    applyThemeFromSettings();
-    saveSettingsDebounced();
-  });
-
-  document.getElementById('setup-btn-bg-color-picker')?.addEventListener('click', () => {
-    openCustomColorPicker({
-      title: 'Background Base Color',
-      type: 'bg',
-      initialColor: (settings && settings.bg_color) || '#0A0A0F',
-      onLiveChange: (hex) => {
-        applyBgColorLive(hex);
-        applyThemeFromSettings();
-      },
-      onApply: (hex) => {
-        applyBgColorLive(hex);
-        applyThemeFromSettings();
-        saveSettingsDebounced();
-      }
-    });
-  });
-
-  const setupBgHexInput = document.getElementById('setup-bg-hex-input');
-  if (setupBgHexInput) {
-    const handleHex = () => {
-      let val = setupBgHexInput.value.trim();
-      if (!val.startsWith('#')) val = '#' + val;
-      if (/^#[0-9a-f]{6}$/i.test(val)) {
-        applyBgColorLive(val);
-        applyThemeFromSettings();
-        saveSettingsDebounced();
-      }
-    };
-    setupBgHexInput.addEventListener('input', handleHex);
-    setupBgHexInput.addEventListener('change', handleHex);
-  }
-
-  document.getElementById('setup-btn-reset-bg-color')?.addEventListener('click', () => {
-    applyBgColorLive('#0A0A0F');
-    applyThemeFromSettings();
-    saveSettingsDebounced();
-  });
-
-  const liveThemeInputs = [
-    'setup-notif-style',
-    'setup-bg-style',
-    'setup-bg-anim-style'
-  ];
-
-  liveThemeInputs.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) {
-      const handler = () => {
-        if (!settings) settings = {};
-        const newNotif = document.getElementById('setup-notif-style').value;
-        const notifChanged = settings.notification_style !== newNotif;
-        settings.notification_style = newNotif;
-        settings.background_style = document.getElementById('setup-bg-style').value;
-        settings.background_animation_style = document.getElementById('setup-bg-anim-style').value;
-
-        applyThemeFromSettings();
-        saveSettingsDebounced();
-
-        if (notifChanged && id === 'setup-notif-style') {
-          showToast(`Notification style changed to ${newNotif}!`, 'info');
-        }
-      };
-      el.addEventListener('change', handler);
-      if (el.tagName === 'INPUT') el.addEventListener('input', handler);
-    }
-  });
-
+  api.getSystemInfo().then(info => {
+    const v = $('wz-version'); if (v && info.launcher_version) v.textContent = 'Zero Launcher ' + info.launcher_version;
+    const s = $('wz-sysline'); if (s) s.textContent = [info.os_name, info.arch].filter(Boolean).join(' · ');
+  }).catch(() => {});
 }
 
 async function openSetupWizard(force = false) {
@@ -18114,135 +18275,25 @@ async function openSetupWizard(force = false) {
   if (!force && isFinished) return;
 
   closeSettingsModal();
-
-  // Hide main navigation bar during setup process
   const tabBar = document.getElementById('tab-bar');
   if (tabBar) tabBar.classList.add('hidden');
 
-  // Switch tab page to setup
   document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.pill-tab').forEach(b => b.classList.remove('active'));
   const page = document.getElementById('tab-setup');
   if (page) page.classList.add('active');
 
-  showSetupStep(1);
+  currentSetupStep = 0;
+  showSetupStep(1, true);
+  const sheet = document.getElementById('wz-sheet');
+  if (sheet && wzMotionOn()) { sheet.classList.remove('wz-open'); void sheet.offsetWidth; sheet.classList.add('wz-open'); }
 
-  // Populate current settings into step 1 inputs
-  if (settings) {
-    const notifSel = document.getElementById('setup-notif-style');
-    populateNotifStyleSelects();
-    if (notifSel) notifSel.value = normalizeNotifStyleName(settings.notification_style);
-    const accentCol = document.getElementById('setup-accent-hex-input');
-    if (accentCol) accentCol.value = (settings.accent_color || ACCENT_DEFAULT).toUpperCase();
-    const accentPrev = document.getElementById('setup-accent-preview');
-    if (accentPrev) accentPrev.style.backgroundColor = settings.accent_color || ACCENT_DEFAULT;
-    const bgStyleSel = document.getElementById('setup-bg-style');
-    if (bgStyleSel) bgStyleSel.value = settings.background_style || 'Default';
-    const bgAnimSel = document.getElementById('setup-bg-anim-style');
-    if (bgAnimSel) bgAnimSel.value = settings.background_animation_style || 'Starfield';
-  }
-
-  // Reset step 2 to the choice screen and refresh its "already set up" message
+  wzSyncAppearance();
   showSetupAccountView('choice');
   await updateSetupAccountExistingMsg();
 }
 
-async function updateSetupAccountExistingMsg() {
-  try {
-    const accounts = await api.getAccounts();
-    const existingMsg = document.getElementById('setup-account-existing-msg');
-    if (existingMsg) {
-      if (accounts && accounts.length > 0) {
-        existingMsg.classList.remove('hidden');
-      } else {
-        existingMsg.classList.add('hidden');
-      }
-    }
-  } catch (e) {}
-}
-
-function showSetupStep(step) {
-  currentSetupStep = step;
-  const subtitleEl = document.getElementById('setup-step-subtitle');
-  const dots = document.querySelectorAll('.setup-sdot');
-  const pages = document.querySelectorAll('.setup-step-page');
-  const fillEl = document.getElementById('setup-stepper-fill');
-  const prevBtn = document.getElementById('btn-setup-prev');
-  const nextBtn = document.getElementById('btn-setup-next');
-
-  const subtitles = {
-    1: 'Step 1 of 3 — Appearance',
-    2: 'Step 2 of 3 — Account',
-    3: 'Step 3 of 3 — Tour'
-  };
-  if (subtitleEl) subtitleEl.textContent = subtitles[step] || '';
-
-  if (fillEl) {
-    const pct = step === 1 ? 0 : step === 2 ? 50 : 100;
-    fillEl.style.width = pct + '%';
-  }
-
-  dots.forEach(dot => {
-    const dStep = parseInt(dot.dataset.step);
-    dot.classList.toggle('active', dStep === step);
-    dot.classList.toggle('completed', dStep < step);
-  });
-
-  pages.forEach((page, idx) => {
-    page.classList.toggle('active', idx + 1 === step);
-  });
-
-  if (prevBtn) prevBtn.classList.toggle('hidden', step === 1);
-  if (nextBtn) {
-    if (step === 3) {
-      nextBtn.innerHTML = `Finish Setup <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
-    } else {
-      nextBtn.innerHTML = `Next Step <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>`;
-    }
-  }
-}
-
-async function handleSetupStepSubmit(step) {
-  if (step === 1) {
-    if (!settings) settings = {};
-    settings.notification_style = document.getElementById('setup-notif-style').value;
-    settings.accent_color = currentAccentColor();
-    settings.bg_color = (settings && settings.bg_color) || '#0a0a0f';
-    settings.background_style = document.getElementById('setup-bg-style').value;
-    settings.background_animation_style = document.getElementById('setup-bg-anim-style').value;
-
-    populateSettingsUI();
-    applyThemeFromSettings();
-    await saveSettingsNow();
-    return true;
-  }
-
-  if (step === 2) {
-    // Account creation is handled directly by the Microsoft sign-in flow
-    // and the "Create Offline Account" button now, not by this submit
-    // step — this just makes sure something was actually set up (or
-    // already existed) before moving on.
-    if (setupDeviceFlow) setupDeviceFlow.stopDevicePolling();
-
-    let hasExistingAccount = false;
-    try {
-      const accounts = await api.getAccounts();
-      if (accounts && accounts.length > 0) hasExistingAccount = true;
-    } catch (e) {}
-
-    if (!hasExistingAccount) {
-      showToast('Sign in with Microsoft or create an offline account first', 'warning');
-      return false;
-    }
-    return true;
-  }
-
-  // Step 3 is just the closing tour/finish screen now — nothing to submit,
-  // instances are created afterward from the normal Instances tab.
-  return true;
-}
-
-async function finishSetupWizard() {
+async function finishSetupWizard(opts = {}) {
   if (setupDeviceFlow) setupDeviceFlow.cancel();
   try {
     if (!settings) settings = {};
@@ -18254,21 +18305,17 @@ async function finishSetupWizard() {
     showToast('Warning: Failed to save setup status: ' + e, 'warning');
   }
 
-  // Restore navigation bar
   const tabBar = document.getElementById('tab-bar');
   if (tabBar) tabBar.classList.remove('hidden');
 
-  // Switch to Instances tab
   document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.pill-tab').forEach(b => b.classList.remove('active'));
-
-  const instTabBtn = document.querySelector('.pill-tab[data-tab="instances"]');
-  const instPage = document.getElementById('tab-instances');
-  if (instTabBtn) instTabBtn.classList.add('active');
-  if (instPage) instPage.classList.add('active');
+  document.querySelector('.pill-tab[data-tab="instances"]')?.classList.add('active');
+  document.getElementById('tab-instances')?.classList.add('active');
 
   playUiReveal();
-  showToast('Setup complete! Welcome to Zero Launcher.', 'success');
+  if (opts.createInstance) setTimeout(() => document.getElementById('btn-new-instance')?.click(), 380);
+  else showToast('Setup complete. Welcome to Zero Launcher.', 'success');
 }
 
 function initCustomTitlebar() {
