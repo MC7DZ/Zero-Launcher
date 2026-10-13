@@ -30,6 +30,20 @@
 //! `size_mb` is only used for the "(45.2 MB)" text in the update prompt —
 //! it's fine to leave it out or slightly wrong.
 //!
+//! Preferred changelog format: a top-level `logs` map of version -> bullets.
+//! If the user is several versions behind, every version newer than theirs
+//! is listed (newest first):
+//!
+//! ```json
+//! "logs": {
+//!   "2.2.10": ["add new stuff"],
+//!   "2.2.9":  ["fix bugs on windows", "improve desktop shortcut launching ui"]
+//! }
+//! ```
+//!
+//! The older per-OS `changelog` array still works as a fallback when `logs`
+//! has nothing for the missing versions.
+//!
 //! `changelog` is optional too. Give it a short list of plain-text bullet
 //! points describing what's new in that version — the update prompt shows
 //! them under a "What's new" heading. Leave it out (or empty) and the
@@ -79,6 +93,18 @@ struct OsUpdateEntry {
 struct UpdateManifest {
     windows: Option<OsUpdateEntry>,
     linux: Option<OsUpdateEntry>,
+    /// Per-version changelogs: `{ "2.2.10": ["..."], "2.2.9": ["..."] }`.
+    /// When the user is several versions behind, every version newer than
+    /// the one they're running is shown (newest first).
+    #[serde(default)]
+    logs: std::collections::HashMap<String, Vec<String>>,
+}
+
+/// One version's worth of changelog bullets.
+#[derive(Debug, Serialize, Clone)]
+pub struct ChangelogEntry {
+    pub version: String,
+    pub notes: Vec<String>,
 }
 
 /// What the frontend gets back when an update is available.
@@ -88,6 +114,9 @@ pub struct UpdateAvailable {
     pub url: String,
     pub size_mb: Option<f64>,
     pub changelog: Vec<String>,
+    /// Changelogs for every version newer than the running one, newest
+    /// first (from the manifest's top-level `logs` map).
+    pub changelogs: Vec<ChangelogEntry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -100,29 +129,54 @@ struct UpdateProgress {
 /// left to right, missing parts treated as 0. Good enough for "1.2.0" style
 /// versions; non-numeric parts (e.g. "1.2.0-beta") compare that segment as
 /// 0 rather than failing outright.
-fn version_is_newer(remote: &str, current: &str) -> bool {
-    let parse = |v: &str| -> Vec<u64> {
-        v.trim_start_matches('v')
-            .split('.')
-            .map(|part| {
-                part.chars()
-                    .take_while(|c| c.is_ascii_digit())
-                    .collect::<String>()
-                    .parse::<u64>()
-                    .unwrap_or(0)
-            })
-            .collect()
-    };
-    let r = parse(remote);
-    let c = parse(current);
-    for i in 0..r.len().max(c.len()) {
-        let rv = r.get(i).copied().unwrap_or(0);
-        let cv = c.get(i).copied().unwrap_or(0);
-        if rv != cv {
-            return rv > cv;
+fn parse_version(v: &str) -> Vec<u64> {
+    v.trim()
+        .trim_start_matches('v')
+        .split('.')
+        .map(|part| {
+            part.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse::<u64>()
+                .unwrap_or(0)
+        })
+        .collect()
+}
+
+fn cmp_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    let x = parse_version(a);
+    let y = parse_version(b);
+    for i in 0..x.len().max(y.len()) {
+        let xv = x.get(i).copied().unwrap_or(0);
+        let yv = y.get(i).copied().unwrap_or(0);
+        if xv != yv {
+            return xv.cmp(&yv);
         }
     }
-    false
+    std::cmp::Ordering::Equal
+}
+
+fn version_is_newer(remote: &str, current: &str) -> bool {
+    cmp_versions(remote, current) == std::cmp::Ordering::Greater
+}
+
+/// Every changelog version newer than `current`, newest first, with empty
+/// entries dropped.
+fn missing_changelogs(
+    logs: &std::collections::HashMap<String, Vec<String>>,
+    current: &str,
+) -> Vec<ChangelogEntry> {
+    let mut out: Vec<ChangelogEntry> = logs
+        .iter()
+        .filter(|(v, _)| version_is_newer(v, current))
+        .map(|(v, notes)| ChangelogEntry {
+            version: v.trim_start_matches('v').to_string(),
+            notes: notes.iter().filter(|n| !n.trim().is_empty()).cloned().collect(),
+        })
+        .filter(|e| !e.notes.is_empty())
+        .collect();
+    out.sort_by(|a, b| cmp_versions(&b.version, &a.version));
+    out
 }
 
 fn current_os_key() -> &'static str {
@@ -239,6 +293,7 @@ pub async fn check_for_update(
             url: entry.url,
             size_mb: entry.size_mb,
             changelog: entry.changelog,
+            changelogs: missing_changelogs(&manifest.logs, current_version),
         }))
     } else {
         logger::info(

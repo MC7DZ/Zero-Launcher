@@ -3262,6 +3262,14 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   line-height: 1.6;
 }
 .update-changelog-list li { margin: 2px 0; }
+.update-changelog-list li.update-changelog-version {
+  list-style: none;
+  margin: 10px 0 2px -18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.update-changelog-list li.update-changelog-version:first-child { margin-top: 0; }
+.update-changelog { max-height: 260px; overflow-y: auto; }
 .update-ready-countdown {
   margin: 10px 0 0;
   font-size: 12px;

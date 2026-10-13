@@ -19036,10 +19036,31 @@ function initAutoUpdate() {
     // same as before (just version + size + actions).
     const changelogEl = document.getElementById('update-changelog');
     const changelogList = document.getElementById('update-changelog-list');
-    const notes = Array.isArray(update.changelog) ? update.changelog.filter(Boolean) : [];
-    if (notes.length) {
-      changelogList.innerHTML = '';
-      notes.forEach((note) => {
+    const groups = Array.isArray(update.changelogs)
+      ? update.changelogs
+          .map((g) => ({ version: g.version, notes: (g.notes || []).filter(Boolean) }))
+          .filter((g) => g.notes.length)
+      : [];
+    const legacyNotes = Array.isArray(update.changelog) ? update.changelog.filter(Boolean) : [];
+    changelogList.innerHTML = '';
+    if (groups.length) {
+      // One block per missed version, newest first:
+      //   ChangeLogs for 2.2.10:
+      //   * note
+      groups.forEach((g) => {
+        const head = document.createElement('li');
+        head.className = 'update-changelog-version';
+        head.textContent = `ChangeLogs for ${g.version}:`;
+        changelogList.appendChild(head);
+        g.notes.forEach((note) => {
+          const li = document.createElement('li');
+          li.textContent = note;
+          changelogList.appendChild(li);
+        });
+      });
+      changelogEl.classList.remove('hidden');
+    } else if (legacyNotes.length) {
+      legacyNotes.forEach((note) => {
         const li = document.createElement('li');
         li.textContent = note;
         changelogList.appendChild(li);
