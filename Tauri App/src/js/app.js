@@ -1655,6 +1655,8 @@ async function refreshAccountUI(isBackgroundRefresh = false) {
 function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, deviceStatusEl, onSuccess }) {
   let devicePollTimer = null;
   let deviceVerificationUri = '';
+  let flowGen = 0;      // bumps on every start/cancel so stale polls bail out
+  let autoRestarts = 0; // consecutive automatic new-code requests
 
   function stopDevicePolling() {
     if (devicePollTimer) {
@@ -1671,42 +1673,70 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
     deviceStatusEl.style.color = isError ? 'var(--danger, #ef4444)' : 'var(--text-muted)';
   }
 
-  async function pollDeviceCode(intervalSeconds) {
+  async function pollDeviceCode(intervalSeconds, myGen) {
+    if (myGen !== flowGen) return; // superseded by cancel / a newer code
+    let account = null;
     try {
-      const account = await api.microsoftDeviceCodePoll();
-      if (account) {
-        stopDevicePolling();
-        await onSuccess(account);
-        return;
-      }
-      // Still pending — schedule next poll.
-      devicePollTimer = setTimeout(() => pollDeviceCode(intervalSeconds), intervalSeconds * 1000);
+      account = await api.microsoftDeviceCodePoll();
     } catch (e) {
+      if (myGen !== flowGen) return;
       const msg = String(e).toLowerCase();
-      // Fatal errors from Microsoft that mean the code/session is dead and
-      // cannot be recovered by retrying — stop polling and tell the user.
+      // The backend ends the session on any terminal failure (expired,
+      // declined, rejected, login-chain failure). Anything else
+      // (network blip, timeout) leaves the session alive — keep polling.
       const isFatal =
         msg.includes('expired') ||
+        msg.includes('declined') ||
         msg.includes('authorization_declined') ||
         msg.includes('access_denied') ||
         msg.includes('bad_verification_code') ||
+        msg.includes('sign-in failed') ||
+        msg.includes('unexpected response') ||
         msg.includes('no device sign-in in progress');
 
-      if (isFatal) {
-        stopDevicePolling();
-        // Turn the raw OAuth error string into something a human can act on.
-        let friendly = 'Something went wrong — please try signing in again.';
-        if (msg.includes('expired')) friendly = 'The code expired before you finished signing in. Click "Sign In with Microsoft" to get a new one.';
-        else if (msg.includes('authorization_declined') || msg.includes('access_denied')) friendly = 'Sign-in was cancelled or denied in the browser. You can try again.';
-        else if (msg.includes('bad_verification_code')) friendly = 'Microsoft rejected the code. Please try again.';
-        setDeviceStatus(friendly, true);
-        showToast('Microsoft sign-in failed — ' + friendly, 'error');
-      } else {
-        // Transient: network blip, slow_down, timeout, etc. — keep polling.
+      if (!isFatal) {
         console.warn('[MSA device poll] transient error, will retry:', e);
-        devicePollTimer = setTimeout(() => pollDeviceCode(intervalSeconds), intervalSeconds * 1000);
+        devicePollTimer = setTimeout(() => pollDeviceCode(intervalSeconds, myGen), intervalSeconds * 1000);
+        return;
       }
+
+      stopDevicePolling();
+      let friendly = 'Sign-in failed — getting you a new code…';
+      if (msg.includes('expired')) friendly = 'The code expired — here is a new one.';
+      else if (msg.includes('declined') || msg.includes('access_denied')) friendly = 'Sign-in was cancelled in the browser — here is a new code if you want to try again.';
+      else if (msg.includes('bad_verification_code')) friendly = 'Microsoft rejected the code — here is a new one.';
+      console.warn('[MSA device poll] fatal error:', e);
+
+      // Automatically request a fresh code (max 3 in a row, so a
+      // persistent failure can't loop forever).
+      if (autoRestarts < 3) {
+        autoRestarts++;
+        await start({ auto: true, notice: friendly });
+      } else {
+        autoRestarts = 0;
+        setDeviceStatus('Sign-in keeps failing — ' + String(e).replace(/^Error:\s*/, '') + ' Click "Sign In with Microsoft" to try again.', true);
+        showToast('Microsoft sign-in failed — please try again.', 'error');
+        if (deviceCodeEl) deviceCodeEl.textContent = '— — — — —';
+      }
+      return;
     }
+
+    if (myGen !== flowGen) return;
+    if (account) {
+      stopDevicePolling();
+      autoRestarts = 0;
+      // A UI error while updating the screen must NOT be mistaken for a
+      // failed sign-in (the account is already saved by the backend).
+      try {
+        await onSuccess(account);
+      } catch (e) {
+        console.error('[MSA device] sign-in succeeded but UI update failed:', e);
+        try { await refreshAccountUI(); } catch (_) {}
+      }
+      return;
+    }
+    // Still pending — schedule next poll.
+    devicePollTimer = setTimeout(() => pollDeviceCode(intervalSeconds, myGen), intervalSeconds * 1000);
   }
 
   if (deviceCodeEl && !deviceCodeEl.dataset.copyBound) {
@@ -1742,23 +1772,28 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
     });
   }
 
-  async function start() {
+  async function start(opts = {}) {
     if (!devicePanelEl) return;
+    const myGen = ++flowGen;
+    stopDevicePolling();
+    if (!opts.auto) autoRestarts = 0;
     if (methodChoiceEl) methodChoiceEl.classList.add('hidden');
     devicePanelEl.classList.remove('hidden');
     if (deviceCodeEl) deviceCodeEl.textContent = '— — — — —';
-    setDeviceStatus('Requesting a sign-in code from Microsoft…', false);
+    setDeviceStatus(opts.notice || 'Requesting a sign-in code from Microsoft…', false);
     try {
       const startRes = await api.microsoftDeviceCodeStart();
+      if (myGen !== flowGen) return; // cancelled / replaced while waiting
       deviceVerificationUri = startRes.verification_uri || 'https://microsoft.com/link';
       if (deviceCodeEl) {
         deviceCodeEl.textContent = startRes.user_code;
         deviceCodeEl.title = 'Click to copy code';
       }
-      setDeviceStatus('Waiting for you to sign in… (this page will update automatically)', false);
+      setDeviceStatus((opts.notice ? opts.notice + ' ' : '') + 'Waiting for you to sign in… (this page will update automatically)', false);
       const interval = Math.max(startRes.interval || 5, 3);
-      devicePollTimer = setTimeout(() => pollDeviceCode(interval), interval * 1000);
+      devicePollTimer = setTimeout(() => pollDeviceCode(interval, myGen), interval * 1000);
     } catch (e) {
+      if (myGen !== flowGen) return;
       const friendly = 'Could not reach Microsoft — check your internet connection and try again.';
       setDeviceStatus(friendly, true);
       showToast(friendly, 'error');
@@ -1767,6 +1802,8 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
   }
 
   function cancel() {
+    flowGen++;
+    autoRestarts = 0;
     stopDevicePolling();
     api.microsoftDeviceCodeCancel().catch(() => {});
     if (devicePanelEl) devicePanelEl.classList.add('hidden');
@@ -1784,7 +1821,7 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
     });
   }
 
-  return { start, cancel, openVerificationLink, stopDevicePolling };
+  return { start, cancel, openVerificationLink, stopDevicePolling: () => { flowGen++; stopDevicePolling(); } };
 }
 
 function initAccountDropdown() {

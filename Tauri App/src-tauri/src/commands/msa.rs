@@ -95,15 +95,31 @@ pub async fn microsoft_device_code_start(
     Ok(start)
 }
 
+/// Clears the in-progress device-code session, but only if it is still the
+/// one identified by `device_code`. A slow poll belonging to an old code
+/// must never wipe out a newer code the user has since requested.
+fn clear_device_session_if_current(state: &State<'_, AppState>, device_code: &str) {
+    let mut guard = state.device_code_session.lock().unwrap();
+    if guard.as_deref() == Some(device_code) {
+        *guard = None;
+    }
+}
+
 /// Polls once to check whether the user has finished a device-code
 /// sign-in. Returns `Ok(None)` while still pending (call again after the
 /// `interval` from the start response), or `Ok(Some(account))` once
-/// signed in and saved. Errors (expired code, declined, etc.) clear the
-/// session and are returned as `Err`.
+/// signed in and saved. Errors (expired code, declined, login chain
+/// failure, etc.) clear the session and are returned as `Err` — the
+/// frontend should then call `microsoft_device_code_start` again to get a
+/// fresh code.
 #[tauri::command]
 pub async fn microsoft_device_code_poll(
     state: State<'_, AppState>,
 ) -> Result<Option<AccountInfo>, String> {
+    // Serialize polls: two overlapping polls would both try to redeem the
+    // same device code, and the loser's error would kill the session.
+    let _poll_guard = state.device_code_poll_lock.lock().await;
+
     let device_code = state
         .device_code_session
         .lock()
@@ -111,8 +127,9 @@ pub async fn microsoft_device_code_poll(
         .clone()
         .ok_or_else(|| "No device sign-in in progress.".to_string())?;
 
+    let code_for_task = device_code.clone();
     let poll_result = tokio::task::spawn_blocking(move || {
-        match msa::poll_device_code_token(AZURE_CLIENT_ID, &device_code) {
+        match msa::poll_device_code_token(AZURE_CLIENT_ID, &code_for_task) {
             Ok(msa::DeviceCodePoll::Pending) => Ok(None),
             Ok(msa::DeviceCodePoll::Success(token)) => Ok(Some(token)),
             Err(e) => Err(e.to_string()),
@@ -121,20 +138,44 @@ pub async fn microsoft_device_code_poll(
     .await
     .map_err(|e| format!("Poll task failed: {e}"))?;
 
+    // If the user cancelled or requested a new code while that request was
+    // in flight, this result belongs to a dead session: ignore it and let
+    // the frontend keep polling whatever session is current now.
+    let still_current = state.device_code_session.lock().unwrap().as_deref() == Some(device_code.as_str());
+    if !still_current {
+        return Ok(None);
+    }
+
     match poll_result {
         Ok(None) => Ok(None),
         Ok(Some(token)) => {
-            *state.device_code_session.lock().unwrap() = None;
             let login = tokio::task::spawn_blocking(move || {
                 msa::complete_login_from_token(token).map_err(|e| e.to_string())
             })
             .await
-            .map_err(|e| format!("Login task failed: {e}"))??;
+            .map_err(|e| format!("Login task failed: {e}"));
+
+            // The device code is single-use and now spent either way, so
+            // the session ends here — success or failure — and a failure
+            // must not leave a dead code behind.
+            clear_device_session_if_current(&state, &device_code);
+
+            let login = login?.map_err(|e| format!("Sign-in failed: {e}. Please request a new code."))?;
             let account = save_microsoft_login(&state, &login);
             Ok(Some(account))
         }
         Err(e) => {
-            *state.device_code_session.lock().unwrap() = None;
+            // Only end the session for terminal failures. A network blip or
+            // timeout leaves the device code valid, so the frontend can
+            // simply poll again instead of losing the code.
+            let lower = e.to_lowercase();
+            let terminal = lower.contains("expired")
+                || lower.contains("declined")
+                || lower.contains("sign-in failed")
+                || lower.contains("unexpected response");
+            if terminal {
+                clear_device_session_if_current(&state, &device_code);
+            }
             Err(e)
         }
     }

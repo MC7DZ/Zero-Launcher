@@ -54,6 +54,9 @@ pub struct AppState {
     /// `microsoft_device_code_poll`. Only one device-code sign-in can be
     /// in flight at a time.
     pub device_code_session: Mutex<Option<String>>,
+    /// Serializes `microsoft_device_code_poll` calls so overlapping polls
+    /// can't redeem the same device code twice.
+    pub device_code_poll_lock: Arc<tokio::sync::Mutex<()>>,
     /// Ely.by OAuth2 sign-in currently in progress (if any) — set by
     /// `elyby_oauth_start`, read/cleared by `elyby_oauth_poll`. Holds the
     /// expected `state` value plus a shared slot the local loopback
@@ -148,6 +151,7 @@ impl AppState {
             generic_cancels: Mutex::new(HashMap::new()),
             log_file: Mutex::new(log_file),
             device_code_session: Mutex::new(None),
+            device_code_poll_lock: Arc::new(tokio::sync::Mutex::new(())),
             elyby_oauth_session: Mutex::new(None),
             msa_session_cache: Mutex::new(HashMap::new()),
             msa_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
