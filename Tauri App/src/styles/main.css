@@ -10822,11 +10822,11 @@ html.no-ui-animations .dressing-room-modal {
 @keyframes tab-enter-l { from { transform: translate3d(-34px, 0, 0) scale(0.985); } to { transform: translate3d(0, 0, 0) scale(1); } }
 
 .tab-page.tab-leave-l, .is-webkit-gtk .tab-page.tab-leave-l {
-  animation: tab-leave-l 0.3s cubic-bezier(0.4, 0, 0.9, 0.5) both !important;
+  animation: tab-leave-l 0.2s cubic-bezier(0.4, 0, 0.9, 0.5) both !important;
   pointer-events: none;
 }
 .tab-page.tab-leave-r, .is-webkit-gtk .tab-page.tab-leave-r {
-  animation: tab-leave-r 0.3s cubic-bezier(0.4, 0, 0.9, 0.5) both !important;
+  animation: tab-leave-r 0.2s cubic-bezier(0.4, 0, 0.9, 0.5) both !important;
   pointer-events: none;
 }
 .tab-page.tab-enter-r, .is-webkit-gtk .tab-page.tab-enter-r {
@@ -11880,3 +11880,53 @@ body.zl-reveal .tab-page.active:not(:has(.instances-layout)) { animation: zl-rev
   0%, 100% { box-shadow: 0 0 0 1px var(--accent-dim), 0 0 8px 0 var(--accent-glow); }
   50%      { box-shadow: 0 0 0 1px var(--accent), 0 0 12px 1px var(--accent-glow); }
 }
+
+
+/* ═══ Solid, tactile feel ═══
+   Small, cheap touches so everything responds the instant it's touched:
+   a firm press-down on clickable things, accent-colored keyboard focus, a
+   steady lift on card hover, and no accidental text selection / image
+   dragging on the app chrome. Transform/opacity only. */
+:root { --press-ease: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+button, .btn, .pill-tab, .mod-card, .instance-card, .glass-card[role="button"],
+.tab-anim-card, .appearance-nav-chip {
+  -webkit-tap-highlight-color: transparent;
+}
+img, svg { -webkit-user-drag: none; user-select: none; }
+
+button:not(:disabled):active,
+.mod-card:active,
+.instance-card:active,
+.tab-anim-card:active,
+.appearance-nav-chip:active {
+  transform: scale(0.975);
+  transition-duration: 0.06s;
+}
+button:disabled { cursor: not-allowed; }
+
+.mod-card, .instance-card, .tab-anim-card {
+  transition: transform 0.16s var(--press-ease), border-color var(--transition),
+              background var(--transition), box-shadow 0.18s ease;
+}
+.mod-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 4px 14px rgba(var(--accent-rgb, 16, 185, 129), 0.18);
+}
+
+button:focus-visible, [tabindex]:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Keep scrolling steady and let the compositor own the sliding indicator. */
+.tab-page { scroll-behavior: auto; }
+.tab-indicator { will-change: transform, width; }
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active, .mod-card:active, .instance-card:active,
+  .tab-anim-card:active, .appearance-nav-chip:active { transform: none; }
+}
+html.no-ui-animations button:not(:disabled):active,
+html.no-ui-animations .mod-card:active,
+html.no-ui-animations .instance-card:active { transform: none; }

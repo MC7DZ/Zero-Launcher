@@ -879,7 +879,7 @@ let pendingTabSwitchTimer = null;
 let lastTabClickAt = 0;
 // Per-animation exit time (ms) before the new page is shown. Must match the
 // leave durations in main.css ("Selectable tab animations").
-const TAB_ANIM_DELAYS = { slide: 300, fade: 160, zoom: 170, rise: 170, swing: 200, swipe: 180, none: 0 };
+const TAB_ANIM_DELAYS = { slide: 200, fade: 120, zoom: 130, rise: 130, swing: 150, swipe: 140, none: 0 };
 const TAB_ANIM_NAMES = Object.keys(TAB_ANIM_DELAYS);
 // Spam protection: clicks closer together than TAB_SPAM_WINDOW_MS count as
 // spamming; the page then only switches after TAB_SPAM_QUIET_MS without clicks.
@@ -1176,13 +1176,17 @@ function initTabs() {
           }
           // Keeps the currently selected content type active when switching back
           if (['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world'].includes(activeContentType)) {
-            showModsTabLoading();
+            // If the grid already shows content, refresh it quietly: the
+            // signature check skips the rebuild when nothing changed, so
+            // coming back to this tab doesn't wipe and redraw every card.
+            const warmGrid = !!document.querySelector('#mods-grid .mod-card, #mods-grid .world-card, #mods-grid .screenshot-card');
+            if (!warmGrid) showModsTabLoading();
             loadModInstances().then(() => {
               // Bail if the user has already switched to another tab since
               // this chain started — don't render mod data into a tab that
               // isn't (or is no longer) the one being looked at.
               if (myToken !== latestTabToken) return;
-              return loadMods();
+              return loadMods({ auto: warmGrid });
             }).catch(() => {}).finally(() => {
               if (myToken !== latestTabToken) return;
               hideModsTabLoading();
@@ -8562,22 +8566,37 @@ function filterMods() {
 }
 
 let modsTabLoadingHideTimer = null;
+let modsTabLoadingShowTimer = null;
+// The overlay only appears if a load is actually slow (> ~220ms). Fast loads
+// never show it at all, which removes the "whole panel blinks away and comes
+// back" flash. Once shown it stays up for a minimum time so it can't strobe.
+const MODS_LOADING_SHOW_DELAY_MS = 220;
+const MODS_LOADING_MIN_VISIBLE_MS = 240;
+let modsTabLoadingShownAt = 0;
 function showModsTabLoading() {
   const overlay = document.getElementById('mods-tab-loading');
   if (!overlay) return;
   if (modsTabLoadingHideTimer) { clearTimeout(modsTabLoadingHideTimer); modsTabLoadingHideTimer = null; }
-  overlay.setAttribute('aria-hidden', 'false');
-  overlay.classList.add('visible');
+  if (overlay.classList.contains('visible') || modsTabLoadingShowTimer) return;
+  modsTabLoadingShowTimer = setTimeout(() => {
+    modsTabLoadingShowTimer = null;
+    modsTabLoadingShownAt = performance.now();
+    overlay.setAttribute('aria-hidden', 'false');
+    overlay.classList.add('visible');
+  }, MODS_LOADING_SHOW_DELAY_MS);
 }
 function hideModsTabLoading() {
   const overlay = document.getElementById('mods-tab-loading');
   if (!overlay) return;
-  // Small minimum-visible delay so a near-instant load doesn't flash the
-  // spinner in and out — feels calmer than an abrupt appear/disappear.
+  if (modsTabLoadingShowTimer) { clearTimeout(modsTabLoadingShowTimer); modsTabLoadingShowTimer = null; }
+  if (!overlay.classList.contains('visible')) return;
+  if (modsTabLoadingHideTimer) clearTimeout(modsTabLoadingHideTimer);
+  const remaining = Math.max(120, MODS_LOADING_MIN_VISIBLE_MS - (performance.now() - modsTabLoadingShownAt));
   modsTabLoadingHideTimer = setTimeout(() => {
+    modsTabLoadingHideTimer = null;
     overlay.classList.remove('visible');
     overlay.setAttribute('aria-hidden', 'true');
-  }, 120);
+  }, remaining);
 }
 
 // ── Content type switcher (Resource Packs / Mods / Worlds) ──
@@ -8755,10 +8774,10 @@ async function loadMods(opts) {
     return loadPacksGrid(activeContentType, auto);
   }
   if (activeContentType === 'screenshot') {
-    return loadScreenshotsGrid();
+    return loadScreenshotsGrid(auto);
   }
   if (activeContentType === 'world') {
-    return loadWorldsGrid();
+    return loadWorldsGrid(auto);
   }
   if (activeContentType === 'server') {
     return loadServersGrid();
@@ -8974,7 +8993,7 @@ async function loadPacksGrid(type, auto) {
 // ── Worlds ────────────────────────────────────────────────────────────────
 // Shows Minecraft world saves. Each card displays the world name, game mode,
 // version, last-played date and size. Icons are loaded asynchronously.
-async function loadWorldsGrid() {
+async function loadWorldsGrid(auto) {
   if (!settings) return;
   const myGeneration = modsLoadGeneration;
   const grid = document.getElementById('mods-grid');
@@ -8994,12 +9013,20 @@ async function loadWorldsGrid() {
     ? (targetInstance.directory || settings.game_directory)
     : settings.game_directory;
 
-  // Always show loading indicator before await
-  grid.innerHTML = '<div class="empty-state"><span>Loading worlds…</span></div>';
+  // Only blank the grid for a real (re)load. A quiet refresh keeps the
+  // current cards on screen until we know something actually changed.
+  const hasWorldCards = !!grid.querySelector('.world-card');
+  if (!(auto && hasWorldCards)) {
+    grid.innerHTML = '<div class="empty-state"><span>Loading worlds…</span></div>';
+  }
 
   try {
     const worlds = await api.listWorlds(directory);
     if (myGeneration !== modsLoadGeneration) return;
+
+    const worldSig = 'world|' + directory + '|' + JSON.stringify(worlds);
+    if (auto && hasWorldCards && worldSig === modsGridSignature) return;
+    modsGridSignature = worldSig;
 
     grid.innerHTML = '';
 
@@ -9923,7 +9950,7 @@ async function renderScreenshotLightbox() {
   }
 }
 
-async function loadScreenshotsGrid() {
+async function loadScreenshotsGrid(auto) {
   if (!settings) return;
   const myGeneration = modsLoadGeneration;
   const grid = document.getElementById('mods-grid');
@@ -9933,7 +9960,10 @@ async function loadScreenshotsGrid() {
   if (subpanel) subpanel.classList.add('hidden');
   grid.classList.add('screenshots-mode');
 
-  grid.innerHTML = '<div class="empty-state"><span>Loading content…</span></div>';
+  const hasShotCards = !!grid.querySelector('.screenshot-card');
+  if (!(auto && hasShotCards)) {
+    grid.innerHTML = '<div class="empty-state"><span>Loading content…</span></div>';
+  }
 
   const targetInstance = getModsTargetInstance();
   const directory = targetInstance ? (targetInstance.directory || settings.game_directory) : settings.game_directory;
@@ -9941,6 +9971,9 @@ async function loadScreenshotsGrid() {
   try {
     const items = await api.listScreenshots(directory);
     if (myGeneration !== modsLoadGeneration) return;
+    const shotSig = 'shot|' + directory + '|' + items.map(it => `${it.path}|${it.modified_ms || 0}|${it.size_bytes || 0}`).join('\n');
+    if (auto && hasShotCards && shotSig === modsGridSignature) return;
+    modsGridSignature = shotSig;
     resetScreenshotObserver();
 
     if (items.length === 0) {
