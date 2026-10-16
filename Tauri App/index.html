@@ -1574,95 +1574,126 @@
       </div>
     </div>
 
-    <!-- ── Export Mods Overlay (Hyprland Floating Islands) ── -->
+    <!-- ── Export Mods Overlay (Modern Glass Island Redesign) ── -->
     <div id="export-mods-overlay" class="overlay hidden">
-      <div class="hypr-modal export-mods-modal">
+      <div class="export-mods-window">
         <!-- Header Island -->
-        <div class="hypr-island hypr-header-island">
-          <div class="hypr-header-left">
-            <div class="hypr-icon-badge">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <div class="export-mods-header-island">
+          <div class="export-mods-header-left">
+            <div class="export-mods-icon-badge">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 15V3"></path>
                 <path d="M7.5 7.5 12 3l4.5 4.5"></path>
                 <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path>
               </svg>
             </div>
-            <div class="hypr-header-titles">
-              <h3 class="hypr-title" id="export-mods-title">Export Mods</h3>
-              <span class="hypr-subtitle">Share your mod list as a portable JSON preset</span>
+            <div class="export-mods-header-titles">
+              <h3 class="export-mods-title" id="export-mods-title">Export Mods</h3>
+              <span class="export-mods-subtitle">Save selected mods as a portable JSON preset</span>
             </div>
           </div>
           <button class="overlay-close" id="btn-close-export-mods" title="Close">✕</button>
         </div>
 
-        <div class="hypr-island">
-          <div id="export-mods-info" class="apply-preset-info"></div>
+        <!-- Meta Banner Island -->
+        <div class="export-mods-banner-island">
+          <div id="export-mods-info" class="export-mods-info-grid"></div>
         </div>
 
-        <div class="hypr-island" style="padding: 14px 16px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-            <label class="bento-tile-label" style="margin: 0;">Mods to Export</label>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" class="btn-secondary" id="btn-export-mods-select-all" style="padding: 3px 10px; font-size: 11px;">Select All</button>
-              <button type="button" class="btn-secondary" id="btn-export-mods-select-none" style="padding: 3px 10px; font-size: 11px;">Select None</button>
+        <!-- Mods Selection Island -->
+        <div class="export-mods-list-island">
+          <div class="export-mods-list-toolbar">
+            <div class="export-mods-filter-wrap">
+              <span class="export-mods-search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="6"/>
+                  <path d="M15.5 15.5 20 20" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <input type="text" id="export-mods-search" class="export-mods-search-input" placeholder="Filter mods in list…" autocomplete="off" />
+            </div>
+            <div class="export-mods-selection-actions">
+              <span id="export-mods-selected-counter" class="export-mods-selected-counter">0 selected</span>
+              <button type="button" class="btn-ghost btn-xs" id="btn-export-mods-select-all">Select All</button>
+              <button type="button" class="btn-ghost btn-xs" id="btn-export-mods-select-none">Select None</button>
             </div>
           </div>
-          <div id="export-mods-list" class="apply-preset-mod-list" style="max-height: 240px; overflow-y: auto;"></div>
+          <div id="export-mods-list" class="export-mods-card-list"></div>
         </div>
 
-        <div class="hypr-actions-island">
+        <!-- Footer Actions Island -->
+        <div class="export-mods-footer-island">
           <button class="btn-ghost" id="btn-cancel-export-mods">Cancel</button>
           <button class="btn-accent export-mods-accent-btn" id="btn-export-mods-confirm" title="Choose a save location and write the selected mods to a JSON file">Export Mods</button>
         </div>
       </div>
     </div>
 
-    <!-- ── Import Mods Overlay (Hyprland Floating Islands) ── -->
+    <!-- ── Import Mods Overlay (Modern Glass Island Redesign) ── -->
     <div id="import-mods-overlay" class="overlay hidden">
-      <div class="hypr-modal import-mods-modal">
+      <div class="import-mods-window">
         <!-- Header Island -->
-        <div class="hypr-island hypr-header-island">
-          <div class="hypr-header-left">
-            <div class="hypr-icon-badge">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <div class="import-mods-header-island">
+          <div class="import-mods-header-left">
+            <div class="import-mods-icon-badge">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 3v12"></path>
                 <path d="M7.5 10.5 12 15l4.5-4.5"></path>
                 <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path>
               </svg>
             </div>
-            <div class="hypr-header-titles">
-              <h3 class="hypr-title" id="import-mods-title">Import Mods</h3>
-              <span class="hypr-subtitle">Install mods from a preset file into your instance</span>
+            <div class="import-mods-header-titles">
+              <h3 class="import-mods-title" id="import-mods-title">Import Mods</h3>
+              <span class="import-mods-subtitle">Review, select, and install mods from your export file</span>
             </div>
           </div>
           <button class="overlay-close" id="btn-close-import-mods" title="Close">✕</button>
         </div>
 
-        <div class="hypr-island">
-          <div id="import-mods-info" class="apply-preset-info"></div>
+        <!-- Meta Banner Island (Source vs Target Instance) -->
+        <div class="import-mods-banner-island">
+          <div id="import-mods-info" class="import-mods-info-grid"></div>
         </div>
 
-        <div class="hypr-island" style="padding: 14px 16px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-            <label class="bento-tile-label" style="margin: 0;">Mods to Import</label>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" class="btn-secondary" id="btn-import-mods-select-all" style="padding: 3px 10px; font-size: 11px;">Select All</button>
-              <button type="button" class="btn-secondary" id="btn-import-mods-select-none" style="padding: 3px 10px; font-size: 11px;">Select None</button>
+        <!-- Mods Selection Island -->
+        <div class="import-mods-list-island">
+          <div class="import-mods-list-toolbar">
+            <div class="import-mods-filter-wrap">
+              <span class="import-mods-search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="6"/>
+                  <path d="M15.5 15.5 20 20" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <input type="text" id="import-mods-search" class="import-mods-search-input" placeholder="Filter mods in list…" autocomplete="off" />
+            </div>
+            <div class="import-mods-selection-actions">
+              <span id="import-mods-selected-counter" class="import-mods-selected-counter">0 selected</span>
+              <button type="button" class="btn-ghost btn-xs" id="btn-import-mods-select-all">Select All</button>
+              <button type="button" class="btn-ghost btn-xs" id="btn-import-mods-select-none">Select None</button>
             </div>
           </div>
-          <div id="import-mods-list" class="apply-preset-mod-list" style="max-height: 240px; overflow-y: auto;"></div>
+          <div id="import-mods-list" class="import-mods-card-list"></div>
         </div>
 
-        <div id="import-mods-progress" class="hypr-island hidden" style="padding: 12px 16px;">
-          <div class="progress-text" id="import-mods-progress-label" style="font-size: 12px; margin-bottom: 6px; color: var(--text);">Importing…</div>
-          <div class="progress-track" style="height: 6px; background: rgba(var(--overlay-rgb), 0.1); border-radius: 99px; overflow: hidden;">
-            <div class="progress-bar" id="import-mods-progress-bar" style="height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease;"></div>
+        <!-- Progress Island -->
+        <div id="import-mods-progress" class="import-mods-progress-island hidden">
+          <div class="import-mods-progress-header">
+            <span class="import-mods-progress-text" id="import-mods-progress-label">Importing…</span>
+            <span class="import-mods-progress-pct" id="import-mods-progress-pct">0%</span>
+          </div>
+          <div class="import-mods-progress-track">
+            <div class="import-mods-progress-bar" id="import-mods-progress-bar"></div>
           </div>
         </div>
 
-        <div class="hypr-actions-island">
+        <!-- Footer Actions -->
+        <div class="import-mods-footer-island">
           <button class="btn-ghost" id="btn-cancel-import-mods">Cancel</button>
-          <button class="btn-accent import-mods-accent-btn" id="btn-import-mods-confirm" title="Download and install the checked mods into the target instance">Import Selected</button>
+          <button class="btn-accent import-mods-accent-btn" id="btn-import-mods-confirm" title="Download and install the checked mods into the target instance">
+            <svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M12 3v12"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+            Import Selected
+          </button>
         </div>
       </div>
     </div>
@@ -1903,34 +1934,47 @@
         <!-- TOP PANEL: Toolbar / Controls — spans the full width -->
         <div class="mods-top-panel">
           <div class="mods-top-panel-left">
-            <h2 class="mods-panel-title" id="content-panel-title">Manage</h2>
-            <span id="mods-count" class="mods-count"></span>
+            <div class="mods-title-wrap">
+              <h2 class="mods-panel-title" id="content-panel-title">Manage</h2>
+              <span id="mods-count" class="mods-count-badge"></span>
+            </div>
           </div>
           <div class="mods-top-panel-center">
-            <input type="text" id="mods-search" class="input-field mods-search-input" placeholder="⌕ Search mods…" autocomplete="off" />
+            <div class="mods-search-box">
+              <span class="mods-search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="2"/>
+                  <path d="M15.5 15.5 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <input type="text" id="mods-search" class="mods-search-input" placeholder="Search mods…" autocomplete="off" />
+            </div>
             <button id="btn-update-all-mods" class="btn-update-all-pill" type="button" title="Update All Mods" disabled>
               <span class="update-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6.5 11.5 12 17l5.5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+              <span class="update-all-text">Update All</span>
             </button>
           </div>
           <div class="mods-top-panel-right">
-            <select id="mods-instance-select" class="input-field mods-instance-inline">
-              <option value="">Select an instance…</option>
-            </select>
-            <button id="btn-check-updates" class="btn-pill btn-sm" title="Check every installed mod against Modrinth for a newer version">⟳ Updates</button>
-            <button id="btn-fix-mods-run" class="btn-pill btn-sm" title="Install missing dependencies, remove duplicates, disable incompatible mods, then check for and install updates — all in one click">Fix Mods</button>
-            <div class="fix-mods-wrapper" style="position:relative; display:inline-flex; align-items:center;">
-              <button id="btn-fix-mods" class="btn-pill btn-sm" aria-haspopup="true" aria-expanded="false" title="More fix options">▾</button>
-              <div id="fix-mods-inline" class="fix-mods-inline" aria-hidden="true">
-                <button id="fix-install-deps" class="btn-ghost" title="Download any mods that are required but missing">Install Deps</button>
-                <button id="fix-dedupe" class="btn-ghost" title="Delete duplicate copies of the same mod, keeping the newest version">Deduplicate</button>
-                <button id="fix-disable-incompatible" class="btn-ghost" title="Disable mods built for a different mod loader than this instance">Disable Incompatible</button>
+            <div class="mods-actions-group">
+              <button id="btn-check-updates" class="btn-pill btn-sm" title="Check every installed mod against Modrinth for a newer version">⟳ Updates</button>
+              <div class="fix-mods-wrapper" style="position:relative; display:inline-flex; align-items:center;">
+                <button id="btn-fix-mods-run" class="btn-pill btn-sm" title="Install missing dependencies, remove duplicates, disable incompatible mods, then check for and install updates — all in one click">Fix Mods</button>
+                <button id="btn-fix-mods" class="btn-pill btn-sm btn-fix-more" aria-haspopup="true" aria-expanded="false" title="More fix options">▾</button>
+                <div id="fix-mods-inline" class="fix-mods-inline" aria-hidden="true">
+                  <button id="fix-install-deps" class="btn-ghost" title="Download any mods that are required but missing">Install Deps</button>
+                  <button id="fix-dedupe" class="btn-ghost" title="Delete duplicate copies of the same mod, keeping the newest version">Deduplicate</button>
+                  <button id="fix-disable-incompatible" class="btn-ghost" title="Disable mods built for a different mod loader than this instance">Disable Incompatible</button>
+                </div>
               </div>
             </div>
-            <button id="btn-delete-selected-mods" class="btn-pill btn-sm hidden" title="Delete the checked mods"><svg viewBox="0 0 24 24" fill="none" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><path d="M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9.5 7V5.2c0-.66.54-1.2 1.2-1.2h2.6c.66 0 1.2.54 1.2 1.2V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 7 7.3 19a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5L17.5 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.2 11v6M13.8 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Delete Selected</button>
-            <button id="btn-export-mods" class="btn-pill btn-sm btn-pill-export" title="Export the selected instance's mods to a JSON list"><svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 7.5 12 3l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Export</button>
-            <button id="btn-import-mods" class="btn-pill btn-sm btn-pill-import" title="Import a mod list JSON into the selected instance"><svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 10.5 12 15l4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Import</button>
-            <button id="btn-add-server" class="btn-pill btn-sm" style="display:none;" title="Add a new server to this instance"><svg viewBox="0 0 24 24" fill="none" width="14" height="14" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Add Server</button>
-            <button id="btn-open-mods" class="btn-pill btn-sm" title="Open this instance's mods folder">⌗ Folder</button>
+            <div class="mods-actions-group">
+              <button id="btn-export-mods" class="btn-pill btn-sm btn-pill-export" title="Export the selected instance's mods to a JSON list"><svg viewBox="0 0 24 24" fill="none" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 7.5 12 3l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Export</button>
+              <button id="btn-import-mods" class="btn-pill btn-sm btn-pill-import" title="Import a mod list JSON into the selected instance"><svg viewBox="0 0 24 24" fill="none" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 10.5 12 15l4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Import</button>
+            </div>
+            <button id="btn-delete-selected-mods" class="btn-pill btn-sm btn-pill-danger hidden" title="Delete the checked mods"><svg viewBox="0 0 24 24" fill="none" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><path d="M4 7h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9.5 7V5.2c0-.66.54-1.2 1.2-1.2h2.6c.66 0 1.2.54 1.2 1.2V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 7 7.3 19a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5L17.5 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.2 11v6M13.8 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Delete Selected</button>
+            <button id="btn-add-content" class="btn-pill btn-sm btn-pill-accent" title="Discover and add content to this instance"><svg viewBox="0 0 24 24" fill="none" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg> Add</button>
+            <button id="btn-add-server" class="btn-pill btn-sm btn-pill-accent" style="display:none;" title="Add a new server to this instance"><svg viewBox="0 0 24 24" fill="none" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Add Server</button>
+            <button id="btn-open-mods" class="btn-pill btn-sm btn-pill-folder" title="Open this instance's folder"><svg viewBox="0 0 24 24" fill="none" width="13" height="13" xmlns="http://www.w3.org/2000/svg"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg> Folder</button>
           </div>
         </div>
 
@@ -2038,17 +2082,26 @@
           </div>
         </div>
 
+        <!-- Full-tab overlay shown when no instance is selected -->
+        <div id="mods-no-instance-overlay" class="mods-no-instance-overlay hidden">
+          <div class="mods-no-instance-panel">
+            <span class="mods-no-instance-icon">
+              <svg viewBox="0 0 24 24" fill="none" width="22" height="22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </span>
+            <span class="mods-no-instance-text">Please select an instance to use this section</span>
+          </div>
+        </div>
+
       </section>
 
       <!-- ── Presets Tab ── -->
       <section id="tab-presets" class="tab-page">
         <div class="logs-toolbar">
           <h2 class="section-title">Presets</h2>
-        </div>
-        <div class="form-group mods-instance-row" style="margin-bottom:16px; display:flex; gap:8px; align-items:center;">
-          <select id="presets-instance-select" class="input-field mods-instance-inline">
-            <option value="">Select a target instance…</option>
-          </select>
         </div>
 
         <!-- GitHub sync progress banner -->
@@ -2071,11 +2124,8 @@
           <!-- LEFT ISLAND: Content Panel -->
           <div class="discover-content-island glass-island">
             <div class="discover-content-header">
-              <!-- Left: Targeted Instance & Results count -->
+              <!-- Left: Results count -->
               <div class="discover-header-left">
-                <select id="discover-target-instance" class="input-field discover-target-select">
-                  <option value="">Any instance / version…</option>
-                </select>
                 <span id="discover-results-count" class="discover-results-count">Loading…</span>
               </div>
 

@@ -1545,6 +1545,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex: 1;
   min-width: 0;
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 /* Icon/name header, the four stat tiles, and the running-instances strip
@@ -1627,7 +1630,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   justify-content: flex-start;
   padding: 14px 16px 12px;
   gap: 18px;
-  min-height: 300px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ── Left side: global stats list ───────────────────────────────────── */
@@ -1801,7 +1806,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 .playtime-chart {
   flex: 1 1 auto;
-  min-height: 130px;
+  min-height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1935,58 +1940,228 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 .playtime-bar-tooltip.visible { opacity: 1; }
 
-/* Panel is a row of two unequal columns. As the window narrows, shrink the
-   stats side gradually first (its content is short labels/numbers, so it
-   scales down cleanly) before falling back to a fully stacked layout once
-   there just isn't enough width left for two columns to coexist. */
-@media (max-width: 760px) {
+/* Panel is a row of two unequal columns. As the window narrows or on low-res screens:
+   - At <= 1080px or <= 900px, adapt layout so columns don't crush each other.
+   - Collapse stats side cleanly into compact pills or 2x2 grid so chart has full room. */
+@media (max-width: 1080px) {
   .playtime-stats-side {
-    flex-basis: 170px;
-    max-width: 190px;
+    flex-basis: 180px;
+    max-width: 200px;
     padding-right: 12px;
     gap: 8px;
   }
   .playtime-stat-row {
-    padding: 8px 10px;
-    gap: 8px;
+    padding: 7px 9px;
+    gap: 7px;
   }
   .playtime-stat-icon {
     width: 15px;
     height: 15px;
   }
   .playtime-stat-row-label {
-    font-size: 9px;
+    font-size: 9.5px;
   }
   .playtime-stat-row-value {
     font-size: 12px;
   }
+  .playtime-range-btn {
+    padding: 4px 7px;
+    font-size: 10px;
+  }
 }
-@media (max-width: 560px) {
+
+@media (max-width: 920px) {
   .instance-hero-empty.playtime-panel {
     flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
   }
   .playtime-stats-side {
     flex: 0 0 auto;
     max-width: none;
+    width: 100%;
     padding-right: 0;
-    padding-bottom: 10px;
+    padding-bottom: 8px;
     border-right: none;
     border-bottom: 1px solid rgba(var(--overlay-rgb), 0.07);
   }
   .playtime-stats-list {
-    flex-direction: row;
-  }
-  .playtime-stat-row {
-    flex: 1 1 0;
-    padding: 10px 8px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 6px;
   }
-  .playtime-stat-icon {
-    width: 16px;
-    height: 16px;
+  .playtime-stat-row {
+    flex: 1 1 auto;
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  .playtime-panel-main {
+    flex: 1 1 auto;
+    min-height: 120px;
+  }
+}
+
+@media (max-width: 680px) {
+  .playtime-stats-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .playtime-panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .playtime-range-buttons {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .playtime-range-btn {
+    flex: 1 1 0;
+    text-align: center;
+    padding: 4px 2px;
+  }
+}
+
+/* ── Compact window height responsiveness for Instances middle column ── */
+@media (max-height: 840px) {
+  .instance-hero-column {
+    gap: 10px;
+  }
+  .instance-hero {
+    padding: 12px 16px;
+    gap: 10px;
+  }
+  .hero-stat-grid {
+    gap: 6px;
+  }
+  .hero-stat {
+    padding: 7px 10px;
+    gap: 8px;
+  }
+  .hero-stat-icon {
+    width: 24px;
+    height: 24px;
+  }
+  .hero-stat-icon svg {
+    width: 13px;
+    height: 13px;
+  }
+  .hero-stat-label {
+    font-size: 9.5px;
+  }
+  .hero-stat-value {
+    font-size: 12px;
+  }
+  .instance-hero-running {
+    min-height: 48px;
+    padding: 6px 8px;
+  }
+  .instance-hero-empty.playtime-panel {
+    padding: 10px 14px 8px;
+    gap: 12px;
+  }
+  .playtime-stats-side {
+    gap: 6px;
+    padding-right: 12px;
+  }
+  .playtime-stats-list {
+    gap: 5px;
+  }
+  .playtime-stat-row {
+    padding: 7px 9px;
   }
   .playtime-stat-row-value {
-    font-size: 13px;
+    font-size: 12px;
+  }
+  .playtime-panel-header {
+    gap: 8px;
+  }
+  .playtime-panel-title {
+    font-size: 11px;
+  }
+  .playtime-range-btn {
+    padding: 4px 7px;
+    font-size: 10px;
+  }
+  .playtime-panel-footer {
+    padding-top: 5px;
+  }
+  .playtime-fact-label {
+    font-size: 8.5px;
+  }
+  .playtime-fact-value {
+    font-size: 11px;
+  }
+}
+
+@media (max-height: 700px) {
+  .instance-hero-column {
+    gap: 8px;
+  }
+  .instance-hero {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .detail-icon {
+    width: 40px;
+    height: 40px;
+  }
+  .detail-name {
+    font-size: 16px;
+  }
+  .hero-stat-grid {
+    gap: 4px;
+  }
+  .hero-stat {
+    padding: 5px 8px;
+    gap: 6px;
+  }
+  .instance-hero-running {
+    min-height: 40px;
+    padding: 4px 6px;
+  }
+  .instance-hero-empty.playtime-panel {
+    padding: 8px 10px 6px;
+    gap: 8px;
+  }
+  .playtime-stats-list {
+    gap: 4px;
+  }
+  .playtime-stat-row {
+    padding: 4px 7px;
+  }
+  .playtime-stat-icon {
+    width: 14px;
+    height: 14px;
+  }
+  .playtime-stat-row-value {
+    font-size: 11px;
+  }
+  .playtime-stat-row-label {
+    font-size: 8.5px;
+  }
+  .playtime-range-buttons {
+    padding: 2px;
+    gap: 2px;
+  }
+  .playtime-range-btn {
+    padding: 3px 6px;
+    font-size: 9.5px;
+  }
+  .playtime-bars {
+    padding-bottom: 15px;
+  }
+  .playtime-bar-label {
+    font-size: 7.5px;
+    margin-top: 2px;
+  }
+  .playtime-panel-footer {
+    padding-top: 4px;
+  }
+  .playtime-fact-label {
+    font-size: 8px;
+  }
+  .playtime-fact-value {
+    font-size: 10.5px;
   }
 }
 .detail-icon {
@@ -4001,51 +4176,332 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: var(--radius);
-  background: rgba(33,33,33,0.55);
-  border: 1px solid rgba(255,255,255,0.07);
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 16px;
+  border-radius: var(--radius, 12px);
+  background: rgba(33, 33, 33, 0.45);
+  background-image: var(--panel-tint);
+  border: 1px solid var(--panel-edge);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  position: relative;
+  overflow: hidden;
 }
 
 .mods-top-panel-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
 }
+
+.mods-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .mods-panel-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+  white-space: nowrap;
+  margin: 0;
+}
+
+.mods-count-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, rgba(255, 255, 255, 0.04));
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, rgba(255, 255, 255, 0.08));
+  padding: 2px 9px;
+  border-radius: 999px;
   white-space: nowrap;
 }
 
 .mods-top-panel-center {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: 1 1 auto;
+  max-width: 480px;
+  min-width: 180px;
+}
+
+.mods-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
   min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  background: rgba(15, 15, 18, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+}
+
+.mods-search-box:focus-within {
+  background: rgba(18, 18, 22, 0.95);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.mods-search-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color var(--transition);
+}
+
+.mods-search-box:focus-within .mods-search-icon {
+  color: var(--accent);
+}
+
+.mods-search-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.mods-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none !important;
+  background: transparent !important;
+  color: var(--text) !important;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.mods-search-input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.mods-search-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+/* Update All button — modern glow + bounce animations */
+.btn-update-all-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 13px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.32);
+  color: #4ade80;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-update-all-pill:hover:not(:disabled) {
+  background: #16a34a;
+  border-color: #22c55e;
+  color: #fff;
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4);
+}
+
+.btn-update-all-pill:hover:not(:disabled) .update-icon svg {
+  transform: translateY(1.5px);
+}
+
+.btn-update-all-pill:active:not(:disabled) {
+  transform: scale(0.96) translateY(0);
+}
+
+.btn-update-all-pill:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+.btn-update-all-pill .update-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-update-all-pill .update-icon svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+/* Pulsing animated download state for Update All button */
+.btn-update-all-pill.is-downloading {
+  pointer-events: none;
+  background: rgba(34, 197, 94, 0.2) !important;
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  color: #4ade80 !important;
+  animation: update-all-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes update-all-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 14px 2px rgba(34, 197, 94, 0.55);
+  }
+}
+
+/* Export button loading animation */
+.btn-pill-export {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-pill-export.is-loading {
+  pointer-events: none;
+  opacity: 0.85;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+.btn-pill-export.is-loading svg {
+  animation: export-spin 0.75s linear infinite;
+}
+
+@keyframes export-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .mods-top-panel-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
-  flex-wrap: wrap;
 }
 
-/* Buttons inside the mods toolbar: same height/padding as .btn-pill but
-   use --radius-sm (8px) instead of the full pill shape (999px) */
-.mods-top-panel .btn-pill {
-  border-radius: var(--radius-sm);
-  padding: 6px 12px;
-  font-size: 12px;
-  height: 32px;
+.mods-actions-group {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: calc(var(--radius-sm) + 2px);
+}
+
+.mods-top-panel .btn-pill {
+  border-radius: var(--radius-sm);
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 600;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  transition: all var(--transition-fast);
+}
+
+.mods-top-panel .btn-pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.mods-top-panel .btn-fix-more {
+  padding: 0 7px;
+}
+
+.mods-top-panel .btn-pill-export,
+.mods-top-panel .btn-pill-import {
+  font-size: 11.5px;
+}
+
+.mods-top-panel .btn-pill-accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.mods-top-panel .btn-pill-accent:hover {
+  background: var(--accent-hover, #6366f1);
+  border-color: var(--accent-hover, #6366f1);
+}
+
+.mods-top-panel .btn-pill-danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.mods-top-panel .btn-pill-danger:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+}
+
+/* Content Type List & Add Button in Manage Island */
+.content-type-item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  z-index: 1;
+}
+
+.content-type-item-row .content-type-segment {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-content-type-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.btn-content-type-add:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  transform: scale(1.06);
+}
+
+.btn-content-type-add:active {
+  transform: scale(0.95);
 }
 
 /* ── Modpack Subpanel (Switch between User Mods and Modpack Mods) ── */
@@ -4275,33 +4731,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .mods-toolbar-right { display: flex; gap: 8px; align-items: center; }
 .mods-toolbar-instance-row { display:flex; gap:8px; align-items:center; }
 .mods-instance-inline { width: 150px; flex: 0 0 150px; }
-.mods-search-input { flex: 1; min-width: 120px; }
 .mods-instance-controls { display:flex; gap:6px; align-items:center; }
 .mods-instance-row { display:flex; gap:8px; align-items:center; }
-
-/* Update All — green-tinted icon button */
-.btn-update-all-pill {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  background: rgba(22,163,74,0.1);
-  border: 1px solid rgba(22,163,74,0.3);
-  color: #16a34a;
-  font-size: 14px;
-  line-height: 1;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--transition), transform var(--transition);
-}
-.btn-update-all-pill:hover { background: #16a34a; color: #fff; }
-.btn-update-all-pill:active { transform: scale(0.97); }
-.btn-update-all-pill:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
-.btn-update-all-pill .update-icon { color: inherit; display: flex; align-items: center; justify-content: center; }
-.btn-update-all-pill .update-icon svg,
-.mod-actions .btn-update-mod svg { width: 14px; height: 14px; }
 
 .btn-pill.hidden { display: none; }
 
@@ -8117,6 +8548,692 @@ body.screenshot-lightbox-open {
   color: var(--text-muted);
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   REMODELED IMPORT MODS UI (MODERN GLASS ISLANDS)
+   ═══════════════════════════════════════════════════════════════════ */
+.import-mods-window {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 620px;
+  max-width: 95vw;
+  max-height: 90vh;
+  padding: 8px;
+  animation: modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.import-mods-header-island,
+.import-mods-banner-island,
+.import-mods-list-island,
+.import-mods-progress-island,
+.import-mods-footer-island {
+  position: relative;
+  background: rgba(28, 28, 32, 0.75);
+  background-image: var(--panel-tint);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius, 12px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.import-mods-header-island {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+}
+
+.import-mods-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.import-mods-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.import-mods-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.import-mods-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-mods-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Banner / Meta Information (Source vs Target Instance) */
+.import-mods-banner-island {
+  padding: 12px 16px;
+}
+
+.import-mods-info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-mods-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.import-mods-meta-col {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.import-mods-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.import-mods-tag.source {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.import-mods-tag.target {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
+
+.import-mods-arrow {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mods List Island */
+.import-mods-list-island {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  min-height: 200px;
+}
+
+.import-mods-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.import-mods-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 260px;
+  height: 30px;
+  padding: 0 10px;
+  background: rgba(15, 15, 18, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+
+.import-mods-filter-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.import-mods-search-icon {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.import-mods-search-input {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  color: var(--text) !important;
+  font-size: 12px;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.import-mods-search-input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.import-mods-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-mods-selected-counter {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.btn-xs {
+  padding: 3px 8px;
+  font-size: 11px;
+  height: 24px;
+  border-radius: 5px;
+}
+
+/* Card list */
+.import-mods-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.import-mod-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.15s ease;
+}
+
+.import-mod-card-row:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.import-mod-card-row.is-checked {
+  background: color-mix(in srgb, var(--accent) 7%, rgba(255, 255, 255, 0.02));
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.import-mod-card-row.disabled {
+  opacity: 0.6;
+}
+
+.import-mod-check-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.import-mod-check-wrap input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.import-mod-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-mod-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.import-mod-status-pill.waiting {
+  background: rgba(255, 255, 255, 0.06);
+  color: #9ca3af;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.import-mod-status-pill.downloading {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  animation: pulse-badge 1s infinite alternate;
+}
+
+.import-mod-status-pill.installed,
+.import-mod-status-pill.already_installed {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.import-mod-status-pill.skipped {
+  background: rgba(240, 190, 90, 0.15);
+  color: #f0be5a;
+  border: 1px solid rgba(240, 190, 90, 0.35);
+}
+
+.import-mod-status-pill.failed {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+@keyframes pulse-badge {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
+}
+
+/* Progress */
+.import-mods-progress-island {
+  padding: 12px 16px;
+}
+
+.import-mods-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.import-mods-progress-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.import-mods-progress-pct {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.import-mods-progress-track {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.import-mods-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+  transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Footer Actions */
+.import-mods-footer-island {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   REMODELED EXPORT MODS UI (MODERN GLASS ISLANDS)
+   ═══════════════════════════════════════════════════════════════════ */
+.export-mods-window {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 620px;
+  max-width: 95vw;
+  max-height: 90vh;
+  padding: 8px;
+  animation: modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.export-mods-header-island,
+.export-mods-banner-island,
+.export-mods-list-island,
+.export-mods-footer-island {
+  position: relative;
+  background: rgba(28, 28, 32, 0.75);
+  background-image: var(--panel-tint);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius, 12px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.export-mods-header-island {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+}
+
+.export-mods-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.export-mods-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.export-mods-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.export-mods-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-mods-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.export-mods-banner-island {
+  padding: 12px 16px;
+}
+
+.export-mods-info-grid {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.export-mods-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.export-mods-tag.accent {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
+
+.export-mods-list-island {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  min-height: 200px;
+}
+
+.export-mods-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.export-mods-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 260px;
+  height: 30px;
+  padding: 0 10px;
+  background: rgba(15, 15, 18, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+
+.export-mods-filter-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.export-mods-search-icon {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.export-mods-search-input {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  color: var(--text) !important;
+  font-size: 12px;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.export-mods-search-input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.export-mods-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-mods-selected-counter {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.export-mods-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.export-mod-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.15s ease;
+}
+
+.export-mod-card-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.export-mod-card-row.is-checked {
+  background: color-mix(in srgb, var(--accent) 7%, rgba(255, 255, 255, 0.02));
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.export-mod-check-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.export-mod-check-wrap input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.export-mod-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-mod-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.export-mod-status-pill.linked {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.export-mod-status-pill.unlinked {
+  background: rgba(240, 190, 90, 0.15);
+  color: #f0be5a;
+  border: 1px solid rgba(240, 190, 90, 0.35);
+}
+
+.export-mods-footer-island {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+}
+
+/* ── Content Type Disabled / Bottom Reordering for Vanilla ── */
+.content-type-segment.is-disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  filter: grayscale(0.85);
+  border-color: transparent !important;
+}
+
+.content-type-segment.is-disabled:hover {
+  background: transparent !important;
+  color: var(--text-muted) !important;
+}
+
+.content-type-segment.is-disabled .content-type-icon-wrap {
+  opacity: 0.6;
+}
+
+.content-type-segment.at-bottom {
+  order: 99;
+}
+
+/* ── Manage Tab No-Instance Selected Overlay ── */
+.mods-no-instance-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 12, 15, 0.88);
+  padding: 20px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.mods-no-instance-overlay.hidden {
+  display: none !important;
+}
+
+.mods-no-instance-panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(26, 26, 32, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius, 12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.mods-no-instance-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.mods-no-instance-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
 /* ═══ Crash Dialog ═══ */
 /* Styled to feel like a genuine OS-level crash/error window rather than a
    normal in-app modal — a title bar, a hard system accent color, and a
@@ -10291,8 +11408,7 @@ html.no-ui-animations .wz-sheet *, html.no-ui-animations .wz-sheet { animation: 
 .is-webkit-gtk .dl-widget-icon,
 .is-webkit-gtk .dl-bar-fill[data-indeterminate],
 .is-webkit-gtk .preset-sync-bar,
-.is-webkit-gtk .mod-card.mod-update-glow,
-.is-webkit-gtk .mini-spinner {
+.is-webkit-gtk .mod-card.mod-update-glow {
   animation: none !important;
 }
 
@@ -10310,11 +11426,15 @@ html.no-ui-animations .wz-sheet *, html.no-ui-animations .wz-sheet { animation: 
 /* Spinners that are active: swap continuous rotate for a single-shot 360 */
 .is-webkit-gtk .update-icon-badge-spin svg,
 .is-webkit-gtk .update-check-status.is-checking svg,
-.is-webkit-gtk #btn-check-for-updates-icon.is-spinning,
-.is-webkit-gtk .mini-spinner {
+.is-webkit-gtk #btn-check-for-updates-icon.is-spinning {
   animation: webkit-gtk-spin-once 0.7s linear !important;
 }
 @keyframes webkit-gtk-spin-once { to { transform: rotate(360deg); } }
+
+/* Active loading spinners must continue spinning while work is in flight */
+.is-webkit-gtk .mini-spinner {
+  animation: mini-spinner-spin 0.7s linear infinite !important;
+}
 
 /* ── 10b. Downloads edge-drawer — keep its open/close motion but make sure
          nothing about it leaves a permanent extra compositor layer or a
@@ -11648,6 +12768,7 @@ body.zl-reveal .tab-page.active:not(:has(.instances-layout)) { animation: zl-rev
 .instance-sidebar,
 .hero-island,
 .hypr-island,
+.mods-top-panel,
 .mods-type-island,
 .mods-content-island,
 .discover-content-island,

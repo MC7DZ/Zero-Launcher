@@ -1174,6 +1174,9 @@ function initTabs() {
           if (window.refreshContentTypeIndicator) {
             requestAnimationFrame(() => window.refreshContentTypeIndicator(true));
           }
+          if (typeof window.updateContentTypeAvailability === 'function') {
+            window.updateContentTypeAvailability();
+          }
           // Keeps the currently selected content type active when switching back
           if (['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world'].includes(activeContentType)) {
             // If the grid already shows content, refresh it quietly: the
@@ -5884,7 +5887,7 @@ function getActiveTabId() {
 
 function getModsTargetInstance() {
   const sel = document.getElementById('mods-instance-select');
-  const selectedId = sel && sel.value ? sel.value : selectedInstanceId;
+  const selectedId = (sel && sel.value) ? sel.value : selectedInstanceId;
   return selectedId ? getInstances().find(i => i.version_id === selectedId) : null;
 }
 
@@ -5903,6 +5906,9 @@ function selectOptionIfAvailable(select, value) {
 
 async function syncInstanceSelectionAcrossTabs() {
   await loadModInstances();
+  if (typeof window.updateContentTypeAvailability === 'function') {
+    window.updateContentTypeAvailability();
+  }
   populateDiscoverInstanceSelect();
   if (getActiveTabId() === 'mods' && ['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world', 'server'].includes(activeContentType)) {
     await loadMods();
@@ -7902,6 +7908,7 @@ async function installInstance() {
 async function loadModInstances() {
   if (!settings) settings = await api.getSettings();
   const sel = document.getElementById('mods-instance-select');
+  if (!sel) return;
   const instances = getInstances();
   const desiredInstance = selectedInstanceId;
   sel.innerHTML = '<option value="">Select an instance…</option>';
@@ -8654,6 +8661,12 @@ function setContentType(type) {
   const modOnlyDisplay = type === 'mod' ? '' : 'none';
 
   const addServerBtn = document.getElementById('btn-add-server');
+  const addContentBtn = document.getElementById('btn-add-content');
+  const canDiscoverAdd = type === 'mod' || type === 'resourcepack' || type === 'shaderpack';
+  if (addContentBtn) {
+    addContentBtn.style.display = canDiscoverAdd ? '' : 'none';
+    addContentBtn.title = `Discover and add ${label.toLowerCase()} to this instance`;
+  }
 
   if (rightPanel) rightPanel.style.display = isManageable ? '' : 'none';
   if (countEl) countEl.style.display = isManageable ? '' : 'none';
@@ -8742,6 +8755,50 @@ function setContentType(type) {
     if (active) updateContentTypeIndicator(active, immediate);
   };
 
+  // Updates availability of content types based on whether instance is vanilla or null
+  window.updateContentTypeAvailability = function() {
+    const inst = getModsTargetInstance();
+    const isVanilla = !inst || !inst.loader || inst.loader.toLowerCase() === 'vanilla';
+    const noInstance = !inst;
+
+    // Manage tab overlay when no instance is selected
+    const noInstOverlay = document.getElementById('mods-no-instance-overlay');
+    if (noInstOverlay) {
+      noInstOverlay.classList.toggle('hidden', !noInstance);
+    }
+    const topPanel = document.querySelector('.mods-top-panel');
+    if (topPanel) {
+      topPanel.style.pointerEvents = noInstance ? 'none' : '';
+      topPanel.style.opacity = noInstance ? '0.45' : '';
+    }
+
+    const modBtn = document.getElementById('content-type-mod');
+    const shaderBtn = document.getElementById('content-type-shaderpack');
+
+    if (modBtn) {
+      modBtn.classList.toggle('is-disabled', isVanilla);
+      modBtn.classList.toggle('at-bottom', isVanilla);
+      modBtn.title = isVanilla ? 'Mods require a mod loader (Fabric, Forge, NeoForge, or Quilt)' : '';
+    }
+    if (shaderBtn) {
+      shaderBtn.classList.toggle('is-disabled', isVanilla);
+      shaderBtn.classList.toggle('at-bottom', isVanilla);
+      shaderBtn.title = isVanilla ? 'Shader packs require a modded instance (OptiFine or Iris)' : '';
+    }
+
+    // If currently on an unavailable tab while vanilla, automatically switch to Resource Packs
+    if (isVanilla && (activeContentType === 'mod' || activeContentType === 'shaderpack')) {
+      const rpBtn = document.getElementById('content-type-resourcepack');
+      if (rpBtn) {
+        document.querySelectorAll('.content-type-segment').forEach(b => b.classList.remove('active'));
+        rpBtn.classList.add('active');
+        setContentType('resourcepack');
+      }
+    }
+
+    window.refreshContentTypeIndicator(true);
+  };
+
   // Check whenever visibility changes via IntersectionObserver
   const io = new IntersectionObserver((entries) => {
     if (entries.some(e => e.isIntersecting)) {
@@ -8756,6 +8813,15 @@ function setContentType(type) {
 
   document.querySelectorAll('.content-type-segment').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (btn.classList.contains('is-disabled')) {
+        const inst = getModsTargetInstance();
+        if (!inst) {
+          showToast('Please select an instance first.', 'info', 'No instance');
+        } else {
+          showToast(`This feature is not supported on Vanilla instances. Edit instance to install a mod loader.`, 'warning', 'Vanilla Instance');
+        }
+        return;
+      }
       if (btn.classList.contains('active')) return;
       document.querySelectorAll('.content-type-segment').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -8763,6 +8829,32 @@ function setContentType(type) {
       setContentType(btn.dataset.contentType);
     });
   });
+
+  // Add button in top panel to teleport to Discover tab for current active content type
+  const topAddBtn = document.getElementById('btn-add-content');
+  if (topAddBtn) {
+    topAddBtn.addEventListener('click', () => {
+      // Mapping from Manage activeContentType to Discover data-type
+      let discoverType = 'mod';
+      if (activeContentType === 'resourcepack') discoverType = 'resourcepack';
+      else if (activeContentType === 'shaderpack') discoverType = 'shader';
+      else if (activeContentType === 'mod') discoverType = 'mod';
+
+      // 1. Switch to Discover tab
+      const discoverTabBtn = document.querySelector('.pill-tab[data-tab="discover"]');
+      if (discoverTabBtn) {
+        discoverTabBtn.click();
+      }
+
+      // 2. Select corresponding type in Discover
+      const discoverTypeBtn = document.querySelector(`.discover-segment[data-type="${discoverType}"]`);
+      if (discoverTypeBtn) {
+        setTimeout(() => {
+          discoverTypeBtn.click();
+        }, 50);
+      }
+    });
+  }
 })();
 
 let currentModpackInfo = null;
@@ -11378,7 +11470,7 @@ async function loadPresets() {
 
 function currentPresetsTargetInstance() {
   const sel = document.getElementById('presets-instance-select');
-  const id = sel ? sel.value : '';
+  const id = (sel && sel.value) ? sel.value : selectedInstanceId;
   if (!id) return null;
   return getInstances().find(i => i.version_id === id) || null;
 }
@@ -11783,7 +11875,15 @@ function initApplyPresetOverlayEvents() {
 // (launcherVersion / instanceName / mcVersion / modLoader / modLoaderVersion
 // / mods[{name, fileName, modrinthId, modrinthUrl}]) so files exported from
 // either launcher can be imported into the other.
-let exportModsState = null; // { instance, rows: [{name, fileName, modrinthId, checkbox}] }
+let exportModsState = null; // { instance, rows: [{name, fileName, modrinthId, checkbox, card}] }
+
+function updateExportModsCounter() {
+  const counter = document.getElementById('export-mods-selected-counter');
+  if (!counter || !exportModsState) return;
+  const total = exportModsState.rows.length;
+  const selected = exportModsState.rows.filter(r => r.checkbox && r.checkbox.checked).length;
+  counter.textContent = `${selected} of ${total} selected`;
+}
 
 function openExportModsOverlay() {
   const inst = getModsTargetInstance();
@@ -11792,15 +11892,17 @@ function openExportModsOverlay() {
     return;
   }
   const directory = getModsTargetDirectory();
+  const exportBtn = document.getElementById('btn-export-mods');
+  if (exportBtn) exportBtn.classList.add('is-loading');
 
   gatherModsForDirectory(directory).then(async (mods) => {
     if (!mods || mods.length === 0) {
+      if (exportBtn) exportBtn.classList.remove('is-loading');
       showToast('This instance has no mods to export.', 'info', 'No mods');
       return;
     }
 
-    // Resolve Modrinth IDs by hash up front (same "known-hash" identification
-    // the Java client keeps around on currentModEntries) so each row can show
+    // Resolve Modrinth IDs by hash up front so each row can show
     // whether it will actually be exportable/importable.
     const withHash = mods.filter(m => m.sha1);
     let lookup = {};
@@ -11813,7 +11915,17 @@ function openExportModsOverlay() {
 
     const loaderStr = (inst.loader && inst.loader !== 'vanilla') ? inst.loader.toUpperCase() : 'VANILLA';
     const info = document.getElementById('export-mods-info');
-    info.innerHTML = `MC ${discoverEscape(inst.minecraft_version || '?')} &nbsp;│&nbsp; ${discoverEscape(loaderStr)}${inst.loader_version && inst.loader_version !== 'latest' ? ' ' + discoverEscape(inst.loader_version) : ''}`;
+    if (info) {
+      info.innerHTML = `
+        <span class="export-mods-tag accent">${discoverEscape(inst.name || inst.version_id)}</span>
+        <span class="export-mods-tag">MC ${discoverEscape(inst.minecraft_version || '?')}</span>
+        <span class="export-mods-tag">${discoverEscape(loaderStr)}${inst.loader_version && inst.loader_version !== 'latest' ? ' ' + discoverEscape(inst.loader_version) : ''}</span>
+        <span class="export-mods-tag" style="margin-left:auto; color:var(--text-muted);">${mods.length} mod(s) detected</span>
+      `;
+    }
+
+    const searchInput = document.getElementById('export-mods-search');
+    if (searchInput) searchInput.value = '';
 
     const list = document.getElementById('export-mods-list');
     list.innerHTML = '';
@@ -11824,35 +11936,51 @@ function openExportModsOverlay() {
       const name = mod.name || fileName;
 
       const row = document.createElement('div');
-      row.className = 'apply-preset-mod-row';
+      row.className = 'export-mod-card-row is-checked';
 
       const label = document.createElement('label');
+      label.className = 'export-mod-check-wrap';
+
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = true;
-      label.appendChild(cb);
+      cb.addEventListener('change', () => {
+        row.classList.toggle('is-checked', cb.checked);
+        updateExportModsCounter();
+      });
+
       const nameSpan = document.createElement('span');
+      nameSpan.className = 'export-mod-name';
       nameSpan.textContent = name;
+      nameSpan.title = fileName !== name ? `${name} (${fileName})` : name;
+
+      label.appendChild(cb);
       label.appendChild(nameSpan);
       row.appendChild(label);
 
+      const statusEl = document.createElement('span');
       if (modrinthId) {
-        const link = document.createElement('span');
-        link.className = 'export-mods-mod-link';
-        link.textContent = `modrinth.com/mod/${modrinthId}`;
-        row.appendChild(link);
+        statusEl.className = 'export-mod-status-pill linked';
+        statusEl.textContent = 'Modrinth Linked';
+        statusEl.title = `Project: ${modrinthId}`;
       } else {
-        const statusEl = document.createElement('span');
-        statusEl.className = 'apply-preset-mod-status skipped';
-        statusEl.textContent = 'No Modrinth link';
-        row.appendChild(statusEl);
+        statusEl.className = 'export-mod-status-pill unlinked';
+        statusEl.textContent = 'Unlinked';
+        statusEl.title = 'No verified Modrinth project found for this file hash';
       }
+      row.appendChild(statusEl);
 
-      exportModsState.rows.push({ name, fileName, modrinthId, checkbox: cb });
+      exportModsState.rows.push({ name, fileName, modrinthId, checkbox: cb, card: row });
       list.appendChild(row);
     });
 
+    updateExportModsCounter();
     document.getElementById('export-mods-overlay').classList.remove('hidden');
+  }).catch((e) => {
+    console.error('Export failed to gather mods', e);
+    showToast(String(e), 'error');
+  }).finally(() => {
+    if (exportBtn) exportBtn.classList.remove('is-loading');
   });
 }
 
@@ -11865,13 +11993,34 @@ function initExportModsOverlayEvents() {
   document.getElementById('btn-close-export-mods').addEventListener('click', closeExportModsOverlay);
   const cancelBtn = document.getElementById('btn-cancel-export-mods');
   if (cancelBtn) cancelBtn.addEventListener('click', closeExportModsOverlay);
+
+  const searchInput = document.getElementById('export-mods-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const q = (e.target.value || '').trim().toLowerCase();
+      if (!exportModsState) return;
+      exportModsState.rows.forEach(r => {
+        const matches = !q || r.name.toLowerCase().includes(q) || r.fileName.toLowerCase().includes(q);
+        r.card.style.display = matches ? '' : 'none';
+      });
+    });
+  }
+
   document.getElementById('btn-export-mods-select-all').addEventListener('click', () => {
     if (!exportModsState) return;
-    exportModsState.rows.forEach(r => { r.checkbox.checked = true; });
+    exportModsState.rows.forEach(r => {
+      r.checkbox.checked = true;
+      r.card.classList.add('is-checked');
+    });
+    updateExportModsCounter();
   });
   document.getElementById('btn-export-mods-select-none').addEventListener('click', () => {
     if (!exportModsState) return;
-    exportModsState.rows.forEach(r => { r.checkbox.checked = false; });
+    exportModsState.rows.forEach(r => {
+      r.checkbox.checked = false;
+      r.card.classList.remove('is-checked');
+    });
+    updateExportModsCounter();
   });
   document.getElementById('btn-export-mods-confirm').addEventListener('click', async () => {
     if (!exportModsState) return;
@@ -11919,16 +12068,24 @@ function initExportModsOverlayEvents() {
       showToast(`Exported ${selected.length} mod(s) to ${savePath.split(/[/\\]/).pop()}`, 'success', 'Mods exported');
       closeExportModsOverlay();
     } catch (e) {
-      showToast(String(e), 'error', 'Export failed');
+      showToast('Failed to export mods list: ' + e, 'error');
     }
   });
 }
 
 // ── Import Mods overlay ──
-let importModsState = null; // { targetInstance, rows: [{name, modrinthId, checkbox, statusEl}] }
+let importModsState = null; // { targetInstance, rows: [{name, modrinthId, checkbox, statusEl, cardEl}] }
+
+function updateImportModsCounter() {
+  const counter = document.getElementById('import-mods-selected-counter');
+  if (!counter || !importModsState) return;
+  const total = importModsState.rows.length;
+  const selected = importModsState.rows.filter(r => r.checkbox.checked && !r.checkbox.disabled).length;
+  counter.textContent = `${selected} of ${total} selected`;
+}
 
 function setImportModStatus(row, status, label) {
-  row.statusEl.className = 'apply-preset-mod-status ' + status;
+  row.statusEl.className = 'import-mod-status-pill ' + status;
   row.statusEl.textContent = label;
 }
 
@@ -11967,7 +12124,10 @@ async function startImportMods() {
 function openImportModsOverlay(targetInstance, root, fileName) {
   importModsState = { targetInstance, rows: [] };
 
-  document.getElementById('import-mods-title').innerHTML = `${IMPORT_ICON_SVG}<span>Import Mods — ${discoverEscape(fileName)}</span>`;
+  const titleEl = document.getElementById('import-mods-title');
+  if (titleEl) {
+    titleEl.textContent = `Import Mods — ${fileName}`;
+  }
 
   const srcInstance = root.instanceName || 'Unknown';
   const srcVersion = root.mcVersion || '?';
@@ -11976,53 +12136,105 @@ function openImportModsOverlay(targetInstance, root, fileName) {
   const targetLoaderStr = (targetInstance.loader && targetInstance.loader !== 'vanilla') ? targetInstance.loader.toUpperCase() : 'VANILLA';
 
   const info = document.getElementById('import-mods-info');
-  info.innerHTML = `Source: ${discoverEscape(srcInstance)} &nbsp;│&nbsp; MC ${discoverEscape(srcVersion)} &nbsp;│&nbsp; ${discoverEscape(srcLoader)} ${discoverEscape(srcLoaderVer)}<br>` +
-    `→ Target: <strong>${discoverEscape(targetInstance.name || targetInstance.version_id)}</strong> (MC ${discoverEscape(targetInstance.minecraft_version || '?')}, ${discoverEscape(targetLoaderStr)})`;
+  if (info) {
+    info.innerHTML = `
+      <div class="import-mods-meta-row">
+        <div class="import-mods-meta-col">
+          <span class="import-mods-tag source">File Source</span>
+          <strong>${discoverEscape(srcInstance)}</strong>
+          <span style="opacity:0.75;">(MC ${discoverEscape(srcVersion)}, ${discoverEscape(srcLoader)}${srcLoaderVer ? ' ' + discoverEscape(srcLoaderVer) : ''})</span>
+        </div>
+        <div class="import-mods-arrow">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </div>
+        <div class="import-mods-meta-col">
+          <span class="import-mods-tag target">Target</span>
+          <strong>${discoverEscape(targetInstance.name || targetInstance.version_id)}</strong>
+          <span style="opacity:0.75;">(MC ${discoverEscape(targetInstance.minecraft_version || '?')}, ${discoverEscape(targetLoaderStr)})</span>
+        </div>
+      </div>
+    `;
+  }
 
   const list = document.getElementById('import-mods-list');
   list.innerHTML = '';
+  const searchInput = document.getElementById('import-mods-search');
+  if (searchInput) searchInput.value = '';
+
   const mods = Array.isArray(root.mods) ? root.mods : [];
   mods.forEach(mod => {
     const name = mod.name || 'Unknown mod';
     const modrinthId = mod.modrinthId || null;
 
     const row = document.createElement('div');
-    row.className = 'apply-preset-mod-row';
+    row.className = 'import-mod-card-row' + (modrinthId ? ' is-checked' : ' disabled');
 
-    const label = document.createElement('label');
+    const checkLabel = document.createElement('label');
+    checkLabel.className = 'import-mod-check-wrap';
+
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = !!modrinthId;
     cb.disabled = !modrinthId;
-    label.appendChild(cb);
+    checkLabel.appendChild(cb);
+
     const nameSpan = document.createElement('span');
+    nameSpan.className = 'import-mod-name';
     nameSpan.textContent = name;
-    label.appendChild(nameSpan);
-    row.appendChild(label);
+    checkLabel.appendChild(nameSpan);
+
+    row.appendChild(checkLabel);
 
     const statusEl = document.createElement('span');
-    statusEl.className = 'apply-preset-mod-status';
+    statusEl.className = 'import-mod-status-pill';
     row.appendChild(statusEl);
 
-    const rowObj = { name, modrinthId, checkbox: cb, statusEl };
+    const rowObj = { name, modrinthId, checkbox: cb, statusEl, cardEl: row };
+
+    cb.addEventListener('change', () => {
+      row.classList.toggle('is-checked', cb.checked);
+      updateImportModsCounter();
+    });
+
     if (!modrinthId) {
-      setImportModStatus(rowObj, 'skipped', 'Skipped — no Modrinth link');
+      setImportModStatus(rowObj, 'skipped', 'No Modrinth link');
     } else {
-      setImportModStatus(rowObj, 'waiting', 'Waiting');
+      setImportModStatus(rowObj, 'waiting', 'Ready');
     }
     importModsState.rows.push(rowObj);
     list.appendChild(row);
   });
 
-  document.getElementById('import-mods-progress').classList.add('hidden');
+  updateImportModsCounter();
+
+  // Search filter
+  if (searchInput) {
+    searchInput.oninput = () => {
+      const q = searchInput.value.trim().toLowerCase();
+      importModsState.rows.forEach(r => {
+        const matches = !q || r.name.toLowerCase().includes(q);
+        r.cardEl.style.display = matches ? '' : 'none';
+      });
+    };
+  }
+
+  const progress = document.getElementById('import-mods-progress');
+  if (progress) progress.classList.add('hidden');
+  const progressBar = document.getElementById('import-mods-progress-bar');
+  if (progressBar) progressBar.style.width = '0%';
+  const progressPct = document.getElementById('import-mods-progress-pct');
+  if (progressPct) progressPct.textContent = '0%';
+
   const confirmBtn = document.getElementById('btn-import-mods-confirm');
   confirmBtn.disabled = false;
-  confirmBtn.textContent = 'Import Selected';
+  confirmBtn.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M12 3v12"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+    Import Selected
+  `;
 
   document.getElementById('import-mods-overlay').classList.remove('hidden');
 
-  // Mark mods already installed in the target instance so they're
-  // unchecked and skipped instead of being redownloaded.
+  // Mark mods already installed in the target instance
   gatherModsForDirectory(targetInstance.directory).then(async (existing) => {
     if (!importModsState || importModsState.targetInstance !== targetInstance) return;
     const withHash = (existing || []).filter(m => m.sha1);
@@ -12035,8 +12247,11 @@ function openImportModsOverlay(targetInstance, root, fileName) {
       if (!r.modrinthId || !installedIds.has(r.modrinthId)) return;
       r.checkbox.checked = false;
       r.checkbox.disabled = true;
+      r.cardEl.classList.remove('is-checked');
+      r.cardEl.classList.add('disabled');
       setImportModStatus(r, 'already_installed', 'Already installed');
     });
+    updateImportModsCounter();
   }).catch(() => {});
 }
 
@@ -12051,11 +12266,21 @@ function initImportModsOverlayEvents() {
   if (cancelBtn) cancelBtn.addEventListener('click', closeImportModsOverlay);
   document.getElementById('btn-import-mods-select-all').addEventListener('click', () => {
     if (!importModsState) return;
-    importModsState.rows.forEach(r => { if (!r.checkbox.disabled) r.checkbox.checked = true; });
+    importModsState.rows.forEach(r => {
+      if (!r.checkbox.disabled) {
+        r.checkbox.checked = true;
+        r.cardEl.classList.add('is-checked');
+      }
+    });
+    updateImportModsCounter();
   });
   document.getElementById('btn-import-mods-select-none').addEventListener('click', () => {
     if (!importModsState) return;
-    importModsState.rows.forEach(r => { r.checkbox.checked = false; });
+    importModsState.rows.forEach(r => {
+      r.checkbox.checked = false;
+      r.cardEl.classList.remove('is-checked');
+    });
+    updateImportModsCounter();
   });
   document.getElementById('btn-import-mods-confirm').addEventListener('click', async () => {
     if (!importModsState) return;
@@ -12069,10 +12294,12 @@ function initImportModsOverlayEvents() {
 
     const confirmBtn = document.getElementById('btn-import-mods-confirm');
     confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Importing...';
+    confirmBtn.textContent = 'Importing…';
     const progress = document.getElementById('import-mods-progress');
     const progressLabel = document.getElementById('import-mods-progress-label');
-    progress.classList.remove('hidden');
+    const progressBar = document.getElementById('import-mods-progress-bar');
+    const progressPct = document.getElementById('import-mods-progress-pct');
+    if (progress) progress.classList.remove('hidden');
 
     const dlId = `import-mods-${targetInstance.version_id}-${Date.now()}`;
     const directory = targetInstance.directory;
@@ -12092,8 +12319,6 @@ function initImportModsOverlayEvents() {
     let wasCancelled = false;
     let settledCount = 0;
 
-    // Multiple mods download at once (Settings → Performance & Java →
-    // Concurrent Downloads, default 3) instead of strictly one-at-a-time.
     await runWithConcurrency(selected, getDownloadConcurrency(), async (r) => {
       if (cancelled()) { wasCancelled = true; setImportModStatus(r, 'skipped', 'Cancelled'); return; }
 
@@ -12104,12 +12329,12 @@ function initImportModsOverlayEvents() {
         if (cancelled()) { wasCancelled = true; setImportModStatus(r, 'skipped', 'Cancelled'); return; }
         if (!urlInfo) {
           failedCount++;
-          setImportModStatus(r, 'failed', 'No compatible version found');
+          setImportModStatus(r, 'failed', 'No compatible version');
           return;
         }
         await trackedDiscoverDownload(directory, 'mod', urlInfo.url, urlInfo.file_name, dlId, r.name);
         installedCount++;
-        setImportModStatus(r, 'installed', 'Downloaded');
+        setImportModStatus(r, 'installed', 'Installed');
       } catch (e) {
         if (cancelled() || String(e).toLowerCase().includes('cancel')) {
           wasCancelled = true;
@@ -12120,9 +12345,12 @@ function initImportModsOverlayEvents() {
         }
       } finally {
         settledCount++;
-        progressLabel.textContent = `Importing… (${settledCount} / ${selected.length})`;
+        const pct = Math.round((settledCount / selected.length) * 100);
+        if (progressLabel) progressLabel.textContent = `Importing (${settledCount} / ${selected.length})…`;
+        if (progressBar) progressBar.style.width = `${pct}%`;
+        if (progressPct) progressPct.textContent = `${pct}%`;
         if (dlWidgetGeneric) {
-          dlWidgetGeneric.update(dlId, null, `${settledCount} / ${selected.length} mods`, (settledCount / selected.length) * 100);
+          dlWidgetGeneric.update(dlId, null, `${settledCount} / ${selected.length} mods`, pct);
         }
       }
     });
@@ -12189,8 +12417,9 @@ function populateDiscoverInstanceSelect() {
 
 function currentDiscoverTargetInstance() {
   const sel = document.getElementById('discover-target-instance');
-  if (!sel || !sel.value) return null;
-  return getInstances().find(i => i.version_id === sel.value) || null;
+  const id = (sel && sel.value) ? sel.value : selectedInstanceId;
+  if (!id) return null;
+  return getInstances().find(i => i.version_id === id) || null;
 }
 
 function applyInstanceFiltersToDiscover(inst) {
@@ -13309,6 +13538,13 @@ async function resolveDiscoverDownloadOption(hit, versionSelect, downloadBtn, ta
 async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
   if (!settings) settings = await api.getSettings();
   const target = currentDiscoverTargetInstance();
+
+  // Modpacks aren't dropped into an existing instance folder — they can be installed standalone
+  if (hit.project_type !== 'modpack' && !target) {
+    showToast('Please select an instance first to download content.', 'warning', 'No instance selected');
+    return;
+  }
+
   const directory = target ? (target.directory || settings.game_directory) : settings.game_directory;
 
   const opt = await resolveDiscoverDownloadOption(hit, versionSelect, downloadBtn, target);
