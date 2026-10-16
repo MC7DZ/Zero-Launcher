@@ -114,13 +114,13 @@ fn extract_native_jar(jar_path: &Path, destination: &Path, library: &Library) ->
 
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
-        let entry_name = entry.name().to_string();
+        let entry_name = entry.name()?;
         if should_skip_entry(&entry_name, &excluded) {
             continue;
         }
 
         let Some(enclosed) = entry.enclosed_name().map(|path| path.to_path_buf()) else {
-            safe_join(destination, &entry_name)?;
+            safe_join(destination, entry_name.as_ref())?;
             continue;
         };
         let output = safe_join(destination, enclosed)?;

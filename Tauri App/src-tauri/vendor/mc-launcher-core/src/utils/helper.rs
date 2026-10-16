@@ -276,7 +276,7 @@ pub fn get_jar_mainclass(path: impl AsRef<Path>) -> Result<String, Box<dyn std::
     // Read the MANIFEST.MF file from the JAR
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
-        if entry.name().eq_ignore_ascii_case("META-INF/MANIFEST.MF") {
+        if entry.name()?.eq_ignore_ascii_case("META-INF/MANIFEST.MF") {
             entry.read_to_string(&mut manifest)?;
             break;
         }

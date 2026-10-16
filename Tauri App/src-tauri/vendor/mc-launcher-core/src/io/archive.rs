@@ -25,7 +25,7 @@ pub fn extract_zip_safely(zip_path: impl AsRef<Path>, destination: impl AsRef<Pa
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
         let Some(enclosed) = entry.enclosed_name().map(|path| path.to_path_buf()) else {
-            let unsafe_name = entry.name().to_string();
+            let unsafe_name = entry.name()?.to_string();
             safe_join(destination, unsafe_name)?;
             continue;
         };

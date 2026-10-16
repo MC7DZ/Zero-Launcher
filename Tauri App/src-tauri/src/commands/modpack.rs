@@ -754,7 +754,8 @@ fn extract_zip_folder(
             Ok(e) => e,
             Err(_) => continue,
         };
-        let raw_name = entry.name().replace('\\', "/");
+        let name_str = entry.name().unwrap_or_default();
+        let raw_name = name_str.replace('\\', "/");
         let name = raw_name.trim_start_matches("./");
         let name_lower = name.to_lowercase();
 
@@ -812,7 +813,8 @@ fn zip_has_folder(archive: &mut ZipArchive<std::fs::File>, folder: &str) -> bool
         archive
             .by_index(i)
             .map(|e| {
-                let name = e.name().replace('\\', "/");
+                let name_str = e.name().unwrap_or_default();
+                let name = name_str.replace('\\', "/");
                 let name_lower = name.trim_start_matches("./").to_lowercase();
                 name_lower.starts_with(&prefix_lower)
             })
@@ -834,7 +836,8 @@ fn read_zip_entry_string(archive: &mut ZipArchive<std::fs::File>, name: &str) ->
 
     for i in 0..archive.len() {
         if let Ok(mut entry) = archive.by_index(i) {
-            let raw_name = entry.name().replace('\\', "/");
+            let name_str = entry.name().unwrap_or_default();
+            let raw_name = name_str.replace('\\', "/");
             let clean = raw_name.trim_start_matches("./").to_lowercase();
             if clean == name_lower || clean.ends_with(&slash_suffix) {
                 // Ensure it's directly at root or inside 1 directory level

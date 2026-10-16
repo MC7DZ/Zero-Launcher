@@ -50,8 +50,9 @@ pub fn extract_natives_file(
 
         // 检查是否应排除文件
         let mut should_exclude = false;
+        let file_name = file.name()?;
         for e in extract_data.get("exclude").expect("not exist key: exclude") {
-            if file.name().starts_with(e) {
+            if file_name.starts_with(e) {
                 should_exclude = true;
                 break;
             }
@@ -60,7 +61,7 @@ pub fn extract_natives_file(
         // 如果不应排除文件，则提取文件
         if !should_exclude {
             let mut output_file =
-                fs::File::create(Path::new(extract_path.as_ref()).join(file.name()))?;
+                fs::File::create(Path::new(extract_path.as_ref()).join(file_name.as_ref()))?;
             io::copy(&mut file, &mut output_file)?;
         }
     }

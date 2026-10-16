@@ -1106,91 +1106,153 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .btn-ghost:active { transform: scale(0.97); }
 
 
-/* ═══ PLAY Button ═══ */
-.btn-play {
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  font-family: var(--font);
-  font-weight: 800;
-  font-size: 15px;
-  padding: 12px 40px;
-  border-radius: var(--radius);
-  cursor: pointer;
-  letter-spacing: 1px;
-  transition: filter var(--transition), transform var(--transition), box-shadow var(--transition), background var(--transition);
-  box-shadow: 0 4px 20px var(--accent-glow);
-  will-change: transform, opacity;
-}
-.btn-play:hover:not(:disabled) {
-  filter: brightness(1.1);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px var(--accent-glow);
-}
-.btn-play:active:not(:disabled) {
-  filter: brightness(0.95);
-  transform: translateY(0) scale(0.97);
-  box-shadow: 0 2px 8px var(--accent-glow);
-}
-.btn-play:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
-
-/* Turns yellow while at least one instance is running, with a running-count
-   badge appended after the label (e.g. "PLAY ➤ 1"). */
-.btn-play.is-running {
-  background: #f5a623;
-  box-shadow: 0 4px 20px rgba(245,166,35,0.35);
-}
-.btn-play.is-running:hover:not(:disabled) {
-  box-shadow: 0 8px 30px rgba(245,166,35,0.45);
-}
-.btn-play-count {
-  margin-left: 8px;
-  font-weight: 800;
-}
-.btn-play-hourglass {
-  width: 15px;
-  height: 15px;
-  vertical-align: -2px;
-  margin-right: 2px;
-  animation: btn-play-hourglass-spin 1.1s ease-in-out infinite;
-  will-change: transform;
-}
-
-/* ═══ Play button gear/options menu ═══ */
+/* ═══ PLAY Button & Action Bar ═══ */
 .btn-play-group {
   position: relative;
   display: inline-flex;
   align-items: stretch;
   gap: 6px;
 }
+
+.btn-play {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  padding: 10px 32px;
+  border-radius: var(--radius-sm, 8px);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: transform var(--transition-fast), filter var(--transition-fast), background var(--transition), box-shadow var(--transition-fast);
+}
+.btn-play:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.32);
+}
+.btn-play:active:not(:disabled) {
+  transform: translateY(0.5px) scale(0.99);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+.btn-play:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Turns amber while at least one instance is running */
+.btn-play.is-running {
+  background: #f59e0b;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+.btn-play.is-running:hover:not(:disabled) {
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
+.btn-play-count {
+  margin-left: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.btn-play-hourglass {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  animation: btn-play-hourglass-spin 1.1s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Options / Gear dropdown button */
 .btn-play-gear {
-  background: var(--panel-bg, rgba(255,255,255,0.06));
-  color: var(--text);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: var(--radius);
-  width: 40px;
-  display: flex;
+  background: var(--panel, #1b1b1b);
+  color: var(--text-muted);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.1));
+  border-radius: var(--radius-sm, 8px);
+  height: 38px;
+  min-height: 38px;
+  width: 38px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all var(--transition);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), width 0.28s cubic-bezier(0.16, 1, 0.3, 1), padding 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  position: relative;
+  padding: 0;
+  white-space: nowrap;
 }
-.btn-play-gear svg { width: 18px; height: 18px; }
-.btn-play-gear:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
-.btn-play-gear:disabled { opacity: 0.4; cursor: default; }
-.btn-play-gear.is-open { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-play-gear svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin: 0 11px;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), color var(--transition-fast);
+}
+.btn-play-gear:hover:not(:disabled) {
+  background: rgba(var(--overlay-rgb), 0.08);
+  color: var(--text);
+  border-color: rgba(var(--overlay-rgb), 0.2);
+  width: auto;
+  padding-right: 14px;
+}
+.btn-play-gear:hover:not(:disabled) svg {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+.btn-play-gear:hover:not(:disabled) .btn-action-text {
+  max-width: 80px;
+  opacity: 1;
+  transform: translateX(0);
+  margin-left: 2px;
+}
+.btn-play-gear:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.btn-play-gear.is-open {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+  width: auto;
+  padding-right: 14px;
+}
+.btn-play-gear.is-open svg {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+.btn-play-gear.is-open .btn-action-text {
+  max-width: 80px;
+  opacity: 1;
+  transform: translateX(0);
+  margin-left: 2px;
+}
 
 .play-options-popover {
   position: absolute;
   bottom: calc(100% + 8px);
   right: 0;
-  min-width: 220px;
-  background: var(--panel-bg-solid, #1c1c22);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: var(--radius);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  min-width: 210px;
+  background: var(--panel, #1c1c22);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-sm, 8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   padding: 6px;
-  z-index: 40;
+  z-index: 50;
+  animation: zl-reveal-up 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .play-options-popover.hidden { display: none; }
 .play-options-item {
@@ -1201,33 +1263,59 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: var(--text);
   font-family: var(--font);
   font-size: 13px;
-  padding: 9px 10px;
-  border-radius: calc(var(--radius) - 4px);
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 6px;
   cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
-.play-options-item:hover { background: rgba(255,255,255,0.08); }
+.play-options-item:hover {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
 .play-options-checkbox {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 10px;
-  font-size: 13px;
-  color: var(--text-dim, var(--text));
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
   cursor: pointer;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid rgba(var(--overlay-rgb), 0.08);
   margin-top: 4px;
 }
-.play-status-text {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent);
-  white-space: nowrap;
-  letter-spacing: 0.2px;
+.play-options-checkbox:hover {
+  color: var(--text);
 }
-.play-status-text.hidden { display: none; }
+
+/* ═══ Play Status Panel (Clean panel without dots, aligned to left) ═══ */
+.play-status-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--panel, #1b1b1b);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  z-index: 25;
+  pointer-events: none;
+  animation: zl-reveal-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.play-status-panel.hidden {
+  display: none;
+}
+.play-status-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.play-status-text.hidden {
+  display: none;
+}
 .play-options-checkbox input { cursor: pointer; }
 @keyframes msa-spin {
   to { transform: rotate(360deg); }
@@ -2163,6 +2251,22 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   .playtime-fact-value {
     font-size: 10.5px;
   }
+  .btn-play {
+    padding: 9px 26px;
+    font-size: 13.5px;
+  }
+  .btn-play-gear {
+    width: 38px;
+  }
+  .btn-action-pill {
+    padding: 6px 10px;
+    font-size: 11.5px;
+    gap: 5px;
+  }
+  .btn-action-pill svg {
+    width: 13px;
+    height: 13px;
+  }
 }
 .detail-icon {
   width: 52px;
@@ -2275,10 +2379,146 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 .detail-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
-#btn-create-shortcut {
+
+/* ═══ Action Buttons Styled Like Launch Options Button (.btn-play-gear) ═══ */
+.btn-action-icon {
+  background: var(--panel, #1b1b1b);
+  color: var(--text-muted);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.1));
+  border-radius: var(--radius-sm, 8px);
+  height: 38px;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), width var(--transition), padding var(--transition), transform var(--transition-fast);
+  white-space: nowrap;
+}
+.btn-action-icon:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.btn-action-icon:hover:not(:disabled) {
+  background: rgba(var(--overlay-rgb), 0.08);
+  color: var(--text);
+  border-color: rgba(var(--overlay-rgb), 0.2);
+}
+
+/* Expanding Action Buttons (Edit, Delete, Options) */
+.btn-action-expand {
+  width: 38px;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), width 0.32s cubic-bezier(0.16, 1, 0.3, 1), padding 0.32s cubic-bezier(0.16, 1, 0.3, 1), box-shadow var(--transition-fast);
+}
+.btn-action-expand .btn-action-svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin: 0 11px;
+  transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1), color var(--transition-fast);
+}
+.btn-action-expand .btn-action-text {
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(-6px);
+  overflow: hidden;
+  transition: max-width 0.32s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), margin 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-right: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* On hover or when is-open (active/menu open): expand button smoothly */
+.btn-action-expand:hover:not(:disabled),
+.btn-action-expand.is-open {
+  width: auto;
+  padding-right: 14px;
+}
+.btn-action-expand:hover:not(:disabled) .btn-action-text,
+.btn-action-expand.is-open .btn-action-text {
+  max-width: 90px;
+  opacity: 1;
+  transform: translateX(0);
+  margin-left: 2px;
+}
+
+/* Edit Button — Pencil wiggle animation on hover / expanded when open */
+#btn-edit-instance:hover:not(:disabled),
+#btn-edit-instance.is-open {
+  color: var(--accent);
+  border-color: var(--accent-dim, rgba(var(--accent-rgb, 255, 255, 255), 0.3));
+}
+#btn-edit-instance:hover:not(:disabled) .btn-action-svg,
+#btn-edit-instance.is-open .btn-action-svg {
+  color: var(--accent);
+  animation: edit-pencil-wiggle 0.5s ease-in-out infinite alternate;
+}
+@keyframes edit-pencil-wiggle {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(-18deg) scale(1.1); }
+  100% { transform: rotate(12deg) scale(1.1); }
+}
+
+/* Delete Button — Trash can lid open animation on hover / expanded when open */
+.btn-action-delete:hover:not(:disabled),
+.btn-action-delete.is-open {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+.btn-action-delete:hover:not(:disabled) .btn-action-svg,
+.btn-action-delete.is-open .btn-action-svg {
+  color: #ef4444;
+}
+.btn-action-delete:hover:not(:disabled) .trash-lid-line,
+.btn-action-delete:hover:not(:disabled) .trash-handle,
+.btn-action-delete.is-open .trash-lid-line,
+.btn-action-delete.is-open .trash-handle {
+  transform-origin: 3px 6px;
+  animation: trash-lid-lift 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.btn-action-delete:hover:not(:disabled) .trash-can,
+.btn-action-delete.is-open .trash-can {
+  animation: trash-can-shake 0.45s ease-in-out infinite alternate;
+  transform-origin: center bottom;
+}
+@keyframes trash-lid-lift {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(-22deg) translate(-1px, -2px); }
+}
+@keyframes trash-can-shake {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(4deg); }
+  100% { transform: rotate(-4deg); }
+}
+
+/* Create Desktop Shortcut Button — Same launch-options style, no expanding animation */
+.btn-action-shortcut {
   margin-left: auto;
+  padding: 0 14px;
+  gap: 8px;
+  color: var(--text-muted);
+}
+.btn-action-shortcut svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.btn-action-shortcut:hover:not(:disabled) svg {
+  transform: scale(1.1);
+  color: var(--accent);
 }
 
 /* ═══ Running Instances (single-line strip in its own hero panel) ═══

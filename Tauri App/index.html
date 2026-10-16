@@ -1903,13 +1903,16 @@
             <div class="detail-actions-wrap">
               <div class="detail-actions">
                 <div class="btn-play-group">
-                  <div id="play-status-text" class="play-status-text hidden"></div>
+                  <div id="play-status-panel" class="play-status-panel hidden">
+                    <span id="play-status-text" class="play-status-text"></span>
+                  </div>
                   <button id="btn-play" class="btn-play" disabled title="Launch the selected instance">▶ PLAY</button>
-                  <button id="btn-play-options" class="btn-play-gear" disabled title="Launch options" aria-haspopup="true" aria-expanded="false">
+                  <button id="btn-play-options" class="btn-play-gear btn-action-expand" disabled title="Launch options" aria-haspopup="true" aria-expanded="false">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                       <circle cx="12" cy="12" r="3"></circle>
-                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0 1.51 1z"></path>
                     </svg>
+                    <span class="btn-action-text">Options</span>
                   </button>
                   <div id="play-options-popover" class="play-options-popover hidden" role="menu">
                     <button id="btn-launch-offline" class="play-options-item" role="menuitem" title="Skip the libraries/assets check and launch immediately from what's already on disk">Launch Offline</button>
@@ -1919,9 +1922,29 @@
                     </label>
                   </div>
                 </div>
-                <button id="btn-edit-instance" class="btn-secondary" title="Rename or change the loader version of the selected instance">Edit</button>
-                <button id="btn-delete-instance" class="btn-danger-outline" title="Permanently delete the selected instance">Delete</button>
-                <button id="btn-create-shortcut" class="btn-secondary" title="Create a desktop or search menu shortcut to directly launch this instance"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px; vertical-align:-1.5px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>Create Desktop Shortcut</button>
+                <button id="btn-edit-instance" class="btn-action-icon btn-action-expand" title="Rename or change the loader version of the selected instance">
+                  <svg class="btn-action-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                  </svg>
+                  <span class="btn-action-text">Edit</span>
+                </button>
+                <button id="btn-delete-instance" class="btn-action-icon btn-action-expand btn-action-delete" title="Permanently delete the selected instance">
+                  <svg class="btn-action-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="3 6 5 6 21 6" class="trash-lid-line"></polyline>
+                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" class="trash-handle"></path>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" class="trash-can"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                  <span class="btn-action-text">Delete</span>
+                </button>
+                <button id="btn-create-shortcut" class="btn-action-icon btn-action-shortcut" title="Create a desktop or search menu shortcut to directly launch this instance">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                  </svg>
+                  <span>Create Desktop Shortcut</span>
+                </button>
               </div>
             </div>
           </div>

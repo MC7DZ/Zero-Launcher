@@ -47,7 +47,7 @@ open = "5.4.0"
 # never writes one (no ZipWriter anywhere in src/). Dropping default
 # features removes writer support and every non-deflate codec (bzip2,
 # zstd, aes encryption, etc.) that the default feature set bundles.
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.0.4", default-features = false, features = ["deflate"] }
 discord-rich-presence = "1.1.0"
 sha1 = "0.10"
 flate2 = "1"

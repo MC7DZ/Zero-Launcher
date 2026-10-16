@@ -1924,13 +1924,13 @@ pub async fn launch_minecraft(
     let mut _verify_guard = if !offline { Some(crate::state::ActiveDownloadGuard::new(&app)) } else { None };
     if !offline {
         logger::info_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
-            "Verifying libraries/assets for {} before launch...", vid
+            "Verifying files for {} before launch...", vid
         ));
         let status_id = vid.clone();
         let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
             version_id: status_id.clone(),
             active: true,
-            message: "Checking libraries & assets…".to_string(),
+            message: "Checking files…".to_string(),
         });
 
         let mc_dir_for_verify = mc_dir.clone();
@@ -1954,10 +1954,10 @@ pub async fn launch_minecraft(
                 match &event {
                     ProgressEvent::StageStarted { stage } => {
                         current_stage = match stage {
-                            mc_launcher_core::progress::InstallStage::DownloadLibraries => "Checking libraries",
-                            mc_launcher_core::progress::InstallStage::DownloadAssets => "Checking assets",
-                            mc_launcher_core::progress::InstallStage::ExtractNatives => "Extracting natives",
-                            mc_launcher_core::progress::InstallStage::Verify => "Verifying files",
+                            mc_launcher_core::progress::InstallStage::DownloadLibraries => "Checking files",
+                            mc_launcher_core::progress::InstallStage::DownloadAssets => "Checking files",
+                            mc_launcher_core::progress::InstallStage::ExtractNatives => "Preparing natives",
+                            mc_launcher_core::progress::InstallStage::Verify => "Checking files",
                             _ => "Checking files",
                         }.to_string();
                         // Only worth telling the user about while nothing's
@@ -1979,7 +1979,7 @@ pub async fn launch_minecraft(
                             let _ = app_for_verify.emit("launch-verify-status", &LaunchVerifyStatus {
                                 version_id: vid_for_verify.clone(),
                                 active: true,
-                                message: "Installing missing libraries/assets…".to_string(),
+                                message: "Downloading missing files…".to_string(),
                             });
                         }
                         let info = DownloadProgressInfo {

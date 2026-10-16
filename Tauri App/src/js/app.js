@@ -5831,6 +5831,7 @@ function selectInstance(id) {
     updatePlayGearEnabled();
     if (iconEl) iconEl.innerHTML = '';
     document.getElementById('play-status-text')?.classList.add('hidden');
+    document.getElementById('play-status-panel')?.classList.add('hidden');
     renderPlaytimeChart();
     syncInstanceSelectionAcrossTabs().catch(() => {});
     return;
@@ -5859,6 +5860,7 @@ function selectInstance(id) {
   }
   updatePlayGearEnabled();
   document.getElementById('play-status-text')?.classList.add('hidden');
+  document.getElementById('play-status-panel')?.classList.add('hidden');
 
   if (iconEl) {
     const newSrc = loaderIcon(inst.loader);
@@ -6446,6 +6448,7 @@ function initInstanceActions() {
   // Delete
   document.getElementById('btn-delete-instance').addEventListener('click', async () => {
     if (!selectedInstanceId) return;
+    const delBtn = document.getElementById('btn-delete-instance');
     const inst = getInstances().find(i => i.version_id === selectedInstanceId);
     const isVanilla = !inst || !inst.loader || inst.loader.toLowerCase() === 'vanilla';
 
@@ -6457,6 +6460,7 @@ function initInstanceActions() {
         console.error('Failed to check dependent instances:', e);
       }
       if (dependents.length > 0) {
+        if (delBtn) delBtn.classList.add('is-open');
         showVanillaDeleteWarning(inst, dependents);
         return;
       }
@@ -6464,6 +6468,7 @@ function initInstanceActions() {
 
     const instName = (inst && (inst.name || inst.version_id)) || selectedInstanceId;
     const doDelete = async (deleteData) => {
+      if (delBtn) delBtn.classList.remove('is-open');
       await performInstanceDelete(selectedInstanceId, inst, deleteData);
     };
 
@@ -6480,6 +6485,7 @@ function initInstanceActions() {
       // safe and is what most users expect when they say "delete this modpack".
       // The user can still un-tick it if they want to keep the folder.
       const dataDeletionDefaultOn = !dataUnsafe;
+      if (delBtn) delBtn.classList.add('is-open');
       showInstanceConfirmModal({
         type: 'delete',
         title: 'Delete Instance',
@@ -6492,14 +6498,20 @@ function initInstanceActions() {
           defaultChecked: dataDeletionDefaultOn,
           disabledReason: "Not available — this instance stores its data in your main .minecraft folder, shared with other instances.",
         },
-        onConfirm: doDelete
+        onConfirm: doDelete,
+        onCancel: () => {
+          if (delBtn) delBtn.classList.remove('is-open');
+        }
       });
     }
   });
 
   // Vanilla-instance delete dependency warning: Cancel / Delete Anyway / Hide
   const vanillaWarningOverlay = document.getElementById('vanilla-delete-warning-overlay');
-  const closeVanillaWarning = () => vanillaWarningOverlay.classList.add('hidden');
+  const closeVanillaWarning = () => {
+    vanillaWarningOverlay.classList.add('hidden');
+    document.getElementById('btn-delete-instance')?.classList.remove('is-open');
+  };
   document.getElementById('btn-close-vanilla-delete-warning').addEventListener('click', closeVanillaWarning);
   document.getElementById('btn-vanilla-delete-cancel').addEventListener('click', closeVanillaWarning);
 
@@ -6813,6 +6825,8 @@ function initInstanceActions() {
     // take a moment on the first open (network round trip for the Mojang
     // manifest), and waiting on that before showing anything made "Edit"
     // feel slow. Populate the dropdown in the background instead.
+    const editBtn = document.getElementById('btn-edit-instance');
+    if (editBtn) editBtn.classList.add('is-open');
     editOverlay.classList.remove('hidden');
     const initialMcVer = (inst.minecraft_version && isLikelyMcVersion(inst.minecraft_version)) ? inst.minecraft_version : (isLikelyMcVersion(inst.version_id) ? inst.version_id : null);
     loadMcVersions(editMcVersionSelect, initialMcVer).catch(e => {
@@ -6821,7 +6835,10 @@ function initInstanceActions() {
       refreshEditLoaderVersions(inst.loader_version);
     });
   });
-  function closeEditInstanceOverlay() { editOverlay.classList.add('hidden'); }
+  function closeEditInstanceOverlay() {
+    editOverlay.classList.add('hidden');
+    document.getElementById('btn-edit-instance')?.classList.remove('is-open');
+  }
   document.getElementById('btn-cancel-edit-instance').addEventListener('click', closeEditInstanceOverlay);
   document.getElementById('btn-cancel-edit-instance-2').addEventListener('click', closeEditInstanceOverlay);
   document.getElementById('btn-save-edit-instance').addEventListener('click', async () => {
@@ -16644,7 +16661,7 @@ function updatePlayButtonRunningState() {
 
   btn.classList.toggle('is-running', count > 0);
   if (count > 0) {
-    btn.innerHTML = `▶ PLAY <span class="btn-play-count">➤ ${count}</span>`;
+    btn.innerHTML = `▶ PLAY <span class="btn-play-count">${count}</span>`;
   } else {
     btn.textContent = '▶  PLAY';
   }
@@ -19658,6 +19675,7 @@ function initUpdateChecker() {
 function initLaunchVerifyStatus() {
   if (!api.onLaunchVerifyStatus) return;
   const textEl = document.getElementById('play-status-text');
+  const panelEl = document.getElementById('play-status-panel');
   if (!textEl) return;
 
   api.onLaunchVerifyStatus((event) => {
@@ -19670,10 +19688,12 @@ function initLaunchVerifyStatus() {
     // selected — a verify pass for a different (background) launch
     // shouldn't repaint text next to a Play button for something else.
     if (p.active && p.version_id === selectedInstanceId) {
-      textEl.textContent = p.message || 'Checking libraries & assets…';
+      textEl.textContent = p.message || 'Checking files…';
       textEl.classList.remove('hidden');
+      if (panelEl) panelEl.classList.remove('hidden');
     } else if (!p.active && p.version_id === selectedInstanceId) {
       textEl.classList.add('hidden');
+      if (panelEl) panelEl.classList.add('hidden');
     }
   });
 
