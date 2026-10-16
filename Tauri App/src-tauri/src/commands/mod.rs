@@ -453,7 +453,15 @@ pub fn window_toggle_always_on_top(window: tauri::Window) -> Result<bool, String
     Ok(next_state)
 }
 
-/// Explicitly releases unused memory pages back to the operating system
+/// Explicitly releases unused memory pages back to the operating system.
+///
+/// - Linux: `malloc_trim(0)` walks glibc's arena free-lists and returns
+///   pages that are above the trim threshold back to the kernel.
+/// - Windows: `SetProcessWorkingSetSize(-1, -1)` empties the working set
+///   (essentially "soft-faults" every page out to the page file / evicts
+///   cold pages from physical RAM). The data is still accessible — it
+///   just won't count against the process's physical-memory footprint
+///   until it's actually accessed again.
 #[tauri::command]
 pub fn trim_memory() {
     #[cfg(target_os = "linux")]
@@ -462,6 +470,16 @@ pub fn trim_memory() {
             fn malloc_trim(pad: usize) -> i32;
         }
         malloc_trim(0);
+    }
+
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentProcess, SetProcessWorkingSetSize,
+        };
+        // Passing usize::MAX for both min and max is the documented way
+        // to tell Windows to empty the working set immediately.
+        SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
     }
 }
 

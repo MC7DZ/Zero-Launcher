@@ -211,6 +211,7 @@ enum OauthCallbackResult {
 
 /// Ely.by OAuth2 sign-in in progress. Lives in `AppState` between
 /// `elyby_oauth_start` and `elyby_oauth_poll`.
+#[allow(dead_code)]
 pub struct ElybyOauthSession {
     expected_state: String,
     result: std::sync::Arc<std::sync::Mutex<OauthCallbackResult>>,

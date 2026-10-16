@@ -1,6 +1,6 @@
 [package]
 name = "ZeroLauncher"
-version = "2.2.10"
+version = "2.2.11"
 edition = "2021"
 
 # Smaller AppImage: optimize for size, strip symbols, drop unwind tables.
@@ -56,6 +56,10 @@ base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 mslnk = "0.1"
+# Provides SetProcessWorkingSetSize + GetCurrentProcess for trim_memory().
+# Only the Threading feature is needed — everything else is gated off,
+# so this adds almost no size to the Windows binary.
+windows-sys = { version = "0.59", features = ["Win32_System_Threading"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Lets us set GLib's "prgname" before any window is created. Tao/GTK never

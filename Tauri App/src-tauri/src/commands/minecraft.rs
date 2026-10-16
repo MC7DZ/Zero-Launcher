@@ -633,7 +633,7 @@ pub async fn install_minecraft(
     // to avoid inter-instance conflicts and version collision issues.
     let default_minecraft_dir = state.settings.lock().unwrap().resolved_game_directory();
 
-    let display_name = payload.name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
+    let _display_name = payload.name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
         if loader_type == "vanilla" || loader_type.is_empty() {
             mc_version.clone()
         } else {

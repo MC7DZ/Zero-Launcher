@@ -1689,9 +1689,21 @@ fn read_mod_metadata(path: &PathBuf, file_name: &str, enabled: bool) -> ModInfo 
 /// rather than failing the whole metadata read.
 fn compute_sha1(path: &PathBuf) -> Option<String> {
     use sha1::{Digest, Sha1};
-    let bytes = std::fs::read(path).ok()?;
+    use std::io::Read;
+
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = std::io::BufReader::with_capacity(64 * 1024, file);
     let mut hasher = Sha1::new();
-    hasher.update(&bytes);
+    let mut buffer = [0u8; 64 * 1024];
+
+    loop {
+        let bytes_read = reader.read(&mut buffer).ok()?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
     let digest = hasher.finalize();
     Some(digest.iter().map(|b| format!("{:02x}", b)).collect::<String>())
 }

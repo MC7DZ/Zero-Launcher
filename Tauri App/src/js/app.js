@@ -1204,6 +1204,15 @@ function initTabs() {
 
         if (tabId === 'presets') initPresetsTabIfNeeded();
 
+        // When leaving the Mods tab (which hosts the Screenshots grid), drop the
+        // in-memory screenshot data-URL cache and ask the backend to release any
+        // heap pages it no longer needs — screenshots are large Base64 blobs that
+        // can easily occupy 50–200 MB of JS heap if not actively cleared.
+        if (fromTab === 'mods' && tabId !== 'mods') {
+          clearScreenshotImageCache();
+          try { invoke('trim_memory'); } catch (_) {}
+        }
+
         // Update Discord RPC — skip if superseded by a later switch already.
         if (myToken === latestTabToken) {
           const tabName = tabId.charAt(0).toUpperCase() + tabId.slice(1);
@@ -9692,15 +9701,37 @@ function updateScreenshotsCountFromGrid() {
 // path -> Promise<dataUrl>. Shared by the grid thumbnails and the lightbox
 // so opening a screenshot that's already visible in the grid is instant
 // instead of re-reading the file a second time.
+//
+// Capped at MAX_SCREENSHOT_CACHE_SIZE entries (LRU eviction): each Base64
+// data-URL is typically 1–5 MB of text. Without a limit, a folder with
+// hundreds of screenshots could push the WebKit process into the hundreds
+// of megabytes permanently — the LRU cap keeps the footprint predictable.
+const MAX_SCREENSHOT_CACHE_SIZE = 30;
 const screenshotImageCache = new Map();
+
 function getScreenshotImageDataUrl(path) {
-  if (screenshotImageCache.has(path)) return screenshotImageCache.get(path);
+  if (screenshotImageCache.has(path)) {
+    // Refresh insertion order so recently-accessed entries are evicted last.
+    const cached = screenshotImageCache.get(path);
+    screenshotImageCache.delete(path);
+    screenshotImageCache.set(path, cached);
+    return cached;
+  }
   const promise = api.readScreenshotImage(path).catch(e => {
     screenshotImageCache.delete(path); // let a later retry try again
     throw e;
   });
   screenshotImageCache.set(path, promise);
+  // Evict the oldest entry (first in insertion order) when over the cap.
+  if (screenshotImageCache.size > MAX_SCREENSHOT_CACHE_SIZE) {
+    const oldestKey = screenshotImageCache.keys().next().value;
+    screenshotImageCache.delete(oldestKey);
+  }
   return promise;
+}
+
+function clearScreenshotImageCache() {
+  screenshotImageCache.clear();
 }
 
 // Thumbnails load through a small shared queue so at most

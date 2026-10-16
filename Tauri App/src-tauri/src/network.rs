@@ -70,12 +70,36 @@ pub fn current_mode(state: &AppState) -> NetworkMode {
         .unwrap_or(NetworkMode::Automatic)
 }
 
-fn client_pinned_to(family: Option<IpAddr>, connect_timeout: Duration) -> reqwest::Client {
-    let mut builder = reqwest::Client::builder().connect_timeout(connect_timeout);
-    if let Some(addr) = family {
-        builder = builder.local_address(addr);
+fn client_pinned_to(family: Option<IpAddr>, connect_timeout: Duration) -> &'static reqwest::Client {
+    use std::sync::OnceLock;
+
+    // One long-lived client per address family. reqwest::Client owns an
+    // internal connection pool, a TLS context, and a thread-pool for
+    // DNS resolution — building one on every request is expensive both
+    // in CPU time (~1–3 ms per build) and in memory (the pools never get
+    // a chance to warm up or reuse connections). Caching them here means
+    // connections are kept alive and reused across successive requests,
+    // which cuts both latency and per-request allocations.
+    static CLIENT_IPV4: OnceLock<reqwest::Client> = OnceLock::new();
+    static CLIENT_IPV6: OnceLock<reqwest::Client> = OnceLock::new();
+    static CLIENT_DEFAULT: OnceLock<reqwest::Client> = OnceLock::new();
+
+    let build_fresh = |addr: Option<IpAddr>| {
+        let mut builder = reqwest::Client::builder()
+            .connect_timeout(connect_timeout)
+            .pool_idle_timeout(Duration::from_secs(90))
+            .pool_max_idle_per_host(4);
+        if let Some(a) = addr {
+            builder = builder.local_address(a);
+        }
+        builder.build().unwrap_or_else(|_| reqwest::Client::new())
+    };
+
+    match family {
+        Some(IpAddr::V4(_)) => CLIENT_IPV4.get_or_init(|| build_fresh(family)),
+        Some(IpAddr::V6(_)) => CLIENT_IPV6.get_or_init(|| build_fresh(family)),
+        None => CLIENT_DEFAULT.get_or_init(|| build_fresh(None)),
     }
-    builder.build().unwrap_or_else(|_| reqwest::Client::new())
 }
 
 /// Number of attempts made per address family before giving up on it (or,
