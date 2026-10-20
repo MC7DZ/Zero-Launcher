@@ -1452,7 +1452,9 @@ let lastActiveAccountId = undefined;
 
 async function refreshAccountUI(isBackgroundRefresh = false) {
   try {
-    renderInstanceList();
+    if (getInstances().length > 0) {
+      renderInstanceList();
+    }
     updateSkinMiniPreview().catch(() => {});
 
     const accounts = await api.getAccounts();
