@@ -576,7 +576,15 @@
               <div class="dressing-room-grid" id="dressing-room-capes-grid">
                 <!-- Owned capes are populated here -->
               </div>
-              <p class="dressing-room-note">Some capes might not show up here — you need to equip them first. Head to <button type="button" class="dressing-room-note-link" id="dressing-room-editskin-link">minecraft.net/msaprofile/editskin</button> to equip a cape, or change your skin/cape entirely from there.</p>
+              <div class="dressing-room-capes-footer" id="dressing-room-capes-footer">
+                <button type="button" class="btn-refresh-capes" id="btn-refresh-capes" title="Refresh capes from Mojang">
+                  <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                  </svg>
+                  <span>Refresh Capes</span>
+                </button>
+                <span class="dressing-room-capes-cooldown" id="dressing-room-capes-cooldown"></span>
+              </div>
             </div>
 
           </div>

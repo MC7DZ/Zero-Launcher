@@ -1448,6 +1448,8 @@ const ACCOUNT_TYPE_ICON_ELYBY = `<svg viewBox="0 0 24 24" width="12" height="12"
 let lastAccountSwitchTimestamp = 0;
 let accountSwitchCooldownTimer = null;
 
+let lastActiveAccountId = undefined;
+
 async function refreshAccountUI(isBackgroundRefresh = false) {
   try {
     renderInstanceList();
@@ -1455,6 +1457,14 @@ async function refreshAccountUI(isBackgroundRefresh = false) {
 
     const accounts = await api.getAccounts();
     const active = accounts.find(a => a.is_active);
+    const currentActiveId = active ? active.id : null;
+
+    if (currentActiveId !== lastActiveAccountId) {
+      lastActiveAccountId = currentActiveId;
+      // Fetch official capes when the launcher opens or active account changes
+      fetchCapesForActiveAccount(true).catch(() => {});
+    }
+
     const accountNameEl = document.getElementById('account-name');
     if (accountNameEl) {
       accountNameEl.textContent = active
@@ -4284,22 +4294,89 @@ async function populateDressingRoomSkins() {
   }
 }
 
-async function populateDressingRoomCapes() {
+// Capes cache & fetch state: fetched only when launcher opens or when switching accounts
+let currentAccountCapesCache = {
+  accountId: null,
+  capes: null,
+  error: null,
+  loading: false,
+};
+let lastCapesManualRefreshTime = 0;
+let capesCooldownInterval = null;
+
+async function fetchCapesForActiveAccount(force = false) {
+  const accounts = await api.getAccounts().catch(() => []);
+  const active = accounts.find(a => a.is_active);
+
+  if (!active || active.account_type === 'offline' || !active.mc_uuid || active.account_type === 'elyby') {
+    currentAccountCapesCache = { accountId: active ? active.id : null, capes: [], error: null, loading: false };
+    return currentAccountCapesCache;
+  }
+
+  // If already loaded for this active account and not forced, return cached
+  if (!force && currentAccountCapesCache.accountId === active.id && currentAccountCapesCache.capes !== null) {
+    return currentAccountCapesCache;
+  }
+
+  currentAccountCapesCache.accountId = active.id;
+  currentAccountCapesCache.loading = true;
+  currentAccountCapesCache.error = null;
+
+  try {
+    const capes = await api.getAccountCapes(active.id);
+    currentAccountCapesCache.capes = capes || [];
+    currentAccountCapesCache.error = null;
+  } catch (err) {
+    console.warn('Failed to fetch capes for account:', err);
+    currentAccountCapesCache.error = String(err);
+    currentAccountCapesCache.capes = null;
+  } finally {
+    currentAccountCapesCache.loading = false;
+  }
+
+  return currentAccountCapesCache;
+}
+
+function updateCapesRefreshCooldownUI() {
+  const btn = document.getElementById('btn-refresh-capes');
+  const cooldownText = document.getElementById('dressing-room-capes-cooldown');
+  if (!btn) return;
+
+  const COOLDOWN_MS = 60 * 1000;
+  const elapsed = Date.now() - lastCapesManualRefreshTime;
+  const remaining = Math.max(0, Math.ceil((COOLDOWN_MS - elapsed) / 1000));
+
+  if (remaining > 0) {
+    btn.disabled = true;
+    if (cooldownText) cooldownText.textContent = `Wait ${remaining}s`;
+  } else {
+    btn.disabled = false;
+    if (cooldownText) cooldownText.textContent = '';
+    if (capesCooldownInterval) {
+      clearInterval(capesCooldownInterval);
+      capesCooldownInterval = null;
+    }
+  }
+}
+
+async function populateDressingRoomCapes(forceRefresh = false) {
   const grid = document.getElementById('dressing-room-capes-grid');
+  const footer = document.getElementById('dressing-room-capes-footer');
   if (!grid) return;
 
   grid.innerHTML = '';
+  updateCapesRefreshCooldownUI();
 
   const accounts = await api.getAccounts().catch(() => []);
   const active = accounts.find(a => a.is_active);
   const isOffline = !active || active.account_type === 'offline' || !active.mc_uuid;
   const isElyby = active && active.account_type === 'elyby';
 
+  if (footer) {
+    footer.style.display = (isOffline || isElyby) ? 'none' : 'flex';
+  }
+
   if (isElyby) {
-    // Ely.by doesn't let accounts set a custom cape — capes.ely.by just
-    // proxies whatever Mojang cape (if any) the underlying Mojang account
-    // already has, and there's no API to change that. So rather than show
-    // a confusing "fetch failed" error, explain that up front.
     const note = document.createElement('div');
     note.className = 'dressing-room-empty-center';
     note.innerHTML = `
@@ -4321,34 +4398,44 @@ async function populateDressingRoomCapes() {
     return;
   }
 
-  // Centered Loading State
-  const loading = document.createElement('div');
-  loading.className = 'dressing-room-empty-center';
-  loading.innerHTML = `
-    <span class="msa-device-spinner" style="width:28px; height:28px; border-radius:50%; border:3px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite; margin-bottom:12px;"></span>
-    <span>Fetching official Mojang capes…</span>
-  `;
-  grid.appendChild(loading);
+  // If forceRefresh, or if no data/error yet or different account, fetch
+  if (forceRefresh || currentAccountCapesCache.accountId !== active.id || (currentAccountCapesCache.capes === null && !currentAccountCapesCache.error)) {
+    // Show Loading State
+    const loading = document.createElement('div');
+    loading.className = 'dressing-room-empty-center';
+    loading.innerHTML = `
+      <span class="msa-device-spinner" style="width:28px; height:28px; border-radius:50%; border:3px solid var(--accent); border-top-color:transparent; display:inline-block; animation: msa-spin 0.8s linear infinite; margin-bottom:12px;"></span>
+      <span>Fetching official Mojang capes…</span>
+    `;
+    grid.appendChild(loading);
 
-  let capes = [];
-  try {
-    capes = await api.getAccountCapes(active.id);
-  } catch (err) {
-    console.warn('Failed to fetch capes from Mojang:', err);
+    await fetchCapesForActiveAccount(forceRefresh);
     grid.innerHTML = '';
+  }
+
+  if (currentAccountCapesCache.error) {
     const errNotice = document.createElement('div');
     errNotice.className = 'dressing-room-empty-center';
     errNotice.innerHTML = `
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--danger, #ef4444)" stroke-width="1.5" style="margin-bottom:10px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      <span>Could not load capes from Mojang: ${escapeHtml(String(err))}</span>
+      <span>Could not load capes from Mojang: ${escapeHtml(currentAccountCapesCache.error)}</span>
+      <button type="button" class="dressing-room-retry-btn" id="btn-retry-fetch-capes">
+        <svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+        </svg>
+        <span>Retry</span>
+      </button>
     `;
     grid.appendChild(errNotice);
+
+    errNotice.querySelector('#btn-retry-fetch-capes')?.addEventListener('click', () => {
+      populateDressingRoomCapes(true);
+    });
     return;
   }
 
-  grid.innerHTML = '';
-
-  const activeCape = (capes || []).find(c => c.state === 'ACTIVE');
+  const capes = currentAccountCapesCache.capes || [];
+  const activeCape = capes.find(c => c.state === 'ACTIVE');
 
   // 1. "None / Unequip" Card
   const noneCard = document.createElement('div');
@@ -4387,6 +4474,10 @@ async function populateDressingRoomCapes() {
     try {
       await api.equipMojangCape(null, active.id);
       showToast('Cape unequipped on Mojang servers!', 'success');
+      // Update cache
+      if (currentAccountCapesCache.capes) {
+        currentAccountCapesCache.capes.forEach(c => { c.state = 'INACTIVE'; });
+      }
     } catch (err) {
       console.warn('Failed to unequip cape:', err);
       showToast(`Failed to unequip cape on Mojang: ${err}`, 'error');
@@ -4461,6 +4552,12 @@ async function populateDressingRoomCapes() {
       try {
         await api.equipMojangCape(cape.id, active.id);
         showToast(`Equipped "${cape.alias || 'Cape'}" on Mojang servers!`, 'success');
+        // Update cache
+        if (currentAccountCapesCache.capes) {
+          currentAccountCapesCache.capes.forEach(c => {
+            c.state = (c.id === cape.id) ? 'ACTIVE' : 'INACTIVE';
+          });
+        }
       } catch (err) {
         console.warn('Failed to equip cape on Mojang:', err);
         showToast(`Failed to equip cape on Mojang: ${err}`, 'error');
@@ -4584,13 +4681,30 @@ function initDressingRoomUI() {
     });
   }
 
-  // Capes note link
-  document.getElementById('dressing-room-editskin-link')?.addEventListener('click', async () => {
-    const url = 'https://www.minecraft.net/en-us/msaprofile/mygames/editskin';
-    invoke('open_url_in_browser', { url }).catch((e) => {
-      console.error('Failed to open browser for editskin link:', e);
+  // Refresh Capes button (1-minute cooldown)
+  const refreshCapesBtn = document.getElementById('btn-refresh-capes');
+  if (refreshCapesBtn && !refreshCapesBtn.dataset.bound) {
+    refreshCapesBtn.dataset.bound = '1';
+    refreshCapesBtn.addEventListener('click', async () => {
+      const COOLDOWN_MS = 60 * 1000;
+      if (Date.now() - lastCapesManualRefreshTime < COOLDOWN_MS) {
+        updateCapesRefreshCooldownUI();
+        return;
+      }
+      lastCapesManualRefreshTime = Date.now();
+      refreshCapesBtn.classList.add('spinning');
+      updateCapesRefreshCooldownUI();
+
+      if (capesCooldownInterval) clearInterval(capesCooldownInterval);
+      capesCooldownInterval = setInterval(updateCapesRefreshCooldownUI, 1000);
+
+      try {
+        await populateDressingRoomCapes(true);
+      } finally {
+        refreshCapesBtn.classList.remove('spinning');
+      }
     });
-  });
+  }
 }
 
 function initSkinViewerUI() {
@@ -5097,11 +5211,12 @@ async function updateSkinMiniPreview() {
     skinMiniPreviewInstance.animation = anim;
     skinMiniPreviewInstance.renderPaused = false;
 
-    // Load equipped cape onto mini preview
+    // Load equipped cape onto mini preview (uses cached capes)
     try {
       if (!useUnknownSkin && !isOffline && active && active.mc_uuid) {
-        api.getAccountCapes(active.id).then(capes => {
-          const activeCape = (capes || []).find(c => c.state === 'ACTIVE');
+        fetchCapesForActiveAccount(false).then(cached => {
+          const capes = cached.capes || [];
+          const activeCape = capes.find(c => c.state === 'ACTIVE');
           if (activeCape && activeCape.url) {
             skinMiniPreviewInstance.loadCape(activeCape.url).catch(() => {});
           } else {
@@ -8839,7 +8954,7 @@ function setContentType(type) {
   });
 
   document.querySelectorAll('.content-type-segment').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
       if (btn.classList.contains('is-disabled')) {
         const inst = getModsTargetInstance();
         if (!inst) {
@@ -8849,7 +8964,11 @@ function setContentType(type) {
         }
         return;
       }
-      if (btn.classList.contains('active')) return;
+      if (btn.classList.contains('active') || activeContentType === btn.dataset.contentType) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       document.querySelectorAll('.content-type-segment').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       updateContentTypeIndicator(btn, false);
