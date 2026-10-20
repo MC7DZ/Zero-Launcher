@@ -524,6 +524,7 @@ const api = {
   // Worlds — Minecraft saves with level.dat parsing
   listWorlds: (gameDir) => invoke('list_worlds', { directory: gameDir }),
   openWorldsFolder: (gameDir) => invoke('open_worlds_folder', { directory: gameDir }),
+  installWorldFiles: (paths, gameDir) => invoke('install_world_files', { paths, directory: gameDir }),
   readWorldIcon: (path) => invoke('read_world_icon', { path }),
   deleteWorld: (path) => invoke('delete_world', { path }),
   // Servers — servers.dat multiplayer list
@@ -10343,6 +10344,148 @@ async function installDroppedModPaths(paths) {
   }
 }
 
+async function installDroppedPackPaths(paths, kind) {
+  if (!settings || !paths || paths.length === 0) return;
+  const directory = getModsTargetDirectory();
+  if (!directory) {
+    showToast(`Select an instance before adding ${kind === 'shaderpack' ? 'shader packs' : 'resource packs'}`, 'warning');
+    return;
+  }
+
+  const zipPaths = paths.filter(p => p.toLowerCase().endsWith('.zip'));
+  const rejectedUpfront = paths.length - zipPaths.length;
+  if (zipPaths.length === 0) {
+    showToast(`Only .zip files can be added as ${kind === 'shaderpack' ? 'shader packs' : 'resource packs'}`, 'error');
+    return;
+  }
+
+  const unitName = kind === 'shaderpack' ? 'shader pack' : 'resource pack';
+  const unitPlural = kind === 'shaderpack' ? 'shader packs' : 'resource packs';
+
+  try {
+    const results = await api.installPackFiles(zipPaths, directory, kind);
+    const installed = results.filter(r => r.success);
+    const rejected = results.filter(r => !r.success);
+
+    if (installed.length > 0) {
+      await loadMods();
+      const installedPaths = new Set(installed.map(r => r.modInfo?.path || r.mod_info?.path).filter(Boolean));
+      document.querySelectorAll('.mod-card').forEach(card => {
+        if (installedPaths.has(card.dataset.path)) {
+          card.classList.add('mod-just-installed');
+          setTimeout(() => card.classList.remove('mod-just-installed'), 1400);
+        }
+      });
+      const names = installed.map(r => (r.modInfo || r.mod_info)?.name || r.sourceName || r.source_name).join(', ');
+      showToast(
+        installed.length === 1 ? `Added ${names}` : `Added ${installed.length} ${unitPlural}: ${names}`,
+        'success'
+      );
+    }
+
+    if (rejected.length > 0) {
+      const lines = rejected.map(r => `${r.sourceName || r.source_name} — ${r.reason || 'invalid archive'}`);
+      showToast(
+        rejected.length === 1
+          ? lines[0]
+          : `${rejected.length} file(s) skipped:\n${lines.join('\n')}`,
+        'error',
+        rejected.length === 1 ? `Not a valid ${unitName}` : 'Some files skipped'
+      );
+    }
+
+    if (rejectedUpfront > 0) {
+      showToast(`Ignored ${rejectedUpfront} non-.zip file(s)`, 'warning');
+    }
+  } catch (e) {
+    showToast(`Failed to install ${unitPlural}: ` + e, 'error');
+  }
+}
+
+async function installDroppedWorldPaths(paths) {
+  if (!settings || !paths || paths.length === 0) return;
+  const directory = getModsTargetDirectory();
+  if (!directory) {
+    showToast('Select an instance before adding worlds', 'warning');
+    return;
+  }
+
+  // Accepts .zip archives or folder paths (directories)
+  const validPaths = paths.filter(p => {
+    const lower = p.toLowerCase();
+    return lower.endsWith('.zip') || !lower.includes('.');
+  });
+  const rejectedUpfront = paths.length - validPaths.length;
+  if (validPaths.length === 0) {
+    showToast('Only .zip world archives or world folders can be added', 'error');
+    return;
+  }
+
+  try {
+    const results = await api.installWorldFiles(validPaths, directory);
+    const installed = results.filter(r => r.success);
+    const rejected = results.filter(r => !r.success);
+
+    if (installed.length > 0) {
+      await loadMods();
+      const installedPaths = new Set(installed.map(r => r.worldInfo?.path || r.world_info?.path).filter(Boolean));
+      document.querySelectorAll('.world-card').forEach(card => {
+        if (installedPaths.has(card.dataset.path)) {
+          card.classList.add('mod-just-installed');
+          setTimeout(() => card.classList.remove('mod-just-installed'), 1400);
+        }
+      });
+      const names = installed.map(r => (r.worldInfo || r.world_info)?.name || r.sourceName || r.source_name).join(', ');
+      showToast(
+        installed.length === 1 ? `Added world "${names}"` : `Added ${installed.length} worlds: ${names}`,
+        'success'
+      );
+    }
+
+    if (rejected.length > 0) {
+      const lines = rejected.map(r => `${r.sourceName || r.source_name} — ${r.reason || 'not a valid world'}`);
+      showToast(
+        rejected.length === 1
+          ? lines[0]
+          : `${rejected.length} item(s) skipped:\n${lines.join('\n')}`,
+        'error',
+        rejected.length === 1 ? 'Not a valid world' : 'Some items skipped'
+      );
+    }
+
+    if (rejectedUpfront > 0) {
+      showToast(`Ignored ${rejectedUpfront} unsupported file(s)`, 'warning');
+    }
+  } catch (e) {
+    showToast('Failed to install world(s): ' + e, 'error');
+  }
+}
+
+function updateModsDragOverlayContent() {
+  const titleEl = document.querySelector('#mods-drag-overlay .mods-drag-overlay-title');
+  const subEl = document.querySelector('#mods-drag-overlay .mods-drag-overlay-sub');
+  if (!titleEl || !subEl) return;
+
+  switch (activeContentType) {
+    case 'resourcepack':
+      titleEl.textContent = 'Release to add resource packs';
+      subEl.textContent = 'Each .zip file is checked for pack.mcmeta before installing';
+      break;
+    case 'shaderpack':
+      titleEl.textContent = 'Release to add shader packs';
+      subEl.textContent = 'Drop .zip shader packs to install directly into shaderpacks/';
+      break;
+    case 'world':
+      titleEl.textContent = 'Release to add worlds';
+      subEl.textContent = 'Drop world .zip archives or world folders containing level.dat';
+      break;
+    default:
+      titleEl.textContent = 'Release to add mods';
+      subEl.textContent = 'Each file is checked for a Fabric, Quilt, or Forge manifest first';
+      break;
+  }
+}
+
 function initModsDragDrop() {
   const overlay = document.getElementById('mods-drag-overlay');
   const modpackOverlay = document.getElementById('modpack-drag-overlay');
@@ -10358,19 +10501,29 @@ function initModsDragDrop() {
   // Tauri emits window-level drag events with the full OS file paths —
   // no browser File objects involved, so this works for arbitrarily large
   // jars/archives without reading them into memory on the frontend at all.
-  //
-  // Which overlay lights up while the mouse hovers depends on what's being
-  // dragged (Tauri v2 includes `paths` on drag-enter/drag-over, not just
-  // on drop): a .zip/.mrpack always shows the modpack extractor prompt,
-  // regardless of which tab is open; a .jar only shows the mods-tab
-  // overlay, and only while that tab is active.
   let dragActive = false;
-  const dragIsModpack = (paths) => (paths || []).some(p => isModpackFile(p));
+  const isContentTab = () => getActiveTabId() === 'mods';
+  const isEligibleContentType = () => ['mod', 'resourcepack', 'shaderpack', 'world'].includes(activeContentType);
+
   const setDragActive = (on, paths) => {
     dragActive = on;
-    const modpack = on && dragIsModpack(paths);
+    const inContentTab = isContentTab() && isEligibleContentType();
+    // Modpack overlay is global across tabs for .zip/.mrpack, EXCEPT when the
+    // user is on the Content tab under resourcepack, shaderpack, or world (where
+    // .zip files belong to that active content type instead).
+    const canAcceptZipInTab = inContentTab && activeContentType !== 'mod';
+    const modpack = on && !canAcceptZipInTab && (paths || []).some(p => isModpackFile(p));
+
     if (modpackOverlay) modpackOverlay.classList.toggle('active', modpack);
-    if (overlay) overlay.classList.toggle('active', on && !modpack && getActiveTabId() === 'mods');
+
+    if (overlay) {
+      if (on && !modpack && inContentTab) {
+        updateModsDragOverlayContent();
+        overlay.classList.add('active');
+      } else {
+        overlay.classList.remove('active');
+      }
+    }
   };
 
   listen('tauri://drag-enter', (e) => setDragActive(true, e && e.payload && e.payload.paths));
@@ -10379,22 +10532,35 @@ function initModsDragDrop() {
   listen('tauri://drag-drop', (event) => {
     setDragActive(false);
     const paths = (event && event.payload && event.payload.paths) || [];
+    if (paths.length === 0) return;
+
+    const inContentTab = isContentTab() && isEligibleContentType();
+    const canAcceptZipInTab = inContentTab && activeContentType !== 'mod';
 
     const modpackPaths = paths.filter(isModpackFile);
-    if (modpackPaths.length > 0) {
+    if (modpackPaths.length > 0 && !canAcceptZipInTab) {
       // A modpack archive takes priority even if other files were dropped
       // alongside it — only the first one is imported at a time.
       openModpackImportOverlay(modpackPaths[0]);
       return;
     }
 
-    if (getActiveTabId() !== 'mods') {
+    if (!isContentTab()) {
       if (paths.some(p => p.toLowerCase().endsWith('.jar'))) {
         showToast('Switch to the Mods tab to drop mod files', 'info');
+      } else if (paths.some(p => p.toLowerCase().endsWith('.zip'))) {
+        showToast('Switch to the Content tab to drop packs or worlds', 'info');
       }
       return;
     }
-    installDroppedModPaths(paths);
+
+    if (activeContentType === 'mod') {
+      installDroppedModPaths(paths);
+    } else if (activeContentType === 'resourcepack' || activeContentType === 'shaderpack') {
+      installDroppedPackPaths(paths, activeContentType);
+    } else if (activeContentType === 'world') {
+      installDroppedWorldPaths(paths);
+    }
   });
 }
 

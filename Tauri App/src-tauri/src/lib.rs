@@ -442,6 +442,7 @@ pub fn run() {
             commands::mods::read_screenshot_image,
             commands::mods::list_worlds,
             commands::mods::open_worlds_folder,
+            commands::mods::install_world_files,
             commands::mods::read_world_icon,
             commands::mods::delete_world,
             commands::mods::list_servers,

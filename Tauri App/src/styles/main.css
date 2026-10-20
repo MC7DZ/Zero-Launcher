@@ -5027,9 +5027,9 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 .mods-drag-overlay-sub { font-size: 13px; color: var(--text-muted); }
 
-/* Result badge appended briefly to a freshly-installed mod card, or shown
+/* Result badge appended briefly to a freshly-installed mod/pack/world card, or shown
    in a rejected-file toast list. */
-.mod-card.mod-just-installed {
+.mod-card.mod-just-installed, .world-card.mod-just-installed {
   animation: modJustInstalled 1.4s ease;
 }
 @keyframes modJustInstalled {

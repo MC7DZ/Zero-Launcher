@@ -1437,6 +1437,289 @@ pub async fn delete_world(path: String) -> Result<(), String> {
     std::fs::remove_dir_all(&p).map_err(|e| format!("Failed to delete world: {e}"))
 }
 
+#[derive(Serialize)]
+pub struct WorldInstallResult {
+    pub source_name: String,
+    pub success: bool,
+    pub reason: Option<String>,
+    pub world_info: Option<WorldInfo>,
+}
+
+fn build_world_info_from_dir(path: &PathBuf) -> WorldInfo {
+    let folder_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let level_dat_path = path.join("level.dat");
+    let meta = path.metadata().ok();
+    let has_icon = path.join("icon.png").exists();
+    let size_bytes = calc_world_size(path).unwrap_or(meta.as_ref().map(|m| m.len()).unwrap_or(0));
+
+    let (display_name, last_played_ms, game_mode, version, hardcore) = parse_level_dat(&level_dat_path)
+        .unwrap_or_else(|| {
+            let default_name = folder_name.clone();
+            let modified = meta
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            (default_name, modified, "Unknown".to_string(), String::new(), false)
+        });
+
+    WorldInfo {
+        folder_name,
+        name: if display_name.trim().is_empty() { path.file_name().unwrap().to_string_lossy().to_string() } else { display_name },
+        path: path.to_string_lossy().to_string(),
+        last_played_ms,
+        size_bytes,
+        game_mode,
+        version,
+        hardcore,
+        has_icon,
+    }
+}
+
+fn copy_dir_all_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let target = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_all_recursive(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Validate and install dropped/selected world files (.zip archives or world folders)
+/// into the instance's `saves/` directory.
+#[tauri::command]
+pub async fn install_world_files(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    directory: Option<String>,
+) -> Result<Vec<WorldInstallResult>, String> {
+    let game_dir = directory
+        .map(PathBuf::from)
+        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+
+    let saves_dir = game_dir.join("saves");
+    std::fs::create_dir_all(&saves_dir)
+        .map_err(|e| format!("Failed to create saves directory: {e}"))?;
+
+    let mut results = Vec::with_capacity(paths.len());
+
+    for src_path_str in paths {
+        let src = PathBuf::from(&src_path_str);
+        let source_name = src
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| src_path_str.clone());
+
+        if !src.exists() {
+            results.push(WorldInstallResult {
+                source_name,
+                success: false,
+                reason: Some("File or folder not found".to_string()),
+                world_info: None,
+            });
+            continue;
+        }
+
+        if src.is_dir() {
+            // Check for level.dat inside the directory or a single subfolder
+            let direct_level_dat = src.join("level.dat");
+            let actual_world_dir = if direct_level_dat.exists() {
+                Some(src.clone())
+            } else {
+                let mut found = None;
+                if let Ok(entries) = std::fs::read_dir(&src) {
+                    for entry in entries.flatten() {
+                        let sub = entry.path();
+                        if sub.is_dir() && sub.join("level.dat").exists() {
+                            found = Some(sub);
+                            break;
+                        }
+                    }
+                }
+                found
+            };
+
+            let Some(world_src) = actual_world_dir else {
+                results.push(WorldInstallResult {
+                    source_name,
+                    success: false,
+                    reason: Some("No level.dat found inside folder — not a valid Minecraft world".to_string()),
+                    world_info: None,
+                });
+                continue;
+            };
+
+            let base_name = world_src.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let dest_dir = unique_destination_ext(&saves_dir, &base_name, "");
+            if let Err(e) = copy_dir_all_recursive(&world_src, &dest_dir) {
+                results.push(WorldInstallResult {
+                    source_name,
+                    success: false,
+                    reason: Some(format!("Failed to copy world folder: {e}")),
+                    world_info: None,
+                });
+                continue;
+            }
+
+            let world_info = build_world_info_from_dir(&dest_dir);
+            results.push(WorldInstallResult {
+                source_name,
+                success: true,
+                reason: None,
+                world_info: Some(world_info),
+            });
+        } else if src.is_file() {
+            if !source_name.to_lowercase().ends_with(".zip") {
+                results.push(WorldInstallResult {
+                    source_name,
+                    success: false,
+                    reason: Some("Only .zip archives or world folders can be added as worlds".to_string()),
+                    world_info: None,
+                });
+                continue;
+            }
+
+            let file = match std::fs::File::open(&src) {
+                Ok(f) => f,
+                Err(e) => {
+                    results.push(WorldInstallResult {
+                        source_name,
+                        success: false,
+                        reason: Some(format!("Failed to open zip file: {e}")),
+                        world_info: None,
+                    });
+                    continue;
+                }
+            };
+
+            let mut archive = match zip::ZipArchive::new(file) {
+                Ok(a) => a,
+                Err(_) => {
+                    results.push(WorldInstallResult {
+                        source_name,
+                        success: false,
+                        reason: Some("Not a valid zip file".to_string()),
+                        world_info: None,
+                    });
+                    continue;
+                }
+            };
+
+            // Locate level.dat inside the zip
+            let mut prefix_to_strip = None;
+            for i in 0..archive.len() {
+                if let Ok(entry) = archive.by_index(i) {
+                    let ename = entry.name().unwrap_or_default().replace('\\', "/");
+                    if ename == "level.dat" {
+                        prefix_to_strip = Some("".to_string());
+                        break;
+                    } else if ename.ends_with("/level.dat") {
+                        let idx = ename.rfind("/level.dat").unwrap();
+                        let p = &ename[..=idx];
+                        // Only accept 1 level deep wrapper: e.g. "WorldName/level.dat"
+                        if !p[..p.len() - 1].contains('/') {
+                            prefix_to_strip = Some(p.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let Some(strip_prefix) = prefix_to_strip else {
+                results.push(WorldInstallResult {
+                    source_name,
+                    success: false,
+                    reason: Some("No level.dat found inside zip — not a Minecraft world archive".to_string()),
+                    world_info: None,
+                });
+                continue;
+            };
+
+            let zip_stem = source_name.strip_suffix(".zip").unwrap_or(&source_name);
+            let raw_folder_name = if !strip_prefix.is_empty() {
+                strip_prefix.trim_matches('/').to_string()
+            } else {
+                zip_stem.to_string()
+            };
+            let folder_name = if raw_folder_name.is_empty() { zip_stem.to_string() } else { raw_folder_name };
+            let dest_dir = unique_destination_ext(&saves_dir, &folder_name, "");
+
+            let mut extract_err = None;
+            for i in 0..archive.len() {
+                let mut entry = match archive.by_index(i) {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let ename = entry.name().unwrap_or_default().replace('\\', "/");
+                let clean_name = ename.trim_start_matches("./");
+
+                let rel_path = if strip_prefix.is_empty() {
+                    clean_name
+                } else if clean_name.starts_with(&strip_prefix) {
+                    &clean_name[strip_prefix.len()..]
+                } else {
+                    continue;
+                };
+
+                let rel_clean = rel_path.trim_matches('/');
+                if rel_clean.is_empty() || rel_clean.contains("..") {
+                    continue;
+                }
+
+                let out_path = dest_dir.join(rel_clean);
+                if entry.is_dir() || ename.ends_with('/') {
+                    let _ = std::fs::create_dir_all(&out_path);
+                    continue;
+                }
+
+                if let Some(parent) = out_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+
+                let mut out_file = match std::fs::File::create(&out_path) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        extract_err = Some(format!("Failed to write file {}: {}", rel_clean, e));
+                        break;
+                    }
+                };
+
+                if let Err(e) = std::io::copy(&mut entry, &mut out_file) {
+                    extract_err = Some(format!("Failed to extract file {}: {}", rel_clean, e));
+                    break;
+                }
+            }
+
+            if let Some(err) = extract_err {
+                let _ = std::fs::remove_dir_all(&dest_dir);
+                results.push(WorldInstallResult {
+                    source_name,
+                    success: false,
+                    reason: Some(err),
+                    world_info: None,
+                });
+                continue;
+            }
+
+            let world_info = build_world_info_from_dir(&dest_dir);
+            results.push(WorldInstallResult {
+                source_name,
+                success: true,
+                reason: None,
+                world_info: Some(world_info),
+            });
+        }
+    }
+
+    Ok(results)
+}
+
 /// Open the mods folder in the system file manager.
 #[tauri::command]
 pub async fn open_mods_folder(
