@@ -880,7 +880,7 @@ let pendingTabSwitchTimer = null;
 let lastTabClickAt = 0;
 // Per-animation exit time (ms) before the new page is shown. Must match the
 // leave durations in main.css ("Selectable tab animations").
-const TAB_ANIM_DELAYS = { slide: 200, fade: 120, zoom: 130, rise: 130, swing: 150, swipe: 140, none: 0 };
+const TAB_ANIM_DELAYS = { slide: 200, fade: 120, zoom: 130, rise: 130, swing: 150, swipe: 100, none: 0 };
 const TAB_ANIM_NAMES = Object.keys(TAB_ANIM_DELAYS);
 // Spam protection: clicks closer together than TAB_SPAM_WINDOW_MS count as
 // spamming; the page then only switches after TAB_SPAM_QUIET_MS without clicks.

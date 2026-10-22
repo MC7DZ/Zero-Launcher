@@ -708,7 +708,10 @@ input, textarea, select, [contenteditable="true"] {
 }
 
 .tab-page {
-  display: none;
+  /* Keep all tab pages in the rendering tree (no display:none) so the browser
+     doesn't have to perform a full layout reflow when a tab becomes active.
+     Invisible pages are hidden with visibility + pointer-events instead.      */
+  display: block;
   position: absolute;
   inset: 0;
   padding: 20px;
@@ -716,9 +719,12 @@ input, textarea, select, [contenteditable="true"] {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   contain: layout paint;
+  visibility: hidden;
+  pointer-events: none;
 }
-.tab-page.active { display: block; }
-.tab-page.mods-two-pane-page.active { display: flex; overflow: hidden; padding: 20px; }
+.tab-page.active { visibility: visible; pointer-events: auto; }
+.tab-page.mods-two-pane-page { display: flex; overflow: hidden; }
+.tab-page.mods-two-pane-page.active { visibility: visible; pointer-events: auto; }
 
 /* ═══ Glass Card ═══ */
 
@@ -12517,10 +12523,11 @@ html.no-ui-animations .dressing-room-modal {
 @keyframes ta-swing-in-r  { from { opacity: 0; transform: perspective(1200px) rotateY(-8deg) translate3d(40px,0,0); } to { opacity: 1; transform: perspective(1200px) rotateY(0) translate3d(0,0,0); } }
 @keyframes ta-swing-in-l  { from { opacity: 0; transform: perspective(1200px) rotateY(8deg) translate3d(-40px,0,0); } to { opacity: 1; transform: perspective(1200px) rotateY(0) translate3d(0,0,0); } }
 
-@keyframes ta-swipe-out-l { from { opacity: 1; transform: translate3d(0,0,0); } to { opacity: 0; transform: translate3d(-45%,0,0); } }
-@keyframes ta-swipe-out-r { from { opacity: 1; transform: translate3d(0,0,0); } to { opacity: 0; transform: translate3d(45%,0,0); } }
-@keyframes ta-swipe-in-r  { from { opacity: 0; transform: translate3d(45%,0,0); } to { opacity: 1; transform: translate3d(0,0,0); } }
-@keyframes ta-swipe-in-l  { from { opacity: 0; transform: translate3d(-45%,0,0); } to { opacity: 1; transform: translate3d(0,0,0); } }
+/* Pure translate — no opacity change so pages never go semi-transparent during swipe */
+@keyframes ta-swipe-out-l { from { transform: translate3d(0,0,0); } to { transform: translate3d(-45%,0,0); } }
+@keyframes ta-swipe-out-r { from { transform: translate3d(0,0,0); } to { transform: translate3d(45%,0,0); } }
+@keyframes ta-swipe-in-r  { from { transform: translate3d(45%,0,0); } to { transform: translate3d(0,0,0); } }
+@keyframes ta-swipe-in-l  { from { transform: translate3d(-45%,0,0); } to { transform: translate3d(0,0,0); } }
 
 :root[data-tab-anim="fade"] .tab-page.tab-leave-l, :root[data-tab-anim="fade"] .tab-page.tab-leave-r { animation: ta-fade-out 0.16s ease-out both !important; }
 :root[data-tab-anim="fade"] .tab-page.tab-enter-l, :root[data-tab-anim="fade"] .tab-page.tab-enter-r { animation: ta-fade-in 0.28s ease-out both !important; }
@@ -12532,8 +12539,9 @@ html.no-ui-animations .dressing-room-modal {
 :root[data-tab-anim="swing"] .tab-page.tab-leave-r { animation: ta-swing-out-r 0.2s ease-in both !important; }
 :root[data-tab-anim="swing"] .tab-page.tab-enter-r { animation: ta-swing-in-r 0.42s cubic-bezier(0.16, 1, 0.3, 1) both !important; }
 :root[data-tab-anim="swing"] .tab-page.tab-enter-l { animation: ta-swing-in-l 0.42s cubic-bezier(0.16, 1, 0.3, 1) both !important; }
-:root[data-tab-anim="swipe"] .tab-page.tab-leave-l { animation: ta-swipe-out-l 0.18s cubic-bezier(0.4, 0, 1, 1) both !important; }
-:root[data-tab-anim="swipe"] .tab-page.tab-leave-r { animation: ta-swipe-out-r 0.18s cubic-bezier(0.4, 0, 1, 1) both !important; }
+/* Swipe: faster leave (0.1s) so the outgoing page clears quickly; pure translate, no opacity */
+:root[data-tab-anim="swipe"] .tab-page.tab-leave-l { animation: ta-swipe-out-l 0.1s cubic-bezier(0.4, 0, 1, 1) both !important; }
+:root[data-tab-anim="swipe"] .tab-page.tab-leave-r { animation: ta-swipe-out-r 0.1s cubic-bezier(0.4, 0, 1, 1) both !important; }
 :root[data-tab-anim="swipe"] .tab-page.tab-enter-r { animation: ta-swipe-in-r 0.34s cubic-bezier(0.22, 1, 0.36, 1) both !important; }
 :root[data-tab-anim="swipe"] .tab-page.tab-enter-l { animation: ta-swipe-in-l 0.34s cubic-bezier(0.22, 1, 0.36, 1) both !important; }
 :root[data-tab-anim="none"] .tab-page.tab-leave-l, :root[data-tab-anim="none"] .tab-page.tab-leave-r,
