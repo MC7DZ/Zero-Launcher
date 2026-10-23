@@ -499,6 +499,7 @@ impl ActiveDownloadGuard {
 impl Drop for ActiveDownloadGuard {
     fn drop(&mut self) {
         let st = self.0.state::<AppState>();
+        #[allow(deprecated)]
         let _ = st.active_downloads.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| Some(n.saturating_sub(1)));
     }
 }
