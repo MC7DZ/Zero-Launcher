@@ -2045,8 +2045,38 @@ pub async fn launch_minecraft(
     // files actually hit the network.
     // Held for the whole verify/download pass (dropped at the end of this
     // block) so "Close launcher when game starts" can't fire mid-download.
-    let mut _verify_guard = if !offline { Some(crate::state::ActiveDownloadGuard::new(&app)) } else { None };
-    if !offline {
+    //
+    // Incomplete instances (client jar missing from `versions/`) must be
+    // repaired even when launching offline / "Always Launch Offline" is on:
+    // the verify pass is the only thing that downloads the jar, and the game
+    // cannot start without it. Modern Forge bootstraps load Minecraft through
+    // their own module layer and don't put the client jar on the classpath,
+    // so a missing jar there doesn't force a network pass.
+    let client_jar_missing = {
+        let manages_jar = matches!(
+            version.main_class.as_deref(),
+            Some("cpw.mods.bootstraplauncher.BootstrapLauncher")
+                | Some("net.minecraftforge.bootstrap.ForgeBootstrap")
+        );
+        if manages_jar {
+            false
+        } else {
+            version
+                .jar
+                .as_deref()
+                .or(version.id.as_deref())
+                .map(|id| !mc_dir.join("versions").join(id).join(format!("{id}.jar")).is_file())
+                .unwrap_or(false)
+        }
+    };
+    if offline && client_jar_missing {
+        logger::info_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
+            "Client jar for {} is missing — downloading it before launching (even in offline mode)", vid
+        ));
+    }
+    let run_verify = !offline || client_jar_missing;
+    let mut _verify_guard = if run_verify { Some(crate::state::ActiveDownloadGuard::new(&app)) } else { None };
+    if run_verify {
         logger::info_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
             "Verifying files for {} before launch...", vid
         ));
@@ -2234,6 +2264,14 @@ pub async fn launch_minecraft(
             });
         }
 
+        if let Err(e) = &result {
+            if client_jar_missing {
+                fail_cleanup();
+                return Err(format!(
+                    "This instance is missing its game jar and it could not be downloaded ({e}). Check your internet connection and try again."
+                ));
+            }
+        }
         if let Err(e) = result {
             logger::warn_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
                 "File verification error ({e}) — continuing in offline mode"
@@ -3697,6 +3735,127 @@ pub async fn delete_instance_data(
     robust_remove_dir(&canonical_target)
 }
 
+#[cfg(target_os = "linux")]
+fn zlib_probe_input(n: usize) -> Vec<u8> {
+    const WORDS: [&str; 32] = [
+        "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
+        "kilo", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango",
+        "uniform", "victor", "whiskey", "xray", "yankee", "zulu", "net", "minecraft", "forge",
+        "class", "com", "org",
+    ];
+    let mut x: u64 = 12345;
+    let mut out: Vec<u8> = Vec::with_capacity(n + 16);
+    while out.len() < n {
+        x = (x * 1103515245 + 12345) & 0x7fffffff;
+        out.extend_from_slice(WORDS[((x >> 8) as usize) % WORDS.len()].as_bytes());
+        out.push(if (x >> 3) % 7 == 0 { b'/' } else { b' ' });
+    }
+    out.truncate(n);
+    out
+}
+
+#[cfg(target_os = "linux")]
+fn zlib_probe_crc32(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFF_FFFF;
+    for &b in data {
+        crc ^= b as u32;
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+        }
+    }
+    !crc
+}
+
+/// Second, behavioural zlib test: actually load the zlib the dynamic linker
+/// resolves for `libz.so.1` (the same one a system Java would pick up),
+/// read its `zlibVersion()` and run real `compress2` calls through it,
+/// comparing the compressed bytes with what stock zlib produces. Forge's
+/// installer verifies hashes of data compressed via the system zlib, so
+/// byte-identical output means it is safe, whatever the build is called.
+/// Returns `None` when libz can't be loaded or the sanity compression
+/// fails, so callers can fall back to the file-based detection.
+#[cfg(target_os = "linux")]
+fn probe_system_zlib() -> Option<(String, bool)> {
+    use std::ffi::{c_char, c_int, c_ulong, c_void, CStr, CString};
+
+    extern "C" {
+        fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+        fn dlclose(handle: *mut c_void) -> c_int;
+    }
+    const RTLD_NOW: c_int = 2;
+
+    let candidates = [
+        "libz.so.1",
+        "/usr/lib/libz.so.1",
+        "/usr/lib64/libz.so.1",
+        "/lib64/libz.so.1",
+        "/usr/lib/x86_64-linux-gnu/libz.so.1",
+    ];
+
+    for name in candidates {
+        let cname = CString::new(name).ok()?;
+        // SAFETY: plain dlopen/dlsym of a well-known library; the function
+        // pointers are only called with the documented zlib signatures and
+        // the handle is closed before returning.
+        unsafe {
+            let handle = dlopen(cname.as_ptr(), RTLD_NOW);
+            if handle.is_null() {
+                continue;
+            }
+            let ver_sym = dlsym(handle, b"zlibVersion\0".as_ptr() as *const c_char);
+            let cmp_sym = dlsym(handle, b"compress2\0".as_ptr() as *const c_char);
+            let mut result = None;
+            if !ver_sym.is_null() && !cmp_sym.is_null() {
+                let zlib_version: extern "C" fn() -> *const c_char = std::mem::transmute(ver_sym);
+                let compress2: extern "C" fn(*mut u8, *mut c_ulong, *const u8, c_ulong, c_int) -> c_int =
+                    std::mem::transmute(cmp_sym);
+
+                let v = zlib_version();
+                if !v.is_null() {
+                    let version = CStr::from_ptr(v).to_string_lossy().to_string();
+                    // Deterministic, realistic test input (identical generator
+                    // was used to record the reference values below with
+                    // stock zlib 1.3).
+                    let input = zlib_probe_input(65536);
+                    // Compressed (len, crc32) recorded from STOCK zlib.
+                    // Forge's installer hash checks only break when the
+                    // system zlib produces different deflate output than
+                    // stock zlib, so compare the actual bytes, not names.
+                    let reference: [(c_int, usize, u32); 3] = [
+                        (1, 16908, 0x53e3fa9e),
+                        (6, 13695, 0x37ff24cb),
+                        (9, 13625, 0x727ec6da),
+                    ];
+                    let mut all_ok = true;
+                    let mut all_matched = true;
+                    for (level, ref_len, ref_crc) in reference {
+                        let mut out = vec![0u8; 80000];
+                        let mut out_len: c_ulong = out.len() as c_ulong;
+                        let rc = compress2(out.as_mut_ptr(), &mut out_len, input.as_ptr(), input.len() as c_ulong, level);
+                        if rc != 0 || out_len == 0 {
+                            all_ok = false;
+                            break;
+                        }
+                        let produced = &out[..out_len as usize];
+                        if produced.len() != ref_len || zlib_probe_crc32(produced) != ref_crc {
+                            all_matched = false;
+                        }
+                    }
+                    if all_ok {
+                        result = Some((version, all_matched));
+                    }
+                }
+            }
+            dlclose(handle);
+            if result.is_some() {
+                return result;
+            }
+        }
+    }
+    None
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinuxZlibCheckResult {
     pub has_conflict: bool,
@@ -3798,7 +3957,19 @@ pub fn check_linux_zlib_conflict() -> LinuxZlibCheckResult {
         // newer, unaffected zlib. Trusting those alone kept telling users
         // with a perfectly fine, newer zlib to "download" a fix they didn't
         // need. Base the verdict solely on has_zlib_ng_in_libz.
-        let has_conflict = has_zlib_ng_in_libz;
+        //
+        // Second test (authoritative when it works): really load libz and
+        // ask it. A custom/patched standard zlib whose file or symlink
+        // names happen to look like zlib-ng reports a plain version string
+        // and must NOT trigger the warning; a real zlib-ng-compat reports
+        // "...zlib-ng". If libz can't be probed, use the file-based result.
+        let has_conflict = match probe_system_zlib() {
+            Some((version, matches_stock)) => {
+                eprintln!("[zlib-check] libz reports version '{version}', output matches stock zlib: {matches_stock}");
+                !matches_stock
+            }
+            None => has_zlib_ng_in_libz,
+        };
         let _ = (has_pacman_zlib_ng, has_libz_ng_file); // kept for future diagnostics/logging
         LinuxZlibCheckResult {
             has_conflict,

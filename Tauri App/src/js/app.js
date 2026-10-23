@@ -6040,7 +6040,7 @@ function selectInstance(id) {
   }
 
   const loaderStr = (inst.loader && inst.loader !== 'vanilla') ? loaderLabel(inst.loader) : null;
-  nameEl.textContent = (inst.name || inst.version_id) + (inst.missing_jar ? ' (incomplete)' : '');
+  nameEl.textContent = (inst.name || inst.version_id) + (inst.missing_jar ? ' (will repair on launch)' : '');
   verEl.textContent = (inst.minecraft_version || inst.version_id) + (loaderStr ? '  •  ' + loaderStr : '');
   if (gameVerEl) gameVerEl.textContent = inst.minecraft_version || inst.version_id || '—';
   loaderEl.textContent = loaderStr || 'Vanilla';
@@ -6048,7 +6048,10 @@ function selectInstance(id) {
   if (lastPlayedEl) lastPlayedEl.textContent = formatLastPlayed(inst.last_played_at);
   updateSelectedInstancePlaytimeDisplay();
   renderPlaytimeChart();
-  playBtn.disabled = !!inst.missing_jar;
+  // Incomplete instances (missing client jar) stay launchable: the launch
+  // pre-check downloads the missing jar before starting the game.
+  playBtn.disabled = false;
+  playBtn.title = inst.missing_jar ? 'Missing files will be downloaded when you launch' : '';
   const shortcutBtn = document.getElementById('btn-create-shortcut');
   if (shortcutBtn) shortcutBtn.disabled = false;
   // If a launch was in flight for a *different* instance, the launching flag
@@ -7861,6 +7864,11 @@ function confirmZlibIfConflict(loader) {
       return resolve(true);
     }
     try {
+      if (localStorage.getItem('zlibWarningSuppressed') === '1') {
+        return resolve(true);
+      }
+    } catch (_) {}
+    try {
       const res = await api.checkLinuxZlibConflict();
       if (!res || !res.has_conflict) {
         return resolve(true);
@@ -7871,6 +7879,11 @@ function confirmZlibIfConflict(loader) {
 
     const overlay = document.getElementById('zlib-warning-overlay');
     if (!overlay) return resolve(true);
+    // #app is `z-index:1; isolation:isolate`, so anything inside it can never
+    // rise above the Downloads drawer (a direct child of <body>, z-index 920).
+    // Re-parent this overlay to <body> so its own z-index (10200) applies
+    // against the drawer and it opens on top of it.
+    if (overlay.parentElement !== document.body) document.body.appendChild(overlay);
 
     const close = () => {
       overlay.classList.add('hidden');
@@ -7878,6 +7891,11 @@ function confirmZlibIfConflict(loader) {
     };
 
     const handleProceed = () => {
+      try {
+        if (document.getElementById('zlib-warning-dont-show')?.checked) {
+          localStorage.setItem('zlibWarningSuppressed', '1');
+        }
+      } catch (_) {}
       close();
       resolve(true);
     };
@@ -13120,81 +13138,127 @@ async function fetchProjectVersions(projectId) {
   return versions || [];
 }
 
-async function populateVersionSelect(hit, versionSelect, downloadBtn) {
-  if (versionSelect._loaded) return;
-  versionSelect._loaded = true;
-  versionSelect.innerHTML = '<option value="">Loading versions…</option>';
+// Native <select> popups (WebView2 / WebKitGTK) are a snapshot: if the
+// <option>s are swapped while the popup is open, the open popup keeps showing
+// the old "Loading versions…" row even though the element itself is already
+// updated. After the real versions arrive we close and re-open the popup so
+// it shows what is actually in the select.
+function refreshOpenSelectPopup(sel) {
+  if (!sel || !sel.isConnected || document.activeElement !== sel) return;
   try {
-    const versions = await fetchProjectVersions(hit.project_id);
-    if (!versions || versions.length === 0) {
-      versionSelect.innerHTML = '<option value="">No versions available</option>';
-      if (downloadBtn) downloadBtn.disabled = true;
-      return;
-    }
-    const target = currentDiscoverTargetInstance();
-    versionSelect.innerHTML = '';
-
-    const isPack = hit.project_type === 'modpack' || discoverState.type === 'modpack';
-    const filterMc = (discoverState.gameVersion || '').trim();
-    const filterLoader = (discoverState.loader || '').trim().toLowerCase();
-
-    versions.forEach(v => {
-      const primaryFile = (v.files && v.files.find(f => f.primary)) || (v.files && v.files[0]);
-      if (!primaryFile) return;
-      const opt = document.createElement('option');
-      opt.value = v.id;
-      const latestGameVersion = (v.game_versions && v.game_versions[v.game_versions.length - 1]) || '';
-      const loadersList = (v.loaders || []).map(l => loaderLabel(l) || l).join(', ');
-      
-      let compatible = isDiscoverVersionCompatible(v, hit, target);
-      // For modpacks, additionally filter by active search filters if set,
-      // but never mark them red/incompatible — just deprioritize in the list.
-      let packFiltered = false;
-      if (isPack) {
-        if (filterMc && v.game_versions && !v.game_versions.includes(filterMc)) {
-          packFiltered = true;
-        }
-        if (filterLoader && v.loaders && !v.loaders.some(l => l.toLowerCase() === filterLoader)) {
-          packFiltered = true;
-        }
+    sel.blur();
+    requestAnimationFrame(() => {
+      if (!sel.isConnected) return;
+      sel.focus({ preventScroll: true });
+      if (typeof sel.showPicker === 'function') {
+        try { sel.showPicker(); } catch (_) { /* needs a user gesture on some engines */ }
       }
-
-      const labelPrefix = v.name && v.name !== v.version_number ? `${v.name}` : `${v.version_number}`;
-      const loaderPart = loadersList ? ` · ${loadersList}` : '';
-      const mcPart = latestGameVersion ? ` (MC ${latestGameVersion}${loaderPart})` : '';
-
-      // Modpacks: never show "Incompatible" — they always work regardless of game/loader filter
-      if (!isPack && !compatible) {
-        opt.textContent = `${labelPrefix}${mcPart} — Incompatible`;
-        opt.style.color = 'var(--danger)';
-        opt.dataset.incompatible = '1';
-      } else {
-        opt.textContent = `${labelPrefix}${mcPart}`;
-        // Slightly dim pack versions that don't match current filters (but still selectable)
-        if (isPack && packFiltered) {
-          opt.style.opacity = '0.55';
-          opt.dataset.packFiltered = '1';
-        }
-      }
-      opt.dataset.fileUrl = primaryFile.url;
-      opt.dataset.fileName = primaryFile.filename;
-      versionSelect.appendChild(opt);
     });
+  } catch (_) {}
+}
 
-    const firstCompatible = Array.from(versionSelect.options).find(o => !o.dataset.incompatible);
-    if (firstCompatible) {
-      firstCompatible.selected = true;
-      versionSelect.value = firstCompatible.value;
-    } else if (versionSelect.options.length > 0) {
-      versionSelect.options[0].selected = true;
-      versionSelect.value = versionSelect.options[0].value;
+// Returns the same promise to every caller while a load is in flight, so
+// focus + mousedown + hover + "Download" all wait on ONE request instead of
+// the later callers returning early and seeing a half-filled select.
+function populateVersionSelect(hit, versionSelect, downloadBtn) {
+  if (versionSelect._loaded) return Promise.resolve();
+  if (versionSelect._populatePromise) return versionSelect._populatePromise;
+
+  const token = versionSelect._populateToken = (versionSelect._populateToken || 0) + 1;
+  versionSelect._populatePromise = (async () => {
+    versionSelect.innerHTML = '<option value="">Loading versions…</option>';
+    versionSelect.dataset.loading = '1';
+    try {
+      const versions = await fetchProjectVersions(hit.project_id);
+      // The card may have been scrolled out of view and torn down while we
+      // were waiting; nothing to update then (the cache is already filled,
+      // so the re-rendered card loads instantly next time).
+      if (!versionSelect.isConnected || versionSelect._populateToken !== token) return;
+
+      if (!versions || versions.length === 0) {
+        versionSelect.innerHTML = '<option value="">No versions available</option>';
+        versionSelect._loaded = true;
+        if (downloadBtn) downloadBtn.disabled = true;
+        return;
+      }
+      const target = currentDiscoverTargetInstance();
+      versionSelect.innerHTML = '';
+
+      const isPack = hit.project_type === 'modpack' || discoverState.type === 'modpack';
+      const filterMc = (discoverState.gameVersion || '').trim();
+      const filterLoader = (discoverState.loader || '').trim().toLowerCase();
+
+      const frag = document.createDocumentFragment();
+      versions.forEach(v => {
+        const primaryFile = (v.files && v.files.find(f => f.primary)) || (v.files && v.files[0]);
+        if (!primaryFile) return;
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        const latestGameVersion = (v.game_versions && v.game_versions[v.game_versions.length - 1]) || '';
+        const loadersList = (v.loaders || []).map(l => loaderLabel(l) || l).join(', ');
+
+        let compatible = isDiscoverVersionCompatible(v, hit, target);
+        // For modpacks, additionally filter by active search filters if set,
+        // but never mark them red/incompatible — just deprioritize in the list.
+        let packFiltered = false;
+        if (isPack) {
+          if (filterMc && v.game_versions && !v.game_versions.includes(filterMc)) {
+            packFiltered = true;
+          }
+          if (filterLoader && v.loaders && !v.loaders.some(l => l.toLowerCase() === filterLoader)) {
+            packFiltered = true;
+          }
+        }
+
+        const labelPrefix = v.name && v.name !== v.version_number ? `${v.name}` : `${v.version_number}`;
+        const loaderPart = loadersList ? ` · ${loadersList}` : '';
+        const mcPart = latestGameVersion ? ` (MC ${latestGameVersion}${loaderPart})` : '';
+
+        // Modpacks: never show "Incompatible" — they always work regardless of game/loader filter
+        if (!isPack && !compatible) {
+          opt.textContent = `${labelPrefix}${mcPart} — Incompatible`;
+          opt.style.color = 'var(--danger)';
+          opt.dataset.incompatible = '1';
+        } else {
+          opt.textContent = `${labelPrefix}${mcPart}`;
+          // Slightly dim pack versions that don't match current filters (but still selectable)
+          if (isPack && packFiltered) {
+            opt.style.opacity = '0.55';
+            opt.dataset.packFiltered = '1';
+          }
+        }
+        opt.dataset.fileUrl = primaryFile.url;
+        opt.dataset.fileName = primaryFile.filename;
+        frag.appendChild(opt);
+      });
+      versionSelect.appendChild(frag);
+
+      const firstCompatible = Array.from(versionSelect.options).find(o => !o.dataset.incompatible);
+      if (firstCompatible) {
+        firstCompatible.selected = true;
+        versionSelect.value = firstCompatible.value;
+      } else if (versionSelect.options.length > 0) {
+        versionSelect.options[0].selected = true;
+        versionSelect.value = versionSelect.options[0].value;
+      }
+      versionSelect._loaded = true;
+      versionSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      if (downloadBtn) downloadBtn.disabled = false;
+      refreshOpenSelectPopup(versionSelect);
+    } catch (e) {
+      if (versionSelect.isConnected && versionSelect._populateToken === token) {
+        versionSelect.innerHTML = '<option value="">Failed to load versions — click to retry</option>';
+      }
+      versionSelect._loaded = false;
+    } finally {
+      if (versionSelect._populateToken === token) {
+        delete versionSelect.dataset.loading;
+        versionSelect._populatePromise = null;
+      }
     }
-    versionSelect.dispatchEvent(new Event('change', { bubbles: true }));
-    if (downloadBtn) downloadBtn.disabled = false;
-  } catch (e) {
-    versionSelect.innerHTML = '<option value="">Failed to load versions</option>';
-    versionSelect._loaded = false;
-  }
+  })();
+
+  return versionSelect._populatePromise;
 }
 
 let discoverVirtualObserver = null;
@@ -13315,6 +13379,17 @@ function renderCardContent(card) {
 
   versionSelect.addEventListener('focus', () => populateVersionSelect(hit, versionSelect, downloadBtn));
   versionSelect.addEventListener('mousedown', () => populateVersionSelect(hit, versionSelect, downloadBtn));
+  // Start loading as soon as the pointer is over the footer (after a short
+  // dwell so scrolling past a card doesn't fire a request per card).
+  let hoverTimer = null;
+  const footerEl = card.querySelector('.discover-card-footer');
+  if (footerEl) {
+    footerEl.addEventListener('pointerenter', () => {
+      clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(() => populateVersionSelect(hit, versionSelect, downloadBtn), 150);
+    });
+    footerEl.addEventListener('pointerleave', () => clearTimeout(hoverTimer));
+  }
   downloadBtn.addEventListener('click', () => downloadDiscoverSelection(hit, versionSelect, downloadBtn));
 
   if (menuBtn) {
@@ -13818,6 +13893,8 @@ function populateDiscoverProjectModal(hit, details) {
   if (els.versionSelect && els.downloadBtn) {
     els.versionSelect.dataset.projectId = hit.project_id;
     els.versionSelect._loaded = false;
+    els.versionSelect._populateToken = (els.versionSelect._populateToken || 0) + 1; // orphan any in-flight load for the previous project
+    els.versionSelect._populatePromise = null;
     els.versionSelect.innerHTML = '<option value="__latest__">Latest compatible version</option>';
     els.downloadBtn.innerHTML = `${DISCOVER_ICONS.download}<span>${hit.project_type === 'modpack' ? 'Install' : 'Download'}</span>`;
     els.downloadBtn.disabled = false;

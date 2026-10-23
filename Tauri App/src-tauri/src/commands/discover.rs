@@ -241,6 +241,8 @@ struct CfAuthor {
 #[derive(Deserialize)]
 struct CfLogo {
     url: String,
+    #[serde(rename = "thumbnailUrl", default)]
+    thumbnail_url: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -268,6 +270,8 @@ struct CfFile {
 #[derive(Deserialize)]
 struct CfScreenshot {
     url: String,
+    #[serde(rename = "thumbnailUrl", default)]
+    thumbnail_url: Option<String>,
     title: Option<String>,
     description: Option<String>,
 }
@@ -291,11 +295,26 @@ struct CfDescriptionResponse {
 
 fn cf_mod_to_discover_hit(m: CfMod, default_project_type: &str) -> DiscoverHit {
     let author = m.authors.first().map(|a| a.name.clone()).unwrap_or_default();
-    let icon_url = m.logo.map(|l| l.url);
+    // Search cards only ever show a small icon and a banner behind the text.
+    // CurseForge's full-size `url` images are huge (often several MB) and
+    // decoding a page worth of them on the UI thread is what made the
+    // grid lag, so prefer the `thumbnailUrl` variants here.
+    let icon_url = m.logo.map(|l| {
+        l.thumbnail_url
+            .filter(|t| !t.is_empty())
+            .unwrap_or(l.url)
+    });
     let cats: Vec<String> = m.categories.iter().map(|c| c.name.clone()).collect();
     let display_cats = cats.clone();
-    let gallery: Vec<String> = m.screenshots.iter().map(|s| s.url.clone()).collect();
-    let featured_gallery = gallery.first().cloned();
+    let featured_gallery = m.screenshots.first().map(|s| {
+        s.thumbnail_url
+            .clone()
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| s.url.clone())
+    });
+    // The card never renders the rest of the gallery (the detail view
+    // fetches its own), so don't ship every full-size screenshot URL.
+    let gallery: Vec<String> = featured_gallery.iter().cloned().collect();
 
     let project_type = match m.class_id {
         Some(6) => "mod",

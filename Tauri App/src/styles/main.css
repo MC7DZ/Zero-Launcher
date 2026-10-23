@@ -5961,10 +5961,11 @@ body.screenshot-lightbox-open {
   background: linear-gradient(135deg, #00AF5C 0%, #008746 50%, #004d28 100%);
   border: 1px solid rgba(248, 249, 250, 0.28);
   box-shadow: 0 4px 18px rgba(0, 175, 92, 0.5), 0 1px 6px rgba(0, 175, 92, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  /* Colour changes (border/shadow/::before) are intentionally NOT
+     transitioned: fading from the green base to CurseForge orange showed a
+     green flash. Only the slide + initial fade-in animate. */
   transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
               width 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
-              border-color 0.35s ease,
-              box-shadow 0.35s ease,
               opacity 0.2s ease;
   will-change: transform, width;
 }
@@ -5976,7 +5977,6 @@ body.screenshot-lightbox-open {
   border-radius: inherit;
   background: linear-gradient(135deg, #000000 0%, #a8380e 48%, #EB622B 100%);
   opacity: 0;
-  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
   z-index: 0;
 }
@@ -7187,10 +7187,11 @@ body.screenshot-lightbox-open {
   background: linear-gradient(135deg, #00AF5C 0%, #008746 50%, #004d28 100%);
   border: 1px solid rgba(248, 249, 250, 0.28);
   box-shadow: 0 4px 18px rgba(0, 175, 92, 0.5), 0 1px 6px rgba(0, 175, 92, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  /* Colour changes (border/shadow/::before) are intentionally NOT
+     transitioned: fading from the green base to CurseForge orange showed a
+     green flash. Only the slide + initial fade-in animate. */
   transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
               width 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
-              border-color 0.35s ease,
-              box-shadow 0.35s ease,
               opacity 0.2s ease;
   will-change: transform, width;
 }
@@ -7202,7 +7203,6 @@ body.screenshot-lightbox-open {
   border-radius: inherit;
   background: linear-gradient(135deg, #000000 0%, #a8380e 48%, #EB622B 100%);
   opacity: 0;
-  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
   z-index: 0;
 }
