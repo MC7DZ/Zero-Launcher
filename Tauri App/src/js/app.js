@@ -9954,7 +9954,7 @@ function resetScreenshotObserver() {
   return screenshotObserver;
 }
 
-const SCREENSHOT_LOAD_CONCURRENCY = 6;
+const SCREENSHOT_LOAD_CONCURRENCY = 12;
 let screenshotLoadQueue = [];
 let screenshotLoadActive = 0;
 
@@ -10355,12 +10355,16 @@ async function loadScreenshotsGrid(auto) {
     // anything left over from a previous grid first so a reload doesn't
     // just pile new cards behind stale, already-disconnected ones.
     screenshotLoadQueue = [];
-    grid.querySelectorAll('.screenshot-card').forEach((card) => enqueueScreenshotLoad(card));
+    const allCards = Array.from(grid.querySelectorAll('.screenshot-card'));
+    // First viewport-worth of cards (≈12) get priority so they appear
+    // immediately; the rest trickle in through the normal queue behind them.
+    allCards.forEach((card, i) => enqueueScreenshotLoad(card, i < 12 ? { priority: true } : undefined));
   } catch (e) {
     grid.innerHTML = `<div class="empty-state"><span style="color:var(--danger)">${e}</span></div>`;
     if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
   }
 }
+
 
 function initMods() {
   const modsInstanceSel = document.getElementById('mods-instance-select');
@@ -11645,8 +11649,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // ══════════════════════════════════════════════════════════════════
 // DISCOVER (Modrinth browser)
 // ══════════════════════════════════════════════════════════════════
-const DISCOVER_DEFAULT_PAGE_SIZE = 20;
-const DISCOVER_PAGE_SIZES = [10, 20, 40, 60, 100];
+const DISCOVER_DEFAULT_PAGE_SIZE = 30;
+const DISCOVER_PAGE_SIZES = [10, 20, 30, 40, 60, 100];
 const DISCOVER_PREFS_KEY = 'zerolauncher-discover-prefs';
 
 function loadDiscoverPrefs() {
@@ -11668,6 +11672,11 @@ function saveDiscoverPrefs() {
 }
 
 const discoverPrefs = loadDiscoverPrefs();
+
+// Incremented each time a new search is kicked off.  Every in-flight call
+// captures the value at launch; if the value has changed by the time the
+// response arrives, the result is from a superseded search and is dropped.
+let discoverSearchGeneration = 0;
 
 let discoverState = {
   platform: 'modrinth',       // 'modrinth' | 'curseforge'
@@ -12869,7 +12878,7 @@ function showDiscoverSkeletons() {
   const grid = document.getElementById('discover-results');
   if (!grid) return;
   grid.innerHTML = '';
-  const count = 8;
+  const count = discoverState.pageSize || 20;
   for (let i = 0; i < count; i++) {
     const sk = document.createElement('div');
     sk.className = 'discover-skeleton';
@@ -12927,6 +12936,10 @@ function updateDiscoverPagination() {
 async function performDiscoverSearch() {
   const grid = document.getElementById('discover-results');
   if (!grid) return;
+  // Grab a generation token.  If a newer search starts before this one
+  // resolves, the token will be stale and the result is silently dropped,
+  // leaving the newer search's output intact instead of overwriting it.
+  const myGeneration = ++discoverSearchGeneration;
   showDiscoverSkeletons();
 
   const isShader = discoverState.type === 'shader';
@@ -12963,18 +12976,17 @@ async function performDiscoverSearch() {
       discoverState.pageSize,
       discoverState.platform || 'modrinth'
     );
-    // If the user has since switched away from Discover, don't spend time
-    // rendering results into a grid nobody's looking at right now — the
-    // data's already cached in discoverState for whenever they come back.
-    const discoverTab = document.getElementById('tab-discover');
-    if (!discoverTab || !discoverTab.classList.contains('active')) return;
+    // Drop results from a superseded search (a newer search has since started).
+    if (myGeneration !== discoverSearchGeneration) return;
     discoverState.totalHits = result.total_hits || 0;
     renderDiscoverResults(result.hits || []);
     updateDiscoverPagination();
   } catch (e) {
+    if (myGeneration !== discoverSearchGeneration) return;
     grid.innerHTML = `<div class="empty-state"><span style="color:var(--danger)">${discoverEscape(String(e))}</span></div>`;
   }
 }
+
 
 function renderDiscoverResults(hits) {
   const grid = document.getElementById('discover-results');
