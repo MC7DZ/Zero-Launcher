@@ -28,6 +28,10 @@ import iconFabric from '../assets/loaders/fabric.png';
 import iconForge from '../assets/loaders/forge.png';
 import iconNeoforge from '../assets/loaders/neoforge.png';
 import iconQuilt from '../assets/loaders/quilt.png';
+import iconModrinth from '../assets/icons/modrinth.png';
+import iconModrinthActive from '../assets/icons/modrinth-active.png';
+import iconCurseforge from '../assets/icons/curseforge.png';
+import iconCurseforgeActive from '../assets/icons/curseforge-active.png';
 import javaIconSvgRaw from '../assets/icons/java.svg?raw';
 import defaultOfflineSkin from '../assets/default-offline-skin.png';
 // "Unknown" placeholder skin — a question-mark-textured skin, bundled
@@ -14489,8 +14493,11 @@ function initDiscover() {
       const img = b.querySelector('.discover-source-icon');
       if (!img) return;
       const isAct = b === btn;
-      const targetSrc = isAct ? img.dataset.iconActive : img.dataset.iconDefault;
-      if (targetSrc && img.getAttribute('src') !== targetSrc) {
+      const srcType = b.dataset.source;
+      const targetSrc = srcType === 'curseforge'
+        ? (isAct ? iconCurseforgeActive : iconCurseforge)
+        : (isAct ? iconModrinthActive : iconModrinth);
+      if (targetSrc && img.src !== targetSrc) {
         img.src = targetSrc;
       }
     });
@@ -14520,6 +14527,18 @@ function initDiscover() {
     const activeType = document.querySelector('.discover-segment.active');
     if (activeType) updateDiscoverTypeIndicator(activeType);
   };
+
+  // Pre-seed bundled Vite icons onto discover platform buttons immediately
+  const modrinthIconEl = document.getElementById('discover-icon-modrinth');
+  if (modrinthIconEl) {
+    const isAct = modrinthIconEl.closest('.discover-source-btn')?.classList.contains('active');
+    modrinthIconEl.src = isAct ? iconModrinthActive : iconModrinth;
+  }
+  const curseforgeIconEl = document.getElementById('discover-icon-curseforge');
+  if (curseforgeIconEl) {
+    const isAct = curseforgeIconEl.closest('.discover-source-btn')?.classList.contains('active');
+    curseforgeIconEl.src = isAct ? iconCurseforgeActive : iconCurseforge;
+  }
 
   // Initialize indicator positions
   requestAnimationFrame(() => {
