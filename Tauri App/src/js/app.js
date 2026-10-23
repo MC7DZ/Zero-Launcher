@@ -10287,8 +10287,20 @@ async function loadScreenshotsGrid(auto) {
   grid.classList.add('screenshots-mode');
 
   const hasShotCards = !!grid.querySelector('.screenshot-card');
+
+  // Show skeleton tiles immediately so there's instant visual feedback —
+  // the overlay loading spinner has a 220ms debounce which makes it feel
+  // like nothing is happening. Skeletons appear on the very next frame.
   if (!(auto && hasShotCards)) {
-    grid.innerHTML = '<div class="empty-state"><span>Loading content…</span></div>';
+    grid.innerHTML = '';
+    const SKELETON_COUNT = 12;
+    const skFrag = document.createDocumentFragment();
+    for (let s = 0; s < SKELETON_COUNT; s++) {
+      const sk = document.createElement('div');
+      sk.className = 'screenshot-skeleton';
+      skFrag.appendChild(sk);
+    }
+    grid.appendChild(skFrag);
   }
 
   const targetInstance = getModsTargetInstance();
@@ -10314,14 +10326,12 @@ async function loadScreenshotsGrid(auto) {
       return;
     }
 
-    // A folder with hundreds of screenshots used to build every card
-    // synchronously in one giant burst, which is what froze the UI for a
-    // moment on switching to this tab. Instead, build+insert them in
-    // small batches across animation frames — the "Loading content…"
-    // state stays up until the first batch lands, then the rest streams
-    // in behind it without blocking the main thread.
+    // Build cards in small batches of 4 per animation frame so the DOM
+    // inserts are spread across many frames — keeps the thread free and
+    // eliminates the big lag spike that happened when all cards were
+    // inserted at once or in one large batch.
     grid.innerHTML = '';
-    const BATCH_SIZE = 24;
+    const BATCH_SIZE = 4;
     let i = 0;
     await new Promise((resolve) => {
       const appendBatch = () => {
@@ -10356,6 +10366,7 @@ async function loadScreenshotsGrid(auto) {
     if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
   }
 }
+
 
 
 function initMods() {
