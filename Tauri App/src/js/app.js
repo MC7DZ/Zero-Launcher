@@ -8910,15 +8910,7 @@ function setContentType(type) {
       if (updateAllBtn) updateAllBtn.style.display = '';
     }
     showModsTabLoading();
-    if (type === 'screenshot') {
-      const myGen = modsLoadGeneration;
-      setTimeout(() => {
-        if (myGen !== modsLoadGeneration) return;
-        Promise.resolve(loadMods()).catch(() => {}).finally(() => hideModsTabLoading());
-      }, 500);
-    } else {
-      Promise.resolve(loadMods()).catch(() => {}).finally(() => hideModsTabLoading());
-    }
+    Promise.resolve(loadMods()).catch(() => {}).finally(() => hideModsTabLoading());
   } else {
     hideModsTabLoading();
     if (subpanel) subpanel.classList.add('hidden');
