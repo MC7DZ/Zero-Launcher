@@ -11623,6 +11623,10 @@ let discoverState = {
   totalHits: 0,
   loaded: false,
   syncedInstanceId: null, // last selectedInstanceId the tab's filters/search were refreshed for
+  platformFilters: {
+    modrinth: null,
+    curseforge: null,
+  },
 };
 
 // Lazily-fetched Modrinth tag data (game versions / categories / licenses),
@@ -14225,6 +14229,62 @@ function updateDiscoverShaderLoaderPillsUI() {
   });
 }
 
+function updateDiscoverFiltersUI() {
+  const isCf = discoverState.platform === 'curseforge';
+  const isShader = discoverState.type === 'shader';
+  const wantsLoader = discoverState.type === 'mod' || discoverState.type === 'modpack';
+
+  const loaderSection = document.getElementById('filter-section-loader');
+  const shaderLoaderSection = document.getElementById('filter-section-shader-loader');
+  const perfSection = document.getElementById('filter-section-performance-impact');
+  const featuresSection = document.getElementById('filter-section-features');
+  const categorySection = document.getElementById('filter-section-category');
+  const categoryLabel = document.getElementById('discover-category-label');
+  const envSection = document.getElementById('filter-section-env');
+  const resSection = document.getElementById('filter-section-resolution');
+  const licenseSection = document.getElementById('filter-section-license');
+
+  if (loaderSection) loaderSection.style.display = wantsLoader ? 'flex' : 'none';
+  if (shaderLoaderSection) shaderLoaderSection.style.display = (!isCf && isShader) ? 'flex' : 'none';
+  if (perfSection) perfSection.style.display = (!isCf && isShader) ? 'flex' : 'none';
+  if (featuresSection) featuresSection.style.display = (!isCf && isShader) ? 'flex' : 'none';
+  if (envSection) envSection.style.display = (!isCf && wantsLoader) ? 'flex' : 'none';
+  if (resSection) resSection.style.display = (!isCf && discoverState.type === 'resourcepack') ? 'flex' : 'none';
+  if (licenseSection) licenseSection.style.display = !isCf ? 'flex' : 'none';
+  if (categorySection) categorySection.style.display = !isCf ? 'flex' : 'none';
+  if (categoryLabel) categoryLabel.textContent = isShader ? 'Style & Categories' : 'Categories';
+
+  // Synchronize inputs with current discoverState
+  const qInput = document.getElementById('discover-query');
+  if (qInput) {
+    qInput.value = discoverState.query || '';
+    qInput.placeholder = isCf ? 'Search CurseForge…' : 'Search Modrinth…';
+  }
+  const gvSelect = document.getElementById('discover-game-version-select');
+  if (gvSelect) gvSelect.value = discoverState.gameVersion || '';
+  const resSelect = document.getElementById('discover-resolution-select');
+  if (resSelect) resSelect.value = discoverState.resolution || '';
+  const perfSelect = document.getElementById('discover-performance-impact-select');
+  if (perfSelect) perfSelect.value = discoverState.performanceImpact || '';
+  const envSelect = document.getElementById('discover-environment-select');
+  if (envSelect) envSelect.value = discoverState.environment || 'any';
+  const licSelect = document.getElementById('discover-license-select');
+  if (licSelect) {
+    licSelect.value = discoverState.openSourceOnly ? '__opensource__' : (discoverState.license || '');
+  }
+
+  updateDiscoverLoaderPillsUI();
+  updateDiscoverShaderLoaderPillsUI();
+  if (!isCf) {
+    populateDiscoverCategories();
+    if (discoverState.type === 'resourcepack') populateDiscoverResolutions();
+    if (isShader) {
+      populateDiscoverPerformanceImpacts();
+      populateDiscoverFeatures();
+    }
+  }
+}
+
 function initDiscover() {
   const queryInput = document.getElementById('discover-query');
   const searchBtn = document.getElementById('discover-search-btn');
@@ -14394,20 +14454,66 @@ function initDiscover() {
   document.querySelectorAll('.discover-source-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.classList.contains('active')) return;
+      const prevPlatform = discoverState.platform || 'modrinth';
+      const nextPlatform = btn.dataset.source || 'modrinth';
+
+      // Save current platform's query, type, and filters
+      discoverState.platformFilters[prevPlatform] = {
+        query: discoverState.query,
+        type: discoverState.type,
+        loader: discoverState.loader,
+        shaderLoader: discoverState.shaderLoader,
+        gameVersion: discoverState.gameVersion,
+        categories: [...discoverState.categories],
+        features: [...discoverState.features],
+        performanceImpact: discoverState.performanceImpact,
+        environment: discoverState.environment,
+        resolution: discoverState.resolution,
+        license: discoverState.license,
+        openSourceOnly: discoverState.openSourceOnly,
+        page: discoverState.page,
+      };
+
       document.querySelectorAll('.discover-source-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      discoverState.platform = btn.dataset.source || 'modrinth';
+      discoverState.platform = nextPlatform;
       updateDiscoverSourceIndicator(btn);
 
-      // Sync color theme to the content type buttons sliding pill as well
+      // Restore saved state for nextPlatform if available, otherwise sensible defaults
+      const saved = discoverState.platformFilters[nextPlatform];
+      if (saved) {
+        discoverState.query = saved.query || '';
+        discoverState.type = saved.type || 'resourcepack';
+        discoverState.loader = saved.loader || 'any';
+        discoverState.shaderLoader = saved.shaderLoader || 'any';
+        discoverState.gameVersion = saved.gameVersion || '';
+        discoverState.categories = [...(saved.categories || [])];
+        discoverState.features = [...(saved.features || [])];
+        discoverState.performanceImpact = saved.performanceImpact || '';
+        discoverState.environment = saved.environment || 'any';
+        discoverState.resolution = saved.resolution || '';
+        discoverState.license = saved.license || '';
+        discoverState.openSourceOnly = !!saved.openSourceOnly;
+        discoverState.page = saved.page || 1;
+      } else {
+        discoverState.query = '';
+        discoverState.page = 1;
+        discoverState.categories = [];
+        discoverState.features = [];
+        discoverState.performanceImpact = '';
+        discoverState.resolution = '';
+        discoverState.license = '';
+        discoverState.openSourceOnly = false;
+      }
+
+      // Sync active content-type segment button in UI
+      document.querySelectorAll('.discover-segment').forEach(b => {
+        b.classList.toggle('active', b.dataset.type === discoverState.type);
+      });
       const activeType = document.querySelector('.discover-segment.active');
       if (activeType) updateDiscoverTypeIndicator(activeType);
 
-      discoverState.page = 1;
-      const qInput = document.getElementById('discover-query');
-      if (qInput) {
-        qInput.placeholder = discoverState.platform === 'curseforge' ? 'Search CurseForge…' : 'Search Modrinth…';
-      }
+      updateDiscoverFiltersUI();
       performDiscoverSearch();
     });
   });
@@ -14430,36 +14536,9 @@ function initDiscover() {
       // Modpacks and Shaders do not carry over the target instance game version
       if (discoverState.type === 'modpack' || discoverState.type === 'shader') {
         discoverState.gameVersion = '';
-        const gvSelect = document.getElementById('discover-game-version-select');
-        if (gvSelect) gvSelect.value = '';
       }
 
-      const loaderSection = document.getElementById('filter-section-loader');
-      const shaderLoaderSection = document.getElementById('filter-section-shader-loader');
-      const perfSection = document.getElementById('filter-section-performance-impact');
-      const featuresSection = document.getElementById('filter-section-features');
-      const categoryLabel = document.getElementById('discover-category-label');
-      const envSection = document.getElementById('filter-section-env');
-      const resSection = document.getElementById('filter-section-resolution');
-
-      const isShader = discoverState.type === 'shader';
-      const wantsLoaderEnv = discoverState.type === 'mod' || discoverState.type === 'modpack';
-      if (loaderSection) loaderSection.style.display = wantsLoaderEnv ? 'flex' : 'none';
-      if (shaderLoaderSection) shaderLoaderSection.style.display = isShader ? 'flex' : 'none';
-      if (perfSection) perfSection.style.display = isShader ? 'flex' : 'none';
-      if (featuresSection) featuresSection.style.display = isShader ? 'flex' : 'none';
-      if (envSection) envSection.style.display = wantsLoaderEnv ? 'flex' : 'none';
-      if (resSection) resSection.style.display = discoverState.type === 'resourcepack' ? 'flex' : 'none';
-      if (categoryLabel) categoryLabel.textContent = isShader ? 'Style & Categories' : 'Categories';
-
-      updateDiscoverLoaderPillsUI();
-      updateDiscoverShaderLoaderPillsUI();
-      populateDiscoverCategories();
-      if (discoverState.type === 'resourcepack') populateDiscoverResolutions();
-      if (isShader) {
-        populateDiscoverPerformanceImpacts();
-        populateDiscoverFeatures();
-      }
+      updateDiscoverFiltersUI();
       applyInstanceFiltersToDiscover(currentDiscoverTargetInstance());
       performDiscoverSearch();
     });
