@@ -14345,6 +14345,17 @@ function initDiscover() {
         sourceIndicator.classList.add('ready');
       }
     }
+
+    // Swap icons between active and inactive states
+    document.querySelectorAll('.discover-source-btn').forEach(b => {
+      const img = b.querySelector('.discover-source-icon');
+      if (!img) return;
+      const isAct = b === btn;
+      const targetSrc = isAct ? img.dataset.iconActive : img.dataset.iconDefault;
+      if (targetSrc && img.getAttribute('src') !== targetSrc) {
+        img.src = targetSrc;
+      }
+    });
   }
 
   function updateDiscoverTypeIndicator(btn) {

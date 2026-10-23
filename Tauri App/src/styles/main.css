@@ -5943,11 +5943,11 @@ body.screenshot-lightbox-open {
   box-shadow: 0 3px 12px rgba(0, 175, 92, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
-/* CurseForge color theme for segment indicator: #088073 up, #FFFFFF tiny middle, #EB622B under */
+/* CurseForge color theme for segment indicator: smooth blend of #EB622B into #000000 */
 .discover-type-indicator.platform-curseforge {
-  background: linear-gradient(180deg, #088073 0%, #088073 14%, #FFFFFF 15%, #FFFFFF 19%, #EB622B 20%, #EB622B 100%);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  box-shadow: 0 3px 12px rgba(235, 98, 43, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: linear-gradient(135deg, #EB622B 0%, #a8380e 52%, #000000 100%);
+  border: 1px solid rgba(235, 98, 43, 0.4);
+  box-shadow: 0 3px 12px rgba(235, 98, 43, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .discover-segment {
@@ -6960,9 +6960,9 @@ body.screenshot-lightbox-open {
 }
 
 .discover-source-indicator.platform-curseforge {
-  background: linear-gradient(180deg, #088073 0%, #088073 14%, #FFFFFF 15%, #FFFFFF 19%, #EB622B 20%, #EB622B 100%);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  box-shadow: 0 3px 12px rgba(235, 98, 43, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: linear-gradient(135deg, #EB622B 0%, #a8380e 52%, #000000 100%);
+  border: 1px solid rgba(235, 98, 43, 0.4);
+  box-shadow: 0 3px 12px rgba(235, 98, 43, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .discover-source-btn {
