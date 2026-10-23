@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Make build script executable
         run: chmod +x "Tauri App/build.sh"
       - name: Install system dependencies
@@ -33,7 +33,7 @@ jobs:
           ls -lh
 
       - name: Upload build artifacts (AppImage + zsync)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: zerolauncher-linux-build
           path: |
@@ -42,7 +42,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload zsync delta file
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ZeroLauncher-zsync
           path: Tauri App/src-tauri/target/release/bundle/appimage/*.zsync
