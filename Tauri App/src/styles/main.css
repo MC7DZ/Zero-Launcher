@@ -5924,21 +5924,20 @@ body.screenshot-lightbox-open {
   opacity: 0;
   transform: translateX(0);
   background: linear-gradient(135deg, #00AF5C 0%, #008746 50%, #004d28 100%);
-  border: 1px solid rgba(248, 249, 250, 0.25);
-  box-shadow: 0 3px 12px rgba(0, 175, 92, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(248, 249, 250, 0.28);
+  box-shadow: 0 4px 18px rgba(0, 175, 92, 0.5), 0 1px 6px rgba(0, 175, 92, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
               width 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
               border-color 0.35s ease,
               box-shadow 0.35s ease,
               opacity 0.2s ease;
   will-change: transform, width;
-  overflow: hidden;
 }
 
 .discover-type-indicator::before {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -1px;
   border-radius: inherit;
   background: linear-gradient(135deg, #000000 0%, #a8380e 48%, #EB622B 100%);
   opacity: 0;
@@ -5953,21 +5952,21 @@ body.screenshot-lightbox-open {
 
 /* Modrinth color theme for segment indicator */
 .discover-type-indicator.platform-modrinth {
-  border-color: rgba(248, 249, 250, 0.25);
-  box-shadow: 0 3px 12px rgba(0, 175, 92, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border-color: rgba(248, 249, 250, 0.28);
+  box-shadow: 0 4px 18px rgba(0, 175, 92, 0.5), 0 1px 6px rgba(0, 175, 92, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 .discover-type-indicator.platform-modrinth::before {
   opacity: 0;
 }
 
-/* CurseForge color theme for segment indicator: smooth blend with dark at top-left into #EB622B */
+/* CurseForge color theme for segment indicator: smooth blend with dark at top-left into vibrant #EB622B glow */
 .discover-type-indicator.platform-curseforge {
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-left-color: rgba(0, 0, 0, 0.7);
-  border-top-color: rgba(0, 0, 0, 0.7);
-  border-right-color: rgba(235, 98, 43, 0.55);
-  border-bottom-color: rgba(235, 98, 43, 0.55);
-  box-shadow: 3px 2px 14px rgba(235, 98, 43, 0.4), -2px -1px 8px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  border-left-color: rgba(10, 10, 10, 0.85);
+  border-top-color: rgba(10, 10, 10, 0.85);
+  border-right-color: rgba(235, 98, 43, 0.65);
+  border-bottom-color: rgba(235, 98, 43, 0.65);
+  box-shadow: 4px 4px 18px rgba(235, 98, 43, 0.55), 1px 1px 6px rgba(235, 98, 43, 0.35), -1px -1px 4px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 .discover-type-indicator.platform-curseforge::before {
   opacity: 1;
@@ -7002,21 +7001,20 @@ body.screenshot-lightbox-open {
   opacity: 0;
   transform: translateX(0);
   background: linear-gradient(135deg, #00AF5C 0%, #008746 50%, #004d28 100%);
-  border: 1px solid rgba(248, 249, 250, 0.25);
-  box-shadow: 0 3px 12px rgba(0, 175, 92, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(248, 249, 250, 0.28);
+  box-shadow: 0 4px 18px rgba(0, 175, 92, 0.5), 0 1px 6px rgba(0, 175, 92, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
               width 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
               border-color 0.35s ease,
               box-shadow 0.35s ease,
               opacity 0.2s ease;
   will-change: transform, width;
-  overflow: hidden;
 }
 
 .discover-source-indicator::before {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -1px;
   border-radius: inherit;
   background: linear-gradient(135deg, #000000 0%, #a8380e 48%, #EB622B 100%);
   opacity: 0;
@@ -7030,8 +7028,8 @@ body.screenshot-lightbox-open {
 }
 
 .discover-source-indicator.platform-modrinth {
-  border-color: rgba(248, 249, 250, 0.25);
-  box-shadow: 0 3px 12px rgba(0, 175, 92, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border-color: rgba(248, 249, 250, 0.28);
+  box-shadow: 0 4px 18px rgba(0, 175, 92, 0.5), 0 1px 6px rgba(0, 175, 92, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 .discover-source-indicator.platform-modrinth::before {
   opacity: 0;
@@ -7039,11 +7037,11 @@ body.screenshot-lightbox-open {
 
 .discover-source-indicator.platform-curseforge {
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-left-color: rgba(0, 0, 0, 0.7);
-  border-top-color: rgba(0, 0, 0, 0.7);
-  border-right-color: rgba(235, 98, 43, 0.55);
-  border-bottom-color: rgba(235, 98, 43, 0.55);
-  box-shadow: 3px 2px 14px rgba(235, 98, 43, 0.4), -2px -1px 8px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  border-left-color: rgba(10, 10, 10, 0.85);
+  border-top-color: rgba(10, 10, 10, 0.85);
+  border-right-color: rgba(235, 98, 43, 0.65);
+  border-bottom-color: rgba(235, 98, 43, 0.65);
+  box-shadow: 4px 4px 18px rgba(235, 98, 43, 0.55), 1px 1px 6px rgba(235, 98, 43, 0.35), -1px -1px 4px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 .discover-source-indicator.platform-curseforge::before {
   opacity: 1;
