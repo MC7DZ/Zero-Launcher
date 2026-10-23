@@ -15093,29 +15093,120 @@ function openCustomColorPicker({ title, initialColor, type = 'accent', onApply, 
   overlay.classList.remove('hidden');
 }
 
-function applyAccentColorLive(hex) {
+let _accentTransitionAnimId = null;
+let _bgTransitionAnimId = null;
+
+function applyAccentColorLive(hex, immediate = false) {
   if (!hex) return;
   if (settings) settings.accent_color = hex;
   const root = document.documentElement;
-  root.style.setProperty('--accent', hex);
-  root.style.setProperty('--accent-dim', hexToRgba(hex, 0.15));
-  root.style.setProperty('--accent-glow', hexToRgba(hex, 0.35));
-  if (typeof BG !== 'undefined' && BG._staticKey) {
-    BG._staticKey = '';
-    BG.requestRedraw();
+
+  if (immediate || (document.documentElement && document.documentElement.classList.contains('no-ui-animations'))) {
+    if (_accentTransitionAnimId) cancelAnimationFrame(_accentTransitionAnimId);
+    root.style.setProperty('--accent', hex);
+    root.style.setProperty('--accent-dim', hexToRgba(hex, 0.15));
+    root.style.setProperty('--accent-glow', hexToRgba(hex, 0.35));
+    if (typeof BG !== 'undefined' && BG._staticKey) {
+      BG._staticKey = '';
+      BG.requestRedraw();
+    }
+    return;
   }
+
+  const currentComputed = getComputedStyle(root).getPropertyValue('--accent').trim() || hex;
+  const startRgb = hexToRgbValues(currentComputed);
+  const endRgb = hexToRgbValues(hex);
+
+  if (_accentTransitionAnimId) cancelAnimationFrame(_accentTransitionAnimId);
+
+  const duration = 320;
+  const startTime = performance.now();
+
+  function step(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(1, elapsed / duration);
+    // Smooth ease-out cubic
+    const ease = 1 - Math.pow(1 - progress, 3);
+
+    const r = Math.round(startRgb[0] + (endRgb[0] - startRgb[0]) * ease);
+    const g = Math.round(startRgb[1] + (endRgb[1] - startRgb[1]) * ease);
+    const b = Math.round(startRgb[2] + (endRgb[2] - startRgb[2]) * ease);
+    const currentHex = rgbToHex(r, g, b);
+
+    root.style.setProperty('--accent', currentHex);
+    root.style.setProperty('--accent-dim', hexToRgba(currentHex, 0.15));
+    root.style.setProperty('--accent-glow', hexToRgba(currentHex, 0.35));
+
+    if (progress < 1) {
+      _accentTransitionAnimId = requestAnimationFrame(step);
+    } else {
+      _accentTransitionAnimId = null;
+      root.style.setProperty('--accent', hex);
+      root.style.setProperty('--accent-dim', hexToRgba(hex, 0.15));
+      root.style.setProperty('--accent-glow', hexToRgba(hex, 0.35));
+      if (typeof BG !== 'undefined' && BG._staticKey) {
+        BG._staticKey = '';
+        BG.requestRedraw();
+      }
+    }
+  }
+
+  _accentTransitionAnimId = requestAnimationFrame(step);
 }
 
-function applyBgColorLive(hex) {
+function applyBgColorLive(hex, immediate = false) {
   if (!hex) return;
   if (settings) settings.bg_color = hex;
   const root = document.documentElement;
-  root.style.setProperty('--bg', hex);
-  root.style.setProperty('--bg-darker', darkenColor(hex, 0.4));
-  if (typeof BG !== 'undefined' && BG._staticKey) {
-    BG._staticKey = '';
-    BG.requestRedraw();
+
+  if (immediate || (document.documentElement && document.documentElement.classList.contains('no-ui-animations'))) {
+    if (_bgTransitionAnimId) cancelAnimationFrame(_bgTransitionAnimId);
+    root.style.setProperty('--bg', hex);
+    root.style.setProperty('--bg-darker', darkenColor(hex, 0.4));
+    if (typeof BG !== 'undefined' && BG._staticKey) {
+      BG._staticKey = '';
+      BG.requestRedraw();
+    }
+    return;
   }
+
+  const currentComputed = getComputedStyle(root).getPropertyValue('--bg').trim() || hex;
+  const startRgb = hexToRgbValues(currentComputed);
+  const endRgb = hexToRgbValues(hex);
+
+  if (_bgTransitionAnimId) cancelAnimationFrame(_bgTransitionAnimId);
+
+  const duration = 320;
+  const startTime = performance.now();
+
+  function step(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(1, elapsed / duration);
+    // Smooth ease-out cubic
+    const ease = 1 - Math.pow(1 - progress, 3);
+
+    const r = Math.round(startRgb[0] + (endRgb[0] - startRgb[0]) * ease);
+    const g = Math.round(startRgb[1] + (endRgb[1] - startRgb[1]) * ease);
+    const b = Math.round(startRgb[2] + (endRgb[2] - startRgb[2]) * ease);
+    const currentHex = rgbToHex(r, g, b);
+
+    root.style.setProperty('--bg', currentHex);
+    root.style.setProperty('--bg-darker', darkenColor(currentHex, 0.4));
+
+    if (progress < 1) {
+      _bgTransitionAnimId = requestAnimationFrame(step);
+    } else {
+      _bgTransitionAnimId = null;
+      root.style.setProperty('--bg', hex);
+      root.style.setProperty('--bg-darker', darkenColor(hex, 0.4));
+      if (typeof BG !== 'undefined' && BG._staticKey) {
+        BG._staticKey = '';
+        BG.requestRedraw();
+      }
+    }
+  }
+
+  _bgTransitionAnimId = requestAnimationFrame(step);
 }
 
 async function loadSettings() {
@@ -15298,9 +15389,15 @@ function applyThemeFromSettings() {
   ensureAccentFields();
   const accent = currentAccentColor();
   const baseBg = (settings && settings.bg_color) || preset.bg_color || '#0a0a0f';
-  root.style.setProperty('--accent', accent);
-  root.style.setProperty('--bg', baseBg);
-  root.style.setProperty('--bg-darker', darkenColor(baseBg, 0.4));
+  if (!_accentTransitionAnimId) {
+    root.style.setProperty('--accent', accent);
+    root.style.setProperty('--accent-dim', hexToRgba(accent, 0.15));
+    root.style.setProperty('--accent-glow', hexToRgba(accent, 0.35));
+  }
+  if (!_bgTransitionAnimId) {
+    root.style.setProperty('--bg', baseBg);
+    root.style.setProperty('--bg-darker', darkenColor(baseBg, 0.4));
+  }
 
   // Sync previews & editable HEX inputs in Settings
   const accentPrev = document.getElementById('setting-accent-preview');

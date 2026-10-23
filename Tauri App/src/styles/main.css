@@ -105,6 +105,7 @@ input, textarea, select, [contenteditable="true"] {
   overflow: hidden;
   background-color: var(--bg, #0a0a0f);
   border-radius: 12px;
+  transition: background-color 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 #bg-canvas {
@@ -2872,6 +2873,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-shrink: 0;
   display: inline-block;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: background-color 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .color-hex-label {
   font-family: var(--font);
