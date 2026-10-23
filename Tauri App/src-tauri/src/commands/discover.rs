@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
 const MODRINTH_API: &str = "https://api.modrinth.com/v2";
+const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
+const CURSEFORGE_API_KEY: &str = "$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm";
 const USER_AGENT: &str = "ZeroLauncher/1.0 (discover-tab)";
 
 // A single shared client (connection pooling + DNS cache) instead of a new
@@ -22,6 +24,18 @@ fn modrinth_client() -> &'static reqwest::Client {
             .user_agent(USER_AGENT)
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(20))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
+fn curseforge_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent(USER_AGENT)
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(25))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new())
     })
@@ -48,6 +62,23 @@ async fn send_download_with_retry(
     let mut attempt = 0;
     loop {
         match build(client).send().await {
+            Ok(resp) => return Ok(resp),
+            Err(e) if attempt < 2 && (e.is_connect() || e.is_timeout()) => {
+                attempt += 1;
+                tokio::time::sleep(Duration::from_millis(400 * attempt as u64)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+async fn send_curseforge_with_retry(
+    build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let client = curseforge_client();
+    let mut attempt = 0;
+    loop {
+        match build(client).header("x-api-key", CURSEFORGE_API_KEY).send().await {
             Ok(resp) => return Ok(resp),
             Err(e) if attempt < 2 && (e.is_connect() || e.is_timeout()) => {
                 attempt += 1;
@@ -154,14 +185,160 @@ struct RawSearchResponse {
     limit: u64,
 }
 
-/// Search Modrinth for mods or resource packs, optionally filtered by loader,
-/// Minecraft version, categories, client/server environment, license, and
-/// open-source-only — mirrors the Discover tab's search bar and filter
-/// dropdowns.
+// ── CurseForge Search Response Types ───────────────────────────────────────
+
+#[derive(Deserialize)]
+struct CfSearchResponse {
+    data: Vec<CfMod>,
+    pagination: CfPagination,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize)]
+struct CfPagination {
+    index: u64,
+    #[serde(rename = "pageSize")]
+    page_size: u64,
+    #[serde(rename = "totalCount")]
+    total_count: u64,
+}
+
+#[derive(Deserialize)]
+struct CfMod {
+    id: u64,
+    name: String,
+    slug: String,
+    summary: String,
+    authors: Vec<CfAuthor>,
+    logo: Option<CfLogo>,
+    #[serde(rename = "downloadCount")]
+    download_count: u64,
+    #[serde(rename = "thumbsUpCount", default)]
+    thumbs_up_count: u64,
+    #[serde(rename = "classId")]
+    class_id: Option<u64>,
+    categories: Vec<CfCategory>,
+    #[serde(rename = "latestFiles", default)]
+    latest_files: Vec<CfFile>,
+    screenshots: Vec<CfScreenshot>,
+    #[serde(rename = "dateModified")]
+    date_modified: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CfAuthor {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct CfLogo {
+    url: String,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize)]
+struct CfCategory {
+    name: String,
+    slug: String,
+}
+
+#[derive(Deserialize)]
+struct CfFile {
+    id: u64,
+    #[serde(rename = "displayName")]
+    display_name: String,
+    #[serde(rename = "fileName")]
+    file_name: String,
+    #[serde(rename = "downloadUrl")]
+    download_url: Option<String>,
+    #[serde(rename = "gameVersions", default)]
+    game_versions: Vec<String>,
+    #[serde(rename = "fileDate", default)]
+    file_date: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CfScreenshot {
+    url: String,
+    title: Option<String>,
+    description: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize)]
+struct CfFilesResponse {
+    data: Vec<CfFile>,
+    pagination: CfPagination,
+}
+
+#[derive(Deserialize)]
+struct CfSingleModResponse {
+    data: CfMod,
+}
+
+#[derive(Deserialize)]
+struct CfDescriptionResponse {
+    data: String,
+}
+
+fn cf_mod_to_discover_hit(m: CfMod, default_project_type: &str) -> DiscoverHit {
+    let author = m.authors.first().map(|a| a.name.clone()).unwrap_or_default();
+    let icon_url = m.logo.map(|l| l.url);
+    let cats: Vec<String> = m.categories.iter().map(|c| c.name.clone()).collect();
+    let display_cats = cats.clone();
+    let gallery: Vec<String> = m.screenshots.iter().map(|s| s.url.clone()).collect();
+    let featured_gallery = gallery.first().cloned();
+
+    let project_type = match m.class_id {
+        Some(6) => "mod",
+        Some(4471) => "modpack",
+        Some(12) => "resourcepack",
+        Some(6552) => "shader",
+        _ => default_project_type,
+    }.to_string();
+
+    let mut versions = Vec::new();
+    let mut latest_version = None;
+    if let Some(first_file) = m.latest_files.first() {
+        latest_version = Some(first_file.display_name.clone());
+        for f in &m.latest_files {
+            for gv in &f.game_versions {
+                if !versions.contains(gv) {
+                    versions.push(gv.clone());
+                }
+            }
+        }
+    }
+
+    DiscoverHit {
+        project_id: m.id.to_string(),
+        slug: m.slug,
+        title: m.name,
+        description: m.summary,
+        author,
+        icon_url,
+        downloads: m.download_count,
+        follows: m.thumbs_up_count,
+        project_type,
+        categories: cats,
+        display_categories: display_cats,
+        license: None,
+        client_side: None,
+        server_side: None,
+        date_modified: m.date_modified,
+        latest_version,
+        versions,
+        gallery,
+        featured_gallery,
+        color: None,
+    }
+}
+
+/// Search Modrinth or CurseForge for mods, modpacks, resource packs, or shaders.
 #[tauri::command]
 pub async fn discover_search(
     query: String,
-    project_type: String, // "mod" | "resourcepack" | "modpack"
+    project_type: String, // "mod" | "resourcepack" | "modpack" | "shader"
     loader: Option<String>,
     game_version: Option<String>,
     categories: Option<Vec<String>>,
@@ -170,7 +347,21 @@ pub async fn discover_search(
     open_source_only: Option<bool>,
     page: u32,
     limit: u32,
+    platform: Option<String>, // "modrinth" | "curseforge"
 ) -> Result<DiscoverSearchResult, String> {
+    let plat = platform.as_deref().unwrap_or("modrinth");
+
+    if plat == "curseforge" {
+        return search_curseforge(
+            &query,
+            &project_type,
+            loader.as_deref(),
+            game_version.as_deref(),
+            page,
+            limit,
+        ).await;
+    }
+
     let mut facets: Vec<Vec<String>> = vec![vec![format!("project_type:{}", project_type)]];
     if let Some(l) = loader.filter(|l| !l.is_empty() && l != "any") {
         facets.push(vec![format!("categories:{}", l.to_lowercase())]);
@@ -255,6 +446,86 @@ pub async fn discover_search(
     })
 }
 
+async fn search_curseforge(
+    query: &str,
+    project_type: &str,
+    loader: Option<&str>,
+    game_version: Option<&str>,
+    page: u32,
+    limit: u32,
+) -> Result<DiscoverSearchResult, String> {
+    let class_id = match project_type {
+        "modpack" => 4471,
+        "resourcepack" => 12,
+        "shader" => 6552,
+        _ => 6, // "mod"
+    };
+
+    let offset = (page.saturating_sub(1)) as u64 * limit as u64;
+
+    let mut query_params: Vec<(&str, String)> = vec![
+        ("gameId", "432".to_string()),
+        ("classId", class_id.to_string()),
+        ("index", offset.to_string()),
+        ("pageSize", limit.to_string()),
+    ];
+
+    let trimmed_q = query.trim();
+    if !trimmed_q.is_empty() {
+        query_params.push(("searchFilter", trimmed_q.to_string()));
+    } else {
+        // Default sort by Popularity / Downloads when no query is typed
+        query_params.push(("sortField", "2".to_string()));
+        query_params.push(("sortOrder", "desc".to_string()));
+    }
+
+    if let Some(gv) = game_version.filter(|v| !v.is_empty() && *v != "any") {
+        query_params.push(("gameVersion", gv.to_string()));
+    }
+
+    if let Some(l) = loader.filter(|l| !l.is_empty() && *l != "any") {
+        let loader_type = match l.to_lowercase().as_str() {
+            "forge" => Some(1),
+            "fabric" => Some(4),
+            "quilt" => Some(5),
+            "neoforge" => Some(6),
+            _ => None,
+        };
+        if let Some(lt) = loader_type {
+            query_params.push(("modLoaderType", lt.to_string()));
+        }
+    }
+
+    let url = format!("{CURSEFORGE_API}/mods/search");
+    let resp = send_curseforge_with_retry(|client| {
+        client.get(&url).query(&query_params)
+    })
+    .await
+    .map_err(|e| format!("Failed to reach CurseForge: {e} (source: {:?})", e.source()))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("CurseForge search failed: HTTP {}", resp.status()));
+    }
+
+    let raw: CfSearchResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse CurseForge response: {e}"))?;
+
+    let hits: Vec<DiscoverHit> = raw
+        .data
+        .into_iter()
+        .map(|m| cf_mod_to_discover_hit(m, project_type))
+        .collect();
+
+    Ok(DiscoverSearchResult {
+        hits,
+        total_hits: raw.pagination.total_count,
+        offset,
+        limit: limit as u64,
+    })
+}
+
 // ── Versions ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -328,6 +599,10 @@ pub async fn discover_get_versions(
     loader: Option<String>,
     game_version: Option<String>,
 ) -> Result<Vec<DiscoverVersion>, String> {
+    if let Ok(mod_id) = project_id.trim().parse::<u64>() {
+        return get_curseforge_versions(mod_id, loader.as_deref(), game_version.as_deref()).await;
+    }
+
     let url = format!("{MODRINTH_API}/project/{project_id}/version");
     let mut query: Vec<(&str, String)> = Vec::new();
     if let Some(l) = loader.filter(|l| !l.is_empty() && l != "any") {
@@ -387,6 +662,116 @@ pub async fn discover_get_versions(
         })
         .collect())
 }
+
+async fn get_curseforge_versions(
+    mod_id: u64,
+    loader: Option<&str>,
+    game_version: Option<&str>,
+) -> Result<Vec<DiscoverVersion>, String> {
+    let url = format!("{CURSEFORGE_API}/mods/{mod_id}/files");
+    let mut query: Vec<(&str, String)> = vec![
+        ("pageSize", "50".to_string()),
+    ];
+
+    if let Some(gv) = game_version.filter(|v| !v.is_empty() && *v != "any") {
+        query.push(("gameVersion", gv.to_string()));
+    }
+
+    if let Some(l) = loader.filter(|l| !l.is_empty() && *l != "any") {
+        let loader_type = match l.to_lowercase().as_str() {
+            "forge" => Some(1),
+            "fabric" => Some(4),
+            "quilt" => Some(5),
+            "neoforge" => Some(6),
+            _ => None,
+        };
+        if let Some(lt) = loader_type {
+            query.push(("modLoaderType", lt.to_string()));
+        }
+    }
+
+    let resp = send_curseforge_with_retry(|client| {
+        client.get(&url).query(&query)
+    })
+    .await
+    .map_err(|e| format!("Failed to reach CurseForge files: {e} (source: {:?})", e.source()))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("CurseForge files request failed: HTTP {}", resp.status()));
+    }
+
+    let raw: CfFilesResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse CurseForge files response: {e}"))?;
+
+    let versions: Vec<DiscoverVersion> = raw
+        .data
+        .into_iter()
+        .map(|f| {
+            let direct_url = f.download_url.unwrap_or_else(|| {
+                format!(
+                    "https://edge.forgecdn.net/files/{}/{}/{}",
+                    f.id / 1000,
+                    f.id % 1000,
+                    urlencoding_file_name(&f.file_name)
+                )
+            });
+
+            let mut loaders = Vec::new();
+            let mut gvs = Vec::new();
+
+            for g in &f.game_versions {
+                let gl = g.to_lowercase();
+                if gl == "forge" || gl == "fabric" || gl == "neoforge" || gl == "quilt" {
+                    if !loaders.contains(&gl) {
+                        loaders.push(gl);
+                    }
+                } else if g.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                    if !gvs.contains(g) {
+                        gvs.push(g.clone());
+                    }
+                }
+            }
+
+            DiscoverVersion {
+                id: f.id.to_string(),
+                version_number: f.display_name.clone(),
+                name: Some(f.display_name),
+                changelog: None,
+                date_published: f.file_date,
+                game_versions: gvs,
+                loaders,
+                files: vec![DiscoverFile {
+                    url: direct_url,
+                    filename: f.file_name,
+                    primary: true,
+                }],
+                dependencies: Vec::new(),
+            }
+        })
+        .collect();
+
+    Ok(versions)
+}
+
+fn urlencoding_file_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for b in name.bytes() {
+        match b {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push_str("%20"),
+            _ => {
+                use std::fmt::Write as _;
+                let _ = write!(out, "%{:02X}", b);
+            }
+        }
+    }
+    out
+}
+
 
 /// Resolve the best download URL + filename for a Modrinth project, filtered
 /// by loader/game version when given. Used by the Presets tab to install a
@@ -481,6 +866,10 @@ pub struct DiscoverProjectDetails {
 /// the user opens the Versions tab of the modal.
 #[tauri::command]
 pub async fn discover_get_project_details(project_id: String) -> Result<DiscoverProjectDetails, String> {
+    if let Ok(mod_id) = project_id.trim().parse::<u64>() {
+        return get_curseforge_project_details(mod_id).await;
+    }
+
     let url = format!("{MODRINTH_API}/project/{project_id}");
     let resp = send_with_retry(|client| client.get(&url))
         .await
@@ -587,6 +976,10 @@ pub async fn discover_get_project_details(project_id: String) -> Result<Discover
 /// and matched against already-installed mods.
 #[tauri::command]
 pub async fn discover_get_project(project_id: String) -> Result<DiscoverHit, String> {
+    if let Ok(mod_id) = project_id.trim().parse::<u64>() {
+        return get_curseforge_project(mod_id).await;
+    }
+
     let url = format!("{MODRINTH_API}/project/{project_id}");
     let resp = send_with_retry(|client| client.get(&url))
         .await
@@ -646,6 +1039,102 @@ pub async fn discover_get_project(project_id: String) -> Result<DiscoverHit, Str
         gallery: Vec::new(),
         featured_gallery: None,
         color: None,
+    })
+}
+
+async fn get_curseforge_project(mod_id: u64) -> Result<DiscoverHit, String> {
+    let url = format!("{CURSEFORGE_API}/mods/{mod_id}");
+    let resp = send_curseforge_with_retry(|client| client.get(&url))
+        .await
+        .map_err(|e| format!("Failed to reach CurseForge: {e} (source: {:?})", e.source()))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to fetch CurseForge mod: HTTP {}", resp.status()));
+    }
+
+    let raw: CfSingleModResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse CurseForge mod: {e}"))?;
+
+    Ok(cf_mod_to_discover_hit(raw.data, "mod"))
+}
+
+async fn get_curseforge_project_details(mod_id: u64) -> Result<DiscoverProjectDetails, String> {
+    let mod_url = format!("{CURSEFORGE_API}/mods/{mod_id}");
+    let desc_url = format!("{CURSEFORGE_API}/mods/{mod_id}/description");
+
+    let (mod_resp, desc_resp) = tokio::join!(
+        send_curseforge_with_retry(|client| client.get(&mod_url)),
+        send_curseforge_with_retry(|client| client.get(&desc_url)),
+    );
+
+    let mod_resp = mod_resp.map_err(|e| format!("Failed to reach CurseForge: {e}"))?;
+    if !mod_resp.status().is_success() {
+        return Err(format!("Failed to fetch CurseForge project: HTTP {}", mod_resp.status()));
+    }
+
+    let raw_mod: CfSingleModResponse = mod_resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse CurseForge project: {e}"))?;
+
+    let m = raw_mod.data;
+
+    let body = match desc_resp {
+        Ok(r) if r.status().is_success() => {
+            if let Ok(d) = r.json::<CfDescriptionResponse>().await {
+                d.data
+            } else {
+                m.summary.clone()
+            }
+        }
+        _ => m.summary.clone(),
+    };
+
+    let author = m.authors.first().map(|a| a.name.clone()).unwrap_or_default();
+    let icon_url = m.logo.map(|l| l.url);
+    let cats: Vec<String> = m.categories.iter().map(|c| c.name.clone()).collect();
+    let gallery = m.screenshots.into_iter().enumerate().map(|(idx, s)| DiscoverGalleryImage {
+        url: s.url,
+        title: s.title,
+        description: s.description,
+        featured: idx == 0,
+    }).collect();
+
+    let project_type = match m.class_id {
+        Some(6) => "mod",
+        Some(4471) => "modpack",
+        Some(12) => "resourcepack",
+        Some(6552) => "shader",
+        _ => "mod",
+    }.to_string();
+
+    Ok(DiscoverProjectDetails {
+        project_id: m.id.to_string(),
+        slug: m.slug,
+        title: m.name,
+        description: m.summary,
+        body,
+        author,
+        icon_url,
+        downloads: m.download_count,
+        follows: m.thumbs_up_count,
+        project_type,
+        categories: cats,
+        license: None,
+        license_url: None,
+        client_side: None,
+        server_side: None,
+        date_created: None,
+        date_modified: m.date_modified,
+        color: None,
+        gallery,
+        source_url: None,
+        issues_url: None,
+        wiki_url: None,
+        discord_url: None,
+        donation_urls: Vec::new(),
     })
 }
 

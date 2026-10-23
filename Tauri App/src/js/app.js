@@ -570,7 +570,7 @@ const api = {
   getInstanceConsoleLogs: (versionId) => invoke('get_instance_console_logs', { versionId }),
   checkLinuxZlibConflict: () => invoke('check_linux_zlib_conflict'),
   installLinuxPackage: (packageType) => invoke('install_linux_package', { packageType }),
-  discoverSearch: (query, projectType, loader, gameVersion, categories, environment, license, openSourceOnly, page, limit) =>
+  discoverSearch: (query, projectType, loader, gameVersion, categories, environment, license, openSourceOnly, page, limit, platform) =>
     invoke('discover_search', {
       query, projectType,
       loader: loader || null,
@@ -580,6 +580,7 @@ const api = {
       license: license || null,
       openSourceOnly: !!openSourceOnly,
       page, limit,
+      platform: platform || 'modrinth',
     }),
   discoverGetVersions: (projectId, loader, gameVersion) =>
     invoke('discover_get_versions', { projectId, loader: loader || null, gameVersion: gameVersion || null }),
@@ -11596,6 +11597,7 @@ function saveDiscoverPrefs() {
 const discoverPrefs = loadDiscoverPrefs();
 
 let discoverState = {
+  platform: 'modrinth',       // 'modrinth' | 'curseforge'
   query: '',
   type: 'resourcepack',       // 'modpack' | 'mod' | 'resourcepack' | 'shader'
   loader: 'any',
@@ -12858,7 +12860,8 @@ async function performDiscoverSearch() {
       discoverState.license || null,
       discoverState.openSourceOnly,
       discoverState.page,
-      discoverState.pageSize
+      discoverState.pageSize,
+      discoverState.platform || 'modrinth'
     );
     // If the user has since switched away from Discover, don't spend time
     // rendering results into a grid nobody's looking at right now — the
@@ -14316,6 +14319,21 @@ function initDiscover() {
       performDiscoverSearch();
     });
   }
+
+  document.querySelectorAll('.discover-source-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('active')) return;
+      document.querySelectorAll('.discover-source-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      discoverState.platform = btn.dataset.source || 'modrinth';
+      discoverState.page = 1;
+      const qInput = document.getElementById('discover-query');
+      if (qInput) {
+        qInput.placeholder = discoverState.platform === 'curseforge' ? 'Search CurseForge…' : 'Search Modrinth…';
+      }
+      performDiscoverSearch();
+    });
+  });
 
   document.querySelectorAll('.discover-segment').forEach(btn => {
     btn.addEventListener('click', () => {

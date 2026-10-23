@@ -6878,6 +6878,49 @@ body.screenshot-lightbox-open {
   color: var(--text-muted);
 }
 
+.discover-source-toggle {
+  display: flex;
+  background: rgba(18, 18, 18, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.discover-source-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.discover-source-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.discover-source-btn.active {
+  background: var(--accent);
+  color: var(--bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.discover-source-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
 /* ── Big search bar — docked under the content island's header row,
    above the results grid, instead of a small field buried in the side
    panel. ── */
