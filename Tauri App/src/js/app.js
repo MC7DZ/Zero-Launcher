@@ -10003,7 +10003,7 @@ function markScreenshotCardBroken(card, reason) {
   img.replaceWith(icon);
 }
 
-function createScreenshotCard(item, directory, allItems, index) {
+function createScreenshotCard(item, directory, allItems, index, globalIndex) {
   const card = document.createElement('div');
   card.className = 'screenshot-card glass-card card-appear';
   const delayMs = Math.min((index || 0) * 28, 220);
@@ -10048,7 +10048,9 @@ function createScreenshotCard(item, directory, allItems, index) {
       updateDeleteSelectedState();
       return;
     }
-    openScreenshotLightbox(allItems, index);
+    // Use globalIndex (real position in the full shotScrollItems list) so
+    // prev/next in the lightbox works correctly with infinite scroll pages.
+    openScreenshotLightbox(allItems, (globalIndex !== undefined) ? globalIndex : index);
   });
 
   card.querySelector('.btn-copy-screenshot').addEventListener('click', async (ev) => {
@@ -10307,11 +10309,11 @@ function appendShotPage(grid, myGeneration) {
 
   const frag = document.createDocumentFragment();
   for (let i = start; i < end; i++) {
-    // Use a LOCAL index so the card-appear stagger resets per page
-    // (cards 0-23 of each page stagger nicely; without this every card
-    // beyond index 7 would share the same 220ms cap and animate together).
+    // localIdx drives the card-appear stagger (resets per page so each batch
+    // staggers nicely). i is the real global position passed to the lightbox
+    // so prev/next navigate the full list correctly.
     const localIdx = i - start;
-    frag.appendChild(createScreenshotCard(shotScrollItems[i], shotScrollDir, shotScrollItems, localIdx));
+    frag.appendChild(createScreenshotCard(shotScrollItems[i], shotScrollDir, shotScrollItems, localIdx, i));
   }
   grid.appendChild(frag);
   shotScrollOffset = end;

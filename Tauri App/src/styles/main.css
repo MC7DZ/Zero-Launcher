@@ -5270,7 +5270,7 @@ body.screenshot-lightbox-open {
   color: #fff;
   cursor: pointer;
   backdrop-filter: blur(6px);
-  transition: background 0.12s ease, transform 0.12s ease;
+  transition: background 0.12s ease;
 }
 .screenshot-lightbox-nav:hover {
   background: rgba(255, 255, 255, 0.22);
@@ -5280,9 +5280,6 @@ body.screenshot-lightbox-open {
   transform: translateY(-50%);
   width: 48px;
   height: 48px;
-}
-.screenshot-lightbox-nav:hover {
-  transform: translateY(-50%);
 }
 .screenshot-lightbox-nav svg {
   width: 22px;
