@@ -10118,11 +10118,11 @@ function ensureScreenshotLightbox() {
   const el = document.createElement('div');
   el.className = 'screenshot-lightbox hidden';
   el.innerHTML = `
-    <button type="button" class="screenshot-lightbox-nav screenshot-lightbox-prev" title="Previous (←)">${ICON_CHEVRON_LEFT_SVG}</button>
     <div class="screenshot-lightbox-stage">
       <img class="screenshot-lightbox-img" alt="" decoding="async" />
       <div class="screenshot-lightbox-status">Loading…</div>
     </div>
+    <button type="button" class="screenshot-lightbox-nav screenshot-lightbox-prev" title="Previous (←)">${ICON_CHEVRON_LEFT_SVG}</button>
     <button type="button" class="screenshot-lightbox-nav screenshot-lightbox-next" title="Next (→)">${ICON_CHEVRON_RIGHT_SVG}</button>
     <div class="screenshot-lightbox-bottom">
       <div class="screenshot-lightbox-caption"></div>
