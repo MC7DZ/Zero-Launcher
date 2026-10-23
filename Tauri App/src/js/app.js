@@ -1160,6 +1160,9 @@ function initTabs() {
           }
           refreshCardCullingIn(page);
         }
+        if (typeof CustomScrollbars !== 'undefined' && CustomScrollbars.updateAll) {
+          CustomScrollbars.updateAll();
+        }
         // Lazy-load data when switching
         if (tabId === 'instances') {
           if (!skinMiniPreviewInstance) {
@@ -17592,10 +17595,23 @@ const CustomScrollbars = {
     const entry = this.entries.get(el);
     if (!entry) return;
     const { track, thumb } = entry;
+    // If the element is hidden (e.g. inactive tab page, modal closed, display:none, visibility:hidden), hide its track immediately
+    if (!el.isConnected || el.closest('.tab-page:not(.active)') || el.closest('.hidden')) {
+      track.style.display = 'none';
+      track.classList.remove('visible');
+      return;
+    }
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+      track.style.display = 'none';
+      track.classList.remove('visible');
+      return;
+    }
     const rect = el.getBoundingClientRect();
     const scrollable = el.scrollHeight - el.clientHeight > 2;
     if (!scrollable || rect.width === 0 || rect.height === 0) {
       track.style.display = 'none';
+      track.classList.remove('visible');
       return;
     }
     track.style.display = '';

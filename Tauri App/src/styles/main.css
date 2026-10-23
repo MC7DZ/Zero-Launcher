@@ -4591,7 +4591,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 
 .btn-update-all-pill:active:not(:disabled) {
-   translateY(0);
 }
 
 .btn-update-all-pill:disabled {
@@ -5946,8 +5945,12 @@ body.screenshot-lightbox-open {
 /* CurseForge color theme for segment indicator: smooth blend of #EB622B into #000000 */
 .discover-type-indicator.platform-curseforge {
   background: linear-gradient(135deg, #EB622B 0%, #a8380e 52%, #000000 100%);
-  border: 1px solid rgba(235, 98, 43, 0.4);
-  box-shadow: 0 3px 12px rgba(235, 98, 43, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left-color: rgba(235, 98, 43, 0.5);
+  border-top-color: rgba(235, 98, 43, 0.5);
+  border-right-color: rgba(0, 0, 0, 0.6);
+  border-bottom-color: rgba(0, 0, 0, 0.6);
+  box-shadow: -3px -1px 12px rgba(235, 98, 43, 0.35), 3px 2px 10px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .discover-segment {
@@ -6998,8 +7001,12 @@ body.screenshot-lightbox-open {
 
 .discover-source-indicator.platform-curseforge {
   background: linear-gradient(135deg, #EB622B 0%, #a8380e 52%, #000000 100%);
-  border: 1px solid rgba(235, 98, 43, 0.4);
-  box-shadow: 0 3px 12px rgba(235, 98, 43, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left-color: rgba(235, 98, 43, 0.5);
+  border-top-color: rgba(235, 98, 43, 0.5);
+  border-right-color: rgba(0, 0, 0, 0.6);
+  border-bottom-color: rgba(0, 0, 0, 0.6);
+  box-shadow: -3px -1px 12px rgba(235, 98, 43, 0.35), 3px 2px 10px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .discover-source-btn {
