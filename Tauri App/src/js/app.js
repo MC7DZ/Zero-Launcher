@@ -19855,6 +19855,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Background update checks after splash is dismissed
   checkSelectedInstanceForUpdates().catch(e => console.error('Startup update check failed', e));
 
+  // Pre-warm lazy tabs in the background so the first-ever switch to
+  // Discover or Presets doesn't cause a visible lag spike.  We stagger them
+  // with small timeouts so neither one blocks the main thread right as the
+  // splash finishes fading out.
+  setTimeout(() => {
+    try { initDiscoverTabIfNeeded(); } catch (_) {}
+  }, 300);
+  setTimeout(() => {
+    try { initPresetsTabIfNeeded(); } catch (_) {}
+  }, 600);
+
   // Single-instance CLI launch event listener
   if (typeof listen === 'function') {
     listen('cli-launch-instance', (evt) => {
