@@ -1274,6 +1274,7 @@ function initTabs() {
         // can easily occupy 50–200 MB of JS heap if not actively cleared.
         if (fromTab === 'mods' && tabId !== 'mods') {
           clearScreenshotImageCache();
+          disposeShotScroll();
           try { invoke('trim_memory'); } catch (_) {}
         }
 
@@ -10276,6 +10277,66 @@ async function renderScreenshotLightbox() {
   }
 }
 
+// ── Screenshot infinite-scroll state ──────────────────────────────────────
+// Instead of dumping every card into the DOM at once (which freezes the UI
+// for large folders), we render one page at a time and append the next page
+// automatically when the user scrolls near the bottom.
+const SCREENSHOT_PAGE_SIZE = 24;
+let shotScrollItems  = [];   // full sorted list from the backend
+let shotScrollDir    = '';   // directory they came from
+let shotScrollOffset = 0;    // how many cards have been rendered so far
+let shotScrollSentinel = null; // IntersectionObserver that fires the next page
+
+function disposeShotScroll() {
+  if (shotScrollSentinel) { shotScrollSentinel.disconnect(); shotScrollSentinel = null; }
+  shotScrollItems  = [];
+  shotScrollDir    = '';
+  shotScrollOffset = 0;
+}
+
+// Appends the next SCREENSHOT_PAGE_SIZE cards into `grid`.
+// `myGeneration` lets us bail if the user switched away mid-flight.
+function appendShotPage(grid, myGeneration) {
+  if (myGeneration !== modsLoadGeneration) return;
+  const start = shotScrollOffset;
+  const end   = Math.min(start + SCREENSHOT_PAGE_SIZE, shotScrollItems.length);
+  if (start >= shotScrollItems.length) return;
+
+  // Remove the old sentinel so it doesn't fire again for the same card.
+  if (shotScrollSentinel) { shotScrollSentinel.disconnect(); shotScrollSentinel = null; }
+
+  const frag = document.createDocumentFragment();
+  for (let i = start; i < end; i++) {
+    // Use a LOCAL index so the card-appear stagger resets per page
+    // (cards 0-23 of each page stagger nicely; without this every card
+    // beyond index 7 would share the same 220ms cap and animate together).
+    const localIdx = i - start;
+    frag.appendChild(createScreenshotCard(shotScrollItems[i], shotScrollDir, shotScrollItems, localIdx));
+  }
+  grid.appendChild(frag);
+  shotScrollOffset = end;
+
+  // Enqueue image loads for this page — first half gets priority so the
+  // visible ones appear before the ones below the fold start loading.
+  const allCards = grid.querySelectorAll('.screenshot-card');
+  for (let i = start; i < end; i++) {
+    const card = allCards[i];
+    if (card) enqueueScreenshotLoad(card, (i - start) < 12 ? { priority: true } : undefined);
+  }
+
+  // If more remain, watch the last rendered card as a sentinel so the
+  // next page loads before the user actually hits the very bottom.
+  if (shotScrollOffset < shotScrollItems.length) {
+    const cards = grid.querySelectorAll('.screenshot-card');
+    const lastCard = cards[cards.length - 1];
+    shotScrollSentinel = new IntersectionObserver((entries) => {
+      if (!entries.some(e => e.isIntersecting)) return;
+      appendShotPage(grid, myGeneration);
+    }, { rootMargin: '400px' });
+    shotScrollSentinel.observe(lastCard);
+  }
+}
+
 async function loadScreenshotsGrid(auto) {
   if (!settings) return;
   const myGeneration = modsLoadGeneration;
@@ -10288,14 +10349,14 @@ async function loadScreenshotsGrid(auto) {
 
   const hasShotCards = !!grid.querySelector('.screenshot-card');
 
-  // Show skeleton tiles immediately so there's instant visual feedback —
-  // the overlay loading spinner has a 220ms debounce which makes it feel
-  // like nothing is happening. Skeletons appear on the very next frame.
+  // Show shimmer skeleton tiles immediately — the overlay spinner has a
+  // 220ms debounce that makes it feel like nothing happened. Skeletons
+  // appear on the very next frame with zero delay.
   if (!(auto && hasShotCards)) {
+    disposeShotScroll();
     grid.innerHTML = '';
-    const SKELETON_COUNT = 12;
     const skFrag = document.createDocumentFragment();
-    for (let s = 0; s < SKELETON_COUNT; s++) {
+    for (let s = 0; s < SCREENSHOT_PAGE_SIZE; s++) {
       const sk = document.createElement('div');
       sk.className = 'screenshot-skeleton';
       skFrag.appendChild(sk);
@@ -10309,10 +10370,14 @@ async function loadScreenshotsGrid(auto) {
   try {
     const items = await api.listScreenshots(directory);
     if (myGeneration !== modsLoadGeneration) return;
+
     const shotSig = 'shot|' + directory + '|' + items.map(it => `${it.path}|${it.modified_ms || 0}|${it.size_bytes || 0}`).join('\n');
     if (auto && hasShotCards && shotSig === modsGridSignature) return;
     modsGridSignature = shotSig;
+
     resetScreenshotObserver();
+    screenshotLoadQueue = [];
+    disposeShotScroll();
 
     if (items.length === 0) {
       grid.innerHTML = '';
@@ -10326,41 +10391,16 @@ async function loadScreenshotsGrid(auto) {
       return;
     }
 
-    // Build cards in small batches of 4 per animation frame so the DOM
-    // inserts are spread across many frames — keeps the thread free and
-    // eliminates the big lag spike that happened when all cards were
-    // inserted at once or in one large batch.
-    grid.innerHTML = '';
-    const BATCH_SIZE = 4;
-    let i = 0;
-    await new Promise((resolve) => {
-      const appendBatch = () => {
-        if (myGeneration !== modsLoadGeneration) return resolve();
-        const frag = document.createDocumentFragment();
-        const end = Math.min(i + BATCH_SIZE, items.length);
-        for (; i < end; i++) frag.appendChild(createScreenshotCard(items[i], directory, items, i));
-        grid.appendChild(frag);
-        updateScreenshotsCount(items.length, targetInstance);
-        if (i < items.length) requestAnimationFrame(appendBatch);
-        else resolve();
-      };
-      requestAnimationFrame(appendBatch);
-    });
-    if (myGeneration !== modsLoadGeneration) return;
+    // Seed the infinite-scroll state and render the first page only.
+    // Subsequent pages are appended automatically as the user scrolls.
+    shotScrollItems = items;
+    shotScrollDir   = directory;
+    grid.innerHTML  = '';
+    updateScreenshotsCount(items.length, targetInstance);
+    appendShotPage(grid, myGeneration);
 
     if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
     filterMods();
-
-    // Enqueue every card in top-to-bottom order — the shared queue (see
-    // enqueueScreenshotLoad) is what actually paces this to a couple of
-    // reads at a time instead of all of them firing together. Clear out
-    // anything left over from a previous grid first so a reload doesn't
-    // just pile new cards behind stale, already-disconnected ones.
-    screenshotLoadQueue = [];
-    const allCards = Array.from(grid.querySelectorAll('.screenshot-card'));
-    // First viewport-worth of cards (≈12) get priority so they appear
-    // immediately; the rest trickle in through the normal queue behind them.
-    allCards.forEach((card, i) => enqueueScreenshotLoad(card, i < 12 ? { priority: true } : undefined));
   } catch (e) {
     grid.innerHTML = `<div class="empty-state"><span style="color:var(--danger)">${e}</span></div>`;
     if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
