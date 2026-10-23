@@ -138,7 +138,13 @@ pub struct DiscoverHit {
     // represent the project, so it's what card banners should show.
     pub featured_gallery: Option<String>,
     pub color: Option<i64>,
+    /// False only for CurseForge mods where the author has disabled distribution.
+    /// Always true for Modrinth projects.
+    #[serde(default = "default_true")]
+    pub allow_distribution: bool,
 }
+
+fn default_true() -> bool { true }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DiscoverSearchResult {
@@ -223,6 +229,8 @@ struct CfMod {
     screenshots: Vec<CfScreenshot>,
     #[serde(rename = "dateModified")]
     date_modified: Option<String>,
+    #[serde(rename = "allowModDistribution", default = "default_true")]
+    allow_mod_distribution: bool,
 }
 
 #[derive(Deserialize)]
@@ -331,6 +339,7 @@ fn cf_mod_to_discover_hit(m: CfMod, default_project_type: &str) -> DiscoverHit {
         gallery,
         featured_gallery,
         color: None,
+        allow_distribution: m.allow_mod_distribution,
     }
 }
 
@@ -438,6 +447,7 @@ pub async fn discover_search(
                 gallery: h.gallery,
                 featured_gallery: h.featured_gallery,
                 color: h.color,
+                allow_distribution: true, // Modrinth always allows distribution
             })
             .collect(),
         total_hits: raw.total_hits,
@@ -1039,6 +1049,7 @@ pub async fn discover_get_project(project_id: String) -> Result<DiscoverHit, Str
         gallery: Vec::new(),
         featured_gallery: None,
         color: None,
+        allow_distribution: true, // Modrinth always allows distribution
     })
 }
 

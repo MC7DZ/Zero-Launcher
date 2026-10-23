@@ -1,0 +1,639 @@
+pub mod accounts;
+pub mod crash_analysis;
+pub mod discover;
+pub mod elyby;
+pub mod java;
+pub mod logs;
+pub mod minecraft;
+pub mod modpack;
+pub mod mods;
+pub mod msa;
+pub mod presets;
+pub mod settings;
+pub mod shortcuts;
+pub mod skins;
+pub mod updater;
+
+use tauri::State;
+use crate::state::AppState;
+
+/// Cancels a "generic" download by id — mod downloads/updates, dependency
+/// installs, discover-tab downloads, Java runtime downloads, etc. Each of
+/// these is given its own id by the frontend when it starts, so several can
+/// be running (and cancelled independently) at once, each as its own card
+/// in the downloads menu. Safe to call even if the id hasn't been
+/// registered yet (e.g. a race between the click and the download actually
+/// starting) — the flag is created in the cancelled state so the download
+/// sees it immediately once it does start.
+#[tauri::command]
+pub fn cancel_generic_download(download_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .generic_cancel_flag(&download_id)
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
+}
+
+/// Reliably opens a directory in the operating system's native file manager.
+///
+/// On Linux:
+/// - Strips / restores AppImage library environment variables (`LD_LIBRARY_PATH`, `LD_PRELOAD`)
+///   so system file managers (Dolphin, Nautilus, Thunar, GIO) don't crash due to AppImage library conflicts.
+/// - Tries multiple fallback desktop launchers: `xdg-open`, `gio open`, `dolphin`, `nautilus`,
+///   `thunar`, `pcmanfm`, `pcmanfm-qt`, `nemo`, and falls back to `open::that_detached` / `open::that`.
+/// On Windows: invokes `explorer`.
+/// On macOS: invokes `open`.
+pub fn open_folder_in_file_manager(path: &std::path::Path) -> Result<(), String> {
+    let _ = std::fs::create_dir_all(path);
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&canonical)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder in Windows Explorer: {e}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&canonical)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder on macOS: {e}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let spawn_cmd = |prog: &str, args: &[&std::ffi::OsStr]| -> bool {
+            let mut cmd = std::process::Command::new(prog);
+            cmd.args(args);
+            if std::env::var_os("APPIMAGE").is_some() || std::env::var_os("APPDIR").is_some() {
+                if let Some(orig) = std::env::var_os("LD_LIBRARY_PATH_ORIG") {
+                    cmd.env("LD_LIBRARY_PATH", orig);
+                } else {
+                    cmd.env_remove("LD_LIBRARY_PATH");
+                }
+                cmd.env_remove("LD_PRELOAD");
+            }
+            cmd.stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            cmd.spawn().is_ok()
+        };
+
+        let path_os = canonical.as_os_str();
+
+        // 1. xdg-open
+        if spawn_cmd("xdg-open", &[path_os]) {
+            return Ok(());
+        }
+
+        // 2. gio open
+        let open_arg = std::ffi::OsStr::new("open");
+        if spawn_cmd("gio", &[open_arg, path_os]) {
+            return Ok(());
+        }
+
+        // 3. Desktop file managers directly
+        for fm in &["dolphin", "nautilus", "thunar", "pcmanfm", "pcmanfm-qt", "nemo"] {
+            if spawn_cmd(fm, &[path_os]) {
+                return Ok(());
+            }
+        }
+
+        // 4. Crate fallback
+        open::that_detached(&canonical)
+            .or_else(|_| open::that(&canonical))
+            .map_err(|e| format!("Failed to open folder: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        open::that(&canonical).map_err(|e| format!("Failed to open folder: {e}"))
+    }
+}
+
+/// Open the root "Zero Launcher" data folder (instances, accounts,
+/// settings, Java runtimes, etc.) in the system file manager.
+#[tauri::command]
+pub fn open_launcher_folder(state: State<'_, AppState>) -> Result<(), String> {
+    open_folder_in_file_manager(&state.data_dir)
+}
+
+/// Open an instance's game directory in the system file manager.
+#[tauri::command]
+pub fn open_instance_folder(
+    state: State<'_, AppState>,
+    directory: Option<String>,
+) -> Result<(), String> {
+    let dir = directory
+        .filter(|s| !s.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+    open_folder_in_file_manager(&dir)
+}
+
+/// Opens a URL in the user's default web browser.
+///
+/// This intentionally does NOT rely on the Tauri shell plugin (`shell:open`,
+/// i.e. `window.__TAURI__.shell.open`) — that plugin/permission isn't
+/// wired up in this app, so calling it from the frontend silently falls
+/// through to `window.open()`, which most webviews (WebKitGTK on Linux in
+/// particular) don't hand off to an external browser. Instead this shells
+/// out directly, the same way `open_folder_in_file_manager` above does for
+/// folders, with the same AppImage-safe env handling and multi-launcher
+/// fallbacks on Linux.
+#[tauri::command]
+pub fn open_url_in_browser(url: String) -> Result<(), String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err("No URL provided".into());
+    }
+    // Only allow http(s) links — this is only ever used to open external
+    // web pages, never local files or other schemes.
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("Refusing to open non-http(s) URL".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW (0x08000000) stops the console window that
+        // `cmd /C start` would otherwise briefly flash on screen.
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let spawn_cmd = |prog: &str, args: &[&str]| -> bool {
+            let mut cmd = std::process::Command::new(prog);
+            cmd.args(args);
+            // Same AppImage LD_LIBRARY_PATH/LD_PRELOAD sanitation as
+            // open_folder_in_file_manager, so xdg-open et al don't crash
+            // when launched from inside an AppImage.
+            if std::env::var_os("APPIMAGE").is_some() || std::env::var_os("APPDIR").is_some() {
+                if let Some(orig) = std::env::var_os("LD_LIBRARY_PATH_ORIG") {
+                    cmd.env("LD_LIBRARY_PATH", orig);
+                } else {
+                    cmd.env_remove("LD_LIBRARY_PATH");
+                }
+                cmd.env_remove("LD_PRELOAD");
+            }
+            cmd.stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            cmd.spawn().is_ok()
+        };
+
+        // 1. xdg-open — the standard freedesktop way, respects the user's
+        //    configured default browser.
+        if spawn_cmd("xdg-open", &[url]) {
+            return Ok(());
+        }
+
+        // 2. gio open — GNOME's replacement for xdg-open, present on most
+        //    modern distros even when xdg-utils isn't.
+        if spawn_cmd("gio", &["open", url]) {
+            return Ok(());
+        }
+
+        // 3. Common browsers directly, in case neither opener is installed.
+        for browser in &[
+            "x-www-browser",
+            "firefox",
+            "google-chrome",
+            "chromium",
+            "chromium-browser",
+            "brave-browser",
+        ] {
+            if spawn_cmd(browser, &[url]) {
+                return Ok(());
+            }
+        }
+
+        // 4. Crate fallback (also tries xdg-open/gio internally on Linux).
+        open::that_detached(url)
+            .or_else(|_| open::that(url))
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        open::that(url).map_err(|e| format!("Failed to open URL: {e}"))
+    }
+}
+
+/// Current launcher version, read from the version in this crate's
+/// `Cargo.toml` (`package.version`) at build time. Shown in
+/// Settings → About & Initial Setup.
+/// Open WebKit / webview developer tools inspector.
+#[tauri::command]
+pub fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        window.open_devtools();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_launcher_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct SystemInfo {
+    pub os_name: String,
+    pub arch: String,
+    pub launcher_version: String,
+}
+
+#[tauri::command]
+pub fn get_system_info() -> SystemInfo {
+    let mut os_name = "Linux".to_string();
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
+            for line in content.lines() {
+                if let Some(val) = line.strip_prefix("PRETTY_NAME=") {
+                    let cleaned = val.trim_matches('"').trim_matches('\'').trim();
+                    if !cleaned.is_empty() {
+                        os_name = cleaned.to_string();
+                        break;
+                    }
+                } else if let Some(val) = line.strip_prefix("NAME=") {
+                    let cleaned = val.trim_matches('"').trim_matches('\'').trim();
+                    if !cleaned.is_empty() && (os_name == "Linux" || os_name == "linux") {
+                        os_name = cleaned.to_string();
+                    }
+                }
+            }
+        }
+        if os_name.eq_ignore_ascii_case("linux") {
+            os_name = "Linux".to_string();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        os_name = "Windows".to_string();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        os_name = "macOS".to_string();
+    }
+
+    let arch_raw = std::env::consts::ARCH;
+    let arch_display = match arch_raw {
+        "x86_64" => "x64 (64-bit)",
+        "aarch64" => "ARM64 (64-bit)",
+        "x86" => "x86 (32-bit)",
+        "arm" => "ARM (32-bit)",
+        other => other,
+    };
+
+    let target_os = match std::env::consts::OS {
+        "linux" => "Linux",
+        "windows" => "Windows",
+        "macos" => "macOS",
+        other => other,
+    };
+
+    SystemInfo {
+        os_name,
+        arch: format!("{} ({})", arch_display, target_os),
+        launcher_version: env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
+/// Reads the last-persisted "Global Stats" panel snapshot from
+/// `<data_dir>/stats.json`, if any — used to populate the panel
+/// immediately on startup rather than showing blank/zero values while
+/// Mods Installed / Game Advancements are rescanned from disk.
+#[tauri::command]
+pub fn load_global_stats(state: State<'_, AppState>) -> Result<Option<crate::models::GlobalStats>, String> {
+    Ok(state.load_global_stats())
+}
+
+/// Persists the "Global Stats" panel to `<data_dir>/stats.json`, called by
+/// the frontend every time it finishes recomputing the panel's values.
+#[tauri::command]
+pub fn save_global_stats(stats: crate::models::GlobalStats, state: State<'_, AppState>) -> Result<(), String> {
+    state.save_global_stats(&stats);
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn play_native_click_sound() {
+    static WRITTEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let sound_path = std::env::temp_dir().join("zerolauncher-click.ogg");
+    if !WRITTEN.load(std::sync::atomic::Ordering::Relaxed) || !sound_path.exists() {
+        let _ = std::fs::write(&sound_path, include_bytes!("../../sounds/click.ogg"));
+        WRITTEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    if std::process::Command::new("paplay")
+        .arg(&sound_path)
+        .spawn()
+        .is_ok()
+    {
+        return;
+    }
+    if std::process::Command::new("pw-cat")
+        .args(["-p", &sound_path.to_string_lossy()])
+        .spawn()
+        .is_ok()
+    {
+        return;
+    }
+    let _ = std::process::Command::new("aplay")
+        .arg(&sound_path)
+        .spawn();
+}
+
+#[cfg(target_os = "windows")]
+fn play_native_click_sound() {
+    static WAV_BYTES: &[u8] = include_bytes!("../../../src/assets/sounds/click.wav");
+    extern "system" {
+        fn PlaySoundA(pszSound: *const u8, hmod: *mut std::ffi::c_void, fdwSound: u32) -> i32;
+    }
+    // SND_ASYNC (0x1) | SND_MEMORY (0x4) | SND_NODEFAULT (0x2)
+    unsafe {
+        PlaySoundA(WAV_BYTES.as_ptr(), std::ptr::null_mut(), 0x0001 | 0x0004 | 0x0002);
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn play_native_click_sound() {
+    let _ = std::process::Command::new("afplay")
+        .arg("/tmp/zerolauncher-click.ogg")
+        .spawn();
+}
+
+#[tauri::command]
+pub fn play_click_sound() {
+    play_native_click_sound();
+}
+
+#[tauri::command]
+pub fn window_minimize(window: tauri::Window) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
+    // Can't maximize/restore while minimized or fullscreen — doing so on
+    // Windows leaves a borderless transparent window in a broken state.
+    if window.is_fullscreen().unwrap_or(false) {
+        return Ok(());
+    }
+    if window.is_minimized().unwrap_or(false) {
+        let _ = window.unminimize();
+    }
+    let result = if window.is_maximized().unwrap_or(false) {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
+    };
+    // Make sure the window is never left hidden/unfocused after the toggle.
+    let _ = window.show();
+    let _ = window.set_focus();
+    result
+}
+
+#[tauri::command]
+pub fn window_close(window: tauri::Window) -> Result<(), String> {
+    window.close().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn window_is_maximized(window: tauri::Window) -> Result<bool, String> {
+    window.is_maximized().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn window_center(window: tauri::Window) -> Result<(), String> {
+    window.center().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn window_toggle_fullscreen(window: tauri::Window) -> Result<bool, String> {
+    let is_fs = window.is_fullscreen().unwrap_or(false);
+    window.set_fullscreen(!is_fs).map_err(|e| e.to_string())?;
+    Ok(!is_fs)
+}
+
+#[tauri::command]
+pub fn window_toggle_always_on_top(window: tauri::Window) -> Result<bool, String> {
+    // There is no is_always_on_top in some platforms, but we can track or toggle
+    static ALWAYS_ON_TOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let next_state = !ALWAYS_ON_TOP.load(std::sync::atomic::Ordering::Relaxed);
+    window.set_always_on_top(next_state).map_err(|e| e.to_string())?;
+    ALWAYS_ON_TOP.store(next_state, std::sync::atomic::Ordering::Relaxed);
+    Ok(next_state)
+}
+
+/// Explicitly releases unused memory pages back to the operating system.
+///
+/// - Linux: `malloc_trim(0)` walks glibc's arena free-lists and returns
+///   pages that are above the trim threshold back to the kernel.
+/// - Windows: `SetProcessWorkingSetSize(-1, -1)` empties the working set
+///   (essentially "soft-faults" every page out to the page file / evicts
+///   cold pages from physical RAM). The data is still accessible — it
+///   just won't count against the process's physical-memory footprint
+///   until it's actually accessed again.
+#[tauri::command]
+pub fn trim_memory() {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        extern "C" {
+            fn malloc_trim(pad: usize) -> i32;
+        }
+        malloc_trim(0);
+    }
+
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentProcess, SetProcessWorkingSetSize,
+        };
+        // Passing usize::MAX for both min and max is the documented way
+        // to tell Windows to empty the working set immediately.
+        SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
+    }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+// Storage (Settings → Storage)
+// ─────────────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct StorageEntry {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    pub path: String,
+    pub bytes: u64,
+    pub clearable: bool,
+}
+
+#[derive(serde::Serialize)]
+pub struct StorageUsage {
+    pub total: u64,
+    pub entries: Vec<StorageEntry>,
+}
+
+/// (id, label, description, path, clearable)
+fn storage_locations(state: &AppState) -> Vec<(&'static str, &'static str, &'static str, std::path::PathBuf, bool)> {
+    let game_dir = state.settings.lock().unwrap().resolved_game_directory();
+    vec![
+        ("versions", "Game files", "Versions and shared libraries", game_dir.join("versions"), false),
+        ("assets", "Assets", "Sounds, languages and textures", game_dir.join("assets"), false),
+        ("java", "Java runtimes", "Runtimes downloaded by the launcher", java::managed_java_root(), false),
+        ("skins", "Skins", "Imported and cached skins", state.data_dir.join("skins"), false),
+        ("cache", "Cache", "Mod icons and temporary downloads", state.data_dir.join("cache"), true),
+        ("logs", "Old logs", "Archived launcher logs (.gz)", crate::logger::logs_dir(&state.data_dir), true),
+        ("updates", "Update downloads", "Installers fetched by the updater", state.data_dir.join("updates"), true),
+    ]
+}
+
+/// Size of every launcher-managed folder, plus instance data folders that
+/// live outside the shared game directory.
+#[tauri::command]
+pub async fn get_storage_usage(state: State<'_, AppState>) -> Result<StorageUsage, String> {
+    let locations = storage_locations(&state);
+    let game_dir = state.settings.lock().unwrap().resolved_game_directory();
+    let instance_dirs: Vec<std::path::PathBuf> = state
+        .instances
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|i| std::path::PathBuf::from(&i.directory))
+        .collect();
+    let state_game_dir = game_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut entries: Vec<StorageEntry> = Vec::new();
+        // Instance data: every distinct instance folder (the shared game
+        // directory is already covered by the versions/libraries/assets rows
+        // so its own size is counted once as "Instance data" minus those).
+        let mut seen = std::collections::HashSet::new();
+        let mut instance_bytes = 0u64;
+        for d in &instance_dirs {
+            if !seen.insert(d.clone()) { continue; }
+            let size = minecraft::dir_size_bytes(d);
+            if *d == game_dir {
+                let shared: u64 = ["versions", "libraries", "assets"]
+                    .iter()
+                    .map(|n| minecraft::dir_size_bytes(&game_dir.join(n)))
+                    .sum::<u64>();
+                instance_bytes = instance_bytes.saturating_add(size.saturating_sub(shared));
+            } else {
+                instance_bytes = instance_bytes.saturating_add(size);
+            }
+        }
+        entries.push(StorageEntry {
+            id: "instances".into(),
+            label: "Instance data".into(),
+            description: "Worlds, mods, configs and resource packs".into(),
+            path: game_dir.to_string_lossy().to_string(),
+            bytes: instance_bytes,
+            clearable: false,
+        });
+        for (id, label, description, path, clearable) in locations {
+            let bytes = if id == "logs" {
+                // Only archived logs count as "old logs".
+                std::fs::read_dir(&path)
+                    .map(|rd| rd.flatten()
+                        .filter(|e| e.path().extension().map(|x| x == "gz").unwrap_or(false))
+                        .filter_map(|e| e.metadata().ok().map(|m| m.len()))
+                        .sum::<u64>())
+                    .unwrap_or(0)
+            } else if id == "versions" {
+                // Shared libraries are folded into "Game files".
+                let libs = state_game_dir.join("libraries");
+                minecraft::dir_size_bytes(&path).saturating_add(minecraft::dir_size_bytes(&libs))
+            } else {
+                minecraft::dir_size_bytes(&path)
+            };
+            entries.push(StorageEntry {
+                id: id.into(),
+                label: label.into(),
+                description: description.into(),
+                path: path.to_string_lossy().to_string(),
+                bytes,
+                clearable,
+            });
+        }
+        let total: u64 = entries.iter().map(|e| e.bytes).sum();
+        StorageUsage { total, entries }
+    })
+    .await
+    .map_err(|e| format!("Failed to measure storage: {e}"))
+}
+
+/// Open one of the storage folders in the system file manager.
+#[tauri::command]
+pub fn open_storage_folder(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let path = if id == "instances" {
+        state.settings.lock().unwrap().resolved_game_directory()
+    } else {
+        storage_locations(&state)
+            .into_iter()
+            .find(|(i, ..)| *i == id)
+            .map(|(_, _, _, p, _)| p)
+            .ok_or_else(|| "Unknown storage item".to_string())?
+    };
+    let _ = std::fs::create_dir_all(&path);
+    open_folder_in_file_manager(&path)
+}
+
+/// Delete the contents of a *clearable* storage item (cache, old logs,
+/// update downloads). Returns the number of bytes freed.
+#[tauri::command]
+pub async fn clear_storage_item(id: String, state: State<'_, AppState>) -> Result<u64, String> {
+    let (path, only_gz) = match id.as_str() {
+        "cache" => (state.data_dir.join("cache"), false),
+        "updates" => (state.data_dir.join("updates"), false),
+        "logs" => (crate::logger::logs_dir(&state.data_dir), true),
+        _ => return Err("This item can't be cleared".into()),
+    };
+    tokio::task::spawn_blocking(move || {
+        let mut freed = 0u64;
+        let rd = match std::fs::read_dir(&path) { Ok(r) => r, Err(_) => return 0 };
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if only_gz && p.extension().map(|x| x != "gz").unwrap_or(true) { continue; }
+            if p.is_dir() {
+                let size = minecraft::dir_size_bytes(&p);
+                if std::fs::remove_dir_all(&p).is_ok() { freed = freed.saturating_add(size); }
+            } else {
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                if std::fs::remove_file(&p).is_ok() { freed = freed.saturating_add(size); }
+            }
+        }
+        freed
+    })
+    .await
+    .map_err(|e| format!("Failed to clear storage: {e}"))
+}

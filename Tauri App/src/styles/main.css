@@ -668,7 +668,7 @@ input, textarea, select, [contenteditable="true"] {
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 16, 185, 129), 0.5);
 }
 .pill-tab:active {
-  transform: scale(0.95);
+  /* no scale — keeps the click feeling snappy without a bounce */
 }
 
 /* ── Sliding pill indicator ──────────────────────────────────────────────────
@@ -952,7 +952,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 }
 .btn-accent:active {
   filter: brightness(0.95);
-  transform: translateY(0) scale(0.97);
+  transform: translateY(0);
   box-shadow: none;
 }
 .btn-accent:disabled { opacity: 0.4; pointer-events: none; }
@@ -4385,7 +4385,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 */
 
 .content-type-segment:active:not(.active):not(.is-disabled) {
-  transform: scale(0.98);
+  /* no scale bounce */
 }
 
 .content-type-segment.active {
@@ -6252,6 +6252,43 @@ body.screenshot-lightbox-open {
   color: var(--text);
   border-color: rgba(255, 255, 255, 0.15);
 }
+
+/* Distribution-restricted note shown on cards where CurseForge author
+   has disabled mod distribution (allowModDistribution = false). */
+.discover-no-distribution-note {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Distribution-restricted note in the project detail modal */
+.discover-no-distribution-modal-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 4px 0;
+}
+.discover-no-distribution-modal-note svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.discover-no-distribution-modal-note a {
+  color: #EB622B;
+  text-decoration: underline;
+}
+.discover-no-distribution-modal-note a:hover {
+  color: #ff8c5e;
+}
+
 
 /* ── Skeletons ── */
 .discover-skeleton {

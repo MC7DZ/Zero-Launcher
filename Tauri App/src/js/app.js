@@ -13098,6 +13098,7 @@ function renderCardContent(card) {
   }
 
   const isModpack = hit.project_type === 'modpack';
+  const noDistribution = hit.allow_distribution === false;
   card.innerHTML = `
     <div class="discover-card-banner-area${galleryImage ? ' has-image' : ''}" ${bannerStyle}>
       <div class="discover-card-banner-overlay"></div>
@@ -13122,14 +13123,20 @@ function renderCardContent(card) {
         ${tagsHtml ? `<div class="discover-card-tags">${tagsHtml}</div>` : ''}
       </div>
       <div class="discover-card-footer">
-        <select class="input-field discover-version-select" data-project-id="${discoverEscape(hit.project_id)}">
-          <option value="__latest__">✦ Latest Compatible Version</option>
-        </select>
-        ${isModpack ? `<button class="discover-card-menu-btn" type="button" title="More options" aria-label="More options">⋯</button>` : ''}
-        <button class="btn-accent btn-sm discover-download-btn" data-project-id="${discoverEscape(hit.project_id)}">${isModpack ? 'Install' : 'Download'}</button>
+        ${noDistribution ? `
+          <span class="discover-no-distribution-note">Distribution restricted</span>
+        ` : `
+          <select class="input-field discover-version-select" data-project-id="${discoverEscape(hit.project_id)}">
+            <option value="__latest__">✦ Latest Compatible Version</option>
+          </select>
+          ${isModpack ? `<button class="discover-card-menu-btn" type="button" title="More options" aria-label="More options">⋯</button>` : ''}
+          <button class="btn-accent btn-sm discover-download-btn" data-project-id="${discoverEscape(hit.project_id)}">${isModpack ? 'Install' : 'Download'}</button>
+        `}
       </div>
     </div>
   `;
+
+  if (noDistribution) return; // no interactive elements to wire up
 
   const versionSelect = card.querySelector('.discover-version-select');
   const downloadBtn = card.querySelector('.discover-download-btn');
@@ -13636,15 +13643,42 @@ function populateDiscoverProjectModal(hit, details) {
   // Download row — reuses the exact same version-select + download flow
   // as the card itself, so behaviour (compatibility checks, modpack install
   // pipeline, progress widget…) all stays identical.
+  // For CurseForge mods with distribution disabled, hide the controls and
+  // show a note pointing the user to the CurseForge website instead.
   if (els.versionSelect && els.downloadBtn) {
-    els.versionSelect.dataset.projectId = hit.project_id;
-    els.versionSelect._loaded = false;
-    els.versionSelect.innerHTML = '<option value="__latest__">Latest compatible version</option>';
-    els.downloadBtn.innerHTML = `${DISCOVER_ICONS.download}<span>${hit.project_type === 'modpack' ? 'Install' : 'Download'}</span>`;
-    els.downloadBtn.disabled = false;
-    els.versionSelect.onfocus = () => populateVersionSelect(hit, els.versionSelect, els.downloadBtn);
-    els.versionSelect.onmousedown = () => populateVersionSelect(hit, els.versionSelect, els.downloadBtn);
-    els.downloadBtn.onclick = () => downloadDiscoverSelection(hit, els.versionSelect, els.downloadBtn);
+    const noDistribution = hit.allow_distribution === false;
+    const downloadRow = els.downloadBtn.closest('.discover-project-download-row') || els.downloadBtn.parentElement;
+
+    if (noDistribution) {
+      // Hide controls and inject a note
+      els.versionSelect.style.display = 'none';
+      els.downloadBtn.style.display = 'none';
+      // Avoid inserting duplicate notes on re-open
+      let note = downloadRow && downloadRow.querySelector('.discover-no-distribution-modal-note');
+      if (!note && downloadRow) {
+        note = document.createElement('div');
+        note.className = 'discover-no-distribution-modal-note';
+        note.innerHTML = `${DISCOVER_ICONS.globe}<span>Distribution restricted — <a href="#" class="discover-cf-external-link" data-external-url="https://www.curseforge.com/minecraft/${hit.project_type === 'modpack' ? 'modpacks' : hit.project_type === 'resourcepack' ? 'texture-packs' : hit.project_type === 'shader' ? 'customization' : 'mc-mods'}/${discoverEscape(hit.slug || hit.project_id)}">download from CurseForge.com</a></span>`;
+        downloadRow.appendChild(note);
+        note.querySelector('.discover-cf-external-link')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          openExternalLink(e.currentTarget.dataset.externalUrl);
+        });
+      }
+    } else {
+      // Normal flow — show controls, remove any leftover note
+      els.versionSelect.style.display = '';
+      els.downloadBtn.style.display = '';
+      downloadRow?.querySelector('.discover-no-distribution-modal-note')?.remove();
+      els.versionSelect.dataset.projectId = hit.project_id;
+      els.versionSelect._loaded = false;
+      els.versionSelect.innerHTML = '<option value="__latest__">Latest compatible version</option>';
+      els.downloadBtn.innerHTML = `${DISCOVER_ICONS.download}<span>${hit.project_type === 'modpack' ? 'Install' : 'Download'}</span>`;
+      els.downloadBtn.disabled = false;
+      els.versionSelect.onfocus = () => populateVersionSelect(hit, els.versionSelect, els.downloadBtn);
+      els.versionSelect.onmousedown = () => populateVersionSelect(hit, els.versionSelect, els.downloadBtn);
+      els.downloadBtn.onclick = () => downloadDiscoverSelection(hit, els.versionSelect, els.downloadBtn);
+    }
   }
 }
 
