@@ -5261,9 +5261,14 @@ body.screenshot-lightbox-open {
 }
 .screenshot-lightbox-nav {
   position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10; /* sit above the stage div so clicks register */
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 48px;
+  height: 48px;
   border: none;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.1);
@@ -5274,12 +5279,6 @@ body.screenshot-lightbox-open {
 }
 .screenshot-lightbox-nav:hover {
   background: rgba(255, 255, 255, 0.22);
-}
-.screenshot-lightbox-nav {
-  top: calc(50% - 24px);
-  transform: translateY(-50%);
-  width: 48px;
-  height: 48px;
 }
 .screenshot-lightbox-nav svg {
   width: 22px;
@@ -12481,7 +12480,6 @@ html.no-ui-animations .wz-sheet *, html.no-ui-animations .wz-sheet { animation: 
 .is-webkit-gtk .screenshot-lightbox-nav:hover,
 .is-webkit-gtk .screenshot-lightbox-toolbar button:hover {
   background: rgba(64, 64, 70, 0.95);
-  transform: none !important;
 }
 .is-webkit-gtk .screenshot-lightbox-toolbar .screenshot-lightbox-delete {
   background: rgba(190, 48, 62, 0.95);
