@@ -54,7 +54,8 @@ function playClickSound() {
 // should stay silent. Toggles, accordions and cards are intentionally excluded.
 const SELECTOR_CONTROLS =
   '.settings-nav-btn, .pill-tab, .dressing-room-tab, .modpack-view-tab, ' +
-  '.discover-loader-pill, .hypr-loader-btn, .skin-speed-btn, [role="tab"]';
+  '.discover-loader-pill, .hypr-loader-btn, .skin-speed-btn, .content-type-segment, ' +
+  '.discover-segment, .discover-source-btn, [role="tab"]';
 
 function isAlreadySelected(el) {
   if (!el) return false;
@@ -62,6 +63,48 @@ function isAlreadySelected(el) {
   if (el.getAttribute && el.getAttribute('aria-selected') === 'true') return true;
   if (el.matches('.instance-card') && el.classList.contains('selected')) return true;
   return el.matches(SELECTOR_CONTROLS) && el.classList.contains('active');
+}
+
+// ── Gentle Soft Switch Sound (for tabs, platform & segment switches) ──
+let softAudioCtx = null;
+let lastSoftSwitchTime = 0;
+
+function playSoftSwitchSound() {
+  if (settings && settings.sound_effects_enabled === false) return;
+  const now = performance.now();
+  if (now - lastSoftSwitchTime < 35) return;
+  lastSoftSwitchTime = now;
+
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    if (!softAudioCtx) {
+      softAudioCtx = new AudioContextClass();
+    }
+    if (softAudioCtx.state === 'suspended') {
+      softAudioCtx.resume().catch(() => {});
+    }
+
+    const t = softAudioCtx.currentTime;
+    const osc = softAudioCtx.createOscillator();
+    const gain = softAudioCtx.createGain();
+
+    osc.type = 'sine';
+    // Very gentle frequency drop from 460Hz to 380Hz over 35ms
+    osc.frequency.setValueAtTime(460, t);
+    osc.frequency.exponentialRampToValueAtTime(380, t + 0.035);
+
+    // Subtle, low-volume envelope (max gain 0.045)
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.045, t + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+
+    osc.connect(gain);
+    gain.connect(softAudioCtx.destination);
+
+    osc.start(t);
+    osc.stop(t + 0.036);
+  } catch (_) {}
 }
 
 function initClickSoundListener() {
@@ -79,11 +122,17 @@ function initClickSoundListener() {
       'a[href], .tab-page nav button, [role="button"], [role="tab"], [role="checkbox"]'
     );
     if (interactive && !interactive.disabled && !interactive.classList.contains('disabled')) {
-      // Content type buttons should not trigger click sounds per user preference
-      if (interactive.closest('.content-type-segment')) return;
       // Quality of life: no click sound when pressing something that is
       // already the selected one (current settings section, tab, loader pill…).
       if (isAlreadySelected(interactive)) return;
+
+      // Tabs, platform toggles, and content type / discover segments use a dedicated gentle, soft switch sound
+      const isSwitchControl = interactive.closest('.pill-tab, .content-type-segment, .discover-segment, .discover-source-btn');
+      if (isSwitchControl) {
+        playSoftSwitchSound();
+        return;
+      }
+
       playClickSound();
     }
   };
@@ -12807,13 +12856,36 @@ function showDiscoverSkeletons() {
     const sk = document.createElement('div');
     sk.className = 'discover-skeleton';
     sk.innerHTML = `
-      <div class="discover-skeleton-icon"></div>
-      <div class="discover-skeleton-body">
-        <div class="discover-skeleton-line w-60"></div>
-        <div class="discover-skeleton-line w-35"></div>
-        <div class="discover-skeleton-line w-90"></div>
-        <div class="discover-skeleton-line w-75"></div>
-        <div class="discover-skeleton-line w-40"></div>
+      <div class="discover-skeleton-banner">
+        <div class="discover-skeleton-banner-content">
+          <div class="discover-skeleton-top">
+            <div class="discover-skeleton-icon"></div>
+            <div class="discover-skeleton-info">
+              <div class="discover-skeleton-line w-60 skeleton-title"></div>
+              <div class="discover-skeleton-line w-35 skeleton-author"></div>
+            </div>
+          </div>
+          <div class="discover-skeleton-desc-lines">
+            <div class="discover-skeleton-line w-90"></div>
+            <div class="discover-skeleton-line w-75"></div>
+          </div>
+        </div>
+      </div>
+      <div class="discover-skeleton-card-body">
+        <div class="discover-skeleton-meta">
+          <div class="discover-skeleton-stats">
+            <div class="discover-skeleton-stat-chip"></div>
+            <div class="discover-skeleton-stat-chip"></div>
+          </div>
+          <div class="discover-skeleton-tags">
+            <div class="discover-skeleton-tag-chip"></div>
+            <div class="discover-skeleton-tag-chip"></div>
+          </div>
+        </div>
+        <div class="discover-skeleton-footer">
+          <div class="discover-skeleton-input"></div>
+          <div class="discover-skeleton-btn"></div>
+        </div>
       </div>
     `;
     grid.appendChild(sk);
@@ -13027,10 +13099,13 @@ async function populateVersionSelect(hit, versionSelect, downloadBtn) {
 
     const firstCompatible = Array.from(versionSelect.options).find(o => !o.dataset.incompatible);
     if (firstCompatible) {
+      firstCompatible.selected = true;
       versionSelect.value = firstCompatible.value;
     } else if (versionSelect.options.length > 0) {
+      versionSelect.options[0].selected = true;
       versionSelect.value = versionSelect.options[0].value;
     }
+    versionSelect.dispatchEvent(new Event('change', { bubbles: true }));
     if (downloadBtn) downloadBtn.disabled = false;
   } catch (e) {
     versionSelect.innerHTML = '<option value="">Failed to load versions</option>';

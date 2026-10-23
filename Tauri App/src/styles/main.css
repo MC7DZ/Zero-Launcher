@@ -6316,13 +6316,38 @@ body.screenshot-lightbox-open {
 
 /* ── Skeletons ── */
 .discover-skeleton {
+  position: relative;
   display: flex;
-  gap: 12px;
-  padding: 14px;
+  flex-direction: column;
+  padding: 0;
   border-radius: 10px;
   background: #212121;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  min-height: 180px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+  min-height: 220px;
+}
+
+.discover-skeleton-banner {
+  position: relative;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.discover-skeleton-banner-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  min-height: 116px;
+  box-sizing: border-box;
+}
+
+.discover-skeleton-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
 }
 
 .discover-skeleton-icon {
@@ -6330,21 +6355,135 @@ body.screenshot-lightbox-open {
   height: 50px;
   min-width: 50px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
 }
 
-.discover-skeleton-body {
+.discover-skeleton-info {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  justify-content: center;
+  gap: 6px;
+  padding-top: 2px;
 }
 
 .discover-skeleton-line {
-  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  height: 10px;
+}
+
+.discover-skeleton-line.skeleton-title {
+  height: 14px;
+  border-radius: 5px;
+}
+
+.discover-skeleton-line.skeleton-author {
+  height: 10px;
+  opacity: 0.6;
+}
+
+.discover-skeleton-desc-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.discover-skeleton-desc-lines .discover-skeleton-line {
+  height: 9px;
+  opacity: 0.55;
+}
+
+.discover-skeleton-card-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 14px 14px;
+  gap: 10px;
+}
+
+.discover-skeleton-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.discover-skeleton-stats {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.discover-skeleton-stat-chip {
+  width: 44px;
+  height: 12px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.06);
+}
+
+.discover-skeleton-tags {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.discover-skeleton-tag-chip {
+  width: 38px;
+  height: 14px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.discover-skeleton-footer {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.discover-skeleton-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+
+.discover-skeleton-btn {
+  width: 72px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.09);
+  flex-shrink: 0;
+}
+
+/* Shimmer pulse effect across all skeleton elements */
+@keyframes discoverSkeletonShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.discover-skeleton-icon,
+.discover-skeleton-line,
+.discover-skeleton-stat-chip,
+.discover-skeleton-tag-chip,
+.discover-skeleton-input,
+.discover-skeleton-btn {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.09) 50%, rgba(255, 255, 255, 0.04) 75%);
+  background-size: 200% 100%;
+  animation: discoverSkeletonShimmer 1.8s ease-in-out infinite;
 }
 
 .discover-skeleton-line.w-60 { width: 60%; }
