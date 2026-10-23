@@ -6880,11 +6880,11 @@ body.screenshot-lightbox-open {
 
 .discover-source-toggle {
   display: flex;
-  background: rgba(18, 18, 18, 0.7);
+  background: rgba(14, 14, 18, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  border-radius: 9px;
   padding: 3px;
-  gap: 3px;
+  gap: 4px;
 }
 
 .discover-source-btn {
@@ -6893,32 +6893,70 @@ body.screenshot-lightbox-open {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  border: none;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.16s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
 }
 
 .discover-source-btn:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.05);
 }
 
-.discover-source-btn.active {
-  background: var(--accent);
-  color: var(--bg);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+/* Modrinth gradient theme: #00AF5C, #F8F9FA, #000000 */
+.discover-source-btn[data-source="modrinth"]:hover {
+  border-color: rgba(0, 175, 92, 0.35);
+  background: rgba(0, 175, 92, 0.1);
+  color: #F8F9FA;
+}
+
+.discover-source-btn[data-source="modrinth"].active {
+  background: linear-gradient(135deg, #00AF5C 0%, #008746 50%, #004d28 100%);
+  color: #F8F9FA;
+  border-color: rgba(248, 249, 250, 0.25);
+  box-shadow: 0 3px 12px rgba(0, 175, 92, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* CurseForge gradient theme: #EB622B, #FFFFFF, #088073 */
+.discover-source-btn[data-source="curseforge"]:hover {
+  border-color: rgba(235, 98, 43, 0.4);
+  background: rgba(235, 98, 43, 0.1);
+  color: #FFFFFF;
+}
+
+.discover-source-btn[data-source="curseforge"].active {
+  background: linear-gradient(135deg, #EB622B 0%, #ba4618 55%, #088073 100%);
+  color: #FFFFFF;
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 3px 12px rgba(235, 98, 43, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 .discover-source-icon {
-  width: 15px;
-  height: 15px;
+  width: 17px;
+  height: 17px;
+  object-fit: contain;
   flex-shrink: 0;
+  border-radius: 3px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+  transition: transform 0.2s ease;
+}
+
+.discover-source-btn:hover .discover-source-icon {
+  transform: scale(1.08);
+}
+
+.discover-source-btn.active .discover-source-icon {
+  transform: scale(1.05);
 }
 
 /* ── Big search bar — docked under the content island's header row,
