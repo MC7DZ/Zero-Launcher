@@ -7631,12 +7631,20 @@ body.screenshot-lightbox-open {
   border-left: 3px solid var(--toast-color);
   border-radius: 8px;
   padding: 10px 12px;
-  pointer-events: auto;
+  pointer-events: none;
   cursor: default;
   opacity: 0;
   transition: opacity 0.12s ease-out;
 }
 .toast.toast-visible { opacity: 1; }
+
+.toast-actions,
+.toast-action-btn,
+.toast-controls,
+.toast-close,
+.toast-copy {
+  pointer-events: auto;
+}
 
 .toast-icon {
   flex-shrink: 0;
