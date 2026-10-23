@@ -5458,9 +5458,15 @@ function renderInstanceList() {
     const inst = instances[i];
     const card = document.createElement('div');
     const isFav = inst.version_id === favId;
-    card.className = 'instance-card'
+    card.className = 'instance-card card-appear'
       + (inst.version_id === selectedInstanceId ? ' selected' : '')
       + (isFav ? ' favorited' : '');
+    const delayMs = Math.min(i * 24, 180);
+    card.style.setProperty('--card-stagger-delay', `${delayMs}ms`);
+    card.addEventListener('animationend', () => {
+      card.classList.remove('card-appear');
+      card.style.removeProperty('--card-stagger-delay');
+    }, { once: true });
     card.dataset.versionId = inst.version_id;
     card.dataset.pinned = isFav ? 'true' : 'false';
     card.draggable = !isFav;
@@ -8536,8 +8542,14 @@ function renderModCardContent(card) {
   // not when the virtual scroll re-renders it after scrolling back to it.
   if (!card._hasEverRendered) {
     card._hasEverRendered = true;
+    const idx = typeof card._staggerIndex === 'number' ? card._staggerIndex : 0;
+    const delayMs = Math.min(idx * 28, 220);
+    card.style.setProperty('--card-stagger-delay', `${delayMs}ms`);
     card.classList.add('card-appear');
-    card.addEventListener('animationend', () => card.classList.remove('card-appear'), { once: true });
+    card.addEventListener('animationend', () => {
+      card.classList.remove('card-appear');
+      card.style.removeProperty('--card-stagger-delay');
+    }, { once: true });
   }
 
   const isModpackMod = !!mod._isModpackMod;
@@ -8671,7 +8683,7 @@ function unloadModCardContent(card) {
   card.innerHTML = '';
 }
 
-function createVirtualModCard(mod, directory, preservedIconHtml, type) {
+function createVirtualModCard(mod, directory, preservedIconHtml, type, index = 0) {
   const card = document.createElement('div');
   card.className = 'glass-card mod-card is-unloaded' + (!mod.enabled ? ' disabled' : '');
   card.dataset.path = mod.path || '';
@@ -8681,6 +8693,7 @@ function createVirtualModCard(mod, directory, preservedIconHtml, type) {
   card._type = type || 'mod';
   card._preservedIconHtml = preservedIconHtml;
   card._isRendered = false;
+  card._staggerIndex = index;
 
   card.addEventListener('click', (e) => {
     if (e.target.closest('.mod-actions')) return;
@@ -9207,7 +9220,7 @@ async function loadMods(opts) {
       empty.innerHTML = `<span class="empty-icon">${ICON_EMPTY_BOX_SVG}</span><span>${isModpackView ? 'No modpack mods found' : 'No user mods added'}</span>`;
       frag.appendChild(empty);
     } else {
-      displayedMods.forEach(mod => frag.appendChild(createVirtualModCard(mod, directory, preservedIcons.get(mod.path))));
+      displayedMods.forEach((mod, index) => frag.appendChild(createVirtualModCard(mod, directory, preservedIcons.get(mod.path), 'mod', index)));
     }
     grid.innerHTML = '';
     grid.appendChild(frag);
@@ -9273,7 +9286,7 @@ async function loadPacksGrid(type, auto) {
       empty.innerHTML = `<span class="empty-icon">${ICON_EMPTY_BOX_SVG}</span><span>No ${unit}s added</span>`;
       frag.appendChild(empty);
     } else {
-      items.forEach(item => frag.appendChild(createVirtualModCard(item, directory, preservedIcons.get(item.path), type)));
+      items.forEach((item, index) => frag.appendChild(createVirtualModCard(item, directory, preservedIcons.get(item.path), type, index)));
     }
     grid.innerHTML = '';
     grid.appendChild(frag);
@@ -9342,7 +9355,7 @@ async function loadWorldsGrid(auto) {
     }
 
     const frag = document.createDocumentFragment();
-    worlds.forEach(world => frag.appendChild(createWorldCard(world)));
+    worlds.forEach((world, index) => frag.appendChild(createWorldCard(world, index)));
     grid.appendChild(frag);
 
     if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
@@ -9370,9 +9383,15 @@ async function loadWorldsGrid(auto) {
   }
 }
 
-function createWorldCard(world) {
+function createWorldCard(world, index = 0) {
   const card = document.createElement('div');
-  card.className = 'world-card';
+  card.className = 'world-card card-appear';
+  const delayMs = Math.min(index * 28, 220);
+  card.style.setProperty('--card-stagger-delay', `${delayMs}ms`);
+  card.addEventListener('animationend', () => {
+    card.classList.remove('card-appear');
+    card.style.removeProperty('--card-stagger-delay');
+  }, { once: true });
   card.dataset.path = world.path;
   card.dataset.name = (world.name || world.folder_name || '').toLowerCase();
   card.dataset.hasIcon = world.has_icon ? 'true' : 'false';
@@ -9527,7 +9546,7 @@ async function loadServersGrid() {
     }
 
     const frag = document.createDocumentFragment();
-    servers.forEach(server => frag.appendChild(createServerCard(server)));
+    servers.forEach((server, index) => frag.appendChild(createServerCard(server, index)));
     grid.appendChild(frag);
 
     if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
@@ -9611,9 +9630,15 @@ function renderMinecraftFormattedText(raw) {
   return html;
 }
 
-function createServerCard(server) {
+function createServerCard(server, index = 0) {
   const card = document.createElement('div');
-  card.className = 'server-card';
+  card.className = 'server-card card-appear';
+  const delayMs = Math.min(index * 28, 220);
+  card.style.setProperty('--card-stagger-delay', `${delayMs}ms`);
+  card.addEventListener('animationend', () => {
+    card.classList.remove('card-appear');
+    card.style.removeProperty('--card-stagger-delay');
+  }, { once: true });
   card.dataset.name = (server.name || '').toLowerCase();
   card.dataset.ip = (server.ip || '').toLowerCase();
 
@@ -9886,7 +9911,7 @@ function updateScreenshotsCountFromGrid() {
 // data-URL is typically 1–5 MB of text. Without a limit, a folder with
 // hundreds of screenshots could push the WebKit process into the hundreds
 // of megabytes permanently — the LRU cap keeps the footprint predictable.
-const MAX_SCREENSHOT_CACHE_SIZE = 30;
+const MAX_SCREENSHOT_CACHE_SIZE = 80;
 const screenshotImageCache = new Map();
 
 function getScreenshotImageDataUrl(path) {
@@ -9914,13 +9939,8 @@ function clearScreenshotImageCache() {
   screenshotImageCache.clear();
 }
 
-// Thumbnails load through a small shared queue so at most
-// SCREENSHOT_LOAD_CONCURRENCY reads are ever in flight together — reset
-// (disconnected + recreated) on every grid re-render so it never holds
-// onto cards that just got replaced. Scrolling to a card still loads it
-// right away: the observer jumps it to the front of the same queue
-// instead of bypassing the cap, so it doesn't reintroduce the
-// "everything visible loads at once" burst.
+// Thumbnails load through a shared queue so at most SCREENSHOT_LOAD_CONCURRENCY
+// reads are in flight together — high enough to load swiftly without saturating IPC.
 let screenshotObserver = null;
 function resetScreenshotObserver() {
   if (screenshotObserver) screenshotObserver.disconnect();
@@ -9930,23 +9950,16 @@ function resetScreenshotObserver() {
       screenshotObserver.unobserve(entry.target);
       enqueueScreenshotLoad(entry.target, { priority: true });
     });
-  }, { rootMargin: '400px' });
+  }, { rootMargin: '600px' });
   return screenshotObserver;
 }
 
-// At most this many screenshots are ever being read+decoded at once.
-// Kept small on purpose — the point isn't to load faster, it's to read a
-// couple, let them actually land on screen, then read the next couple,
-// instead of every thumbnail's IPC read + image decode competing for the
-// main thread all at the same time.
-const SCREENSHOT_LOAD_CONCURRENCY = 2;
+const SCREENSHOT_LOAD_CONCURRENCY = 6;
 let screenshotLoadQueue = [];
 let screenshotLoadActive = 0;
 
 // Adds a card to the shared load queue. `priority: true` (used when a
-// card scrolls into view) jumps it to the front instead of the back, but
-// it still has to wait its turn behind whatever's already in flight —
-// that's what keeps the concurrency cap meaningful.
+// card scrolls into view) jumps it to the front instead of the back.
 function enqueueScreenshotLoad(card, opts) {
   if (card.dataset.loaded === '1' || card.dataset.queued === '1') return;
   card.dataset.queued = '1';
@@ -9976,18 +9989,13 @@ async function loadScreenshotThumbnail(card) {
     const dataUrl = await getScreenshotImageDataUrl(path);
     if (!card.isConnected) return;
     img.src = dataUrl;
+    img.classList.add('loaded');
     card.dataset.loaded = '1';
   } catch (e) {
     if (!card.isConnected) return;
-    // Surface the real reason (hover the "?" icon, or check devtools) —
-    // a silent failure here is indistinguishable from "still broken" no
-    // matter what the actual cause is. The most common cause during
-    // development is simply that the Rust side hasn't been rebuilt since
-    // read_screenshot_image was added — invoke() then rejects with an
-    // "unknown command" style error, which will show up here verbatim.
     console.error('Failed to load screenshot', path, e);
     markScreenshotCardBroken(card, e);
-    card.dataset.loaded = '1'; // broken counts as "done" so the queue doesn't retry it
+    card.dataset.loaded = '1';
   }
 }
 
@@ -10004,7 +10012,13 @@ function markScreenshotCardBroken(card, reason) {
 
 function createScreenshotCard(item, directory, allItems, index) {
   const card = document.createElement('div');
-  card.className = 'screenshot-card glass-card';
+  card.className = 'screenshot-card glass-card card-appear';
+  const delayMs = Math.min((index || 0) * 28, 220);
+  card.style.setProperty('--card-stagger-delay', `${delayMs}ms`);
+  card.addEventListener('animationend', () => {
+    card.classList.remove('card-appear');
+    card.style.removeProperty('--card-stagger-delay');
+  }, { once: true });
   card.dataset.path = item.path || '';
   card.dataset.name = (item.file_name || '').toLowerCase();
 
@@ -12971,7 +12985,7 @@ function renderDiscoverResults(hits) {
     return;
   }
   const frag = document.createDocumentFragment();
-  hits.forEach(hit => frag.appendChild(buildDiscoverCard(hit)));
+  hits.forEach((hit, index) => frag.appendChild(buildDiscoverCard(hit, index)));
   grid.appendChild(frag);
 }
 
@@ -13150,6 +13164,18 @@ function renderCardContent(card) {
   card._isRendered = true;
   card.classList.remove('is-unloaded');
 
+  if (!card._hasEverRendered) {
+    card._hasEverRendered = true;
+    const idx = typeof card._staggerIndex === 'number' ? card._staggerIndex : 0;
+    const delayMs = Math.min(idx * 30, 240);
+    card.style.setProperty('--card-stagger-delay', `${delayMs}ms`);
+    card.classList.add('card-appear');
+    card.addEventListener('animationend', () => {
+      card.classList.remove('card-appear');
+      card.style.removeProperty('--card-stagger-delay');
+    }, { once: true });
+  }
+
   const iconHtml = hit.icon_url
     ? `<img src="${discoverEscape(hit.icon_url)}" alt="" draggable="false" loading="lazy" decoding="async" />`
     : ICON_UNKNOWN_SVG;
@@ -13249,19 +13275,20 @@ function unloadCardContent(card) {
   card.innerHTML = '';
 }
 
-function createVirtualDiscoverCard(hit) {
+function createVirtualDiscoverCard(hit, index = 0) {
   const card = document.createElement('div');
   card.className = 'discover-card is-unloaded';
   card.dataset.projectId = hit.project_id;
   card._hit = hit;
   card._isRendered = false;
+  card._staggerIndex = index;
 
   getDiscoverVirtualObserver().observe(card);
   return card;
 }
 
-function buildDiscoverCard(hit) {
-  return createVirtualDiscoverCard(hit);
+function buildDiscoverCard(hit, index = 0) {
+  return createVirtualDiscoverCard(hit, index);
 }
 
 // ══════════════════════════════════════════════════════════════════

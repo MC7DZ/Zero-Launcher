@@ -5096,14 +5096,29 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   overflow: hidden;
   aspect-ratio: 16 / 9;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.04);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.07) 50%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 200% 100%;
+  animation: screenshotShimmer 1.6s infinite ease-in-out;
   padding: 0;
+}
+@keyframes screenshotShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.screenshot-card[data-loaded="1"] {
+  background: rgba(255, 255, 255, 0.04);
+  animation: none;
 }
 .screenshot-card img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  opacity: 0;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.screenshot-card img.loaded {
+  opacity: 1;
 }
 .screenshot-card.selected {
   outline: 2px solid var(--accent);
@@ -5353,16 +5368,29 @@ body.screenshot-lightbox-open {
   min-height: 132px;
 }
 
-/* cardFadeIn plays only once on first appearance — applied via JS with the
-   .card-appear class so it doesn't replay every time the virtual scroll
-   unloads and reloads a card (which caused flickering on every click/scroll). */
+/* Staggered card appearance animation — adds a smooth, staggered reveal
+   to eliminate the tiny frame drop / lag spike when many cards render at once. */
 @keyframes cardFadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
-.mod-card.card-appear {
-  animation: cardFadeIn 0.12s ease-out forwards;
+
+.mod-card.card-appear,
+.discover-card.card-appear,
+.instance-card.card-appear,
+.world-card.card-appear,
+.server-card.card-appear,
+.screenshot-card.card-appear {
+  animation: cardFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--card-stagger-delay, 0ms);
 }
+
 
 .mod-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,0.3); background: var(--panel-hover); }
 .mod-card.disabled { opacity: 0.6; }
@@ -6035,6 +6063,16 @@ body.screenshot-lightbox-open {
   overflow: hidden;
   contain: layout style paint;
   transition: border-color 0.12s ease, background 0.12s ease;
+  min-height: 220px;
+}
+
+.discover-card.is-unloaded {
+  contain: layout style paint;
+  background: rgba(33, 33, 33, 0.5) !important;
+  border-color: rgba(255, 255, 255, 0.03) !important;
+  box-shadow: none !important;
+  pointer-events: none;
+  transition: none !important;
   min-height: 220px;
 }
 
