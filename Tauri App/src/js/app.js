@@ -10367,6 +10367,15 @@ async function loadScreenshotsGrid(auto) {
   const targetInstance = getModsTargetInstance();
   const directory = targetInstance ? (targetInstance.directory || settings.game_directory) : settings.game_directory;
 
+  // Let the skeletons breathe for 300 ms before firing the IPC call —
+  // this gives a smooth "loading" feel instead of a jarring instant swap.
+  // Skip the wait on silent auto-refreshes (hasShotCards = true) so
+  // background reloads don't flicker. Bail if the user already switched away.
+  if (!auto || !hasShotCards) {
+    await new Promise(r => setTimeout(r, 300));
+    if (myGeneration !== modsLoadGeneration) return;
+  }
+
   try {
     const items = await api.listScreenshots(directory);
     if (myGeneration !== modsLoadGeneration) return;
