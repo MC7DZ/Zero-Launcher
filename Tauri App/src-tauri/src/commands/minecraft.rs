@@ -1463,6 +1463,12 @@ pub async fn install_minecraft(
     }
     state.save_instances();
 
+    {
+        let mut hidden = state.hidden_instances.lock().unwrap();
+        hidden.retain(|h| h != &instance.version_id);
+    }
+    state.save_hidden_instances();
+
     logger::info(&app, &state, "LAUNCHER", &format!(
         "✓ Successfully installed {}",
         instance.version_id
@@ -1899,17 +1905,89 @@ pub async fn launch_minecraft(
     // Load the version metadata first (blocking, but fast — just reads the
     // version json off disk). We need it before we can figure out which
     // Java this instance actually requires.
-    let mc_dir_for_version = mc_dir.clone();
-    let vid_for_version = vid.clone();
-    let version = tokio::task::spawn_blocking(move || {
-        let launcher = Launcher::new(&mc_dir_for_version);
-        launcher
-            .load_version(&vid_for_version)
-            .map_err(|e| format!("Failed to load version: {e}"))
-    })
-    .await
-    .map_err(|e| { fail_cleanup(); format!("Launch task failed: {e}") })?
-    .map_err(|e| { fail_cleanup(); e })?;
+    let version = {
+        let load_res = {
+            let mc_dir_for_version = mc_dir.clone();
+            let vid_for_version = vid.clone();
+            tokio::task::spawn_blocking(move || {
+                let launcher = Launcher::new(&mc_dir_for_version);
+                launcher.load_version(&vid_for_version)
+            })
+            .await
+            .map_err(|e| { fail_cleanup(); format!("Launch task failed: {e}") })?
+        };
+
+        match load_res {
+            Ok(v) => v,
+            Err(e) => {
+                let err_msg = e.to_string();
+                let is_not_found = err_msg.contains("No such file") || err_msg.contains("os error 2");
+                let target_vanilla = if is_not_found {
+                    if is_likely_mc_version(&vid) {
+                        Some(vid.clone())
+                    } else if is_likely_mc_version(&inst_mc_version) {
+                        Some(inst_mc_version.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(mc_ver) = target_vanilla {
+                    logger::info_for_instance(&app, &state, &vid, "LAUNCHER", &format!(
+                        "Version metadata missing for {mc_ver} ({err_msg}) — downloading fresh vanilla profile..."
+                    ));
+                    let mc_dir_for_fetch = mc_dir.clone();
+                    let mc_ver_clone = mc_ver.clone();
+                    let fetch_res = tokio::task::spawn_blocking(move || {
+                        let vjson = mc_launcher_core::install::client::fetch_vanilla_version(&mc_ver_clone)?;
+                        mc_launcher_core::install::client::write_version_json(&mc_dir_for_fetch, &vjson)?;
+                        Ok::<_, mc_launcher_core::error::LauncherError>(vjson)
+                    })
+                    .await
+                    .map_err(|e| { fail_cleanup(); format!("Vanilla fetch task failed: {e}") })?;
+
+                    match fetch_res {
+                        Ok(_) => {
+                            // Also make sure this vanilla version is registered and unhidden
+                            {
+                                let mut instances = state.instances.lock().unwrap();
+                                if let Some(inst) = instances.iter_mut().find(|i| i.version_id == mc_ver) {
+                                    if inst.installed_at.is_empty() {
+                                        inst.installed_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                                    }
+                                }
+                            }
+                            state.save_instances();
+                            {
+                                let mut hidden = state.hidden_instances.lock().unwrap();
+                                hidden.retain(|h| h != &mc_ver);
+                            }
+                            state.save_hidden_instances();
+
+                            // Retry loading version
+                            let mc_dir_retry = mc_dir.clone();
+                            let vid_retry = vid.clone();
+                            tokio::task::spawn_blocking(move || {
+                                Launcher::new(&mc_dir_retry).load_version(&vid_retry)
+                            })
+                            .await
+                            .map_err(|e| { fail_cleanup(); format!("Launch task failed: {e}") })?
+                            .map_err(|e| { fail_cleanup(); format!("Failed to load version: {e}") })?
+                        }
+                        Err(fetch_err) => {
+                            fail_cleanup();
+                            return Err(format!("Failed to load version and could not fetch vanilla profile: {fetch_err}"));
+                        }
+                    }
+                } else {
+                    fail_cleanup();
+                    return Err(format!("Failed to load version: {e}"));
+                }
+            }
+        }
+    };
 
     // "Play" verifies libraries/assets/the client jar before every launch
     // and repairs anything missing or corrupted (e.g. a checksum mismatch
@@ -3457,6 +3535,12 @@ pub async fn delete_installed_version(
         instances.retain(|i| i.version_id != version_id);
     }
     state.save_instances();
+
+    {
+        let mut hidden = state.hidden_instances.lock().unwrap();
+        hidden.retain(|h| h != &version_id);
+    }
+    state.save_hidden_instances();
 
     logger::info(&app, &state, "LAUNCHER", &format!(
         "Deleted version folder for {version_id}"

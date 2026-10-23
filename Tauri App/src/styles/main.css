@@ -1400,7 +1400,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: rgba(var(--overlay-rgb), 0.06);
   border-color: rgba(var(--overlay-rgb), 0.09);
 }
-.instance-card:active {
+.instance-card:active:not(.selected) {
   transform: scale(0.985);
 }
 .instance-card.selected {
@@ -4370,6 +4370,8 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   letter-spacing: 0.01em;
 }
 
+/* Hover effect removed per user request */
+/*
 .content-type-segment:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.06);
@@ -4380,6 +4382,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   color: var(--text);
   transform: scale(1.04);
 }
+*/
 
 .content-type-segment:active:not(.active):not(.is-disabled) {
   transform: scale(0.98);

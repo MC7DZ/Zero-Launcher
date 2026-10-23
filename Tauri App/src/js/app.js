@@ -60,6 +60,7 @@ function isAlreadySelected(el) {
   if (!el) return false;
   if (el.matches('input[type="radio"]') && el.checked) return true;
   if (el.getAttribute && el.getAttribute('aria-selected') === 'true') return true;
+  if (el.matches('.instance-card') && el.classList.contains('selected')) return true;
   return el.matches(SELECTOR_CONTROLS) && el.classList.contains('active');
 }
 
@@ -78,6 +79,8 @@ function initClickSoundListener() {
       'a[href], .tab-page nav button, [role="button"], [role="tab"], [role="checkbox"]'
     );
     if (interactive && !interactive.disabled && !interactive.classList.contains('disabled')) {
+      // Content type buttons should not trigger click sounds per user preference
+      if (interactive.closest('.content-type-segment')) return;
       // Quality of life: no click sound when pressing something that is
       // already the selected one (current settings section, tab, loader pill…).
       if (isAlreadySelected(interactive)) return;
@@ -3412,6 +3415,10 @@ function addVanillaOverride(versionId) {
     try { localStorage.setItem(VANILLA_OVERRIDES_KEY, JSON.stringify(overrides)); } catch (e) { /* ignore */ }
   }
 }
+function removeVanillaOverride(versionId) {
+  const overrides = getVanillaOverrides().filter(id => id !== versionId);
+  try { localStorage.setItem(VANILLA_OVERRIDES_KEY, JSON.stringify(overrides)); } catch (e) { /* ignore */ }
+}
 
 function getVisibleInstances() {
   const vanillaOverrides = getVanillaOverrides();
@@ -5318,6 +5325,7 @@ function initInstanceListDelegation() {
     }
 
     // Card selected
+    if (selectedInstanceId === versionId) return;
     selectInstance(versionId);
   });
 
@@ -6090,6 +6098,7 @@ async function performInstanceDelete(versionId, inst, deleteData) {
         showToast('Instance deleted, but its data folder could not be removed: ' + e, 'error');
       }
     }
+    removeVanillaOverride(versionId);
     await api.deleteInstalledVersion(versionId, inst && inst.directory);
     await refreshInstances();
     if (selectedInstanceId === versionId) {
@@ -6579,19 +6588,7 @@ function initInstanceActions() {
     const inst = getInstances().find(i => i.version_id === selectedInstanceId);
     const isVanilla = !inst || !inst.loader || inst.loader.toLowerCase() === 'vanilla';
 
-    if (isVanilla) {
-      let dependents = [];
-      try {
-        dependents = await api.getDependentInstances(selectedInstanceId);
-      } catch (e) {
-        console.error('Failed to check dependent instances:', e);
-      }
-      if (dependents.length > 0) {
-        if (delBtn) delBtn.classList.add('is-open');
-        showVanillaDeleteWarning(inst, dependents);
-        return;
-      }
-    }
+
 
     const instName = (inst && (inst.name || inst.version_id)) || selectedInstanceId;
     const doDelete = async (deleteData) => {
@@ -8011,6 +8008,7 @@ async function installInstance() {
       // satisfy a modded instance's dependency, or one the user hid earlier).
       // Since this was just explicitly installed, make sure it's visible.
       if (result && result.version_id) {
+        addVanillaOverride(result.version_id);
         try { await api.unhideInstance(result.version_id); } catch (e) { /* not hidden — fine */ }
         if (javaPath || minRamMb || maxRamMb || jvmArgs) {
           try {
@@ -16937,11 +16935,10 @@ async function renderHiddenInstancesSettings() {
     `;
     row.querySelector('.btn-unhide-instance').addEventListener('click', async () => {
       try {
-        if (isAuto) {
-          addVanillaOverride(versionId);
-        } else {
+        addVanillaOverride(versionId);
+        try {
           await api.unhideInstance(versionId);
-        }
+        } catch (_) {}
         await refreshInstances();
         renderInstanceList();
         await renderHiddenInstancesSettings();
