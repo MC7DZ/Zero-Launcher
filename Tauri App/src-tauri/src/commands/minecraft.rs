@@ -628,13 +628,23 @@ pub async fn install_minecraft(
     let control_for_progress = control.clone();
     let control_for_retry = control.clone();
 
+    // If this install is updating/reinstalling an existing instance, look up its
+    // record first so we preserve its playtime, launch count, directories, and settings.
+    let old_instance: Option<InstalledInstance> = if let Some(ref old_id) = payload.old_version_id {
+        state.instances.lock().unwrap().iter().find(|i| &i.version_id == old_id).cloned()
+    } else {
+        None
+    };
+
     // Root directory for this instance. Each instance maintains its own
     // isolated `libraries/`, `assets/`, `versions/`, `mods/`, and configs
     // to avoid inter-instance conflicts and version collision issues.
     let default_minecraft_dir = state.settings.lock().unwrap().resolved_game_directory();
 
     let _display_name = payload.name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
-        if loader_type == "vanilla" || loader_type.is_empty() {
+        if let Some(ref old_inst) = old_instance {
+            old_inst.name.clone()
+        } else if loader_type == "vanilla" || loader_type.is_empty() {
             mc_version.clone()
         } else {
             format!("{mc_version} ({loader_type})")
@@ -642,7 +652,18 @@ pub async fn install_minecraft(
     });
 
     let game_dir = if let Some(ref dir) = payload.directory {
-        PathBuf::from(crate::models::sanitize_user_path(dir))
+        let trimmed = dir.trim();
+        if trimmed.is_empty() {
+            if let Some(ref old_inst) = old_instance {
+                PathBuf::from(&old_inst.directory)
+            } else {
+                default_minecraft_dir.clone()
+            }
+        } else {
+            PathBuf::from(crate::models::sanitize_user_path(trimmed))
+        }
+    } else if let Some(ref old_inst) = old_instance {
+        PathBuf::from(&old_inst.directory)
     } else {
         // No directory chosen = "Shared Default": use the default
         // .minecraft folder itself. (Separated instances are sent from the
@@ -650,7 +671,11 @@ pub async fn install_minecraft(
         default_minecraft_dir.clone()
     };
 
-    let minecraft_dir = game_dir.clone();
+    let minecraft_dir = if let Some(ref old_inst) = old_instance {
+        PathBuf::from(old_inst.minecraft_dir())
+    } else {
+        game_dir.clone()
+    };
 
     // Installs that target the *same* folder (e.g. two "Shared Default"
     // installs into .minecraft) would otherwise write the same
@@ -883,15 +908,21 @@ pub async fn install_minecraft(
                     loader_version: payload.loader_version.clone(),
                     directory: game_dir.to_string_lossy().to_string(),
                     minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
-                    installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                    total_playtime_seconds: 0,
-                    playtime_history: std::collections::HashMap::new(),
-                    last_played_at: None,
-                    launch_count: 0,
-                    java_path: None,
-                    min_ram_mb: None,
-                    max_ram_mb: None,
-                    jvm_args: None,
+                    installed_at: old_instance
+                        .as_ref()
+                        .map(|i| i.installed_at.clone())
+                        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
+                    total_playtime_seconds: old_instance.as_ref().map(|i| i.total_playtime_seconds).unwrap_or(0),
+                    playtime_history: old_instance
+                        .as_ref()
+                        .map(|i| i.playtime_history.clone())
+                        .unwrap_or_default(),
+                    last_played_at: old_instance.as_ref().and_then(|i| i.last_played_at.clone()),
+                    launch_count: old_instance.as_ref().map(|i| i.launch_count).unwrap_or(0),
+                    java_path: old_instance.as_ref().and_then(|i| i.java_path.clone()),
+                    min_ram_mb: old_instance.as_ref().and_then(|i| i.min_ram_mb),
+                    max_ram_mb: old_instance.as_ref().and_then(|i| i.max_ram_mb),
+                    jvm_args: old_instance.as_ref().and_then(|i| i.jvm_args.clone()),
                 };
 
                 {
@@ -1443,15 +1474,21 @@ pub async fn install_minecraft(
         loader_version: payload.loader_version.clone(),
         directory: game_dir.to_string_lossy().to_string(),
         minecraft_directory: minecraft_dir.to_string_lossy().to_string(),
-        installed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-        total_playtime_seconds: 0,
-        playtime_history: std::collections::HashMap::new(),
-        last_played_at: None,
-        launch_count: 0,
-        java_path: None,
-        min_ram_mb: None,
-        max_ram_mb: None,
-        jvm_args: None,
+        installed_at: old_instance
+            .as_ref()
+            .map(|i| i.installed_at.clone())
+            .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
+        total_playtime_seconds: old_instance.as_ref().map(|i| i.total_playtime_seconds).unwrap_or(0),
+        playtime_history: old_instance
+            .as_ref()
+            .map(|i| i.playtime_history.clone())
+            .unwrap_or_default(),
+        last_played_at: old_instance.as_ref().and_then(|i| i.last_played_at.clone()),
+        launch_count: old_instance.as_ref().map(|i| i.launch_count).unwrap_or(0),
+        java_path: old_instance.as_ref().and_then(|i| i.java_path.clone()),
+        min_ram_mb: old_instance.as_ref().and_then(|i| i.min_ram_mb),
+        max_ram_mb: old_instance.as_ref().and_then(|i| i.max_ram_mb),
+        jvm_args: old_instance.as_ref().and_then(|i| i.jvm_args.clone()),
     };
 
     // Save instance to state
@@ -1468,6 +1505,15 @@ pub async fn install_minecraft(
         hidden.retain(|h| h != &instance.version_id);
     }
     state.save_hidden_instances();
+
+    if let Some(ref old_inst) = old_instance {
+        if old_inst.version_id != instance.version_id {
+            let mut logs = state.instance_logs.lock().unwrap();
+            if let Some(l) = logs.remove(&old_inst.version_id) {
+                logs.insert(instance.version_id.clone(), l);
+            }
+        }
+    }
 
     logger::info(&app, &state, "LAUNCHER", &format!(
         "✓ Successfully installed {}",
