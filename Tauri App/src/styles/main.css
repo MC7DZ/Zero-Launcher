@@ -5903,24 +5903,65 @@ body.screenshot-lightbox-open {
 }
 
 .discover-type-toggle {
+  position: relative;
   display: flex;
-  background: rgba(18, 18, 18, 0.85);
+  background: rgba(14, 14, 18, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  padding: 2px;
-  gap: 2px;
+  padding: 3px;
+  gap: 3px;
+  isolation: isolate;
+}
+
+.discover-type-indicator {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 0;
+  border-radius: 6px;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(0);
+  transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
+              width 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
+              background 0.25s ease,
+              box-shadow 0.25s ease,
+              opacity 0.2s ease;
+  will-change: transform, width;
+}
+
+.discover-type-indicator.ready {
+  opacity: 1;
+}
+
+/* Modrinth color theme for segment indicator */
+.discover-type-indicator.platform-modrinth {
+  background: linear-gradient(135deg, #00AF5C 0%, #008746 50%, #004d28 100%);
+  border: 1px solid rgba(248, 249, 250, 0.25);
+  box-shadow: 0 3px 12px rgba(0, 175, 92, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* CurseForge color theme for segment indicator: #088073 up, #FFFFFF tiny middle, #EB622B under */
+.discover-type-indicator.platform-curseforge {
+  background: linear-gradient(180deg, #088073 0%, #088073 14%, #FFFFFF 15%, #FFFFFF 19%, #EB622B 20%, #EB622B 100%);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 3px 12px rgba(235, 98, 43, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .discover-segment {
+  position: relative;
+  z-index: 2;
   border: none;
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
-  padding: 5px 16px;
+  padding: 6px 16px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: color 0.2s ease;
 }
 
 .discover-segment:hover {
@@ -5928,8 +5969,8 @@ body.screenshot-lightbox-open {
 }
 
 .discover-segment.active {
-  background: var(--accent);
-  color: var(--bg);
+  color: #FFFFFF;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
 .discover-scroll-area {
@@ -6879,16 +6920,55 @@ body.screenshot-lightbox-open {
 }
 
 .discover-source-toggle {
+  position: relative;
   display: flex;
   background: rgba(14, 14, 18, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 9px;
   padding: 3px;
   gap: 4px;
+  isolation: isolate;
+}
+
+.discover-source-indicator {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 0;
+  border-radius: 7px;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(0);
+  transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
+              width 0.28s cubic-bezier(0.2, 0.9, 0.3, 1),
+              background 0.25s ease,
+              box-shadow 0.25s ease,
+              opacity 0.2s ease;
+  will-change: transform, width;
+}
+
+.discover-source-indicator.ready {
+  opacity: 1;
+}
+
+.discover-source-indicator.platform-modrinth {
+  background: linear-gradient(135deg, #00AF5C 0%, #008746 50%, #004d28 100%);
+  border: 1px solid rgba(248, 249, 250, 0.25);
+  box-shadow: 0 3px 12px rgba(0, 175, 92, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.discover-source-indicator.platform-curseforge {
+  background: linear-gradient(180deg, #088073 0%, #088073 14%, #FFFFFF 15%, #FFFFFF 19%, #EB622B 20%, #EB622B 100%);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 3px 12px rgba(235, 98, 43, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .discover-source-btn {
   flex: 1;
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6901,44 +6981,24 @@ body.screenshot-lightbox-open {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  position: relative;
-  overflow: hidden;
+  transition: color 0.2s ease, transform 0.15s ease;
 }
 
 .discover-source-btn:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.05);
 }
 
-/* Modrinth gradient theme: #00AF5C, #F8F9FA, #000000 */
 .discover-source-btn[data-source="modrinth"]:hover {
-  border-color: rgba(0, 175, 92, 0.35);
-  background: rgba(0, 175, 92, 0.1);
   color: #F8F9FA;
 }
 
-.discover-source-btn[data-source="modrinth"].active {
-  background: linear-gradient(135deg, #00AF5C 0%, #008746 50%, #004d28 100%);
-  color: #F8F9FA;
-  border-color: rgba(248, 249, 250, 0.25);
-  box-shadow: 0 3px 12px rgba(0, 175, 92, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-
-/* CurseForge gradient theme: #EB622B, #FFFFFF, #088073 */
 .discover-source-btn[data-source="curseforge"]:hover {
-  border-color: rgba(235, 98, 43, 0.4);
-  background: rgba(235, 98, 43, 0.1);
   color: #FFFFFF;
 }
 
-.discover-source-btn[data-source="curseforge"].active {
-  background: linear-gradient(135deg, #EB622B 0%, #ba4618 55%, #088073 100%);
+.discover-source-btn.active {
   color: #FFFFFF;
-  border-color: rgba(255, 255, 255, 0.25);
-  box-shadow: 0 3px 12px rgba(235, 98, 43, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
 .discover-source-icon {

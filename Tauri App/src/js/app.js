@@ -1205,6 +1205,9 @@ function initTabs() {
         }
         if (tabId === 'discover') {
           initDiscoverTabIfNeeded();
+          if (window.refreshDiscoverIndicators) {
+            requestAnimationFrame(() => window.refreshDiscoverIndicators());
+          }
         }
 
         if (tabId === 'presets') initPresetsTabIfNeeded();
@@ -14320,12 +14323,72 @@ function initDiscover() {
     });
   }
 
+  // Sliding pill indicators for Discover: Source Platform & Content Type
+  const sourceToggle = document.getElementById('discover-source-toggle');
+  const sourceIndicator = document.getElementById('discover-source-indicator');
+  const typeToggle = document.getElementById('discover-type-toggle');
+  const typeIndicator = document.getElementById('discover-type-indicator');
+
+  function updateDiscoverSourceIndicator(btn) {
+    if (!btn || !sourceToggle || !sourceIndicator) return;
+    const barRect = sourceToggle.getBoundingClientRect();
+    const btnRect = btn.getBoundingClientRect();
+    const x = btnRect.left - barRect.left;
+    const w = btnRect.width;
+    if (w > 0) {
+      sourceIndicator.style.transform = `translateX(${x}px)`;
+      sourceIndicator.style.width = `${w}px`;
+      const platform = btn.dataset.source || 'modrinth';
+      sourceIndicator.classList.remove('platform-modrinth', 'platform-curseforge');
+      sourceIndicator.classList.add(`platform-${platform}`);
+      if (!sourceIndicator.classList.contains('ready')) {
+        sourceIndicator.classList.add('ready');
+      }
+    }
+  }
+
+  function updateDiscoverTypeIndicator(btn) {
+    if (!btn || !typeToggle || !typeIndicator) return;
+    const barRect = typeToggle.getBoundingClientRect();
+    const btnRect = btn.getBoundingClientRect();
+    const x = btnRect.left - barRect.left;
+    const w = btnRect.width;
+    if (w > 0) {
+      typeIndicator.style.transform = `translateX(${x}px)`;
+      typeIndicator.style.width = `${w}px`;
+      const platform = discoverState.platform || 'modrinth';
+      typeIndicator.classList.remove('platform-modrinth', 'platform-curseforge');
+      typeIndicator.classList.add(`platform-${platform}`);
+      if (!typeIndicator.classList.contains('ready')) {
+        typeIndicator.classList.add('ready');
+      }
+    }
+  }
+
+  window.refreshDiscoverIndicators = function() {
+    const activeSource = document.querySelector('.discover-source-btn.active');
+    if (activeSource) updateDiscoverSourceIndicator(activeSource);
+    const activeType = document.querySelector('.discover-segment.active');
+    if (activeType) updateDiscoverTypeIndicator(activeType);
+  };
+
+  // Initialize indicator positions
+  requestAnimationFrame(() => {
+    window.refreshDiscoverIndicators();
+  });
+
   document.querySelectorAll('.discover-source-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.classList.contains('active')) return;
       document.querySelectorAll('.discover-source-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       discoverState.platform = btn.dataset.source || 'modrinth';
+      updateDiscoverSourceIndicator(btn);
+
+      // Sync color theme to the content type buttons sliding pill as well
+      const activeType = document.querySelector('.discover-segment.active');
+      if (activeType) updateDiscoverTypeIndicator(activeType);
+
       discoverState.page = 1;
       const qInput = document.getElementById('discover-query');
       if (qInput) {
@@ -14340,6 +14403,7 @@ function initDiscover() {
       document.querySelectorAll('.discover-segment').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       discoverState.type = btn.dataset.type;
+      updateDiscoverTypeIndicator(btn);
       discoverState.page = 1;
       discoverState.categories = [];
       discoverState.features = [];
