@@ -44,16 +44,11 @@ const SRC: &str = "CrashReport";
 
 /// Webhook compiled in at build time (`ZL_CRASH_WEBHOOK=... cargo build`).
 /// The Settings field overrides it. Never commit a real URL to the repo.
-const DEFAULT_WEBHOOK: &str = "https://discord.com/api/webhooks/1563503901620310066/aNVxgYSWz1ofPHkThvonXD2WYEl_ddU_UWjdKViiShaaHtkZ-0BQBis0ZSPPq1rHNDJU";
-const BUILD_WEBHOOK: Option<&str> = option_env!("ZL_CRASH_WEBHOOK");
 
 /// The webhook used when the Settings field is blank: the build-time
-/// `ZL_CRASH_WEBHOOK` if one was given (empty string = none), else the default.
+/// `ZL_CRASH_WEBHOOK` if one was given, else none (reporting stays off).
 fn default_webhook() -> &'static str {
-    match BUILD_WEBHOOK {
-        Some(u) if !u.trim().is_empty() => u,
-        _ => DEFAULT_WEBHOOK,
-    }
+    crate::config::crash_webhook().unwrap_or("")
 }
 
 /// Cap per attached file (Discord allows ~10 MB per message for webhooks).
@@ -890,7 +885,7 @@ pub async fn send_test_crash_report(app: AppHandle, webhook_url: Option<String>)
     // Test reports are only for your own webhook: a blank field (= default
     // webhook) or the default URL itself is refused, nothing is sent.
     let url = webhook_url.map(|u| u.trim().to_string()).unwrap_or_default();
-    if url.is_empty() || url == DEFAULT_WEBHOOK || (!default_webhook().is_empty() && url == default_webhook()) {
+    if url.is_empty() || (!default_webhook().is_empty() && url == default_webhook()) {
         return Err("Test reports can't be sent to the default webhook. Enter your own webhook URL to test it.".into());
     }
     if !is_valid_webhook(&url) {

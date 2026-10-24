@@ -7,7 +7,6 @@ use tauri::Emitter;
 
 const MODRINTH_API: &str = "https://api.modrinth.com/v2";
 const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
-const CURSEFORGE_API_KEY: &str = "$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm";
 const USER_AGENT: &str = "ZeroLauncher/1.0 (discover-tab)";
 
 // A single shared client (connection pooling + DNS cache) instead of a new
@@ -78,7 +77,7 @@ async fn send_curseforge_with_retry(
     let client = curseforge_client();
     let mut attempt = 0;
     loop {
-        match build(client).header("x-api-key", CURSEFORGE_API_KEY).send().await {
+        match build(client).header("x-api-key", crate::config::curseforge_api_key().unwrap_or("")).send().await {
             Ok(resp) => return Ok(resp),
             Err(e) if attempt < 2 && (e.is_connect() || e.is_timeout()) => {
                 attempt += 1;

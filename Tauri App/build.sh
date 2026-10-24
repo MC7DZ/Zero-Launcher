@@ -25,8 +25,18 @@ cd "$SCRIPT_DIR"
 # on newer ELF sections (.relr.dyn) produced by current toolchains.
 export NO_STRIP=1
 
-# Optional build-time override of the crash-report webhook (the default is in crashreport.rs).
-export ZL_CRASH_WEBHOOK="${ZL_CRASH_WEBHOOK-}"
+# Build-time configuration (API keys, OAuth creds, crash webhook): load .env if
+# present; variables already set in the environment take precedence.
+# See .env.example for the full list of ZL_* variables.
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line#export }"
+        case "$line" in ''|\#*) continue ;; esac
+        key="${line%%=*}"; val="${line#*=}"
+        val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
+        [ -z "${!key+x}" ] && export "$key=$val"
+    done < "$SCRIPT_DIR/.env"
+fi
 
 log() {
     printf '\n\033[1;34m==>\033[0m %s\n' "$1"

@@ -1,4 +1,5 @@
 mod commands;
+mod config;
 mod crashlog;
 mod crashreport;
 mod diagnostics;

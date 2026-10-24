@@ -20,7 +20,6 @@ use crate::logger;
 use crate::models::{InstallRequestPayload, InstalledInstance};
 use crate::state::AppState;
 
-const CURSEFORGE_API_KEY: &str = "$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm";
 
 // ── Request / response shapes ──────────────────────────────────────────────
 
@@ -639,7 +638,7 @@ async fn download_curseforge_pack_files(
             .post("https://api.curseforge.com/v1/mods/files")
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
-            .header("x-api-key", CURSEFORGE_API_KEY)
+            .header("x-api-key", crate::config::curseforge_api_key().unwrap_or(""))
             .json(&payload)
             .send()
             .await

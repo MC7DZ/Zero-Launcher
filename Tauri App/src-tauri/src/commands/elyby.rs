@@ -182,14 +182,14 @@ pub async fn elyby_login(
 // https://ely.by/skins; OAuth here is about not handling the user's
 // password, not about unlocking skin management.
 
-/// Filled in directly instead of pulled from the environment/.env at build
-/// time — register an app at https://account.ely.by/dev/applications/new
-/// (type "Website", redirect URI `http://127.0.0.1:38621/callback` to
-/// match `OAUTH_REDIRECT_PORT` below) and put the values here. Left
-/// blank, `elyby_oauth_start` fails with a message explaining why instead
-/// of silently misbehaving.
-const ELYBY_OAUTH_CLIENT_ID: &str = "zero-launcher";
-const ELYBY_OAUTH_CLIENT_SECRET: &str = "9GPWN8LenlOlMUTzzVWU9EDNszsYgJMHsU_wxyYpx2qXV9H2x8K8q1mT2Ao_s7O6";
+/// Ely.by OAuth2 credentials, read at build time from `ZL_ELYBY_CLIENT_ID` /
+/// `ZL_ELYBY_CLIENT_SECRET` (see `.env.example`). Register an app at
+/// https://account.ely.by/dev/applications/new (type "Website", redirect URI
+/// `http://127.0.0.1:38621/callback` to match `OAUTH_REDIRECT_PORT` below).
+/// If unset, `elyby_oauth_start` fails with a message explaining why.
+fn elyby_credentials() -> Option<(&'static str, &'static str)> {
+    Some((crate::config::elyby_client_id()?, crate::config::elyby_client_secret()?))
+}
 /// Must exactly match the port baked into the redirect URI registered
 /// above. Picked high/uncommon to avoid colliding with anything else the
 /// user might have running locally.
@@ -354,14 +354,14 @@ fn spawn_oauth_callback_listener(
 /// device-code flow does). Call `elyby_oauth_poll` on a timer afterward.
 #[tauri::command]
 pub async fn elyby_oauth_start(state: State<'_, AppState>) -> Result<String, String> {
-    if ELYBY_OAUTH_CLIENT_ID.is_empty() || ELYBY_OAUTH_CLIENT_SECRET.is_empty() {
+    let Some((elyby_client_id, elyby_client_secret)) = elyby_credentials() else {
         return Err(
             "Ely.by OAuth2 sign-in isn't configured yet — this build is missing its Ely.by \
              clientId/clientSecret (register one at https://account.ely.by/dev/applications/new \
-             with redirect URI http://127.0.0.1:38621/callback and fill it into elyby.rs)."
+             with redirect URI http://127.0.0.1:38621/callback and set ZL_ELYBY_CLIENT_ID and ZL_ELYBY_CLIENT_SECRET in .env and rebuild)."
                 .to_string(),
         );
-    }
+    };
 
     let expected_state = uuid::Uuid::new_v4().to_string();
     let result = std::sync::Arc::new(std::sync::Mutex::new(OauthCallbackResult::Pending));
@@ -377,7 +377,7 @@ pub async fn elyby_oauth_start(state: State<'_, AppState>) -> Result<String, Str
 
     let mut url = url::Url::parse(OAUTH_AUTHORIZE_URL).map_err(|e| format!("Internal URL error: {e}"))?;
     url.query_pairs_mut()
-        .append_pair("client_id", ELYBY_OAUTH_CLIENT_ID)
+        .append_pair("client_id", elyby_client_id)
         .append_pair("redirect_uri", &oauth_redirect_uri())
         .append_pair("response_type", "code")
         .append_pair("scope", OAUTH_SCOPES)
@@ -408,8 +408,8 @@ async fn exchange_oauth_code(client: &reqwest::Client, code: &str) -> Result<Oau
     let response = client
         .post(OAUTH_TOKEN_URL)
         .form(&[
-            ("client_id", ELYBY_OAUTH_CLIENT_ID),
-            ("client_secret", ELYBY_OAUTH_CLIENT_SECRET),
+            ("client_id", elyby_client_id),
+            ("client_secret", elyby_client_secret),
             ("redirect_uri", &oauth_redirect_uri()),
             ("grant_type", "authorization_code"),
             ("code", code),
@@ -582,16 +582,16 @@ async fn refresh_elyby_login_oauth(state: &State<'_, AppState>, account_id: &str
         )
     };
 
-    if ELYBY_OAUTH_CLIENT_ID.is_empty() || ELYBY_OAUTH_CLIENT_SECRET.is_empty() {
+    let Some((elyby_client_id, elyby_client_secret)) = elyby_credentials() else {
         return Err("Ely.by OAuth2 isn't configured on this build — can't refresh the session.".to_string());
-    }
+    };
 
     let client = plain_client()?;
     let response = client
         .post(OAUTH_TOKEN_URL)
         .form(&[
-            ("client_id", ELYBY_OAUTH_CLIENT_ID),
-            ("client_secret", ELYBY_OAUTH_CLIENT_SECRET),
+            ("client_id", elyby_client_id),
+            ("client_secret", elyby_client_secret),
             ("scope", OAUTH_SCOPES),
             ("refresh_token", refresh_token.as_str()),
             ("grant_type", "refresh_token"),

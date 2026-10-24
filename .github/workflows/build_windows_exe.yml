@@ -33,6 +33,12 @@ jobs:
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
+        env:
+          ZL_CURSEFORGE_API_KEY: ${{ secrets.ZL_CURSEFORGE_API_KEY }}
+          ZL_ELYBY_CLIENT_ID: ${{ secrets.ZL_ELYBY_CLIENT_ID }}
+          ZL_ELYBY_CLIENT_SECRET: ${{ secrets.ZL_ELYBY_CLIENT_SECRET }}
+          ZL_AZURE_CLIENT_ID: ${{ secrets.ZL_AZURE_CLIENT_ID }}
+          ZL_CRASH_WEBHOOK: ${{ secrets.ZL_CRASH_WEBHOOK }}
         with:
           projectPath: Tauri App
           args: --no-bundle

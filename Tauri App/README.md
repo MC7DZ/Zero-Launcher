@@ -31,14 +31,26 @@ A modern, lightweight, and highly customizable Minecraft launcher built entirely
 
 **IF YOU DON'T TRUST THE LAUNCHER** You can scan it at [VirusTotal](https://www.virustotal.com/gui/) or you can simply don't use it
 
+## Configuration (environment variables)
+
+Copy `.env.example` to `.env` and fill in the values; they are read at **build time**
+(`./build.sh`, `npm run tauri dev|build`). Real environment variables override `.env`.
+
+| Variable | Needed for |
+|---|---|
+| `ZL_CURSEFORGE_API_KEY` | CurseForge discover / modpacks |
+| `ZL_ELYBY_CLIENT_ID`, `ZL_ELYBY_CLIENT_SECRET` | Ely.by OAuth2 sign-in |
+| `ZL_AZURE_CLIENT_ID` | Microsoft login (optional, has a built-in public default) |
+| `ZL_CRASH_WEBHOOK` | Default crash-report webhook (optional) |
+
 ## Crash & freeze reports (Discord webhook)
 
 Panics, native crashes, unclean exits (OOM/kill/power loss) and UI freezes are
 reported to a Discord webhook with environment details and a scrubbed log.
 
 * Set the webhook in **Settings → Privacy & Developer → Crash Reports**, or bake a
-  default into a build: `ZL_CRASH_WEBHOOK='https://discord.com/api/webhooks/…' ./build.sh --release`
-  (never commit the URL).
+  default into a build via `ZL_CRASH_WEBHOOK` in `.env` (see above). With no default
+  and no webhook in Settings, nothing is sent. (never commit the URL)
 * Crashes are uploaded on the *next* launcher start (a dying process can't safely
   use the network); freezes are uploaded immediately (max 3/session, 5 min apart).
 * Uploaded: crash report + backtrace, launcher log of that run, OS/CPU/RAM/GPU,

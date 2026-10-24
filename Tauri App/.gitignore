@@ -9,3 +9,8 @@ dist
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets
+.env
+.env.*
+!.env.example
