@@ -1,5 +1,6 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::path::{Path, PathBuf};
 
 use tauri::Emitter;
@@ -17,6 +18,12 @@ use crate::state::AppState;
 ///   own launcher and log4j config use for `.minecraft/logs`.
 const LOGS_DIR: &str = "logs";
 const LATEST_LOG: &str = "latest.log";
+
+/// With very verbose debug logging `latest.log` can grow quickly. Once it
+/// passes this size it is truncated in place (older runs are still kept
+/// compressed in the archive files) so it can never fill the disk.
+const MAX_LATEST_LOG_BYTES: u64 = 64 * 1024 * 1024;
+static LOG_BYTES_WRITTEN: AtomicU64 = AtomicU64::new(0);
 
 /// Called once at startup (from [`AppState::new`]) before any other log
 /// line is written. Archives the previous run's `latest.log` (if any) into
@@ -89,6 +96,21 @@ fn append_to_file(state: &AppState, line: &str) {
     if let Ok(mut guard) = state.log_file.lock() {
         if let Some(file) = guard.as_mut() {
             let _ = writeln!(file, "{line}");
+            let total = LOG_BYTES_WRITTEN.fetch_add(line.len() as u64 + 1, Ordering::Relaxed)
+                + line.len() as u64
+                + 1;
+            if total > MAX_LATEST_LOG_BYTES {
+                // Start over in the same file instead of growing forever.
+                let _ = file.set_len(0);
+                let _ = file.seek(SeekFrom::Start(0));
+                let _ = writeln!(
+                    file,
+                    "{} [WARN ] [LOGGER]: latest.log exceeded {} MB and was truncated (older lines of this run were dropped)",
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                    MAX_LATEST_LOG_BYTES / (1024 * 1024)
+                );
+                LOG_BYTES_WRITTEN.store(0, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -116,7 +138,12 @@ pub fn log(
     append_to_file(state, &file_line);
 
     state.push_log(entry.clone());
-    let _ = app.emit("log-entry", &entry);
+    // DEBUG lines are very frequent now and nothing in the UI listens for
+    // them as live events (they are read on demand through `get_logs` /
+    // `latest.log`), so don't spend an IPC round-trip on each one.
+    if entry.level != "DEBUG" {
+        let _ = app.emit("log-entry", &entry);
+    }
 }
 
 /// Path to `logs/latest.log` for a given data dir, without needing an
@@ -151,18 +178,32 @@ pub fn error(app: &tauri::AppHandle, state: &AppState, source: &str, msg: &str) 
     log(app, state, "ERROR", source, msg);
 }
 
-/// Verbose diagnostic logging — only actually recorded/emitted when the
-/// user has "Debug Logging Mode" enabled in Settings → Privacy & Developer.
-/// This is the real switch that setting controls: with it off, DEBUG
-/// entries are skipped entirely (never stored, never sent to the
-/// frontend), keeping the console/log file free of internal noise.
-pub fn debug(app: &tauri::AppHandle, state: &AppState, source: &str, msg: &str) {
-    let enabled = state
+/// Whether DEBUG entries are currently being recorded.
+///
+/// True when ANY of these holds:
+///   - "Debug Logging Mode" is enabled in Settings (default: on),
+///   - the `ZL_DEBUG` environment variable is set (force-on without
+///     touching settings),
+///   - this is a debug build (`tauri dev`).
+pub fn is_debug_enabled(state: &AppState) -> bool {
+    if cfg!(debug_assertions) || std::env::var_os("ZL_DEBUG").is_some() {
+        return true;
+    }
+    // try_lock: logging must never block on (or deadlock with) the
+    // settings mutex. If it's busy, assume "on" — better a line too many.
+    state
         .settings
-        .lock()
+        .try_lock()
         .map(|s| s.debug_mode)
-        .unwrap_or(false);
-    if !enabled {
+        .unwrap_or(true)
+}
+
+/// Verbose diagnostic logging — only actually recorded when
+/// [`is_debug_enabled`] says so. With it off, DEBUG entries are skipped
+/// entirely (never stored, never written to disk), keeping the console/log
+/// file free of internal noise.
+pub fn debug(app: &tauri::AppHandle, state: &AppState, source: &str, msg: &str) {
+    if !is_debug_enabled(state) {
         return;
     }
     log(app, state, "DEBUG", source, msg);

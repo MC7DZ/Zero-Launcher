@@ -615,6 +615,18 @@ pub async fn install_minecraft(
     let mc_version = payload.minecraft_version.clone();
     let loader_type = payload.loader.clone();
     let loader_ver = payload.loader_version.clone();
+    logger::debug(
+        &app,
+        &state,
+        "INSTALL",
+        &format!(
+            "install_minecraft requested: mc={:?} loader={:?} loader_version={:?} active_downloads_before={}",
+            mc_version,
+            loader_type,
+            loader_ver,
+            state.active_downloads.load(std::sync::atomic::Ordering::SeqCst)
+        ),
+    );
 
     // Each install owns its pause/cancel flags, registered under its
     // download id, so installs never interfere with each other.
@@ -1563,6 +1575,16 @@ pub async fn launch_minecraft(
     quick_play_multiplayer: Option<String>,
 ) -> Result<(), String> {
     use mc_launcher_core::prelude::*;
+    logger::debug(
+        &app,
+        &state,
+        "LAUNCHER",
+        &format!(
+            "launch_minecraft requested: version_id={version_id} offline={offline:?} quick_play_singleplayer={quick_play_singleplayer:?} quick_play_multiplayer={quick_play_multiplayer:?} tracked_instances={} active_downloads={}",
+            state.running_instances.lock().map(|m| m.len()).unwrap_or(0),
+            state.active_downloads.load(std::sync::atomic::Ordering::SeqCst)
+        ),
+    );
 
     let offline = offline.unwrap_or_else(|| state.settings.lock().unwrap().always_launch_offline);
 
@@ -3178,6 +3200,7 @@ pub async fn kill_instance(
     state: State<'_, AppState>,
     version_id: String,
 ) -> Result<(), String> {
+    logger::debug(&app, &state, "LAUNCHER", &format!("kill_instance requested for {version_id}"));
     let (pid, was_running) = {
         let map = state.running_instances.lock().unwrap();
         match map.get(&version_id) {
@@ -3435,6 +3458,16 @@ pub async fn update_instance(
     max_ram_mb: Option<u32>,
     jvm_args: Option<String>,
 ) -> Result<InstalledInstance, String> {
+    logger::debug(
+        &app,
+        &state,
+        "INSTANCE",
+        &format!(
+            "update_instance {version_id}: name={name:?} loader={loader:?} mc={minecraft_version:?} loader_version={loader_version:?} min_ram_mb={min_ram_mb:?} max_ram_mb={max_ram_mb:?} java_path_set={} jvm_args_set={}",
+            java_path.is_some(),
+            jvm_args.is_some()
+        ),
+    );
     // Renaming a loader instance also renames its on-disk version folder
     // (`versions/<old id>` -> `versions/<new id>`) so the folder keeps
     // matching the instance's display name. Vanilla instances keep their

@@ -1,4 +1,5 @@
 use tauri::State;
+use crate::logger;
 use crate::models::LauncherSettings;
 use crate::state::AppState;
 
@@ -14,6 +15,7 @@ pub async fn get_settings(
 /// Save launcher settings.
 #[tauri::command]
 pub async fn save_settings(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     mut settings: LauncherSettings,
 ) -> Result<(), String> {
@@ -39,6 +41,35 @@ pub async fn save_settings(
     {
         let current = state.settings.lock().unwrap();
         settings.game_directory = current.game_directory.clone();
+    }
+
+    // Debug: which settings actually changed (names always, values only for
+    // booleans/numbers so nothing path- or text-like leaks into the log).
+    {
+        let old_val = serde_json::to_value(&*state.settings.lock().unwrap()).ok();
+        let new_val = serde_json::to_value(&settings).ok();
+        if let (Some(serde_json::Value::Object(o)), Some(serde_json::Value::Object(n))) = (old_val, new_val) {
+            let mut changes: Vec<String> = Vec::new();
+            for (k, nv) in &n {
+                if o.get(k) != Some(nv) {
+                    let shown = match nv {
+                        serde_json::Value::Bool(_) | serde_json::Value::Number(_) => format!(
+                            "{} -> {}",
+                            o.get(k).map(|v| v.to_string()).unwrap_or_else(|| "unset".to_string()),
+                            nv
+                        ),
+                        _ => "changed".to_string(),
+                    };
+                    changes.push(format!("{k}: {shown}"));
+                }
+            }
+            let msg = if changes.is_empty() {
+                "save_settings: nothing changed".to_string()
+            } else {
+                format!("save_settings: {} setting(s) changed — {}", changes.len(), changes.join("; "))
+            };
+            logger::debug(&app, &state, "SETTINGS", &msg);
+        }
     }
 
     let dir_changed = {

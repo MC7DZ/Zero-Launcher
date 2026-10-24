@@ -6,8 +6,7 @@
    `version_id` field.
    ═══════════════════════════════════════════════════════════════════ */
 
-const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
+import { invoke, listen } from './debug.js';
 
 const params = new URLSearchParams(window.location.search);
 const versionId = params.get('instance') || '';

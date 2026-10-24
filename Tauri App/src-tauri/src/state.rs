@@ -406,6 +406,15 @@ impl AppState {
             // first time a settings.json saved before those fields existed
             // is read — once `on_game_close` is present on disk it's the
             // source of truth and this is skipped entirely.
+            // One-time: debug logging is now on by default. Settings files
+            // saved before this marker existed may have debug_mode=false
+            // stored explicitly, so switch it on once; after the next save
+            // the marker is on disk and the user's own choice is respected.
+            if raw.get("debug_default_applied").is_none() {
+                settings.debug_mode = true;
+                settings.debug_default_applied = true;
+            }
+
             if raw.get("on_game_close").is_none() {
                 settings.on_game_close = if settings.restore_launcher_on_game_close {
                     "show".to_string()

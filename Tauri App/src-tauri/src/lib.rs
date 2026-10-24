@@ -1,4 +1,5 @@
 mod commands;
+mod diagnostics;
 mod discord_rpc;
 mod first_run_setup;
 mod logger;
@@ -16,6 +17,17 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use tauri::image::Image;
 use tauri::WindowEvent;
+
+/// Wraps the generated command handler so every IPC call is logged
+/// (command name + sanitized arguments) before it runs.
+fn traced_handler(
+    handler: impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static,
+) -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    move |invoke| {
+        diagnostics::trace_invoke(&invoke);
+        handler(invoke)
+    }
+}
 
 pub fn run() {
     // WebKitGTK's DMA-BUF renderer is unreliable across many GPU/driver
@@ -144,6 +156,9 @@ pub fn run() {
         // simply undefined on the frontend and every one of those pickers
         // silently no-ops or falls back to a broken path-less <input type=file>.
         .plugin(tauri_plugin_dialog::init())
+        // Verbose diagnostics: page loads + every window event (throttled).
+        .on_page_load(|webview, payload| diagnostics::trace_page_load(webview, payload))
+        .on_window_event(|window, event| diagnostics::trace_window_event(window, event))
         .setup(|app| {
             // Very first thing on every launch: make sure the launcher is
             // installed in its permanent home with a proper shortcut
@@ -215,6 +230,14 @@ pub fn run() {
             app.manage(state);
             app.manage(DiscordRpcState(Mutex::new(DiscordRpcManager::new())));
 
+            // ── Diagnostics ──
+            // State is managed now, so logging works from here on.
+            {
+                let handle = app.handle().clone();
+                diagnostics::log_startup_environment(&handle);
+                diagnostics::start_sampler(handle);
+            }
+
             // ── System tray ──
             let show_hide_item = MenuItemBuilder::with_id("show_hide", "Show / Hide")
                 .build(app)?;
@@ -235,6 +258,9 @@ pub fn run() {
                 .tooltip("ZeroLauncher")
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show_hide" => {
+                        if let Some(st) = app.try_state::<AppState>() {
+                            logger::debug(app, &st, "TRAY", "Tray menu: Show / Hide clicked");
+                        }
                         if let Some(window) = app.get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
@@ -252,6 +278,9 @@ pub fn run() {
                         }
                     }
                     "quit" => {
+                        if let Some(st) = app.try_state::<AppState>() {
+                            logger::info(app, &st, "TRAY", "Tray menu: Quit clicked — shutting down launcher");
+                        }
                         if let Some(rpc_state) = app.try_state::<DiscordRpcState>() {
                             rpc_state.0.lock().unwrap().shutdown();
                         }
@@ -322,6 +351,12 @@ pub fn run() {
                             }
                             (should_hide, notify_tray)
                         };
+                        logger::debug(
+                            &app_handle_clone,
+                            &state,
+                            "WINDOW",
+                            &format!("CloseRequested on main window: hide_to_tray={should_hide}, first_tray_notice={notify_tray}"),
+                        );
                         if should_hide {
                             api.prevent_close();
                             let _ = window_clone.hide();
@@ -344,7 +379,8 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(traced_handler(tauri::generate_handler![
+            diagnostics::frontend_log_batch,
             commands::cancel_generic_download,
             commands::open_launcher_folder,
             commands::open_instance_folder,
@@ -502,10 +538,11 @@ pub fn run() {
             commands::window_toggle_fullscreen,
             commands::window_toggle_always_on_top,
             commands::trim_memory,
-        ])
+        ]))
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            diagnostics::trace_run_event(app_handle, &event);
             // Fires on every way the app can shut down (last window closed,
             // app.exit(0) from the tray "Quit" item, OS session end, etc).
             // Without this the Discord IPC pipe was only ever torn down by

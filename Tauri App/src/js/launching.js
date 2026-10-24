@@ -1,3 +1,4 @@
+import './debug.js';
 import iconVanilla  from '../assets/loaders/vanilla.png';
 import iconFabric   from '../assets/loaders/fabric.png';
 import iconForge    from '../assets/loaders/forge.png';

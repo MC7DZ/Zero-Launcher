@@ -3,8 +3,10 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 // ── Tauri API ──
-const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
+// `invoke`/`listen` come from debug.js, which wraps the real Tauri ones so every
+// IPC call is timed/logged, and which also starts the UI-freeze heartbeat,
+// console/error capture and the other diagnostics (see src/js/debug.js).
+import { invoke, listen, zlog } from './debug.js';
 
 // ── Linux / WebKitGTK Performance Optimization Engine ──
 const IS_WEBKIT_GTK = (
@@ -16903,7 +16905,7 @@ function initSettings() {
           rpc_state_singleplayer: false,
           rpc_state_multiplayer: false,
           redact_tokens: true,
-          debug_mode: false,
+          debug_mode: true,
           enable_crash_analysis: false,
           auto_open_console_on_launch: false,
         };

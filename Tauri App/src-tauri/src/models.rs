@@ -461,8 +461,13 @@ pub struct LauncherSettings {
     // Developer
     #[serde(default)]
     pub unlock_dev_stuff: bool,
-    #[serde(default)]
+    /// Verbose DEBUG-level logging. On by default so problems can be
+    /// diagnosed from `logs/latest.log` without any setup.
+    #[serde(default = "default_true")]
     pub debug_mode: bool,
+    /// Internal marker: the "debug on by default" migration has run.
+    #[serde(default = "default_true")]
+    pub debug_default_applied: bool,
     #[serde(default)]
     pub private_servers_ips: String,
 
@@ -694,7 +699,8 @@ impl Default for LauncherSettings {
             rpc_state_multiplayer: false,
 
             unlock_dev_stuff: false,
-            debug_mode: false,
+            debug_mode: true,
+            debug_default_applied: true,
             private_servers_ips: String::new(),
 
             network_mode: default_network_mode(),
