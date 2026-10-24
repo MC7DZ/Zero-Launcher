@@ -103,6 +103,7 @@ pub fn trace_invoke(invoke: &tauri::ipc::Invoke<tauri::Wry>) {
     if QUIET_COMMANDS.contains(&cmd) {
         return;
     }
+    crate::crashlog::note("IPC", &format!("#{n} {cmd}"));
     let webview = invoke.message.webview_ref();
     let app = webview.app_handle();
     let Some(state) = app.try_state::<AppState>() else {
@@ -145,6 +146,7 @@ pub fn trace_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
+    crate::crashlog::note("WINDOW", &format!("'{}': {:?}", window.label(), event));
     logger::debug(
         app,
         &state,
@@ -185,6 +187,10 @@ pub fn trace_run_event(app: &AppHandle, event: &tauri::RunEvent) {
     // Window events are already covered by `trace_window_event`.
     if matches!(event, tauri::RunEvent::WindowEvent { .. }) {
         return;
+    }
+    crate::crashlog::note("APP", &format!("run event: {:?}", event));
+    if matches!(event, tauri::RunEvent::Exit) {
+        crate::crashlog::mark_clean_exit();
     }
     let Some(state) = app.try_state::<AppState>() else {
         return;

@@ -33,7 +33,7 @@ pub const AZURE_CLIENT_ID: &str = "1b1eda1c-5d4b-4231-8adb-af52aebfb170";
 
 /// Saves (or replaces) the account for a completed Microsoft login.
 fn save_microsoft_login(state: &State<'_, AppState>, login: &CompleteLoginResponse) -> AccountInfo {
-    let mut accounts = state.accounts.lock().unwrap();
+    let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
     // Signing in again with the same Microsoft profile replaces the old
     // entry (refreshed token) instead of duplicating it.
     let existing_was_active = accounts
@@ -67,7 +67,7 @@ fn save_microsoft_login(state: &State<'_, AppState>, login: &CompleteLoginRespon
     state.save_accounts();
 
     // Cache the valid login session (valid for ~24 hours)
-    state.msa_session_cache.lock().unwrap().insert(
+    state.msa_session_cache.lock().unwrap_or_else(|e| e.into_inner()).insert(
         acc.id.clone(),
         crate::state::CachedMsaSession {
             login: login.clone(),
@@ -91,7 +91,7 @@ pub async fn microsoft_device_code_start(
     .await
     .map_err(|e| format!("Device sign-in failed to start: {e}"))??;
 
-    *state.device_code_session.lock().unwrap() = Some(start.device_code.clone());
+    *state.device_code_session.lock().unwrap_or_else(|e| e.into_inner()) = Some(start.device_code.clone());
     Ok(start)
 }
 
@@ -99,7 +99,7 @@ pub async fn microsoft_device_code_start(
 /// one identified by `device_code`. A slow poll belonging to an old code
 /// must never wipe out a newer code the user has since requested.
 fn clear_device_session_if_current(state: &State<'_, AppState>, device_code: &str) {
-    let mut guard = state.device_code_session.lock().unwrap();
+    let mut guard = state.device_code_session.lock().unwrap_or_else(|e| e.into_inner());
     if guard.as_deref() == Some(device_code) {
         *guard = None;
     }
@@ -123,7 +123,7 @@ pub async fn microsoft_device_code_poll(
     let device_code = state
         .device_code_session
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .clone()
         .ok_or_else(|| "No device sign-in in progress.".to_string())?;
 
@@ -141,7 +141,7 @@ pub async fn microsoft_device_code_poll(
     // If the user cancelled or requested a new code while that request was
     // in flight, this result belongs to a dead session: ignore it and let
     // the frontend keep polling whatever session is current now.
-    let still_current = state.device_code_session.lock().unwrap().as_deref() == Some(device_code.as_str());
+    let still_current = state.device_code_session.lock().unwrap_or_else(|e| e.into_inner()).as_deref() == Some(device_code.as_str());
     if !still_current {
         return Ok(None);
     }
@@ -185,7 +185,7 @@ pub async fn microsoft_device_code_poll(
 /// dialog before finishing).
 #[tauri::command]
 pub async fn microsoft_device_code_cancel(state: State<'_, AppState>) -> Result<(), String> {
-    *state.device_code_session.lock().unwrap() = None;
+    *state.device_code_session.lock().unwrap_or_else(|e| e.into_inner()) = None;
     Ok(())
 }
 
@@ -200,10 +200,10 @@ pub(crate) async fn refresh_microsoft_login(
 ) -> Result<(CompleteLoginResponse, AccountInfo), String> {
     // 1. Check in-memory session cache first
     {
-        let cache = state.msa_session_cache.lock().unwrap();
+        let cache = state.msa_session_cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(cached) = cache.get(id) {
             if std::time::Instant::now() < cached.expires_at {
-                let accounts = state.accounts.lock().unwrap();
+                let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(account) = accounts.iter().find(|a| a.id == id) {
                     return Ok((cached.login.clone(), account.clone()));
                 }
@@ -216,10 +216,10 @@ pub(crate) async fn refresh_microsoft_login(
 
     // 3. Double-check cache in case another task refreshed it while waiting for the lock
     {
-        let cache = state.msa_session_cache.lock().unwrap();
+        let cache = state.msa_session_cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(cached) = cache.get(id) {
             if std::time::Instant::now() < cached.expires_at {
-                let accounts = state.accounts.lock().unwrap();
+                let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(account) = accounts.iter().find(|a| a.id == id) {
                     return Ok((cached.login.clone(), account.clone()));
                 }
@@ -228,7 +228,7 @@ pub(crate) async fn refresh_microsoft_login(
     }
 
     let refresh_token = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         let account = accounts
             .iter()
             .find(|a| a.id == id)
@@ -275,7 +275,7 @@ pub(crate) async fn refresh_microsoft_login(
         }
     };
 
-    let mut accounts = state.accounts.lock().unwrap();
+    let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
     let account = accounts
         .iter_mut()
         .find(|a| a.id == id)
@@ -289,7 +289,7 @@ pub(crate) async fn refresh_microsoft_login(
     state.save_accounts();
 
     // Cache the fresh login session
-    state.msa_session_cache.lock().unwrap().insert(
+    state.msa_session_cache.lock().unwrap_or_else(|e| e.into_inner()).insert(
         id.to_string(),
         crate::state::CachedMsaSession {
             login: login.clone(),
@@ -303,7 +303,7 @@ pub(crate) async fn refresh_microsoft_login(
 /// Flags an account as needing the user to sign in again, and persists it
 /// immediately so the header account button reflects it on next refresh.
 fn mark_needs_reauth(state: &State<'_, AppState>, id: &str) {
-    let mut accounts = state.accounts.lock().unwrap();
+    let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(account) = accounts.iter_mut().find(|a| a.id == id) {
         account.needs_reauth = true;
     }
@@ -335,7 +335,7 @@ pub async fn refresh_all_microsoft_accounts(
     state: State<'_, AppState>,
 ) -> Result<Vec<AccountInfo>, String> {
     let ids: Vec<String> = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         accounts
             .iter()
             .filter(|a| a.account_type == "microsoft")
@@ -345,5 +345,5 @@ pub async fn refresh_all_microsoft_accounts(
     for id in ids {
         let _ = refresh_microsoft_login(&state, &id).await;
     }
-    Ok(state.accounts.lock().unwrap().clone())
+    Ok(state.accounts.lock().unwrap_or_else(|e| e.into_inner()).clone())
 }

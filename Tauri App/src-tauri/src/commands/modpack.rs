@@ -128,7 +128,7 @@ impl<'a> ImportCleanupGuard<'a> {
 impl<'a> Drop for ImportCleanupGuard<'a> {
     fn drop(&mut self) {
         if let Some(version_id) = self.registered_version_id.take() {
-            let mut instances = self.state.instances.lock().unwrap();
+            let mut instances = self.state.instances.lock().unwrap_or_else(|e| e.into_inner());
             instances.retain(|i| i.version_id != version_id);
             drop(instances);
             self.state.save_instances();
@@ -997,7 +997,7 @@ pub async fn import_modpack(
     );
 
     // ── Where this instance's mods/config/saves/resourcepacks will live ─
-    let default_dir = state.settings.lock().unwrap().resolved_game_directory();
+    let default_dir = state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory();
     let mut game_dir = if payload.use_custom_directory {
         let dir = payload
             .custom_directory
@@ -1178,7 +1178,7 @@ pub async fn get_modpack_info(
     let base_dir = if let Some(dir) = directory.filter(|d| !d.trim().is_empty()) {
         PathBuf::from(dir)
     } else {
-        state.settings.lock().unwrap().resolved_game_directory()
+        state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory()
     };
 
     // 1. Check .zerolauncher_modpack.json

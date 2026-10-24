@@ -306,7 +306,7 @@ pub async fn add_custom_java_path(
     let mut inst = to_installation(info);
     inst.source = "custom".to_string();
 
-    let mut settings = state.settings.lock().unwrap();
+    let mut settings = state.settings.lock().unwrap_or_else(|e| e.into_inner());
     if !settings.custom_java_paths.contains(&trimmed) {
         settings.custom_java_paths.push(trimmed);
         drop(settings);
@@ -324,7 +324,7 @@ pub async fn remove_custom_java_path(
     path: String,
 ) -> Result<(), String> {
     let trimmed = path.trim();
-    let mut settings = state.settings.lock().unwrap();
+    let mut settings = state.settings.lock().unwrap_or_else(|e| e.into_inner());
     settings.custom_java_paths.retain(|p| p != trimmed);
     drop(settings);
     let _ = state.save_settings_to_disk();
@@ -713,7 +713,7 @@ pub async fn ensure_java_for_version(
     version: &VersionJson,
     offline: bool,
 ) -> Result<PathBuf, String> {
-    let configured = state.settings.lock().unwrap().java_path.clone();
+    let configured = state.settings.lock().unwrap_or_else(|e| e.into_inner()).java_path.clone();
 
     if let Some(raw_path) = configured {
         let raw_path = raw_path.trim();

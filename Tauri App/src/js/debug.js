@@ -271,7 +271,35 @@ window.addEventListener('error', (e) => {
 
 window.addEventListener('unhandledrejection', (e) => {
   err(`UNHANDLED PROMISE REJECTION: ${fmtArg(e.reason)}`);
+  e.preventDefault(); // logged above; don't let it escalate
 });
+
+/* Page lifecycle / environment: what the webview was doing right before it died. */
+window.addEventListener('pagehide', (e) => wrn(`pagehide (persisted=${e.persisted}) - page is being unloaded`));
+window.addEventListener('beforeunload', () => wrn('beforeunload - page is reloading/closing'));
+document.addEventListener('visibilitychange', () => dbg(`visibilitychange -> ${document.visibilityState}`));
+window.addEventListener('online', () => dbg('network: online'));
+window.addEventListener('offline', () => wrn('network: OFFLINE'));
+window.addEventListener('focus', () => dbg('window focus'));
+window.addEventListener('blur', () => dbg('window blur'));
+document.addEventListener('webglcontextlost', (e) => err(`WebGL context LOST on <${e.target && e.target.tagName}>`), true);
+document.addEventListener('webglcontextrestored', () => wrn('WebGL context restored'), true);
+window.addEventListener('error', (e) => {
+  if (e.target && e.target !== window) return; // resource errors handled above
+}, true);
+try {
+  if (typeof PerformanceObserver !== 'undefined') {
+    new PerformanceObserver((list) => {
+      for (const en of list.getEntries()) wrn(`LONG TASK ${Math.round(en.duration)} ms (main thread blocked)`);
+    }).observe({ entryTypes: ['longtask'] });
+  }
+} catch (_) { /* longtask not supported in this WebKit */ }
+setInterval(() => {
+  try {
+    const m = performance && performance.memory;
+    if (m) dbg(`js heap used=${Math.round(m.usedJSHeapSize / 1048576)}MB total=${Math.round(m.totalJSHeapSize / 1048576)}MB limit=${Math.round(m.jsHeapSizeLimit / 1048576)}MB`);
+  } catch (_) {}
+}, 15000);
 
 document.addEventListener('securitypolicyviolation', (e) => {
   wrn(`CSP violation: ${e.violatedDirective} blocked ${clip(e.blockedURI, 200)}`);

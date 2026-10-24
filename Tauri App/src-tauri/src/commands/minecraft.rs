@@ -377,7 +377,7 @@ pub fn is_likely_mc_version(s: &str) -> bool {
         return true;
     }
     if (first == 'a' || first == 'b' || first == 'c' || first == 'r') && s.len() > 1 {
-        let second = s.chars().nth(1).unwrap();
+        let Some(second) = s.chars().nth(1) else { return false };
         if second.is_ascii_digit() || second == 'd' || second == '.' {
             return true;
         }
@@ -500,7 +500,7 @@ pub async fn scan_minecraft_versions(
 ) -> Result<Vec<LocalVersionInfo>, String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let versions_dir = game_dir.join("versions");
     if !versions_dir.is_dir() {
@@ -586,7 +586,7 @@ pub async fn scan_minecraft_versions(
 /// before (or even without) waiting on the full Mojang manifest fetch.
 #[tauri::command]
 pub async fn get_cached_versions(state: State<'_, AppState>) -> Result<Vec<CachedVersionInfo>, String> {
-    let instances = state.instances.lock().unwrap();
+    let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for inst in instances.iter() {
@@ -643,7 +643,7 @@ pub async fn install_minecraft(
     // If this install is updating/reinstalling an existing instance, look up its
     // record first so we preserve its playtime, launch count, directories, and settings.
     let old_instance: Option<InstalledInstance> = if let Some(ref old_id) = payload.old_version_id {
-        state.instances.lock().unwrap().iter().find(|i| &i.version_id == old_id).cloned()
+        state.instances.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|i| &i.version_id == old_id).cloned()
     } else {
         None
     };
@@ -651,7 +651,7 @@ pub async fn install_minecraft(
     // Root directory for this instance. Each instance maintains its own
     // isolated `libraries/`, `assets/`, `versions/`, `mods/`, and configs
     // to avoid inter-instance conflicts and version collision issues.
-    let default_minecraft_dir = state.settings.lock().unwrap().resolved_game_directory();
+    let default_minecraft_dir = state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory();
 
     let _display_name = payload.name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
         if let Some(ref old_inst) = old_instance {
@@ -772,7 +772,7 @@ pub async fn install_minecraft(
     // instead of finding it "taken" and falling back to "<name> (2)".
     if let Some(old_id) = payload.old_version_id.clone() {
         let old_is_loader = {
-            let instances = state.instances.lock().unwrap();
+            let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
             instances
                 .iter()
                 .find(|i| i.version_id == old_id)
@@ -792,7 +792,7 @@ pub async fn install_minecraft(
             }
         }
         {
-            let mut instances = state.instances.lock().unwrap();
+            let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
             instances.retain(|i| i.version_id != old_id);
         }
         state.save_instances();
@@ -938,7 +938,7 @@ pub async fn install_minecraft(
                 };
 
                 {
-                    let mut instances = state.instances.lock().unwrap();
+                    let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
                     instances.retain(|i| i.version_id != instance.version_id);
                     instances.push(instance.clone());
                 }
@@ -1505,7 +1505,7 @@ pub async fn install_minecraft(
 
     // Save instance to state
     {
-        let mut instances = state.instances.lock().unwrap();
+        let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         // Replace if same version_id exists
         instances.retain(|i| i.version_id != instance.version_id);
         instances.push(instance.clone());
@@ -1513,14 +1513,14 @@ pub async fn install_minecraft(
     state.save_instances();
 
     {
-        let mut hidden = state.hidden_instances.lock().unwrap();
+        let mut hidden = state.hidden_instances.lock().unwrap_or_else(|e| e.into_inner());
         hidden.retain(|h| h != &instance.version_id);
     }
     state.save_hidden_instances();
 
     if let Some(ref old_inst) = old_instance {
         if old_inst.version_id != instance.version_id {
-            let mut logs = state.instance_logs.lock().unwrap();
+            let mut logs = state.instance_logs.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(l) = logs.remove(&old_inst.version_id) {
                 logs.insert(instance.version_id.clone(), l);
             }
@@ -1586,13 +1586,13 @@ pub async fn launch_minecraft(
         ),
     );
 
-    let offline = offline.unwrap_or_else(|| state.settings.lock().unwrap().always_launch_offline);
+    let offline = offline.unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).always_launch_offline);
 
     // Only block re-launching the *same* instance while it's already
     // running; different instances are allowed to run side by side, each
     // tracked independently with its own console.
     {
-        let running_instances = state.running_instances.lock().unwrap();
+        let running_instances = state.running_instances.lock().unwrap_or_else(|e| e.into_inner());
         if running_instances
             .get(&version_id)
             .map(|i| i.running)
@@ -1604,7 +1604,7 @@ pub async fn launch_minecraft(
 
     // Get active account info
     let (username, active_account_id, active_account_type, active_mc_uuid) = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         let account = accounts
             .iter()
             .find(|a| a.is_active)
@@ -1621,7 +1621,7 @@ pub async fn launch_minecraft(
     // we're tracking it), so a custom per-instance directory is respected;
     // otherwise fall back to the globally configured game directory.
     let already_tracked = {
-        let instances = state.instances.lock().unwrap();
+        let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         instances.iter().any(|i| i.version_id == version_id)
     };
 
@@ -1632,14 +1632,14 @@ pub async fn launch_minecraft(
     // any instance installed after the split, and the same as `game_dir`
     // for older/untracked instances.
     let (game_dir, minecraft_dir) = {
-        let instances = state.instances.lock().unwrap();
+        let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         instances
             .iter()
             .find(|i| i.version_id == version_id)
             .map(|i| (PathBuf::from(&i.directory), PathBuf::from(i.minecraft_dir())))
     }
     .unwrap_or_else(|| {
-        let default_dir = state.settings.lock().unwrap().resolved_game_directory();
+        let default_dir = state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory();
         (default_dir.clone(), default_dir)
     });
 
@@ -1691,7 +1691,7 @@ pub async fn launch_minecraft(
             // Persist the correction so the next launch and the verify pass
             // both use the right path without needing a reinstall.
             {
-                let mut instances = state.instances.lock().unwrap();
+                let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(inst) = instances.iter_mut().find(|i| i.version_id == version_id) {
                     inst.minecraft_directory = game_dir.to_string_lossy().to_string();
                 }
@@ -1753,7 +1753,7 @@ pub async fn launch_minecraft(
         };
 
         {
-            let mut instances = state.instances.lock().unwrap();
+            let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
             instances.retain(|i| i.version_id != new_instance.version_id);
             instances.push(new_instance);
         }
@@ -1765,7 +1765,7 @@ pub async fn launch_minecraft(
         ));
     }
     let (inst_jvm_args, inst_max_ram, inst_min_ram, inst_java_path) = {
-        let instances = state.instances.lock().unwrap();
+        let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         instances
             .iter()
             .find(|i| i.version_id == version_id)
@@ -1775,14 +1775,14 @@ pub async fn launch_minecraft(
 
     let jvm_args_str = inst_jvm_args
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| state.settings.lock().unwrap().jvm_args.clone());
-    let max_ram = inst_max_ram.unwrap_or_else(|| state.settings.lock().unwrap().max_ram_mb);
-    let min_ram = inst_min_ram.unwrap_or_else(|| state.settings.lock().unwrap().min_ram_mb);
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).jvm_args.clone());
+    let max_ram = inst_max_ram.unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).max_ram_mb);
+    let min_ram = inst_min_ram.unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).min_ram_mb);
 
     // Snapshot the instance's display info now, for the running-instances
     // list and per-instance console window title.
     let (inst_name, inst_mc_version, inst_loader) = {
-        let instances = state.instances.lock().unwrap();
+        let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         instances
             .iter()
             .find(|i| i.version_id == version_id)
@@ -1799,9 +1799,9 @@ pub async fn launch_minecraft(
     // Register this instance as "running" and give it a fresh console
     // *now* — right as Play is pressed — so the UI immediately reflects
     // that the game is starting up with zero delay.
-    state.instance_logs.lock().unwrap().insert(version_id.clone(), Vec::new());
+    state.instance_logs.lock().unwrap_or_else(|e| e.into_inner()).insert(version_id.clone(), Vec::new());
     {
-        let mut running_instances = state.running_instances.lock().unwrap();
+        let mut running_instances = state.running_instances.lock().unwrap_or_else(|e| e.into_inner());
         running_instances.insert(
             version_id.clone(),
             RunningInstanceInfo {
@@ -1816,7 +1816,7 @@ pub async fn launch_minecraft(
         );
     }
     {
-        let mut instances = state.instances.lock().unwrap();
+        let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(inst) = instances.iter_mut().find(|i| i.version_id == version_id) {
             inst.last_played_at = Some(chrono::Local::now().to_rfc3339());
             inst.launch_count = inst.launch_count.saturating_add(1);
@@ -1944,7 +1944,7 @@ pub async fn launch_minecraft(
     // (see the `pid.is_none()` check) — called from every fallible step
     // between here and the actual spawn.
     let fail_cleanup = || {
-        let mut running = state.running_instances.lock().unwrap();
+        let mut running = state.running_instances.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(info) = running.get_mut(&version_id) {
             if info.pid.is_none() {
                 info.running = false;
@@ -2020,7 +2020,7 @@ pub async fn launch_minecraft(
                         Ok(_) => {
                             // Also make sure this vanilla version is registered and unhidden
                             {
-                                let mut instances = state.instances.lock().unwrap();
+                                let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
                                 if let Some(inst) = instances.iter_mut().find(|i| i.version_id == mc_ver) {
                                     if inst.installed_at.is_empty() {
                                         inst.installed_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -2029,7 +2029,7 @@ pub async fn launch_minecraft(
                             }
                             state.save_instances();
                             {
-                                let mut hidden = state.hidden_instances.lock().unwrap();
+                                let mut hidden = state.hidden_instances.lock().unwrap_or_else(|e| e.into_inner());
                                 hidden.retain(|h| h != &mc_ver);
                             }
                             state.save_hidden_instances();
@@ -2307,7 +2307,7 @@ pub async fn launch_minecraft(
 
     // Check if the user cancelled the launch during verification
     {
-        let is_running = state.running_instances.lock().unwrap()
+        let is_running = state.running_instances.lock().unwrap_or_else(|e| e.into_inner())
             .get(&vid)
             .map(|i| i.running)
             .unwrap_or(false);
@@ -2415,7 +2415,7 @@ pub async fn launch_minecraft(
 
     // Check if the user cancelled the launch during Java setup
     {
-        let is_running = state.running_instances.lock().unwrap()
+        let is_running = state.running_instances.lock().unwrap_or_else(|e| e.into_inner())
             .get(&vid)
             .map(|i| i.running)
             .unwrap_or(false);
@@ -2502,7 +2502,7 @@ pub async fn launch_minecraft(
     let user_chose_gc = user_jvm_args.iter().any(|a| {
         (a.starts_with("-XX:+Use") && a.ends_with("GC")) || a.starts_with("-XX:-UseZGC")
     });
-    let zgc_default_enabled = state.settings.lock().unwrap().default_zgc_enabled;
+    let zgc_default_enabled = state.settings.lock().unwrap_or_else(|e| e.into_inner()).default_zgc_enabled;
     if !user_chose_gc && !zgc_default_enabled {
         logger::info_for_instance(&app, &state, &version_id, "LAUNCHER",
             "Default ZGC is switched off in JVM Arguments — using Java's default garbage collector");
@@ -2697,7 +2697,7 @@ pub async fn launch_minecraft(
     let name_done = inst_name.clone();
     let loader_done = inst_loader.clone();
     {
-        let mut running_instances = state.running_instances.lock().unwrap();
+        let mut running_instances = state.running_instances.lock().unwrap_or_else(|e| e.into_inner());
         running_instances.insert(
             version_id.clone(),
             RunningInstanceInfo {
@@ -2729,7 +2729,7 @@ pub async fn launch_minecraft(
     // applied anywhere.
     {
         let (close_on_launch, minimize_on_launch, smart_close) = {
-            let s = state.settings.lock().unwrap();
+            let s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
             (s.close_after_launch, s.minimize_on_launch, s.smart_close_on_launch)
         };
         if close_on_launch {
@@ -2755,7 +2755,7 @@ pub async fn launch_minecraft(
                     let still_running = state_c
                         .running_instances
                         .lock()
-                        .unwrap()
+                        .unwrap_or_else(|e| e.into_inner())
                         .get(&vid_close)
                         .map(|r| r.running)
                         .unwrap_or(false);
@@ -2772,7 +2772,7 @@ pub async fn launch_minecraft(
                             return;
                         }
                         let since = *smart_started.get_or_insert_with(std::time::Instant::now);
-                        let idle_for = state_c.last_activity_at.lock().unwrap().elapsed();
+                        let idle_for = state_c.last_activity_at.lock().unwrap_or_else(|e| e.into_inner()).elapsed();
                         if idle_for >= IDLE_THRESHOLD || since.elapsed() >= SMART_MAX_WAIT {
                             if let Some(window) = app_close.get_webview_window("main") {
                                 let _ = window.close();
@@ -2867,7 +2867,7 @@ pub async fn launch_minecraft(
         // and add this session's elapsed time to the instance's total
         // playtime before we lose track of when it started.
         let started_at_for_playtime = {
-            let mut running = state_done.running_instances.lock().unwrap();
+            let mut running = state_done.running_instances.lock().unwrap_or_else(|e| e.into_inner());
             let info = running.get_mut(&vid_done);
             let started_at = info.as_ref().map(|i| i.started_at.clone());
             if let Some(info) = info {
@@ -2890,7 +2890,7 @@ pub async fn launch_minecraft(
         let log_lines: Vec<String> = state_done
             .instance_logs
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get(&vid_done)
             .map(|entries| entries.iter().map(|e| e.message.clone()).collect())
             .unwrap_or_default();
@@ -2913,7 +2913,7 @@ pub async fn launch_minecraft(
         // the "quit" action specifically when the game crashed — closing
         // the launcher out from under a crash report before the user's
         // even seen it would defeat the point of showing one.
-        if !(crashed && state_done.settings.lock().unwrap().on_game_close == "quit") {
+        if !(crashed && state_done.settings.lock().unwrap_or_else(|e| e.into_inner()).on_game_close == "quit") {
             apply_on_game_close_action(&app_done);
         }
     });
@@ -3025,7 +3025,7 @@ fn accumulate_playtime(state: &AppState, version_id: &str, started_at: &str) {
     let elapsed_secs = (chrono::Local::now().naive_local() - started)
         .num_seconds()
         .max(0) as u64;
-    let mut instances = state.instances.lock().unwrap();
+    let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
     let day_key = started.format("%Y-%m-%d").to_string();
     let mut found = false;
 
@@ -3043,7 +3043,7 @@ fn accumulate_playtime(state: &AppState, version_id: &str, started_at: &str) {
     }
 
     if !found {
-        let game_dir = state.settings.lock().unwrap().resolved_game_directory();
+        let game_dir = state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory();
         let new_inst = InstalledInstance {
             name: version_id.to_string(),
             version_id: version_id.to_string(),
@@ -3081,7 +3081,7 @@ fn accumulate_playtime(state: &AppState, version_id: &str, started_at: &str) {
 /// witness it.
 fn apply_on_game_close_action(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
-    let action = state.settings.lock().unwrap().on_game_close.clone();
+    let action = state.settings.lock().unwrap_or_else(|e| e.into_inner()).on_game_close.clone();
     match action.as_str() {
         "show" => {
             if let Some(window) = app.get_webview_window("main") {
@@ -3153,7 +3153,7 @@ pub fn spawn_external_pid_watcher(app: tauri::AppHandle, version_id: String, pid
         }
         let state = app.state::<AppState>();
         let started_at_for_playtime = {
-            let mut running = state.running_instances.lock().unwrap();
+            let mut running = state.running_instances.lock().unwrap_or_else(|e| e.into_inner());
             let info = running.get_mut(&version_id);
             let started_at = info.as_ref().map(|i| i.started_at.clone());
             if let Some(info) = info {
@@ -3181,7 +3181,7 @@ pub fn spawn_external_pid_watcher(app: tauri::AppHandle, version_id: String, pid
 pub async fn get_running_instances(
     state: State<'_, AppState>,
 ) -> Result<Vec<RunningInstanceInfo>, String> {
-    let map = state.running_instances.lock().unwrap();
+    let map = state.running_instances.lock().unwrap_or_else(|e| e.into_inner());
     let mut list: Vec<RunningInstanceInfo> = map.values().cloned().collect();
     list.sort_by(|a, b| {
         b.running
@@ -3202,7 +3202,7 @@ pub async fn kill_instance(
 ) -> Result<(), String> {
     logger::debug(&app, &state, "LAUNCHER", &format!("kill_instance requested for {version_id}"));
     let (pid, was_running) = {
-        let map = state.running_instances.lock().unwrap();
+        let map = state.running_instances.lock().unwrap_or_else(|e| e.into_inner());
         match map.get(&version_id) {
             Some(info) => (info.pid, info.running),
             None => return Err("Instance is not tracked".to_string()),
@@ -3232,7 +3232,7 @@ pub async fn kill_instance(
                 message: String::new(),
             });
 
-            if let Some(info) = state.running_instances.lock().unwrap().get_mut(&version_id) {
+            if let Some(info) = state.running_instances.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&version_id) {
                 info.running = false;
             }
             state.save_running_instances();
@@ -3264,7 +3264,7 @@ pub async fn kill_instance(
             logger::info(&app, &state, "LAUNCHER", &format!(
                 "Killed instance {} (pid {})", version_id, pid
             ));
-            if let Some(info) = state.running_instances.lock().unwrap().get_mut(&version_id) {
+            if let Some(info) = state.running_instances.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&version_id) {
                 info.running = false;
             }
             state.save_running_instances();
@@ -3287,7 +3287,7 @@ pub async fn get_instance_console_logs(
     state: State<'_, AppState>,
     version_id: String,
 ) -> Result<Vec<LogEntry>, String> {
-    let logs = state.instance_logs.lock().unwrap();
+    let logs = state.instance_logs.lock().unwrap_or_else(|e| e.into_inner());
     Ok(logs.get(&version_id).cloned().unwrap_or_default())
 }
 
@@ -3327,7 +3327,7 @@ pub async fn get_installed_instances(
     state: State<'_, AppState>,
 ) -> Result<Vec<InstalledInstance>, String> {
     let mut modified = false;
-    let mut instances = state.instances.lock().unwrap().clone();
+    let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner()).clone();
     for inst in &mut instances {
         let is_unknown_loader = inst.loader.trim().is_empty() || inst.loader.eq_ignore_ascii_case("unknown");
         let is_corrupted_mc = !is_likely_mc_version(&inst.minecraft_version);
@@ -3354,7 +3354,7 @@ pub async fn get_installed_instances(
         }
     }
     if modified {
-        *state.instances.lock().unwrap() = instances.clone();
+        *state.instances.lock().unwrap_or_else(|e| e.into_inner()) = instances.clone();
         state.save_instances();
     }
     Ok(instances)
@@ -3363,7 +3363,7 @@ pub async fn get_installed_instances(
 /// List every instance the user has hidden (see `hide_instance`).
 #[tauri::command]
 pub async fn get_hidden_instances(state: State<'_, AppState>) -> Result<Vec<String>, String> {
-    Ok(state.hidden_instances.lock().unwrap().clone())
+    Ok(state.hidden_instances.lock().unwrap_or_else(|e| e.into_inner()).clone())
 }
 
 /// Hide an instance from the main Instances list without deleting anything
@@ -3374,7 +3374,7 @@ pub async fn get_hidden_instances(state: State<'_, AppState>) -> Result<Vec<Stri
 #[tauri::command]
 pub async fn hide_instance(state: State<'_, AppState>, version_id: String) -> Result<(), String> {
     {
-        let mut hidden = state.hidden_instances.lock().unwrap();
+        let mut hidden = state.hidden_instances.lock().unwrap_or_else(|e| e.into_inner());
         if !hidden.contains(&version_id) {
             hidden.push(version_id);
         }
@@ -3388,7 +3388,7 @@ pub async fn hide_instance(state: State<'_, AppState>, version_id: String) -> Re
 #[tauri::command]
 pub async fn unhide_instance(state: State<'_, AppState>, version_id: String) -> Result<(), String> {
     {
-        let mut hidden = state.hidden_instances.lock().unwrap();
+        let mut hidden = state.hidden_instances.lock().unwrap_or_else(|e| e.into_inner());
         hidden.retain(|v| v != &version_id);
     }
     state.save_hidden_instances();
@@ -3405,7 +3405,7 @@ pub async fn get_dependent_instances(
     state: State<'_, AppState>,
     version_id: String,
 ) -> Result<Vec<InstalledInstance>, String> {
-    let instances = state.instances.lock().unwrap().clone();
+    let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let Some(target) = instances.iter().find(|i| i.version_id == version_id) else {
         return Ok(Vec::new());
     };
@@ -3432,7 +3432,7 @@ pub async fn remove_instance(
     version_id: String,
 ) -> Result<(), String> {
     {
-        let mut instances = state.instances.lock().unwrap();
+        let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         instances.retain(|i| i.version_id != version_id);
     }
     state.save_instances();
@@ -3477,7 +3477,7 @@ pub async fn update_instance(
     // left with a folder rename that succeeded but state that didn't (or
     // vice versa).
     let rename_plan: Option<(PathBuf, String, String)> = {
-        let instances = state.instances.lock().unwrap();
+        let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         let inst = instances
             .iter()
             .find(|i| i.version_id == version_id)
@@ -3521,7 +3521,7 @@ pub async fn update_instance(
     };
 
     let updated = {
-        let mut instances = state.instances.lock().unwrap();
+        let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         let inst = instances
             .iter_mut()
             .find(|i| i.version_id == version_id)
@@ -3572,7 +3572,7 @@ pub async fn update_instance(
     // doesn't silently go stale after the rename.
     if let Some((_, old_id, new_id)) = rename_plan {
         {
-            let mut hidden = state.hidden_instances.lock().unwrap();
+            let mut hidden = state.hidden_instances.lock().unwrap_or_else(|e| e.into_inner());
             for h in hidden.iter_mut() {
                 if *h == old_id {
                     *h = new_id.clone();
@@ -3582,13 +3582,13 @@ pub async fn update_instance(
         state.save_hidden_instances();
 
         {
-            let mut logs = state.instance_logs.lock().unwrap();
+            let mut logs = state.instance_logs.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(l) = logs.remove(&old_id) {
                 logs.insert(new_id.clone(), l);
             }
         }
         {
-            let mut running = state.running_instances.lock().unwrap();
+            let mut running = state.running_instances.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(r) = running.remove(&old_id) {
                 running.insert(new_id, r);
             }
@@ -3621,7 +3621,7 @@ pub async fn delete_installed_version(
     // the same as deleting a version from `.minecraft/versions` would
     // affect every profile that uses it in the vanilla launcher.
     let tracked_dir = {
-        let instances = state.instances.lock().unwrap();
+        let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         instances
             .iter()
             .find(|i| i.version_id == version_id)
@@ -3630,7 +3630,7 @@ pub async fn delete_installed_version(
     let game_dir = tracked_dir
         .or(directory)
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let version_folder = game_dir.join("versions").join(&version_id);
 
@@ -3648,13 +3648,13 @@ pub async fn delete_installed_version(
     }
 
     {
-        let mut instances = state.instances.lock().unwrap();
+        let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         instances.retain(|i| i.version_id != version_id);
     }
     state.save_instances();
 
     {
-        let mut hidden = state.hidden_instances.lock().unwrap();
+        let mut hidden = state.hidden_instances.lock().unwrap_or_else(|e| e.into_inner());
         hidden.retain(|h| h != &version_id);
     }
     state.save_hidden_instances();
@@ -3750,7 +3750,7 @@ pub async fn delete_instance_data(
     // elsewhere for `minecraft_dir()`).
     let shared_dir = match minecraft_directory.filter(|d| !d.trim().is_empty()) {
         Some(d) => PathBuf::from(d),
-        None => state.settings.lock().unwrap().resolved_game_directory(),
+        None => state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory(),
     };
     if let Ok(canonical_shared) = std::fs::canonicalize(&shared_dir) {
         if canonical_target == canonical_shared {
@@ -4157,7 +4157,7 @@ pub(crate) fn dir_size_bytes(path: &std::path::Path) -> u64 {
 #[tauri::command]
 pub async fn get_instance_disk_size(version_id: String, state: State<'_, AppState>) -> Result<u64, String> {
     let (dir, mc_dir) = {
-        let instances = state.instances.lock().unwrap();
+        let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         let inst = instances
             .iter()
             .find(|i| i.version_id == version_id)

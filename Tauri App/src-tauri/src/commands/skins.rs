@@ -235,7 +235,7 @@ pub async fn upload_skin_to_mojang(
 ) -> Result<(), String> {
     // 1. Find the target account ID
     let target_id = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         let acc = match account_id {
             Some(ref id) => accounts.iter().find(|a| &a.id == id),
             None => accounts.iter().find(|a| a.is_active),
@@ -288,7 +288,7 @@ pub async fn upload_skin_to_mojang(
                 reqwest::multipart::Part::bytes(skin_bytes.clone())
                     .file_name("skin.png")
                     .mime_str("image/png")
-                    .unwrap(),
+                    .unwrap_or_else(|_| reqwest::multipart::Part::bytes(Vec::new())),
             )
     };
 
@@ -301,7 +301,7 @@ pub async fn upload_skin_to_mojang(
         .map_err(|e| format!("Failed to send skin upload request: {e}"))?;
 
     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        state.msa_session_cache.lock().unwrap().remove(&target_id);
+        state.msa_session_cache.lock().unwrap_or_else(|e| e.into_inner()).remove(&target_id);
         let (refreshed, _) = crate::commands::msa::refresh_microsoft_login(&state, &target_id)
             .await
             .map_err(|e| format!("Authentication failed: {e}"))?;
@@ -331,7 +331,7 @@ pub async fn reset_mojang_skin(
     account_id: Option<String>,
 ) -> Result<(), String> {
     let target_id = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         let acc = match account_id {
             Some(ref id) => accounts.iter().find(|a| &a.id == id),
             None => accounts.iter().find(|a| a.is_active),
@@ -365,7 +365,7 @@ pub async fn reset_mojang_skin(
         .map_err(|e| format!("Failed to reset skin on Mojang servers: {e}"))?;
 
     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        state.msa_session_cache.lock().unwrap().remove(&target_id);
+        state.msa_session_cache.lock().unwrap_or_else(|e| e.into_inner()).remove(&target_id);
         let (refreshed, _) = crate::commands::msa::refresh_microsoft_login(&state, &target_id)
             .await
             .map_err(|e| format!("Authentication failed: {e}"))?;
@@ -408,7 +408,7 @@ pub async fn get_account_capes(
     account_id: Option<String>,
 ) -> Result<Vec<CapeInfo>, String> {
     let target_id = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         let acc = match account_id {
             Some(ref id) => accounts.iter().find(|a| &a.id == id),
             None => accounts.iter().find(|a| a.is_active),
@@ -442,7 +442,7 @@ pub async fn get_account_capes(
         .map_err(|e| format!("Failed to fetch profile capes: {e}"))?;
 
     if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-        state.msa_session_cache.lock().unwrap().remove(&target_id);
+        state.msa_session_cache.lock().unwrap_or_else(|e| e.into_inner()).remove(&target_id);
         let (refreshed, _) = crate::commands::msa::refresh_microsoft_login(&state, &target_id)
             .await
             .map_err(|e| format!("Authentication failed: {e}"))?;
@@ -481,7 +481,7 @@ pub async fn equip_mojang_cape(
     cape_id: Option<String>,
 ) -> Result<(), String> {
     let target_id = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         let acc = match account_id {
             Some(ref id) => accounts.iter().find(|a| &a.id == id),
             None => accounts.iter().find(|a| a.is_active),
@@ -518,7 +518,7 @@ pub async fn equip_mojang_cape(
             .map_err(|e| format!("Failed to equip cape: {e}"))?;
 
         if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-            state.msa_session_cache.lock().unwrap().remove(&target_id);
+            state.msa_session_cache.lock().unwrap_or_else(|e| e.into_inner()).remove(&target_id);
             let (refreshed, _) = crate::commands::msa::refresh_microsoft_login(&state, &target_id)
                 .await
                 .map_err(|e| format!("Authentication failed: {e}"))?;
@@ -548,7 +548,7 @@ pub async fn equip_mojang_cape(
             .map_err(|e| format!("Failed to unequip cape: {e}"))?;
 
         if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-            state.msa_session_cache.lock().unwrap().remove(&target_id);
+            state.msa_session_cache.lock().unwrap_or_else(|e| e.into_inner()).remove(&target_id);
             let (refreshed, _) = crate::commands::msa::refresh_microsoft_login(&state, &target_id)
                 .await
                 .map_err(|e| format!("Authentication failed: {e}"))?;

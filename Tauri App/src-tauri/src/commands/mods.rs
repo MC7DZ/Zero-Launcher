@@ -13,7 +13,7 @@ pub async fn list_mods(
 ) -> Result<Vec<ModInfo>, String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
     Ok(list_mods_in_dir(&game_dir))
 }
 
@@ -105,7 +105,7 @@ pub async fn list_packs(
 ) -> Result<Vec<ModInfo>, String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
     Ok(list_packs_in_dir(&game_dir, &kind))
 }
 
@@ -150,7 +150,7 @@ pub async fn open_packs_folder(
     let game_dir = directory
         .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let packs_dir = game_dir.join(pack_folder_name(&kind));
     crate::commands::open_folder_in_file_manager(&packs_dir)
@@ -170,7 +170,7 @@ pub async fn install_pack_files(
 ) -> Result<Vec<ModInstallResult>, String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let packs_dir = game_dir.join(pack_folder_name(&kind));
     std::fs::create_dir_all(&packs_dir)
@@ -354,7 +354,7 @@ pub async fn list_screenshots(
 ) -> Result<Vec<ScreenshotInfo>, String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
     let dir = game_dir.join("screenshots");
     if !dir.exists() {
         return Ok(Vec::new());
@@ -402,7 +402,7 @@ pub async fn open_screenshots_folder(
     let game_dir = directory
         .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let dir = game_dir.join("screenshots");
     crate::commands::open_folder_in_file_manager(&dir)
@@ -467,7 +467,7 @@ pub async fn list_worlds(
     let game_dir = directory
         .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let saves_dir = game_dir.join("saves");
     if !saves_dir.exists() {
@@ -519,7 +519,7 @@ pub async fn list_worlds(
 
         worlds.push(WorldInfo {
             folder_name,
-            name: if display_name.trim().is_empty() { path.file_name().unwrap().to_string_lossy().to_string() } else { display_name },
+            name: if display_name.trim().is_empty() { path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "world".to_string()) } else { display_name },
             path: path.to_string_lossy().to_string(),
             last_played_ms,
             size_bytes,
@@ -681,7 +681,7 @@ pub async fn list_servers(
     let game_dir = directory
         .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let servers_file = game_dir.join("servers.dat");
     if !servers_file.exists() {
@@ -730,9 +730,12 @@ fn skip_nbt_tag(data: &[u8], offset: &mut usize, tag_type: u8) -> bool {
         }
         7 => { // TAG_Byte_Array
             if *offset + 4 > data.len() { return false; }
-            let len = i32::from_be_bytes(data[*offset..*offset + 4].try_into().unwrap()) as usize;
-            *offset += 4 + len;
-            *offset <= data.len()
+            let len = i32::from_be_bytes(data[*offset..*offset + 4].try_into().unwrap());
+            if len < 0 { return false; }
+            match (*offset + 4).checked_add(len as usize) {
+                Some(end) if end <= data.len() => { *offset = end; true }
+                _ => false,
+            }
         }
         8 => { // TAG_String
             read_nbt_string(data, offset).is_some()
@@ -769,15 +772,21 @@ fn skip_nbt_tag(data: &[u8], offset: &mut usize, tag_type: u8) -> bool {
         }
         11 => { // TAG_Int_Array
             if *offset + 4 > data.len() { return false; }
-            let len = i32::from_be_bytes(data[*offset..*offset + 4].try_into().unwrap()) as usize;
-            *offset += 4 + len * 4;
-            *offset <= data.len()
+            let len = i32::from_be_bytes(data[*offset..*offset + 4].try_into().unwrap());
+            if len < 0 { return false; }
+            match (len as usize).checked_mul(4).and_then(|b| (*offset + 4).checked_add(b)) {
+                Some(end) if end <= data.len() => { *offset = end; true }
+                _ => false,
+            }
         }
         12 => { // TAG_Long_Array
             if *offset + 4 > data.len() { return false; }
-            let len = i32::from_be_bytes(data[*offset..*offset + 4].try_into().unwrap()) as usize;
-            *offset += 4 + len * 8;
-            *offset <= data.len()
+            let len = i32::from_be_bytes(data[*offset..*offset + 4].try_into().unwrap());
+            if len < 0 { return false; }
+            match (len as usize).checked_mul(8).and_then(|b| (*offset + 4).checked_add(b)) {
+                Some(end) if end <= data.len() => { *offset = end; true }
+                _ => false,
+            }
         }
         _ => false,
     }
@@ -916,7 +925,7 @@ pub async fn add_server(
     let game_dir = directory
         .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let servers_file = game_dir.join("servers.dat");
 
@@ -1045,7 +1054,7 @@ pub async fn delete_server(
     let game_dir = directory
         .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let servers_file = game_dir.join("servers.dat");
     if !servers_file.exists() {
@@ -1396,7 +1405,7 @@ pub async fn open_worlds_folder(
     let game_dir = directory
         .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let saves_dir = game_dir.join("saves");
     if !saves_dir.exists() {
@@ -1465,7 +1474,7 @@ fn build_world_info_from_dir(path: &PathBuf) -> WorldInfo {
 
     WorldInfo {
         folder_name,
-        name: if display_name.trim().is_empty() { path.file_name().unwrap().to_string_lossy().to_string() } else { display_name },
+        name: if display_name.trim().is_empty() { path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "world".to_string()) } else { display_name },
         path: path.to_string_lossy().to_string(),
         last_played_ms,
         size_bytes,
@@ -1501,7 +1510,7 @@ pub async fn install_world_files(
 ) -> Result<Vec<WorldInstallResult>, String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let saves_dir = game_dir.join("saves");
     std::fs::create_dir_all(&saves_dir)
@@ -1620,7 +1629,7 @@ pub async fn install_world_files(
                         prefix_to_strip = Some("".to_string());
                         break;
                     } else if ename.ends_with("/level.dat") {
-                        let idx = ename.rfind("/level.dat").unwrap();
+                        let Some(idx) = ename.rfind("/level.dat") else { continue };
                         let p = &ename[..=idx];
                         // Only accept 1 level deep wrapper: e.g. "WorldName/level.dat"
                         if !p[..p.len() - 1].contains('/') {
@@ -1729,7 +1738,7 @@ pub async fn open_mods_folder(
     let game_dir = directory
         .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let mods_dir = game_dir.join("mods");
     crate::commands::open_folder_in_file_manager(&mods_dir)
@@ -1762,7 +1771,7 @@ pub async fn install_mod_files(
 ) -> Result<Vec<ModInstallResult>, String> {
     let game_dir = directory
         .map(PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
 
     let mods_dir = game_dir.join("mods");
     std::fs::create_dir_all(&mods_dir)

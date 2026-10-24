@@ -170,7 +170,7 @@ impl AppState {
     pub fn is_generic_download_cancelled(&self, id: &str) -> bool {
         self.generic_cancels
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get(id)
             .map(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
             .unwrap_or(false)
@@ -184,7 +184,7 @@ impl AppState {
     pub fn record_advancement_line(&self, version_id: &str, line: &str) -> bool {
         const DEDUPE_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
         let now = std::time::Instant::now();
-        let mut recent = self.recent_advancement_lines.lock().unwrap();
+        let mut recent = self.recent_advancement_lines.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((last_line, last_seen)) = recent.get(version_id) {
             if last_line == line && now.duration_since(*last_seen) < DEDUPE_WINDOW {
                 return false;
@@ -199,7 +199,7 @@ impl AppState {
         let control = Arc::new(InstallControl::default());
         self.install_controls
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(id.to_string(), control.clone());
         control
     }
@@ -209,7 +209,7 @@ impl AppState {
         let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
         self.install_dir_locks
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .entry(key)
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone()
@@ -217,13 +217,13 @@ impl AppState {
 
     /// Forget an install's control once it has finished (any outcome).
     pub fn remove_install_control(&self, id: &str) {
-        self.install_controls.lock().unwrap().remove(id);
+        self.install_controls.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
     }
 
     /// Controls matching `id`, or every running install when `id` is None
     /// (keeps older callers that don't pass an id working).
     pub fn install_controls_for(&self, id: Option<&str>) -> Vec<Arc<InstallControl>> {
-        let map = self.install_controls.lock().unwrap();
+        let map = self.install_controls.lock().unwrap_or_else(|e| e.into_inner());
         match id.filter(|i| !i.is_empty()) {
             Some(id) => map.get(id).cloned().into_iter().collect(),
             None => map.values().cloned().collect(),
@@ -234,7 +234,7 @@ impl AppState {
     pub fn generic_cancel_flag(&self, id: &str) -> Arc<AtomicBool> {
         self.generic_cancels
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .entry(id.to_string())
             .or_insert_with(|| Arc::new(AtomicBool::new(false)))
             .clone()
@@ -246,7 +246,7 @@ impl AppState {
     /// updating several mods back-to-back under one card) immediately sees
     /// the cancellation instead of silently continuing.
     pub fn finish_generic_download(&self, id: &str) {
-        let mut map = self.generic_cancels.lock().unwrap();
+        let mut map = self.generic_cancels.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(flag) = map.get(id) {
             if !flag.load(std::sync::atomic::Ordering::Relaxed) {
                 map.remove(id);
@@ -259,12 +259,12 @@ impl AppState {
     /// stale id and be immediately treated as cancelled).
     #[allow(dead_code)]
     pub fn clear_generic_download(&self, id: &str) {
-        self.generic_cancels.lock().unwrap().remove(id);
+        self.generic_cancels.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
     }
 
     /// Add a log entry to the ring buffer.
     pub fn push_log(&self, entry: LogEntry) {
-        let mut logs = self.logs.lock().unwrap();
+        let mut logs = self.logs.lock().unwrap_or_else(|e| e.into_inner());
         if logs.len() >= MAX_LOG_ENTRIES {
             logs.remove(0);
         }
@@ -274,7 +274,7 @@ impl AppState {
     /// Add a console line to a specific instance's console buffer (used by
     /// the per-instance console windows).
     pub fn push_instance_log(&self, version_id: &str, entry: LogEntry) {
-        let mut logs = self.instance_logs.lock().unwrap();
+        let mut logs = self.instance_logs.lock().unwrap_or_else(|e| e.into_inner());
         let buf = logs.entry(version_id.to_string()).or_insert_with(Vec::new);
         if buf.len() >= MAX_INSTANCE_LOG_ENTRIES {
             buf.remove(0);
@@ -284,21 +284,21 @@ impl AppState {
 
     /// Persist accounts to disk.
     pub fn save_accounts(&self) {
-        let accounts = self.accounts.lock().unwrap();
+        let accounts = self.accounts.lock().unwrap_or_else(|e| e.into_inner());
         Self::save_json(&self.data_dir, "accounts.json", &*accounts);
     }
 
     /// Persist settings to disk.
     pub fn save_settings_to_disk(&self) {
-        let settings = self.settings.lock().unwrap();
+        let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
         Self::save_json(&self.data_dir, "settings.json", &*settings);
     }
 
     /// Persist instances to disk, inside `<game_directory>/versions/instances.json`.
     pub fn save_instances(&self) {
-        let instances = self.instances.lock().unwrap();
+        let instances = self.instances.lock().unwrap_or_else(|e| e.into_inner());
         let versions_dir = {
-            let settings = self.settings.lock().unwrap();
+            let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
             settings.resolved_game_directory().join("versions")
         };
         std::fs::create_dir_all(&versions_dir).ok();
@@ -308,9 +308,9 @@ impl AppState {
     /// Persist the hidden-instances list to disk, inside
     /// `<game_directory>/versions/hidden_instances.json`.
     pub fn save_hidden_instances(&self) {
-        let hidden = self.hidden_instances.lock().unwrap();
+        let hidden = self.hidden_instances.lock().unwrap_or_else(|e| e.into_inner());
         let versions_dir = {
-            let settings = self.settings.lock().unwrap();
+            let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
             settings.resolved_game_directory().join("versions")
         };
         std::fs::create_dir_all(&versions_dir).ok();
@@ -332,7 +332,7 @@ impl AppState {
     /// history only needs to live in-memory for the session that saw them
     /// exit).
     pub fn save_running_instances(&self) {
-        let running = self.running_instances.lock().unwrap();
+        let running = self.running_instances.lock().unwrap_or_else(|e| e.into_inner());
         let live: Vec<&RunningInstanceInfo> = running.values().filter(|i| i.running).collect();
         let path = self.data_dir.join("running_instances.json");
         match serde_json::to_string_pretty(&live) {
@@ -358,16 +358,16 @@ impl AppState {
     /// whichever `.minecraft` folder is now active.
     pub fn reload_instances_for_current_dir(&self) {
         let versions_dir = {
-            let settings = self.settings.lock().unwrap();
+            let settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
             settings.resolved_game_directory().join("versions")
         };
         std::fs::create_dir_all(&versions_dir).ok();
         let loaded = Self::load_json::<Vec<InstalledInstance>>(&versions_dir, "instances.json")
             .unwrap_or_default();
-        *self.instances.lock().unwrap() = loaded;
+        *self.instances.lock().unwrap_or_else(|e| e.into_inner()) = loaded;
         let loaded_hidden = Self::load_json::<Vec<String>>(&versions_dir, "hidden_instances.json")
             .unwrap_or_default();
-        *self.hidden_instances.lock().unwrap() = loaded_hidden;
+        *self.hidden_instances.lock().unwrap_or_else(|e| e.into_inner()) = loaded_hidden;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

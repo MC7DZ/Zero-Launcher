@@ -9,41 +9,37 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Tauri App/package-lock.json
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: Tauri App/src-tauri
+
       - name: Make build script executable
         run: chmod +x "Tauri App/build.sh"
+
       - name: Install system dependencies
         working-directory: Tauri App
         run: ./build.sh --deps
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+
       - name: Build in release mode
         working-directory: Tauri App
         run: ./build.sh --release
 
-      - name: Verify and generate zsync file
-        working-directory: Tauri App/src-tauri/target/release/bundle/appimage
-        run: |
-          APPIMAGE=$(ls *.AppImage | head -n1)
-          echo "Target AppImage: $APPIMAGE"
-          if [ ! -f "${APPIMAGE}.zsync" ]; then
-            echo "Generating zsync for $APPIMAGE..."
-            zsyncmake "$APPIMAGE"
-          fi
-          echo "Files in bundle directory:"
-          ls -lh
-
-      - name: Upload build artifacts (AppImage + zsync)
+      - name: Upload build artifacts (AppImage)
         uses: actions/upload-artifact@v5
         with:
           name: zerolauncher-linux-build
           path: |
             Tauri App/src-tauri/target/release/bundle/appimage/*.AppImage
-            Tauri App/src-tauri/target/release/bundle/appimage/*.zsync
-          if-no-files-found: error
-
-      - name: Upload zsync delta file
-        uses: actions/upload-artifact@v5
-        with:
-          name: ZeroLauncher-zsync
-          path: Tauri App/src-tauri/target/release/bundle/appimage/*.zsync
           if-no-files-found: error

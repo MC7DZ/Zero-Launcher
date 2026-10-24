@@ -8,7 +8,7 @@ use crate::state::AppState;
 pub async fn get_settings(
     state: State<'_, AppState>,
 ) -> Result<LauncherSettings, String> {
-    let settings = state.settings.lock().unwrap().clone();
+    let settings = state.settings.lock().unwrap_or_else(|e| e.into_inner()).clone();
     Ok(settings)
 }
 
@@ -39,14 +39,14 @@ pub async fn save_settings(
     if !settings.game_directory.trim().is_empty()
         && !std::path::Path::new(settings.game_directory.trim()).is_absolute()
     {
-        let current = state.settings.lock().unwrap();
+        let current = state.settings.lock().unwrap_or_else(|e| e.into_inner());
         settings.game_directory = current.game_directory.clone();
     }
 
     // Debug: which settings actually changed (names always, values only for
     // booleans/numbers so nothing path- or text-like leaks into the log).
     {
-        let old_val = serde_json::to_value(&*state.settings.lock().unwrap()).ok();
+        let old_val = serde_json::to_value(&*state.settings.lock().unwrap_or_else(|e| e.into_inner())).ok();
         let new_val = serde_json::to_value(&settings).ok();
         if let (Some(serde_json::Value::Object(o)), Some(serde_json::Value::Object(n))) = (old_val, new_val) {
             let mut changes: Vec<String> = Vec::new();
@@ -73,11 +73,11 @@ pub async fn save_settings(
     }
 
     let dir_changed = {
-        let current = state.settings.lock().unwrap();
+        let current = state.settings.lock().unwrap_or_else(|e| e.into_inner());
         current.game_directory != settings.game_directory
     };
     {
-        let mut current = state.settings.lock().unwrap();
+        let mut current = state.settings.lock().unwrap_or_else(|e| e.into_inner());
         *current = settings;
     }
     state.save_settings_to_disk();
@@ -98,7 +98,7 @@ pub async fn update_discord_presence(
     playing_instance: Option<String>,
     mc_version: Option<String>,
 ) -> Result<(), String> {
-    let settings = state.settings.lock().unwrap().clone();
+    let settings = state.settings.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if let Ok(mut rpc) = rpc_state.0.lock() {
         rpc.update_presence(&settings, &tab, playing_instance.as_deref(), mc_version.as_deref());
     }
@@ -121,7 +121,7 @@ pub async fn get_default_minecraft_dir() -> Result<String, String> {
 /// in the middle of doing something in it.
 #[tauri::command]
 pub async fn report_activity(state: State<'_, AppState>) -> Result<(), String> {
-    *state.last_activity_at.lock().unwrap() = std::time::Instant::now();
+    *state.last_activity_at.lock().unwrap_or_else(|e| e.into_inner()) = std::time::Instant::now();
     Ok(())
 }
 

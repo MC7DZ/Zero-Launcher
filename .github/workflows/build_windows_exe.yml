@@ -19,15 +19,20 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: Tauri App/package-lock.json
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: Tauri App/src-tauri
 
       - name: Install frontend deps
         working-directory: Tauri App
-        run: npm install
+        run: npm ci
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: Tauri App
           args: --no-bundle
@@ -36,4 +41,5 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: ZeroLauncher-portable-exe
-          path: Tauri App/src-tauri/target/release/*.exe
+          path: Tauri App/src-tauri/target/release/ZeroLauncher.exe
+          if-no-files-found: error

@@ -4395,7 +4395,10 @@ async function fetchCapesForActiveAccount(force = false) {
   currentAccountCapesCache.error = null;
 
   try {
-    const capes = await api.getAccountCapes(active.id);
+    const capes = await Promise.race([
+      api.getAccountCapes(active.id),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('Cape request timed out')), 20000)),
+    ]);
     currentAccountCapesCache.capes = capes || [];
     currentAccountCapesCache.error = null;
   } catch (err) {

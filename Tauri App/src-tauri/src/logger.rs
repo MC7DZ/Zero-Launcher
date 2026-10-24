@@ -137,6 +137,11 @@ pub fn log(
     );
     append_to_file(state, &file_line);
 
+    // WARN/ERROR lines become crash-report breadcrumbs too.
+    if entry.level == "WARN" || entry.level == "ERROR" {
+        crate::crashlog::note(&entry.level, &format!("[{}] {}", entry.source, entry.message));
+    }
+
     state.push_log(entry.clone());
     // DEBUG lines are very frequent now and nothing in the UI listens for
     // them as live events (they are read on demand through `get_logs` /

@@ -4,7 +4,7 @@ version = "2.2.11"
 edition = "2021"
 
 # Smaller AppImage: optimize for size, strip symbols, drop unwind tables.
-# `strip = true` also means the AppImage build's NO_STRIP=1 workaround
+# `strip = "debuginfo"` also means the AppImage build's NO_STRIP=1 workaround
 # (for a linuxdeploy bug with modern ELF sections) no longer costs an
 # unstripped binary — Cargo strips it before linuxdeploy ever sees it.
 [profile.release]
@@ -12,7 +12,8 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
-strip = true
+# Keep the symbol table so crash backtraces show function names.
+strip = "debuginfo"
 
 [lib]
 name = "zero_launcher_lib"
@@ -71,4 +72,6 @@ windows-sys = { version = "0.59", features = ["Win32_System_Threading"] }
 # Pinned to the same 0.18 line tao/gtk-rs already pull in transitively, so
 # this doesn't add a second copy of glib to the build.
 glib = "0.18"
+# Signal handlers for native-crash reports (see src/crashlog.rs).
+libc = "0.2"
 

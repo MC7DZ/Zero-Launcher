@@ -380,14 +380,22 @@ pub async fn discover_search(
     let plat = platform.as_deref().unwrap_or("modrinth");
 
     if plat == "curseforge" {
-        return search_curseforge(
-            &query,
-            &project_type,
-            loader.as_deref(),
-            game_version.as_deref(),
-            page,
-            limit,
-        ).await;
+        return match tokio::time::timeout(
+            Duration::from_secs(30),
+            search_curseforge(
+                &query,
+                &project_type,
+                loader.as_deref(),
+                game_version.as_deref(),
+                page,
+                limit,
+            ),
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(_) => Err("CurseForge search timed out. Check your connection and try again.".to_string()),
+        };
     }
 
     let mut facets: Vec<Vec<String>> = vec![vec![format!("project_type:{}", project_type)]];

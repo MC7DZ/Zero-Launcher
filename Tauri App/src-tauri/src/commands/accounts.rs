@@ -29,7 +29,7 @@ pub async fn add_offline_account(
     };
 
     let result = {
-        let mut accounts = state.accounts.lock().unwrap();
+        let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         // If this is the first account, make it active
         if accounts.is_empty() {
             let mut acc = account.clone();
@@ -53,7 +53,7 @@ pub async fn remove_account(
     id: String,
 ) -> Result<(), String> {
     {
-        let mut accounts = state.accounts.lock().unwrap();
+        let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         let was_active = accounts.iter().find(|a| a.id == id).map(|a| a.is_active).unwrap_or(false);
         accounts.retain(|a| a.id != id);
 
@@ -73,13 +73,13 @@ pub async fn list_accounts(
 ) -> Result<Vec<AccountInfo>, String> {
     // Self-heals a bad on-disk/in-memory state (more than one `is_active`)
     // every time the frontend asks for the list, not just at startup.
-    let mut accounts = state.accounts.lock().unwrap();
+    let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
     let before = accounts.clone();
     normalize_single_active_account(&mut accounts);
     if *accounts != before {
         drop(accounts);
         state.save_accounts();
-        return Ok(state.accounts.lock().unwrap().clone());
+        return Ok(state.accounts.lock().unwrap_or_else(|e| e.into_inner()).clone());
     }
     Ok(accounts.clone())
 }
@@ -91,7 +91,7 @@ pub async fn set_active_account(
     id: String,
 ) -> Result<(), String> {
     {
-        let mut accounts = state.accounts.lock().unwrap();
+        let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         for account in accounts.iter_mut() {
             account.is_active = account.id == id;
         }

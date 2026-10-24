@@ -125,7 +125,7 @@ pub async fn elyby_login(
             .to_string()
     })?;
 
-    let mut accounts = state.accounts.lock().unwrap();
+    let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
     let existing_was_active = accounts
         .iter()
         .any(|a| a.account_type == "elyby" && a.mc_uuid.as_deref() == Some(profile.id.as_str()) && a.is_active);
@@ -259,7 +259,7 @@ fn spawn_oauth_callback_listener(
         let listener = match listener {
             Ok(l) => l,
             Err(e) => {
-                *result.lock().unwrap() = OauthCallbackResult::Error(format!(
+                *result.lock().unwrap_or_else(|e| e.into_inner()) = OauthCallbackResult::Error(format!(
                     "Could not start the local sign-in listener on port {OAUTH_REDIRECT_PORT} ({e}). \
                      Another program (maybe another copy of this launcher) may already be using it."
                 ));
@@ -267,7 +267,7 @@ fn spawn_oauth_callback_listener(
             }
         };
         if listener.set_nonblocking(true).is_err() {
-            *result.lock().unwrap() =
+            *result.lock().unwrap_or_else(|e| e.into_inner()) =
                 OauthCallbackResult::Error("Could not configure the local sign-in listener.".to_string());
             return;
         }
@@ -278,7 +278,7 @@ fn spawn_oauth_callback_listener(
                 return;
             }
             if std::time::Instant::now() > deadline {
-                *result.lock().unwrap() =
+                *result.lock().unwrap_or_else(|e| e.into_inner()) =
                     OauthCallbackResult::Error("Sign-in timed out — please try again.".to_string());
                 return;
             }
@@ -290,7 +290,7 @@ fn spawn_oauth_callback_listener(
                     continue;
                 }
                 Err(e) => {
-                    *result.lock().unwrap() =
+                    *result.lock().unwrap_or_else(|e| e.into_inner()) =
                         OauthCallbackResult::Error(format!("Local sign-in listener error: {e}"));
                     return;
                 }
@@ -342,7 +342,7 @@ fn spawn_oauth_callback_listener(
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.flush();
 
-            *result.lock().unwrap() = outcome;
+            *result.lock().unwrap_or_else(|e| e.into_inner()) = outcome;
             return;
         }
     });
@@ -369,7 +369,7 @@ pub async fn elyby_oauth_start(state: State<'_, AppState>) -> Result<String, Str
 
     spawn_oauth_callback_listener(expected_state.clone(), result.clone(), cancel.clone());
 
-    *state.elyby_oauth_session.lock().unwrap() = Some(ElybyOauthSession {
+    *state.elyby_oauth_session.lock().unwrap_or_else(|e| e.into_inner()) = Some(ElybyOauthSession {
         expected_state: expected_state.clone(),
         result,
         cancel,
@@ -450,7 +450,7 @@ async fn fetch_oauth_account_info(client: &reqwest::Client, access_token: &str) 
 }
 
 fn save_oauth_login(state: &State<'_, AppState>, info: &ElybyAccountInfo, refresh_token: Option<String>) -> AccountInfo {
-    let mut accounts = state.accounts.lock().unwrap();
+    let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
     let existing_was_active = accounts
         .iter()
         .any(|a| a.account_type == "elyby" && a.mc_uuid.as_deref() == Some(info.uuid.as_str()) && a.is_active);
@@ -495,11 +495,11 @@ pub async fn elyby_oauth_poll(state: State<'_, AppState>) -> Result<Option<Accou
     }
 
     let outcome = {
-        let guard = state.elyby_oauth_session.lock().unwrap();
+        let guard = state.elyby_oauth_session.lock().unwrap_or_else(|e| e.into_inner());
         let session = guard
             .as_ref()
             .ok_or_else(|| "No Ely.by sign-in in progress.".to_string())?;
-        let result_guard = session.result.lock().unwrap();
+        let result_guard = session.result.lock().unwrap_or_else(|e| e.into_inner());
         match &*result_guard {
             OauthCallbackResult::Pending => PollOutcome::Pending,
             OauthCallbackResult::Error(msg) => PollOutcome::Error(msg.clone()),
@@ -510,12 +510,12 @@ pub async fn elyby_oauth_poll(state: State<'_, AppState>) -> Result<Option<Accou
     let code = match outcome {
         PollOutcome::Pending => return Ok(None),
         PollOutcome::Error(msg) => {
-            *state.elyby_oauth_session.lock().unwrap() = None;
+            *state.elyby_oauth_session.lock().unwrap_or_else(|e| e.into_inner()) = None;
             return Err(msg);
         }
         PollOutcome::Code(code) => code,
     };
-    *state.elyby_oauth_session.lock().unwrap() = None;
+    *state.elyby_oauth_session.lock().unwrap_or_else(|e| e.into_inner()) = None;
 
     let client = plain_client()?;
     let token = exchange_oauth_code(&client, &code).await?;
@@ -528,7 +528,7 @@ pub async fn elyby_oauth_poll(state: State<'_, AppState>) -> Result<Option<Accou
 /// dialog before finishing) and stops the local callback listener.
 #[tauri::command]
 pub async fn elyby_oauth_cancel(state: State<'_, AppState>) -> Result<(), String> {
-    if let Some(session) = state.elyby_oauth_session.lock().unwrap().take() {
+    if let Some(session) = state.elyby_oauth_session.lock().unwrap_or_else(|e| e.into_inner()).take() {
         session.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     Ok(())
@@ -549,7 +549,7 @@ pub struct ElybySession {
 /// flows matches how this account originally signed in.
 pub async fn refresh_elyby_login(state: &State<'_, AppState>, account_id: &str) -> Result<ElybySession, String> {
     let uses_oauth = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         let acc = accounts
             .iter()
             .find(|a| a.id == account_id && a.account_type == "elyby")
@@ -568,7 +568,7 @@ pub async fn refresh_elyby_login(state: &State<'_, AppState>, account_id: &str) 
 /// short-lived access token without ever showing a sign-in prompt again.
 async fn refresh_elyby_login_oauth(state: &State<'_, AppState>, account_id: &str) -> Result<ElybySession, String> {
     let (username, uuid, refresh_token) = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         let acc = accounts
             .iter()
             .find(|a| a.id == account_id && a.account_type == "elyby")
@@ -605,7 +605,7 @@ async fn refresh_elyby_login_oauth(state: &State<'_, AppState>, account_id: &str
             Ok(err) => err.error_description.unwrap_or(err.error),
             Err(_) => "Ely.by rejected the refresh.".to_string(),
         };
-        let mut accounts = state.accounts.lock().unwrap();
+        let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(a) = accounts.iter_mut().find(|a| a.id == account_id) {
             a.needs_reauth = true;
         }
@@ -622,7 +622,7 @@ async fn refresh_elyby_login_oauth(state: &State<'_, AppState>, account_id: &str
     // A refresh_token grant only returns a new refresh_token sometimes —
     // when it doesn't, the old one is still valid and must be kept.
     if let Some(new_refresh) = &token.refresh_token {
-        let mut accounts = state.accounts.lock().unwrap();
+        let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(a) = accounts.iter_mut().find(|a| a.id == account_id) {
             a.elyby_oauth_refresh_token = Some(new_refresh.clone());
             a.needs_reauth = false;
@@ -638,7 +638,7 @@ async fn refresh_elyby_login_oauth(state: &State<'_, AppState>, account_id: &str
 /// username+password directly in-app (the Yggdrasil-compatible flow).
 async fn refresh_elyby_login_password(state: &State<'_, AppState>, account_id: &str) -> Result<ElybySession, String> {
     let (username, access_token, client_token) = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         let acc = accounts
             .iter()
             .find(|a| a.id == account_id && a.account_type == "elyby")
@@ -664,7 +664,7 @@ async fn refresh_elyby_login_password(state: &State<'_, AppState>, account_id: &
 
     if validate.status().is_success() {
         let uuid = {
-            let accounts = state.accounts.lock().unwrap();
+            let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
             accounts
                 .iter()
                 .find(|a| a.id == account_id)
@@ -688,7 +688,7 @@ async fn refresh_elyby_login_password(state: &State<'_, AppState>, account_id: &
 
     if !refresh.status().is_success() {
         let err_msg = parse_yggdrasil_error(refresh).await;
-        let mut accounts = state.accounts.lock().unwrap();
+        let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(a) = accounts.iter_mut().find(|a| a.id == account_id) {
             a.needs_reauth = true;
         }
@@ -712,7 +712,7 @@ async fn refresh_elyby_login_password(state: &State<'_, AppState>, account_id: &
             state
                 .accounts
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .iter()
                 .find(|a| a.id == account_id)
                 .and_then(|a| a.mc_uuid.clone())
@@ -720,7 +720,7 @@ async fn refresh_elyby_login_password(state: &State<'_, AppState>, account_id: &
         .ok_or("Ely.by refresh response was missing the profile UUID")?;
 
     {
-        let mut accounts = state.accounts.lock().unwrap();
+        let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(a) = accounts.iter_mut().find(|a| a.id == account_id) {
             a.elyby_access_token = Some(refreshed.access_token.clone());
             a.elyby_client_token = Some(refreshed.client_token.clone());
@@ -744,7 +744,7 @@ async fn refresh_elyby_login_password(state: &State<'_, AppState>, account_id: &
 #[tauri::command]
 pub async fn elyby_logout(state: State<'_, AppState>, account_id: String) -> Result<(), String> {
     let tokens = {
-        let accounts = state.accounts.lock().unwrap();
+        let accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
         accounts
             .iter()
             .find(|a| a.id == account_id && a.account_type == "elyby")
@@ -760,7 +760,7 @@ pub async fn elyby_logout(state: State<'_, AppState>, account_id: String) -> Res
             .await; // best-effort — still clear locally even if this fails
     }
 
-    let mut accounts = state.accounts.lock().unwrap();
+    let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(a) = accounts.iter_mut().find(|a| a.id == account_id) {
         a.elyby_access_token = None;
         a.elyby_client_token = None;

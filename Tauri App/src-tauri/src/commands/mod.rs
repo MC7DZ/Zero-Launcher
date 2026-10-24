@@ -132,7 +132,7 @@ pub fn open_instance_folder(
     let dir = directory
         .filter(|s| !s.trim().is_empty())
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| state.settings.lock().unwrap().resolved_game_directory());
+        .unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory());
     open_folder_in_file_manager(&dir)
 }
 
@@ -506,7 +506,7 @@ pub struct StorageUsage {
 
 /// (id, label, description, path, clearable)
 fn storage_locations(state: &AppState) -> Vec<(&'static str, &'static str, &'static str, std::path::PathBuf, bool)> {
-    let game_dir = state.settings.lock().unwrap().resolved_game_directory();
+    let game_dir = state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory();
     vec![
         ("versions", "Game files", "Versions and shared libraries", game_dir.join("versions"), false),
         ("assets", "Assets", "Sounds, languages and textures", game_dir.join("assets"), false),
@@ -523,11 +523,11 @@ fn storage_locations(state: &AppState) -> Vec<(&'static str, &'static str, &'sta
 #[tauri::command]
 pub async fn get_storage_usage(state: State<'_, AppState>) -> Result<StorageUsage, String> {
     let locations = storage_locations(&state);
-    let game_dir = state.settings.lock().unwrap().resolved_game_directory();
+    let game_dir = state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory();
     let instance_dirs: Vec<std::path::PathBuf> = state
         .instances
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .iter()
         .map(|i| std::path::PathBuf::from(&i.directory))
         .collect();
@@ -596,7 +596,7 @@ pub async fn get_storage_usage(state: State<'_, AppState>) -> Result<StorageUsag
 #[tauri::command]
 pub fn open_storage_folder(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let path = if id == "instances" {
-        state.settings.lock().unwrap().resolved_game_directory()
+        state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory()
     } else {
         storage_locations(&state)
             .into_iter()

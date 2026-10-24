@@ -1,4 +1,5 @@
 mod commands;
+mod crashlog;
 mod diagnostics;
 mod discord_rpc;
 mod first_run_setup;
@@ -30,6 +31,9 @@ fn traced_handler(
 }
 
 pub fn run() {
+    // Panic hook first, so even panics during startup leave a report.
+    crashlog::install_panic_hook();
+
     // WebKitGTK's DMA-BUF renderer is unreliable across many GPU/driver
     // combinations (especially binaries built in a generic CI environment,
     // like GitHub Actions runners) and can silently render a blank
@@ -191,8 +195,10 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir).ok();
 
             // Initialize app state with persistence in the platform data dir
+            // Must run before AppState::new, which archives the previous latest.log.
+            crashlog::install_files(&data_dir);
             let state = AppState::new(data_dir.clone());
-            if state.cli_launch_args.lock().unwrap().is_some() {
+            if state.cli_launch_args.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
                 }
@@ -208,7 +214,7 @@ pub fn run() {
             // watcher so we notice when it eventually does exit.
             let persisted = state::AppState::load_persisted_running_instances(&data_dir);
             {
-                let mut running = state.running_instances.lock().unwrap();
+                let mut running = state.running_instances.lock().unwrap_or_else(|e| e.into_inner());
                 for info in persisted {
                     if let Some(pid) = info.pid {
                         if commands::minecraft::is_pid_running(pid) {
@@ -282,7 +288,7 @@ pub fn run() {
                             logger::info(app, &st, "TRAY", "Tray menu: Quit clicked — shutting down launcher");
                         }
                         if let Some(rpc_state) = app.try_state::<DiscordRpcState>() {
-                            rpc_state.0.lock().unwrap().shutdown();
+                            rpc_state.0.lock().unwrap_or_else(|e| e.into_inner()).shutdown();
                         }
                         app.exit(0);
                     }
@@ -332,8 +338,8 @@ pub fn run() {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         let state = app_handle_clone.state::<AppState>();
                         let (should_hide, notify_tray) = {
-                            let mut settings = state.settings.lock().unwrap();
-                            let running = state.running_instances.lock().unwrap()
+                            let mut settings = state.settings.lock().unwrap_or_else(|e| e.into_inner());
+                            let running = state.running_instances.lock().unwrap_or_else(|e| e.into_inner())
                                 .values()
                                 .any(|info| info.running);
                             // Window Behavior → "On Launcher Close": hide to
@@ -551,7 +557,7 @@ pub fn run() {
             // launcher had already closed.
             if let tauri::RunEvent::Exit = event {
                 if let Some(rpc_state) = app_handle.try_state::<DiscordRpcState>() {
-                    rpc_state.0.lock().unwrap().shutdown();
+                    rpc_state.0.lock().unwrap_or_else(|e| e.into_inner()).shutdown();
                 }
 
                 // Privacy → "Clear Account Session on Exit": deactivate
@@ -564,7 +570,7 @@ pub fn run() {
                         .map(|s| s.clear_session_on_exit)
                         .unwrap_or(false);
                     if clear_on_exit {
-                        let mut accounts = state.accounts.lock().unwrap();
+                        let mut accounts = state.accounts.lock().unwrap_or_else(|e| e.into_inner());
                         for acc in accounts.iter_mut() {
                             acc.is_active = false;
                         }

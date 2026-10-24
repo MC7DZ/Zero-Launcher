@@ -39,7 +39,7 @@ pub async fn get_logs(
     source: Option<String>,
     count: Option<usize>,
 ) -> Result<Vec<LogEntry>, String> {
-    let logs = state.logs.lock().unwrap();
+    let logs = state.logs.lock().unwrap_or_else(|e| e.into_inner());
     let count = count.unwrap_or(500);
 
     let filtered: Vec<LogEntry> = logs
@@ -73,7 +73,7 @@ pub async fn get_logs(
 pub async fn clear_logs(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state.logs.lock().unwrap().clear();
+    state.logs.lock().unwrap_or_else(|e| e.into_inner()).clear();
     Ok(())
 }
 
@@ -107,7 +107,7 @@ pub async fn export_logs(
     state: State<'_, AppState>,
     path: String,
 ) -> Result<(), String> {
-    let logs = state.logs.lock().unwrap();
+    let logs = state.logs.lock().unwrap_or_else(|e| e.into_inner());
     let content: String = logs
         .iter()
         .map(|l| format!("[{}] [{}] [{}] {}", l.timestamp, l.level, l.source, l.message))

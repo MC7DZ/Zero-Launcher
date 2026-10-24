@@ -64,7 +64,7 @@ pub fn parse_cli_launch_args(args: &[String]) -> Option<CliLaunchArgs> {
 
 #[tauri::command]
 pub async fn get_cli_launch_args(state: State<'_, AppState>) -> Result<Option<CliLaunchArgs>, String> {
-    Ok(state.cli_launch_args.lock().unwrap().take())
+    Ok(state.cli_launch_args.lock().unwrap_or_else(|e| e.into_inner()).take())
 }
 
 #[tauri::command]
@@ -124,7 +124,7 @@ pub async fn create_instance_shortcut(
     }
 
     let instance = {
-        let instances = state.instances.lock().unwrap();
+        let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
         instances
             .iter()
             .find(|i| i.version_id == instance_id)
