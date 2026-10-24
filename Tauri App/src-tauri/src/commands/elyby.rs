@@ -354,7 +354,7 @@ fn spawn_oauth_callback_listener(
 /// device-code flow does). Call `elyby_oauth_poll` on a timer afterward.
 #[tauri::command]
 pub async fn elyby_oauth_start(state: State<'_, AppState>) -> Result<String, String> {
-    let Some((elyby_client_id, elyby_client_secret)) = elyby_credentials() else {
+    let Some((elyby_client_id, _)) = elyby_credentials() else {
         return Err(
             "Ely.by OAuth2 sign-in isn't configured yet — this build is missing its Ely.by \
              clientId/clientSecret (register one at https://account.ely.by/dev/applications/new \
@@ -405,6 +405,9 @@ struct ElybyAccountInfo {
 }
 
 async fn exchange_oauth_code(client: &reqwest::Client, code: &str) -> Result<OauthTokenResponse, String> {
+    let Some((elyby_client_id, elyby_client_secret)) = elyby_credentials() else {
+        return Err("Ely.by OAuth2 isn't configured on this build.".to_string());
+    };
     let response = client
         .post(OAUTH_TOKEN_URL)
         .form(&[
