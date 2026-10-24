@@ -486,6 +486,19 @@ pub struct LauncherSettings {
     #[serde(default)]
     pub auto_open_console_on_launch: bool,
 
+    // Crash reporting / freeze watchdog
+    /// Auto-reload the UI when it stops responding (see `watchdog.rs`).
+    #[serde(default = "default_true")]
+    pub ui_watchdog_enabled: bool,
+    /// Send a crash/freeze report (environment + scrubbed logs) to the
+    /// Discord webhook below. Does nothing while no webhook is configured.
+    #[serde(default = "default_true")]
+    pub crash_report_enabled: bool,
+    /// Discord webhook URL that crash reports are posted to. Empty means
+    /// "use the one compiled in via the ZL_CRASH_WEBHOOK build variable, if any".
+    #[serde(default)]
+    pub crash_webhook_url: String,
+
     // 3D Skin Standee Settings
     #[serde(default = "default_skin_animation")]
     pub skin_animation: String,
@@ -708,6 +721,10 @@ impl Default for LauncherSettings {
 
             enable_crash_analysis: false,
             auto_open_console_on_launch: false,
+
+            ui_watchdog_enabled: true,
+            crash_report_enabled: true,
+            crash_webhook_url: String::new(),
 
             skin_animation: default_skin_animation(),
             skin_speed: default_skin_speed(),

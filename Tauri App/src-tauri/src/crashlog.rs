@@ -103,7 +103,7 @@ fn tail_of_latest_log(lines: usize) -> String {
     tail_of_file(&dir.join("latest.log"), lines)
 }
 
-fn tail_of_file(path: &Path, lines: usize) -> String {
+pub fn tail_of_file(path: &Path, lines: usize) -> String {
     let Ok(mut f) = fs::File::open(path) else {
         return format!("(could not open {})", path.display());
     };
@@ -122,7 +122,14 @@ fn uptime_secs() -> u64 {
     STARTED.get().map(|s| s.elapsed().as_secs()).unwrap_or(0)
 }
 
-fn build_report(title: &str, detail: &str) -> String {
+pub fn build_report(title: &str, detail: &str) -> String {
+    build_report_opts(title, detail, true)
+}
+
+/// `with_backtrace = false` is for reports about *another* thread's state
+/// (e.g. the UI watchdog reporting a frozen page) where the reporting
+/// thread's own backtrace would only mislead.
+pub fn build_report_opts(title: &str, detail: &str, with_backtrace: bool) -> String {
     let mut r = String::new();
     let _ = writeln!(r, "================ ZERO LAUNCHER CRASH REPORT ================");
     let _ = writeln!(r, "event      : {title}");
@@ -154,8 +161,10 @@ fn build_report(title: &str, detail: &str) -> String {
         }
     }
 
-    let _ = writeln!(r, "\n---------------- backtrace ----------------");
-    let _ = writeln!(r, "{}", std::backtrace::Backtrace::force_capture());
+    if with_backtrace {
+        let _ = writeln!(r, "\n---------------- backtrace ----------------");
+        let _ = writeln!(r, "{}", std::backtrace::Backtrace::force_capture());
+    }
 
     let _ = writeln!(r, "\n---------------- last {LOG_TAIL_LINES} lines of latest.log ----------------");
     let _ = writeln!(r, "{}", tail_of_latest_log(LOG_TAIL_LINES));
@@ -163,18 +172,17 @@ fn build_report(title: &str, detail: &str) -> String {
     r
 }
 
-fn write_report(prefix: &str, report: &str) {
+pub fn write_report(prefix: &str, report: &str) -> Option<PathBuf> {
     // 1. stderr (visible when launched from a terminal / journald)
     eprintln!("{report}");
 
-    let Some(dir) = LOGS_DIR.get() else {
-        return;
-    };
+    let dir = LOGS_DIR.get()?;
     let _ = fs::create_dir_all(dir);
 
     // 2. a dedicated, never-rotated file
     let name = format!("{prefix}-{}.log", chrono::Local::now().format("%Y%m%d-%H%M%S"));
-    let _ = fs::write(dir.join(name), report);
+    let path = dir.join(name);
+    let _ = fs::write(&path, report);
 
     // 3. also into latest.log so it sits right after the lines that led to it
     if let Ok(mut f) = fs::OpenOptions::new().append(true).open(dir.join("latest.log")) {
@@ -182,6 +190,12 @@ fn write_report(prefix: &str, report: &str) {
         let _ = f.flush();
         let _ = f.sync_all();
     }
+    Some(path)
+}
+
+/// The `<data_dir>/logs` folder (known once `install_files` ran).
+pub fn logs_dir() -> Option<PathBuf> {
+    LOGS_DIR.get().cloned()
 }
 
 // ── layer 1: panic hook ─────────────────────────────────────────────────────
@@ -270,6 +284,24 @@ fn check_previous_session(dir: &Path) {
             }
         }
         let _ = pid;
+    }
+    // A panic / fatal-signal report written right before the process died
+    // already explains this exit — don't write (and later upload) a second,
+    // less informative report for the same crash.
+    if let Ok(session_mtime) = fs::metadata(dir.join("session.state")).and_then(|m| m.modified()) {
+        let covered = fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().to_string();
+                n.ends_with(".log") && (n.starts_with("panic-") || n.starts_with("fatal-signal-"))
+            })
+            .filter_map(|e| e.metadata().ok()?.modified().ok())
+            .any(|t| t + Duration::from_secs(5) >= session_mtime);
+        if covered {
+            return;
+        }
     }
     let mut r = String::new();
     let _ = writeln!(r, "================ PREVIOUS RUN DID NOT EXIT CLEANLY ================");

@@ -1,5 +1,6 @@
 mod commands;
 mod crashlog;
+mod crashreport;
 mod diagnostics;
 mod discord_rpc;
 mod first_run_setup;
@@ -7,6 +8,7 @@ mod logger;
 mod models;
 mod network;
 mod state;
+mod watchdog;
 
 use state::AppState;
 use discord_rpc::{DiscordRpcManager, DiscordRpcState};
@@ -241,7 +243,10 @@ pub fn run() {
             {
                 let handle = app.handle().clone();
                 diagnostics::log_startup_environment(&handle);
-                diagnostics::start_sampler(handle);
+                diagnostics::start_sampler(handle.clone());
+                // Freeze watchdog + crash-report uploader.
+                watchdog::start(handle.clone());
+                crashreport::start(handle);
             }
 
             // ── System tray ──
@@ -387,6 +392,8 @@ pub fn run() {
         })
         .invoke_handler(traced_handler(tauri::generate_handler![
             diagnostics::frontend_log_batch,
+            watchdog::watchdog_heartbeat,
+            crashreport::send_test_crash_report,
             commands::cancel_generic_download,
             commands::open_launcher_folder,
             commands::open_instance_folder,

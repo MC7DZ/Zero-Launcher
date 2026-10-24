@@ -461,6 +461,23 @@ setInterval(() => {
 
 /* ────────────────────────── devtools helpers ────────────────────────── */
 
+/* ────────────────── UI freeze watchdog heartbeat ──────────────────
+   Rust's `watchdog.rs` reloads the page (and reports it to the crash
+   webhook) when these ~1 s beats stop arriving while the window is visible.
+   Only the main window beats; plain setInterval so a blocked main thread
+   silences it. Uses the raw invoke so it never floods the IPC log. */
+if (WINDOW_LABEL === 'main') {
+  let beatSeq = 0;
+  const beat = () => {
+    try {
+      const ctx = `${location.pathname}${location.hash} vis=${document.visibilityState} pending=${pending.size}`;
+      rawInvoke('watchdog_heartbeat', { seq: ++beatSeq, context: ctx }).catch(() => {});
+    } catch (_) { /* never let the heartbeat itself throw */ }
+  };
+  beat();
+  setInterval(beat, 1000);
+}
+
 window.__ZL_DEBUG = {
   invoke, listen, zlog, flush,
   /** Block the UI thread for `ms`. */

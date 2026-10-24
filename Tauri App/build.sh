@@ -25,6 +25,9 @@ cd "$SCRIPT_DIR"
 # on newer ELF sections (.relr.dyn) produced by current toolchains.
 export NO_STRIP=1
 
+# Optional build-time override of the crash-report webhook (the default is in crashreport.rs).
+export ZL_CRASH_WEBHOOK="${ZL_CRASH_WEBHOOK-}"
+
 log() {
     printf '\n\033[1;34m==>\033[0m %s\n' "$1"
 }

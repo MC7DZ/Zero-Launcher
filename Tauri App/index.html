@@ -3169,6 +3169,36 @@
               </section>
 
               <section class="appearance-group">
+                <div class="appearance-group-head"><h4>Crash Reports</h4><p>Automatically report launcher crashes and freezes to a Discord webhook.</p></div>
+              <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:8px;">
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-crash-report-enabled" />
+                    <span class="toggle-slider"></span>
+                    <span>Send crash &amp; freeze reports</span>
+                  </label>
+                  <p class="settings-hint">After a crash (sent on the next start) or a UI freeze (sent immediately), uploads the crash report, launcher log, launcher/OS/CPU/RAM/GPU details and non-sensitive settings. Home folder, username, account names, tokens, e-mails and public IPs are removed first. Nothing is sent unless a webhook URL is set.</p>
+                </div>
+                <div class="form-group">
+                  <input type="password" id="setting-crash-webhook-url" class="input-field" placeholder="https://discord.com/api/webhooks/…" autocomplete="off" spellcheck="false" />
+                  <p class="settings-hint">Leave empty to use the webhook built into this launcher (if any).</p>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <button id="btn-test-crash-report" class="btn-ghost" type="button">Send test report</button>
+                  <span id="crash-report-test-status" class="settings-hint" style="margin:0;"></span>
+                </div>
+                <div>
+                  <label class="toggle-row">
+                    <input type="checkbox" id="setting-ui-watchdog" />
+                    <span class="toggle-slider"></span>
+                    <span>Auto-reload when the UI freezes</span>
+                  </label>
+                  <p class="settings-hint">If the launcher window stops responding for 5 seconds it is reloaded (running games are not affected) and a freeze report is created.</p>
+                </div>
+              </div>
+              </section>
+
+              <section class="appearance-group">
                 <div class="appearance-group-head"><h4>Developer</h4><p>Extra detail for troubleshooting.</p></div>
               <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:8px;">
 <div>

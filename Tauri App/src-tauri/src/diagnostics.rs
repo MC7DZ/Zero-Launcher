@@ -27,6 +27,7 @@ const QUIET_COMMANDS: &[&str] = &[
     "window_is_maximized",
     "play_click_sound",
     "report_activity",
+    "watchdog_heartbeat",
 ];
 
 /// Argument names whose values are never written to the log.

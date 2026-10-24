@@ -524,6 +524,7 @@ const api = {
       jvmArgs: jvmArgs !== undefined ? (jvmArgs || null) : null,
     }),
   deleteInstalledVersion: (versionId, directory) => invoke('delete_installed_version', { versionId, directory: directory || null }),
+  sendTestCrashReport: (webhookUrl) => invoke('send_test_crash_report', { webhookUrl: webhookUrl || null }),
   deleteInstanceData: (directory, minecraftDirectory) => invoke('delete_instance_data', { directory, minecraftDirectory: minecraftDirectory || null }),
   scanMinecraftVersions: (directory) => invoke('scan_minecraft_versions', { directory: directory || null }),
   getInstalledInstances: () => invoke('get_installed_instances'),
@@ -15627,6 +15628,12 @@ function populateSettingsUI() {
   const hideLaunchCmdChk = document.getElementById('setting-hide-launch-command');
   if (hideLaunchCmdChk) hideLaunchCmdChk.checked = settings.hide_launch_command !== false;
   document.getElementById('setting-debug-mode').checked = !!settings.debug_mode;
+  const crashRepChk = document.getElementById('setting-crash-report-enabled');
+  if (crashRepChk) crashRepChk.checked = settings.crash_report_enabled !== false;
+  const crashHookInp = document.getElementById('setting-crash-webhook-url');
+  if (crashHookInp) crashHookInp.value = settings.crash_webhook_url || '';
+  const uiWatchdogChk = document.getElementById('setting-ui-watchdog');
+  if (uiWatchdogChk) uiWatchdogChk.checked = settings.ui_watchdog_enabled !== false;
   const crashAnalysisChk = document.getElementById('setting-crash-analysis');
   if (crashAnalysisChk) crashAnalysisChk.checked = !!settings.enable_crash_analysis;
   const autoOpenConsoleChk = document.getElementById('setting-auto-open-console');
@@ -16074,6 +16081,12 @@ function collectSettingsFromUI() {
   const hideLaunchCmdChk2 = document.getElementById('setting-hide-launch-command');
   if (hideLaunchCmdChk2) settings.hide_launch_command = hideLaunchCmdChk2.checked;
   settings.debug_mode = document.getElementById('setting-debug-mode').checked;
+  const crashRepChk2 = document.getElementById('setting-crash-report-enabled');
+  if (crashRepChk2) settings.crash_report_enabled = crashRepChk2.checked;
+  const crashHookInp2 = document.getElementById('setting-crash-webhook-url');
+  if (crashHookInp2) settings.crash_webhook_url = crashHookInp2.value.trim();
+  const uiWatchdogChk2 = document.getElementById('setting-ui-watchdog');
+  if (uiWatchdogChk2) settings.ui_watchdog_enabled = uiWatchdogChk2.checked;
   applyUsernamePrivacy();
 
   // Experimental
@@ -16413,6 +16426,7 @@ function initSettings() {
     'setting-rpc-state-singleplayer', 'setting-rpc-state-multiplayer',
     'setting-redact-tokens', 'setting-redact-paths', 'setting-redact-user-paths', 'setting-hide-launch-command',
     'setting-debug-mode',
+    'setting-crash-report-enabled', 'setting-crash-webhook-url', 'setting-ui-watchdog',
     'setting-crash-analysis',
     'setting-auto-open-console',
     'setting-hardware-acceleration',
@@ -16422,6 +16436,31 @@ function initSettings() {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', saveSettingsNow);
   });
+
+  // Crash Reports → "Send test report"
+  document.getElementById('btn-test-crash-report')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-test-crash-report');
+    const status = document.getElementById('crash-report-test-status');
+    const url = (document.getElementById('setting-crash-webhook-url')?.value || '').trim();
+    if (!url) {
+      const m = "Enter your own webhook URL to test — the default webhook can't be tested.";
+      if (status) status.textContent = m;
+      showToast(m, 'error');
+      return;
+    }
+    btn.disabled = true;
+    if (status) status.textContent = 'Sending…';
+    try {
+      const msg = await api.sendTestCrashReport(url);
+      if (status) status.textContent = msg;
+      showToast(msg, 'success');
+    } catch (e) {
+      if (status) status.textContent = String(e);
+      showToast('Test report failed: ' + e, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }, { once: false });
 
   const hwAccelEl = document.getElementById('setting-hardware-acceleration');
   if (hwAccelEl) {
@@ -16909,6 +16948,8 @@ function initSettings() {
           rpc_state_multiplayer: false,
           redact_tokens: true,
           debug_mode: true,
+          crash_report_enabled: true,
+          ui_watchdog_enabled: true,
           enable_crash_analysis: false,
           auto_open_console_on_launch: false,
         };

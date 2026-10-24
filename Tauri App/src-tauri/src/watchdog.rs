@@ -337,6 +337,18 @@ fn handle_freeze(
         ),
     );
 
+    // Ship a report (environment + logs) to the crash webhook, if configured.
+    crate::crashreport::report_freeze(
+        app,
+        &format!(
+            "message : UI froze — {} for {silent_for_ms} ms\nlast ui context : {ctx}\nbeats received : {beats}\nfailed reloads in a row : {failed}\ntotal reloads this session : {total}\nwindow url : {:?}\nfocused : {:?}  maximized : {:?}",
+            if never_loaded { "page never sent a heartbeat after (re)load" } else { "no heartbeat" },
+            window.url().map(|u| u.to_string()).ok(),
+            window.is_focused().ok(),
+            window.is_maximized().ok(),
+        ),
+    );
+
     // Too many failed reloads in a row → last resort: relaunch the process.
     if failed > MAX_FAILED_RELOADS {
         hard_relaunch(app, failed);
