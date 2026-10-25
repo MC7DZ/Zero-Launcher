@@ -33,6 +33,64 @@ fn traced_handler(
     }
 }
 
+/// Last time the tray toggled the main window (ms since the epoch of
+/// `TRAY_EPOCH`). A double-click delivers click + double-click events
+/// back-to-back on some platforms; without a debounce the window would
+/// flicker hide→show (or show→hide→show) instead of toggling once.
+static TRAY_EPOCH: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+static TRAY_LAST_TOGGLE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+const TRAY_DEBOUNCE_MS: u64 = 450;
+
+/// Shows the main window if hidden, hides it if visible. Shared by the tray
+/// menu item, single click and double click so all three behave and log the
+/// same way.
+fn toggle_main_window(app: &tauri::AppHandle, source: &str) {
+    use std::sync::atomic::Ordering;
+    let now = TRAY_EPOCH
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64;
+    let last = TRAY_LAST_TOGGLE_MS.load(Ordering::SeqCst);
+    if last != 0 && now.saturating_sub(last) < TRAY_DEBOUNCE_MS {
+        if let Some(st) = app.try_state::<AppState>() {
+            logger::debug(app, &st, "TRAY", &format!(
+                "{source}: ignored (debounce, {} ms since last toggle)", now.saturating_sub(last)
+            ));
+        }
+        return;
+    }
+    TRAY_LAST_TOGGLE_MS.store(now.max(1), Ordering::SeqCst);
+
+    let Some(window) = app.get_webview_window("main") else {
+        if let Some(st) = app.try_state::<AppState>() {
+            logger::warn(app, &st, "TRAY", &format!("{source}: main window not found"));
+        }
+        return;
+    };
+    let visible = window.is_visible().unwrap_or(false);
+    let minimized = window.is_minimized().unwrap_or(false);
+    if let Some(st) = app.try_state::<AppState>() {
+        logger::debug(app, &st, "TRAY", &format!(
+            "{source}: toggle requested (visible={visible}, minimized={minimized})"
+        ));
+    }
+    if visible && !minimized {
+        if let Err(e) = window.hide() {
+            if let Some(st) = app.try_state::<AppState>() {
+                logger::warn(app, &st, "TRAY", &format!("{source}: hide failed: {e}"));
+            }
+        }
+    } else {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        // Tell the frontend the window is back so it can resume/repair
+        // anything that pauses (or loses its WebGL context) while natively
+        // hidden — notably the 3D skin preview.
+        let _ = app.emit("launcher-shown", ());
+    }
+}
+
 pub fn run() {
     // Panic hook first, so even panics during startup leave a report.
     crashlog::install_panic_hook();
@@ -143,9 +201,16 @@ pub fn run() {
         // process instead of a second instance starting up — we just show
         // and focus the window that's already there.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(st) = app.try_state::<AppState>() {
+                logger::debug(app, &st, "APP", &format!("Second instance started with args={:?}", args));
+            }
             if let Some(parsed) = crate::commands::shortcuts::parse_cli_launch_args(&args) {
+                let parsed = crate::commands::shortcuts::resolve_instance_found(app, parsed);
                 let _ = app.emit("cli-launch-instance", parsed);
             } else {
+                if let Some(st) = app.try_state::<AppState>() {
+                    logger::debug(app, &st, "APP", "Second instance has no launch args — showing existing window");
+                }
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.unminimize();
@@ -201,11 +266,15 @@ pub fn run() {
             // Must run before AppState::new, which archives the previous latest.log.
             crashlog::install_files(&data_dir);
             let state = AppState::new(data_dir.clone());
-            if state.cli_launch_args.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.hide();
-                }
-            }
+            // Shortcut launch (`--launch-instance`): the main window must NOT
+            // be hidden from Rust here. WebKitGTK doesn't run a hidden
+            // window's page (no DOMContentLoaded, no IPC), so the frontend
+            // never fetched the launch args, the game never started, and
+            // showing the window later from the tray gave a frozen page
+            // (UI-freeze crash report 58ac9126). The frontend hides the
+            // window itself as soon as it has the args and knows the
+            // instance exists.
+            let has_cli_launch = state.cli_launch_args.lock().unwrap_or_else(|e| e.into_inner()).is_some();
 
             // Rehydrate instances that were still running when a *previous*
             // launcher process quit. Those game processes are spawned
@@ -239,6 +308,29 @@ pub fn run() {
             app.manage(state);
             app.manage(DiscordRpcState(Mutex::new(DiscordRpcManager::new())));
 
+            if has_cli_launch {
+                let st = app.state::<AppState>();
+                logger::info(app.handle(), &st, "SHORTCUT", "Started from a shortcut — waiting for the frontend to pick up the launch request");
+                // Safety net: if the page never asks for the launch args
+                // (broken frontend, blocked webview, ...) don't leave the
+                // user with an invisible launcher — show the window.
+                let fallback_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(15));
+                    if let Some(st) = fallback_handle.try_state::<AppState>() {
+                        let still_pending = st.cli_launch_args.lock().unwrap_or_else(|e| e.into_inner()).is_some();
+                        if still_pending {
+                            logger::error(&fallback_handle, &st, "SHORTCUT", "Frontend never picked up the shortcut launch request after 15 s — showing the launcher window");
+                            if let Some(w) = fallback_handle.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.unminimize();
+                                let _ = w.set_focus();
+                            }
+                        }
+                    }
+                });
+            }
+
             // ── Diagnostics ──
             // State is managed now, so logging works from here on.
             {
@@ -270,24 +362,7 @@ pub fn run() {
                 .tooltip("ZeroLauncher")
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show_hide" => {
-                        if let Some(st) = app.try_state::<AppState>() {
-                            logger::debug(app, &st, "TRAY", "Tray menu: Show / Hide clicked");
-                        }
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                                // Tell the frontend the window is back so it can
-                                // resume/repair anything that pauses (or loses
-                                // its WebGL context) while natively hidden —
-                                // notably the 3D skin preview. See the JS-side
-                                // `listen('launcher-shown', ...)` handler.
-                                let _ = app.emit("launcher-shown", ());
-                            }
-                        }
+                        toggle_main_window(app, "Tray menu: Show / Hide");
                     }
                     "quit" => {
                         if let Some(st) = app.try_state::<AppState>() {
@@ -301,18 +376,18 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                                let _ = app.emit("launcher-shown", ());
-                            }
+                    let app = tray.app_handle();
+                    match event {
+                        // Single left click (release) toggles…
+                        TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } => {
+                            toggle_main_window(app, "Tray left click");
                         }
+                        // …and so does a double click. Both go through the same
+                        // debounce, so click + double-click toggles only once.
+                        TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => {
+                            toggle_main_window(app, "Tray double click");
+                        }
+                        _ => {}
                     }
                 })
                 .build(app)?;
@@ -439,6 +514,8 @@ pub fn run() {
             commands::shortcuts::create_instance_shortcut,
             commands::shortcuts::get_cli_launch_args,
             commands::shortcuts::hide_main_window,
+            commands::shortcuts::show_main_window,
+            commands::shortcuts::delete_instance_shortcuts,
             // Modpack import (.mrpack / CurseForge zip drag-and-drop)
             commands::modpack::preview_modpack,
             commands::modpack::import_modpack,

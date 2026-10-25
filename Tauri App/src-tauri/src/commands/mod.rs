@@ -259,6 +259,9 @@ pub fn open_url_in_browser(url: String) -> Result<(), String> {
 #[tauri::command]
 pub fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
+    if let Some(st) = app.try_state::<AppState>() {
+        crate::logger::debug(&app, &st, "WINDOW", "open_devtools requested");
+    }
     if let Some(window) = app.get_webview_window("main") {
         window.open_devtools();
     }
@@ -443,9 +446,23 @@ pub fn play_soft_sound() {
     play_native_sound(UiSound::Soft);
 }
 
+/// Debug-logs a window action ("WINDOW" source). Never panics and does
+/// nothing if the app state isn't managed yet.
+fn log_window_action(window: &tauri::Window, msg: &str) {
+    use tauri::Manager;
+    let app = window.app_handle();
+    if let Some(state) = app.try_state::<AppState>() {
+        crate::logger::debug(app, &state, "WINDOW", &format!("'{}': {}", window.label(), msg));
+    }
+}
+
 #[tauri::command]
 pub fn window_minimize(window: tauri::Window) -> Result<(), String> {
-    window.minimize().map_err(|e| e.to_string())
+    log_window_action(&window, "minimize requested");
+    window.minimize().map_err(|e| {
+        log_window_action(&window, &format!("minimize failed: {e}"));
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -453,8 +470,14 @@ pub fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
     // Can't maximize/restore while minimized or fullscreen — doing so on
     // Windows leaves a borderless transparent window in a broken state.
     if window.is_fullscreen().unwrap_or(false) {
+        log_window_action(&window, "toggle maximize ignored (fullscreen)");
         return Ok(());
     }
+    log_window_action(&window, &format!(
+        "toggle maximize requested (maximized={}, minimized={})",
+        window.is_maximized().unwrap_or(false),
+        window.is_minimized().unwrap_or(false)
+    ));
     if window.is_minimized().unwrap_or(false) {
         let _ = window.unminimize();
     }
@@ -471,7 +494,11 @@ pub fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
 
 #[tauri::command]
 pub fn window_close(window: tauri::Window) -> Result<(), String> {
-    window.close().map_err(|e| e.to_string())
+    log_window_action(&window, "close requested (titlebar button)");
+    window.close().map_err(|e| {
+        log_window_action(&window, &format!("close failed: {e}"));
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -481,12 +508,14 @@ pub fn window_is_maximized(window: tauri::Window) -> Result<bool, String> {
 
 #[tauri::command]
 pub fn window_center(window: tauri::Window) -> Result<(), String> {
+    log_window_action(&window, "center requested");
     window.center().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn window_toggle_fullscreen(window: tauri::Window) -> Result<bool, String> {
     let is_fs = window.is_fullscreen().unwrap_or(false);
+    log_window_action(&window, &format!("toggle fullscreen requested (now fullscreen={is_fs})"));
     window.set_fullscreen(!is_fs).map_err(|e| e.to_string())?;
     Ok(!is_fs)
 }
@@ -498,6 +527,7 @@ pub fn window_toggle_always_on_top(window: tauri::Window) -> Result<bool, String
     let next_state = !ALWAYS_ON_TOP.load(std::sync::atomic::Ordering::Relaxed);
     window.set_always_on_top(next_state).map_err(|e| e.to_string())?;
     ALWAYS_ON_TOP.store(next_state, std::sync::atomic::Ordering::Relaxed);
+    log_window_action(&window, &format!("always-on-top set to {next_state}"));
     Ok(next_state)
 }
 

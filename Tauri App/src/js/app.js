@@ -520,6 +520,8 @@ const api = {
     }),
   getCliLaunchArgs: () => invoke('get_cli_launch_args'),
   hideMainWindow: () => invoke('hide_main_window'),
+  showMainWindow: () => invoke('show_main_window'),
+  deleteInstanceShortcuts: (instanceId) => invoke('delete_instance_shortcuts', { instanceId }),
   listJavaInstallations: () => invoke('list_java_installations'),
   installManagedJava: (major) => invoke('install_managed_java', { major }),
   deleteManagedJava: (major) => invoke('delete_managed_java', { major }),
@@ -7293,31 +7295,62 @@ function initCreateShortcutModal() {
 
 async function handleCliLaunch(args) {
   if (!args || !args.version_id) return;
-  console.log('[CLI Launch] Shortcut requested launch of instance:', args);
+  console.log('[CLI Launch] Shortcut requested launch of instance:', JSON.stringify(args));
 
-  // 1. Immediately ensure the main window stays hidden in the system tray
-  try {
-    await api.hideMainWindow();
-  } catch (_) {}
-  hideStartupSplashScreen(true);
-
-  // 2. Ensure instance list is loaded
-  let inst = getInstances().find(i => i.version_id === args.version_id);
-  if (!inst) {
-    try {
-      await refreshInstances();
-    } catch (_) {}
-    inst = getInstances().find(i => i.version_id === args.version_id);
+  // The backend already checked its instance list (args.instance_found).
+  // When it found the instance, hide the window right away (nothing to ask
+  // the user). When it did NOT, keep the window up until we've re-checked,
+  // so a launcher that must show a prompt is never hidden first.
+  const backendFound = args.instance_found !== false;
+  if (backendFound) {
+    try { await api.hideMainWindow(); } catch (e) { console.warn('[CLI Launch] hideMainWindow failed:', e); }
+    hideStartupSplashScreen(true);
   }
 
-  // 3. Fallback: check on-disk scan
+  // Make sure the instance list is loaded (frontend may still be starting up)
+  let inst = getInstances().find(i => i.version_id === args.version_id);
+  if (!inst) {
+    console.warn('[CLI Launch] Instance not in frontend list yet — refreshing', args.version_id);
+    try { await refreshInstances(); } catch (e) { console.warn('[CLI Launch] refreshInstances failed:', e); }
+    inst = getInstances().find(i => i.version_id === args.version_id);
+  }
+  // Fallback: on-disk scan
   if (!inst) {
     try {
       await api.scanMinecraftVersions();
       await refreshInstances();
       inst = getInstances().find(i => i.version_id === args.version_id);
-    } catch (_) {}
+    } catch (e) { console.warn('[CLI Launch] disk scan failed:', e); }
   }
+
+  // ── Instance does not exist: do NOT launch. Open the launcher and ask
+  //    whether the dead shortcut should be deleted. ──
+  if (!inst) {
+    console.warn('[CLI Launch] Instance not found after refresh + scan — skipping launch, asking user about the shortcut:', args.version_id);
+    hideStartupSplashScreen(true);
+    try { await api.showMainWindow(); } catch (e) { console.warn('[CLI Launch] showMainWindow failed:', e); }
+    const wantsDelete = await showConfirmDialog({
+      type: 'delete',
+      title: 'Instance not found',
+      message: `We couldn't find the instance "${args.version_id}" this shortcut points to. It may have been deleted, renamed or moved. Do you want to delete the shortcut?`,
+      confirmText: 'Delete Shortcut',
+      isDanger: true,
+    });
+    if (wantsDelete) {
+      try {
+        const removed = await api.deleteInstanceShortcuts(args.version_id);
+        console.log('[CLI Launch] Deleted', removed, 'shortcut file(s) for', args.version_id);
+        showToast(removed > 0 ? 'Shortcut deleted' : 'No shortcut files were found to delete', removed > 0 ? 'success' : 'info');
+      } catch (e) {
+        console.error('[CLI Launch] Failed to delete shortcut:', e);
+        showToast('Failed to delete shortcut: ' + e, 'error');
+      }
+    } else {
+      console.log('[CLI Launch] User kept the shortcut for missing instance', args.version_id);
+    }
+    return;
+  }
+  console.log('[CLI Launch] Instance found, launching:', args.version_id);
 
   const instName = (inst && (inst.name || inst.version_id)) || args.version_id;
   const instLoader = (inst && inst.loader) || 'vanilla';
@@ -19944,9 +19977,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const startupCliArgsPromise = api.getCliLaunchArgs().catch(() => null);
   startupCliArgsPromise.then(args => {
     if (args) {
-      api.hideMainWindow().catch(() => {});
-      hideStartupSplashScreen(true);
-      handleCliLaunch(args);
+      console.log('[CLI Launch] Startup args received:', JSON.stringify(args));
+      // Missing instance → leave the window visible so the prompt can show;
+      // handleCliLaunch hides the window itself once the instance is confirmed.
+      handleCliLaunch(args).catch(e => console.error('[CLI Launch] handleCliLaunch crashed:', e));
     }
   });
 
