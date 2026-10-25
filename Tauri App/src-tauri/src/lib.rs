@@ -516,6 +516,9 @@ pub fn run() {
             commands::shortcuts::hide_main_window,
             commands::shortcuts::show_main_window,
             commands::shortcuts::delete_instance_shortcuts,
+            commands::shortcuts::list_shortcuts,
+            commands::shortcuts::update_shortcut,
+            commands::shortcuts::delete_shortcut,
             // Modpack import (.mrpack / CurseForge zip drag-and-drop)
             commands::modpack::preview_modpack,
             commands::modpack::import_modpack,

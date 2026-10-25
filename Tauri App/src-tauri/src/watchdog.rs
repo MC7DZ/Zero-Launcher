@@ -68,6 +68,11 @@ static FAILED_RELOADS: AtomicU32 = AtomicU32::new(0);
 static TOTAL_RELOADS: AtomicU32 = AtomicU32::new(0);
 static AWAITING_RECOVERY: AtomicBool = AtomicBool::new(false);
 static RELAUNCHED_ONCE: AtomicBool = AtomicBool::new(false);
+/// Set once the localhost reachability probe ran for the current page load
+/// (reset on every reload) so we probe/report once, not every poll.
+static LOCALHOST_PROBED: AtomicBool = AtomicBool::new(false);
+/// How long a never-loaded http(s) page waits before we probe its server.
+const LOCALHOST_PROBE_AFTER_MS: u64 = 5_000;
 static LAST_CONTEXT: Mutex<String> = Mutex::new(String::new());
 
 fn now_ms() -> u64 {
@@ -109,6 +114,31 @@ fn watchdog_enabled(app: &AppHandle) -> bool {
             .unwrap_or(true),
         None => true,
     }
+}
+
+/// If the main window points at an http(s) server (the Vite dev server in
+/// `tauri dev`), checks whether anything is listening there.
+/// Returns `Some((url, error))` when the server is NOT reachable.
+fn probe_frontend_server(window: &tauri::WebviewWindow) -> Option<(String, String)> {
+    use std::net::{TcpStream, ToSocketAddrs};
+    let url = window.url().ok()?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    let host = url.host_str()?.to_string();
+    let port = url.port_or_known_default()?;
+    let addrs = match (host.as_str(), port).to_socket_addrs() {
+        Ok(a) => a.collect::<Vec<_>>(),
+        Err(e) => return Some((url.to_string(), format!("could not resolve {host}: {e}"))),
+    };
+    let mut last_err = String::from("no addresses resolved");
+    for addr in addrs {
+        match TcpStream::connect_timeout(&addr, Duration::from_secs(2)) {
+            Ok(_) => return None,
+            Err(e) => last_err = format!("{addr}: {e}"),
+        }
+    }
+    Some((url.to_string(), last_err))
 }
 
 fn notify(app: &AppHandle, title: &str, body: &str) {
@@ -265,6 +295,45 @@ fn run(app: AppHandle) {
             continue;
         }
 
+        // Page never started and it's served over http(s) (dev server):
+        // find out whether the server is simply not there. Independent of
+        // window visibility — a dead server is a dead server.
+        if !has_beat
+            && silent_for >= LOCALHOST_PROBE_AFTER_MS
+            && !LOCALHOST_PROBED.swap(true, Ordering::SeqCst)
+        {
+            if let Some(window) = app.get_webview_window("main") {
+                match probe_frontend_server(&window) {
+                    Some((url, err)) => {
+                        wlog(
+                            &app,
+                            "ERROR",
+                            &format!("FRONTEND SERVER UNREACHABLE: the page at {url} never started and the server did not answer ({err}). Is `npm run dev` running?"),
+                        );
+                        notify(
+                            &app,
+                            "ZeroLauncher can't load its UI",
+                            &format!("Nothing is answering at {url}. Start the dev server (npm run dev) and relaunch. A report was saved."),
+                        );
+                        crate::crashreport::report_frontend_failure(
+                            &app,
+                            &format!(
+                                "message : Frontend failed to load — server not reachable\nurl : {url}\nprobe error : {err}\nsilent for : {silent_for} ms\nbeats received : {}\nvisible : {:?}  focused : {:?}\nhint : `npm run dev` (Vite, port 1420) is probably not running or crashed",
+                                BEAT_COUNT.load(Ordering::SeqCst),
+                                window.is_visible().ok(),
+                                window.is_focused().ok(),
+                            ),
+                        );
+                    }
+                    None => wlog(
+                        &app,
+                        "DEBUG",
+                        "Frontend server probe: reachable (or not http) — page is just slow or its JS is not running",
+                    ),
+                }
+            }
+        }
+
         // Something looks off — check whether the window is even supposed to
         // be running timers. (Window getters talk to the main thread; if it
         // is blocked they fail/time out, which we treat as "visible".)
@@ -382,6 +451,7 @@ fn handle_freeze(
     }
 
     // Start the grace period for the fresh page.
+    LOCALHOST_PROBED.store(false, Ordering::SeqCst);
     let now = now_ms();
     LOAD_MS.store(now, Ordering::SeqCst);
     LAST_BEAT_MS.store(now, Ordering::SeqCst);

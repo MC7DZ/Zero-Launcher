@@ -62,8 +62,10 @@ const MAX_PENDING_PER_START: usize = 5;
 /// Freeze reports: at most this many per session, at least this far apart.
 const MAX_FREEZES_PER_SESSION: u32 = 3;
 const MIN_FREEZE_GAP_SECS: u64 = 300;
+const MAX_FRONTEND_FAILS_PER_SESSION: u32 = 2;
 
 static FREEZES_SENT: AtomicU32 = AtomicU32::new(0);
+static FRONTEND_FAILS_SENT: AtomicU32 = AtomicU32::new(0);
 static LAST_FREEZE_UNIX: AtomicU64 = AtomicU64::new(0);
 
 /// `unclean-exit-*` reports are deliberately NOT uploaded: they are also
@@ -622,6 +624,8 @@ fn kind_of(name: &str) -> (&'static str, u32) {
         ("⚠️ Unclean exit (killed / OOM / power loss)", 0xF59E0B)
     } else if name.starts_with("freeze-") {
         ("🧊 UI freeze", 0xEAB308)
+    } else if name.starts_with("frontend-") {
+        ("🔌 Frontend failed to load (localhost unreachable)", 0xE5484D)
     } else {
         ("🧪 Test report", 0x3B82F6)
     }
@@ -921,6 +925,35 @@ pub fn report_freeze(app: &AppHandle, detail: &str) {
                 clog(&app, "INFO", "UI freeze report uploaded");
             }
             Err(e) => clog(&app, "WARN", &format!("Could not upload UI freeze report: {e}")),
+        }
+    });
+}
+
+/// Called by the watchdog when the page could not be loaded because the
+/// frontend server (e.g. the dev server on `http://localhost:1420`) is not
+/// reachable. Never blocks the caller.
+pub fn report_frontend_failure(app: &AppHandle, detail: &str) {
+    if FRONTEND_FAILS_SENT.load(Ordering::SeqCst) >= MAX_FRONTEND_FAILS_PER_SESSION {
+        return;
+    }
+    // Always keep the local report, even if nothing is uploaded.
+    let report = crashlog::build_report_opts("FRONTEND LOAD FAILED", detail, false);
+    let path = crashlog::write_report("frontend", &report);
+
+    let Some(url) = configured_url(app) else { return };
+    FRONTEND_FAILS_SENT.fetch_add(1, Ordering::SeqCst);
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let name = path.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "frontend-live.log".into());
+        match send_report(&app, &url, &name, &report, None).await {
+            Ok(()) => {
+                if let Some(p) = &path {
+                    mark_sent(p);
+                }
+                clog(&app, "INFO", "Frontend-load-failure report uploaded");
+            }
+            Err(e) => clog(&app, "WARN", &format!("Could not upload frontend-load-failure report: {e}")),
         }
     });
 }

@@ -584,7 +584,6 @@ pub struct StorageUsage {
 
 /// (id, label, description, path, clearable)
 fn storage_locations(state: &AppState) -> Vec<(&'static str, &'static str, &'static str, std::path::PathBuf, bool)> {
-    let game_dir = state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory();
     vec![
         ("java", "Java runtimes", "Runtimes downloaded by the launcher", java::managed_java_root(), false),
         ("skins", "Skins", "Imported and cached skins", state.data_dir.join("skins"), false),

@@ -522,6 +522,17 @@ const api = {
   hideMainWindow: () => invoke('hide_main_window'),
   showMainWindow: () => invoke('show_main_window'),
   deleteInstanceShortcuts: (instanceId) => invoke('delete_instance_shortcuts', { instanceId }),
+  listShortcuts: () => invoke('list_shortcuts'),
+  deleteShortcut: (id) => invoke('delete_shortcut', { id }),
+  updateShortcut: (id, shortcutName, accountId, offline, desktop, appMenu) =>
+    invoke('update_shortcut', {
+      id,
+      shortcutName,
+      accountId: accountId || null,
+      offline: !!offline,
+      desktop: !!desktop,
+      appMenu: !!appMenu,
+    }),
   listJavaInstallations: () => invoke('list_java_installations'),
   installManagedJava: (major) => invoke('install_managed_java', { major }),
   deleteManagedJava: (major) => invoke('delete_managed_java', { major }),
@@ -17150,8 +17161,296 @@ function switchSettingsSection(sectionName) {
     renderStoragePanel();
   }
 
+  if (sectionName === 'shortcuts') {
+    renderShortcutsPanel();
+  }
+
   if (sectionName) {
     localStorage.setItem('zero_settings_last_section', sectionName);
+  }
+}
+
+// ── Shortcuts panel (Settings → Shortcuts) ──
+const IS_WINDOWS_UA = /Win/i.test(navigator.platform) || /Windows/i.test(navigator.userAgent);
+const SHORTCUT_MENU_LABEL = IS_WINDOWS_UA ? 'Start Menu' : 'Search / App Menu';
+let shortcutsLoading = false;
+let shortcutsCache = [];
+let editingShortcutId = null;
+
+function closeEditShortcutModal() {
+  const overlay = document.getElementById('edit-shortcut-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  editingShortcutId = null;
+}
+
+function initShortcutsPanelOnce() {
+  const refreshBtn = document.getElementById('btn-shortcuts-refresh');
+  if (!refreshBtn || refreshBtn.dataset.ready) return;
+  refreshBtn.dataset.ready = '1';
+  refreshBtn.addEventListener('click', () => renderShortcutsPanel());
+
+  const label = document.getElementById('edit-shortcut-appmenu-label');
+  if (label) label.textContent = SHORTCUT_MENU_LABEL;
+
+  document.getElementById('btn-close-edit-shortcut')?.addEventListener('click', closeEditShortcutModal);
+  document.getElementById('btn-edit-shortcut-cancel')?.addEventListener('click', closeEditShortcutModal);
+  document.getElementById('btn-edit-shortcut-save')?.addEventListener('click', saveEditedShortcut);
+}
+
+async function openEditShortcutModal(sc) {
+  const overlay = document.getElementById('edit-shortcut-overlay');
+  if (!overlay) return;
+  editingShortcutId = sc.id;
+  console.log('[Shortcuts] Editing shortcut', sc.id, sc.name);
+
+  const instEl = document.getElementById('edit-shortcut-instance');
+  const nameEl = document.getElementById('edit-shortcut-name');
+  const accEl = document.getElementById('edit-shortcut-account');
+  const deskEl = document.getElementById('edit-shortcut-desktop');
+  const menuEl = document.getElementById('edit-shortcut-appmenu');
+  const offEl = document.getElementById('edit-shortcut-offline');
+
+  if (instEl) {
+    instEl.textContent = `Launches: ${sc.instance_name}` + (sc.minecraft_version ? ` • ${sc.minecraft_version}` : '');
+  }
+  if (nameEl) nameEl.value = sc.name;
+  if (deskEl) deskEl.checked = !!sc.desktop;
+  if (menuEl) menuEl.checked = !!sc.app_menu;
+  if (offEl) offEl.checked = !!sc.offline;
+
+  if (accEl) {
+    accEl.innerHTML = '';
+    const def = document.createElement('option');
+    def.value = '';
+    def.textContent = 'Active / Last Used Account';
+    accEl.appendChild(def);
+    let accounts = [];
+    try { accounts = await api.getAccounts(); } catch (e) { console.warn('[Shortcuts] could not load accounts:', e); }
+    (accounts || []).forEach(acc => {
+      const o = document.createElement('option');
+      o.value = acc.id;
+      o.textContent = acc.username + (acc.account_type ? ` [${acc.account_type}]` : '') + (acc.is_active ? ' ★' : '');
+      accEl.appendChild(o);
+    });
+    // Account was deleted since the shortcut was made → keep it selectable so nothing is lost silently.
+    if (sc.account_id && !(accounts || []).some(a => a.id === sc.account_id)) {
+      const o = document.createElement('option');
+      o.value = sc.account_id;
+      o.textContent = 'Unknown account (' + sc.account_id.slice(0, 8) + '…)';
+      accEl.appendChild(o);
+    }
+    accEl.value = sc.account_id || '';
+  }
+
+  overlay.classList.remove('hidden');
+}
+
+async function saveEditedShortcut() {
+  if (!editingShortcutId) return;
+  const nameEl = document.getElementById('edit-shortcut-name');
+  const accEl = document.getElementById('edit-shortcut-account');
+  const deskEl = document.getElementById('edit-shortcut-desktop');
+  const menuEl = document.getElementById('edit-shortcut-appmenu');
+  const offEl = document.getElementById('edit-shortcut-offline');
+  const saveBtn = document.getElementById('btn-edit-shortcut-save');
+
+  if (!deskEl.checked && !menuEl.checked) {
+    showToast('Pick at least one location, or delete the shortcut instead.', 'error');
+    return;
+  }
+
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+  try {
+    const msg = await api.updateShortcut(
+      editingShortcutId,
+      nameEl.value.trim(),
+      accEl.value,
+      offEl.checked,
+      deskEl.checked,
+      menuEl.checked
+    );
+    console.log('[Shortcuts] Saved shortcut', editingShortcutId);
+    showToast(msg || 'Shortcut updated', 'success');
+    closeEditShortcutModal();
+    renderShortcutsPanel();
+  } catch (err) {
+    console.error('[Shortcuts] Failed to update shortcut:', err);
+    showToast('Failed to update shortcut: ' + err, 'error');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save Changes';
+  }
+}
+
+async function deleteShortcutWithConfirm(sc) {
+  const ok = await showConfirmDialog({
+    type: 'delete',
+    title: 'Delete shortcut?',
+    message: `Delete the shortcut "${sc.name}"? This removes it from ${[sc.desktop ? 'your Desktop' : null, sc.app_menu ? SHORTCUT_MENU_LABEL : null].filter(Boolean).join(' and ')}. The instance itself is not touched.`,
+    confirmText: 'Delete Shortcut',
+    isDanger: true,
+  });
+  if (!ok) return;
+  try {
+    await api.deleteShortcut(sc.id);
+    console.log('[Shortcuts] Deleted shortcut', sc.id, sc.name);
+    showToast('Shortcut deleted', 'success');
+  } catch (err) {
+    console.error('[Shortcuts] Failed to delete shortcut:', err);
+    showToast('Failed to delete shortcut: ' + err, 'error');
+  }
+  renderShortcutsPanel();
+}
+
+async function deleteShortcutLocation(sc, key, label) {
+  const otherOn = key === 'desktop' ? !!sc.app_menu : !!sc.desktop;
+  if (!otherOn) { deleteShortcutWithConfirm(sc); return; }
+  const desktop = key === 'desktop' ? false : !!sc.desktop;
+  const appMenu = key === 'app_menu' ? false : !!sc.app_menu;
+  try {
+    const msg = await api.updateShortcut(sc.id, sc.name, sc.account_id || '', !!sc.offline, desktop, appMenu);
+    showToast(msg || `Removed from ${label}`, 'success');
+  } catch (err) {
+    console.error('[Shortcuts] Failed to remove location:', err);
+    showToast('Failed to update shortcut: ' + err, 'error');
+  }
+  renderShortcutsPanel();
+}
+
+async function toggleShortcutLocation(sc, key, btn) {
+  const desktop = key === 'desktop' ? !sc.desktop : !!sc.desktop;
+  const appMenu = key === 'app_menu' ? !sc.app_menu : !!sc.app_menu;
+  if (!desktop && !appMenu) {
+    showToast('A shortcut needs at least one location. Delete the shortcut instead.', 'error');
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const msg = await api.updateShortcut(sc.id, sc.name, sc.account_id || '', !!sc.offline, desktop, appMenu);
+    showToast(msg || 'Shortcut updated', 'success');
+  } catch (err) {
+    console.error('[Shortcuts] Failed to toggle location:', err);
+    showToast('Failed to update shortcut: ' + err, 'error');
+  }
+  renderShortcutsPanel();
+}
+
+async function renderShortcutsPanel() {
+  initShortcutsPanelOnce();
+  const list = document.getElementById('shortcuts-list');
+  const countEl = document.getElementById('shortcuts-count-value');
+  const refreshBtn = document.getElementById('btn-shortcuts-refresh');
+  const refreshIcon = document.getElementById('btn-shortcuts-refresh-icon');
+  if (!list || shortcutsLoading) return;
+
+  shortcutsLoading = true;
+  if (refreshIcon) refreshIcon.classList.add('is-spinning');
+  if (refreshBtn) refreshBtn.disabled = true;
+  try {
+    shortcutsCache = await api.listShortcuts();
+    if (countEl) countEl.textContent = String(shortcutsCache.length);
+    list.innerHTML = '';
+
+    if (!shortcutsCache.length) {
+      const empty = document.createElement('div');
+      empty.className = 'storage-empty';
+      empty.textContent = 'No shortcuts yet. Select an instance and use the shortcut button to create one.';
+      list.appendChild(empty);
+      return;
+    }
+
+    shortcutsCache.forEach((sc, idx) => {
+      const row = document.createElement('div');
+      row.className = 'shortcut-row';
+      row.style.setProperty('--row-delay', (idx * 45) + 'ms');
+
+      const iconWrap = document.createElement('div');
+      iconWrap.className = 'shortcut-row-icon';
+      const img = document.createElement('img');
+      img.src = loaderIcon(sc.loader);
+      img.alt = '';
+      iconWrap.appendChild(img);
+
+      const text = document.createElement('div');
+      text.className = 'shortcut-row-text';
+      const title = document.createElement('div');
+      title.className = 'shortcut-row-title';
+      title.textContent = sc.name;
+      const sub = document.createElement('div');
+      sub.className = 'shortcut-row-sub';
+      sub.textContent = sc.instance_exists
+        ? `${sc.instance_name}${sc.minecraft_version ? ' • ' + sc.minecraft_version : ''}`
+        : `Instance "${sc.instance_id}" not found`;
+
+      const badges = document.createElement('div');
+      badges.className = 'shortcut-badges';
+      const addBadge = (txt, cls) => {
+        const b = document.createElement('span');
+        b.className = 'shortcut-badge ' + (cls || '');
+        b.textContent = txt;
+        badges.appendChild(b);
+      };
+      if (!sc.instance_exists) addBadge('Instance missing', 'warn');
+      if (sc.offline) addBadge('Offline', 'on');
+      if (sc.account_id) addBadge('Fixed account', 'on');
+      addBadge('ID: ' + String(sc.id).slice(-6), 'id');
+      badges.lastChild.title = 'Shortcut ID: ' + sc.id;
+      const locGroup = document.createElement('div');
+      locGroup.className = 'shortcut-loc-group';
+      const addLocLine = (label, isOn, key) => {
+        const line = document.createElement('div');
+        line.className = 'shortcut-loc-line' + (isOn ? '' : ' off');
+        const name = document.createElement('div');
+        name.className = 'shortcut-loc-name';
+        name.innerHTML = `<span>${label}</span><span class="loc-state">${isOn ? 'Added' : 'Not added'}</span>`;
+        const btns = document.createElement('div');
+        btns.className = 'shortcut-row-actions';
+        if (isOn) {
+          const editBtn = document.createElement('button');
+          editBtn.type = 'button';
+          editBtn.className = 'about-action-btn';
+          editBtn.innerHTML = '<span>Edit</span>';
+          editBtn.disabled = !sc.instance_exists;
+          editBtn.title = sc.instance_exists ? `Edit the ${label} shortcut` : 'The instance no longer exists — delete this shortcut';
+          editBtn.addEventListener('click', () => openEditShortcutModal(sc));
+          const delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.className = 'about-action-btn shortcut-delete-btn';
+          delBtn.innerHTML = '<span>Delete</span>';
+          delBtn.title = `Remove the ${label} shortcut`;
+          delBtn.addEventListener('click', () => deleteShortcutLocation(sc, key, label));
+          btns.append(editBtn, delBtn);
+        } else {
+          const addBtn = document.createElement('button');
+          addBtn.type = 'button';
+          addBtn.className = 'about-action-btn';
+          addBtn.innerHTML = '<span>Add</span>';
+          addBtn.disabled = !sc.instance_exists;
+          addBtn.addEventListener('click', () => toggleShortcutLocation(sc, key, addBtn));
+          btns.append(addBtn);
+        }
+        line.append(name, btns);
+        locGroup.appendChild(line);
+      };
+      addLocLine('Desktop', !!sc.desktop, 'desktop');
+      addLocLine(SHORTCUT_MENU_LABEL, !!sc.app_menu, 'app_menu');
+      text.append(title, sub, locGroup, badges);
+
+      row.append(iconWrap, text);
+      list.appendChild(row);
+    });
+  } catch (err) {
+    console.error('[Shortcuts] Failed to load shortcuts:', err);
+    list.innerHTML = '';
+    const msg = document.createElement('div');
+    msg.className = 'storage-empty';
+    msg.textContent = 'Could not load shortcuts: ' + err;
+    list.appendChild(msg);
+  } finally {
+    shortcutsLoading = false;
+    if (refreshIcon) refreshIcon.classList.remove('is-spinning');
+    if (refreshBtn) refreshBtn.disabled = false;
   }
 }
 
