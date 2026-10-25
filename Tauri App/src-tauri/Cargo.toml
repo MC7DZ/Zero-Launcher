@@ -11,7 +11,11 @@ edition = "2021"
 opt-level = "z"
 lto = true
 codegen-units = 1
-panic = "abort"
+# Must stay "unwind": cancelling a download is implemented by unwinding out of
+# the installer's progress callback (see CANCEL_MARKER in commands/minecraft.rs)
+# and catching it with catch_unwind. With "abort" that cancel killed the whole
+# launcher and was reported as a Rust panic crash.
+panic = "unwind"
 # Keep the symbol table so crash backtraces show function names.
 strip = "debuginfo"
 
@@ -43,11 +47,11 @@ url = "2"
 reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls", "hickory-dns", "multipart"] }
 mc-launcher-core = { path = "vendor/mc-launcher-core" }
 open = "5.4.0"
-# The app only ever reads zips (ZipArchive, for jar/mod inspection and
-# Java archive extraction in commands/mods.rs and commands/java.rs) — it
-# never writes one (no ZipWriter anywhere in src/). Dropping default
-# features removes writer support and every non-deflate codec (bzip2,
-# zstd, aes encryption, etc.) that the default feature set bundles.
+# Reads zips (jar/mod inspection, Java archive extraction in
+# commands/mods.rs and commands/java.rs) and writes one (crash report
+# bundle in crashreport.rs). Dropping default features removes every
+# non-deflate codec (bzip2, zstd, aes encryption, etc.) that the default
+# feature set bundles.
 zip = { version = "9.0.4", default-features = false, features = ["deflate"] }
 discord-rich-presence = "1.1.0"
 sha1 = "0.10"

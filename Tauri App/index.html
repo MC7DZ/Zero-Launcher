@@ -1375,6 +1375,16 @@
             <label class="bento-tile-label" for="inst-jvm-args">Custom JVM Arguments</label>
             <input type="text" id="inst-jvm-args" class="input-field" placeholder="-XX:+UseZGC ... (leave blank to use Settings; ZGC is the default GC)" />
           </div>
+
+          <!-- Launch Options (moved here from the Play button menu) -->
+          <label class="adv-toggle-tile toggle-row" for="inst-always-offline">
+            <span class="adv-toggle-text">
+              <span class="adv-toggle-title">Always launch offline</span>
+              <span class="adv-toggle-sub">Skip the libraries/assets check and start from what's already on disk. This instance only.</span>
+            </span>
+            <input type="checkbox" id="inst-always-offline" />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
 
         <!-- Install Progress (if active) -->
@@ -1389,6 +1399,58 @@
         <div class="hypr-actions-island">
           <button id="btn-cancel-install-form" class="btn-ghost">Cancel</button>
           <button id="btn-start-install" class="btn-accent">Install &amp; Play</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Server overlay (Hyprland Floating Islands) -->
+    <div id="add-server-overlay" class="overlay hidden">
+      <div class="hypr-modal add-server-modal">
+        <div class="hypr-island hypr-header-island">
+          <div class="hypr-header-left">
+            <div class="hypr-icon-badge">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="8" rx="2"></rect>
+                <rect x="2" y="13" width="20" height="8" rx="2"></rect>
+                <line x1="6" y1="7" x2="6.01" y2="7"></line>
+                <line x1="6" y1="17" x2="6.01" y2="17"></line>
+              </svg>
+            </div>
+            <div class="hypr-header-titles">
+              <h3 class="hypr-title">Add Server</h3>
+              <span class="hypr-subtitle" id="add-server-subtitle">Add a server to this instance's multiplayer list</span>
+            </div>
+          </div>
+          <button class="overlay-close" id="btn-close-add-server" title="Close">✕</button>
+        </div>
+
+        <div class="hypr-island hypr-main-island">
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="bento-tile-label" for="add-server-input-name">Server Name</label>
+            <input type="text" id="add-server-input-name" class="input-field" placeholder="Minecraft Server" autocomplete="off" spellcheck="false" maxlength="64" />
+          </div>
+          <div class="form-group">
+            <label class="bento-tile-label" for="add-server-input-ip">Server Address</label>
+            <input type="text" id="add-server-input-ip" class="input-field" placeholder="mc.example.com or 127.0.0.1:25565" autocomplete="off" spellcheck="false" />
+            <span class="bento-tile-hint add-server-error hidden" id="add-server-error" style="margin-top: 4px; display: block;"></span>
+          </div>
+        </div>
+
+        <div class="hypr-island add-server-preview-island">
+          <div class="add-server-preview-label">Preview</div>
+          <div class="add-server-preview">
+            <div class="add-server-preview-icon" id="add-server-preview-icon">?</div>
+            <div class="add-server-preview-text">
+              <div class="add-server-preview-name" id="add-server-preview-name">Minecraft Server</div>
+              <div class="add-server-preview-ip" id="add-server-preview-ip">Enter an address</div>
+              <div class="add-server-preview-motd" id="add-server-preview-motd"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hypr-actions-island">
+          <button id="btn-cancel-add-server" class="btn-ghost">Cancel</button>
+          <button id="btn-confirm-add-server" class="btn-accent">Add Server</button>
         </div>
       </div>
     </div>
@@ -1505,6 +1567,16 @@
             <label class="bento-tile-label" for="edit-inst-jvm-args">Custom JVM Arguments</label>
             <input type="text" id="edit-inst-jvm-args" class="input-field" placeholder="-XX:+UseZGC ... (leave blank to use Settings; ZGC is the default GC)" />
           </div>
+
+          <!-- Launch Options (moved here from the Play button menu) -->
+          <label class="adv-toggle-tile toggle-row" for="edit-inst-always-offline">
+            <span class="adv-toggle-text">
+              <span class="adv-toggle-title">Always launch offline</span>
+              <span class="adv-toggle-sub">Skip the libraries/assets check and start from what's already on disk. This instance only.</span>
+            </span>
+            <input type="checkbox" id="edit-inst-always-offline" />
+            <span class="toggle-slider"></span>
+          </label>
 
           <!-- Game Directory Display -->
           <div class="form-group">
@@ -1919,20 +1991,6 @@
                     <span id="play-status-text" class="play-status-text"></span>
                   </div>
                   <button id="btn-play" class="btn-play" disabled title="Launch the selected instance">▶ PLAY</button>
-                  <button id="btn-play-options" class="btn-play-gear btn-action-expand" disabled title="Launch options" aria-haspopup="true" aria-expanded="false">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <circle cx="12" cy="12" r="3"></circle>
-                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0 1.51 1z"></path>
-                    </svg>
-                    <span class="btn-action-text">Options</span>
-                  </button>
-                  <div id="play-options-popover" class="play-options-popover hidden" role="menu">
-                    <button id="btn-launch-offline" class="play-options-item" role="menuitem" title="Skip the libraries/assets check and launch immediately from what's already on disk">Launch Offline</button>
-                    <label class="play-options-checkbox">
-                      <input type="checkbox" id="chk-always-offline" />
-                      <span>Always launch offline</span>
-                    </label>
-                  </div>
                 </div>
                 <button id="btn-edit-instance" class="btn-action-icon btn-action-expand" title="Rename or change the loader version of the selected instance">
                   <svg class="btn-action-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

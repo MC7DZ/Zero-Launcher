@@ -696,6 +696,57 @@ async fn download_java_via_azul(app: &AppHandle, major: i32) -> Result<JavaInsta
     Ok(to_installation(info))
 }
 
+/// Finds an already-installed Java that can run a Minecraft version needing
+/// `required_major`, without downloading anything.
+///
+/// 1. An exact match (managed folder first, then system / custom installs).
+/// 2. "Smart" fallback: if nothing exact is installed, any *newer* Java is
+///    reused (the lowest newer one), because modern Minecraft (Java 16+,
+///    i.e. 1.17 and up) runs fine on newer runtimes — e.g. a game that asks
+///    for Java 25 happily runs on an installed Java 26, so there is no need
+///    to download 25. Legacy games needing Java 8 / 11 are NOT upgraded:
+///    old Forge/LWJGL2/launchwrapper setups break on newer Java.
+async fn find_installed_java(
+    state: &State<'_, AppState>,
+    required_major: i32,
+) -> Result<Option<PathBuf>, String> {
+    if let Some(managed) = find_managed_java_for_major(required_major) {
+        return Ok(Some(managed));
+    }
+    let custom_paths = state
+        .settings
+        .lock()
+        .ok()
+        .map(|s| s.custom_java_paths.clone())
+        .unwrap_or_default();
+    let installations = get_all_java_installations(custom_paths).await?;
+    if let Some(exact) = installations.iter().find(|j| j.major == required_major) {
+        return Ok(Some(PathBuf::from(&exact.executable)));
+    }
+    if required_major < 16 {
+        return Ok(None);
+    }
+    // (major, executable) of every newer runtime we know about.
+    let mut newer: Vec<(i32, PathBuf)> = installations
+        .iter()
+        .filter(|j| j.major > required_major)
+        .map(|j| (j.major, PathBuf::from(&j.executable)))
+        .collect();
+    if let Ok(rd) = fs::read_dir(managed_java_root()) {
+        for e in rd.flatten() {
+            if let Some(m) = e.file_name().to_str().and_then(|n| n.parse::<i32>().ok()) {
+                if m > required_major {
+                    if let Some(exe) = find_managed_java_for_major(m) {
+                        newer.push((m, exe));
+                    }
+                }
+            }
+        }
+    }
+    newer.sort_by_key(|(m, _)| *m);
+    Ok(newer.into_iter().next().map(|(_, p)| p))
+}
+
 /// Resolves which Java executable should be used to run the given
 /// (already-loaded) Minecraft version, honoring the user's settings:
 ///
@@ -756,20 +807,8 @@ pub async fn ensure_java_for_version(
 
     let required_major = required_java_major(version);
 
-    // Fast path: check managed Java directory first (<managed_root>/<major>)
-    if let Some(managed) = find_managed_java_for_major(required_major) {
-        return Ok(managed);
-    }
-
-    let custom_paths = state
-        .settings
-        .lock()
-        .ok()
-        .map(|s| s.custom_java_paths.clone())
-        .unwrap_or_default();
-    let installations = get_all_java_installations(custom_paths).await?;
-    if let Some(exact) = installations.iter().find(|j| j.major == required_major) {
-        return Ok(PathBuf::from(&exact.executable));
+    if let Some(found) = find_installed_java(state, required_major).await? {
+        return Ok(found);
     }
 
     // No exact match installed: prefer downloading the exact version Java
@@ -842,18 +881,8 @@ pub async fn ensure_java_for_instance(
             ));
         } else if raw_path == "__smart__" {
             let required_major = required_java_major(version);
-            if let Some(managed) = find_managed_java_for_major(required_major) {
-                return Ok(managed);
-            }
-            let custom_paths = state
-                .settings
-                .lock()
-                .ok()
-                .map(|s| s.custom_java_paths.clone())
-                .unwrap_or_default();
-            let installations = get_all_java_installations(custom_paths).await?;
-            if let Some(exact) = installations.iter().find(|j| j.major == required_major) {
-                return Ok(PathBuf::from(&exact.executable));
+            if let Some(found) = find_installed_java(state, required_major).await? {
+                return Ok(found);
             }
             if offline {
                 return Err(format!(

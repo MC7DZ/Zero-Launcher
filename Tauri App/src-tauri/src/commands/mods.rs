@@ -973,6 +973,7 @@ pub async fn add_server(
         new_file_bytes.extend_from_slice(&entry_bytes);
         new_file_bytes.push(0x00); // TAG_End for root compound
 
+        let _ = std::fs::create_dir_all(&game_dir);
         std::fs::write(&servers_file, new_file_bytes).map_err(|e| format!("Failed to create servers.dat: {e}"))?;
         return Ok(());
     }
@@ -987,8 +988,12 @@ pub async fn add_server(
         let count_offset = pos + list_needle.len() + 1; // +1 to skip list element type (0x0a)
         if count_offset + 4 <= data.len() {
             let current_count = i32::from_be_bytes(data[count_offset..count_offset + 4].try_into().unwrap());
-            let new_count = current_count + 1;
+            let new_count = current_count.max(0) + 1;
             data[count_offset..count_offset + 4].copy_from_slice(&new_count.to_be_bytes());
+            // Minecraft writes an empty list with element type TAG_End (0);
+            // once it holds a compound the type must be TAG_Compound (10),
+            // otherwise the game rejects the file and the server never shows.
+            data[count_offset - 1] = 0x0a;
 
             // Insert entry right after list header
             let insert_pos = count_offset + 4;

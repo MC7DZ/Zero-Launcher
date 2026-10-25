@@ -165,7 +165,7 @@ function describeEl(el) {
 
 const QUIET_COMMANDS = new Set([
   'frontend_log_batch', 'get_logs', 'window_is_maximized',
-  'play_click_sound', 'report_activity',
+  'play_click_sound', 'play_soft_sound', 'report_activity',
 ]);
 const SLOW_IPC_MS = 2000;
 

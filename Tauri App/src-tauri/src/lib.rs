@@ -535,6 +535,7 @@ pub fn run() {
             commands::mods::delete_instance_subpath,
             // Sound & Effects
             commands::play_click_sound,
+            commands::play_soft_sound,
             // Logs
             commands::logs::get_logs,
             commands::logs::clear_logs,

@@ -26,6 +26,7 @@ const QUIET_COMMANDS: &[&str] = &[
     "get_logs",
     "window_is_maximized",
     "play_click_sound",
+    "play_soft_sound",
     "report_activity",
     "watchdog_heartbeat",
 ];

@@ -212,6 +212,17 @@ pub fn install_panic_hook() {
 
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        // A user-initiated download cancel unwinds with this marker and is
+        // caught by `catch_unwind` in the installer — it is not a crash, so
+        // it must not be reported, written to disk or printed.
+        if info
+            .payload()
+            .downcast_ref::<String>()
+            .map(|s| s.as_str() == crate::commands::minecraft::CANCEL_MARKER)
+            .unwrap_or(false)
+        {
+            return;
+        }
         if !REPORTING.swap(true, Ordering::SeqCst) {
             let loc = info
                 .location()

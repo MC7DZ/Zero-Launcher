@@ -19,7 +19,8 @@
 //! plus attachments: `report.txt` (the crash report with backtrace and
 //! breadcrumbs), `environment.txt` (full hardware / OS / env-var / launcher
 //! state dump), `settings.txt` (non-sensitive launcher settings) and the log
-//! of the run that crashed.
+//! of the run that crashed, plus `crash-report-<id>.zip` bundling all of those
+//! with a `report-summary.txt` holding the same information as the embed.
 //!
 //! Privacy: everything is run through [`Scrubber`] before it leaves the
 //! machine — home directory and username, account names/UUIDs, access
@@ -653,6 +654,24 @@ fn anon_id() -> String {
     format!("{:08x}", h.finish() as u32)
 }
 
+/// Zips the summary plus every attached `.txt` file into one archive.
+fn build_zip(summary: &[u8], files: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
+    use std::io::Write;
+    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let mut zw = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    zw.start_file("report-summary.txt", opts).map_err(|e| e.to_string())?;
+    zw.write_all(summary).map_err(|e| e.to_string())?;
+    for (name, data) in files {
+        if !name.ends_with(".txt") {
+            continue;
+        }
+        zw.start_file(name.as_str(), opts).map_err(|e| e.to_string())?;
+        zw.write_all(data).map_err(|e| e.to_string())?;
+    }
+    let cursor = zw.finish().map_err(|e| e.to_string())?;
+    Ok(cursor.into_inner())
+}
+
 async fn upload(app: &AppHandle, url: &str, embed: Value, files: Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let payload = json!({
         "username": "ZeroLauncher Crash Reporter",
@@ -753,12 +772,40 @@ async fn send_report(
         "timestamp": chrono::Utc::now().to_rfc3339(),
     });
 
-    let files = vec![
+    let mut files = vec![
         ("report.txt".to_string(), scrub.scrub(&tail_bytes(report_text, MAX_REPORT_BYTES)).into_bytes()),
         ("environment.txt".to_string(), scrub.scrub(&env.text).into_bytes()),
         ("settings.txt".to_string(), settings_summary(app).into_bytes()),
         ("launcher-log.txt".to_string(), log_text.into_bytes()),
     ];
+
+    // A new text file with everything the Discord embed shows (title,
+    // detail, every field, footer, timestamp), so the information survives
+    // outside Discord too. It goes into the zip together with all the
+    // attached .txt files — one download with the complete report.
+    let mut summary = String::new();
+    let _ = writeln!(summary, "{title}");
+    let _ = writeln!(summary, "{}", "=".repeat(title.chars().count().max(8)));
+    let _ = writeln!(summary, "Report ID : {report_id}");
+    let _ = writeln!(summary, "Reporter  : {}", anon_id());
+    let _ = writeln!(summary, "Sent at   : {}", chrono::Utc::now().to_rfc3339());
+    let _ = writeln!(summary, "\n-- Detail --\n{detail}");
+    let _ = writeln!(summary, "\n-- Fields --");
+    for f in &embed_fields {
+        let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let val = f.get("value").and_then(|v| v.as_str()).unwrap_or("").trim_matches('`');
+        let _ = writeln!(summary, "{name}: {val}");
+    }
+    let _ = writeln!(summary, "\n-- Files in this archive --");
+    for (n, d) in &files {
+        let _ = writeln!(summary, "{n} ({} B)", d.len());
+    }
+    let summary_bytes = summary.into_bytes();
+
+    match build_zip(&summary_bytes, &files) {
+        Ok(zip) => files.push((format!("crash-report-{report_id}.zip"), zip)),
+        Err(e) => clog(app, "WARN", &format!("Could not build crash report zip: {e}")),
+    }
     upload(app, url, embed, files).await
 }
 

@@ -14,7 +14,7 @@ use crate::state::AppState;
 /// `ProgressReporter::report` has no return value, so this is the only
 /// way to interrupt the (synchronous, blocking) install from inside the
 /// progress callback.
-const CANCEL_MARKER: &str = "__zerolauncher_download_cancelled__";
+pub(crate) const CANCEL_MARKER: &str = "__zerolauncher_download_cancelled__";
 
 // ── Instance-named version folders ─────────────────────────────────────────
 //
@@ -935,6 +935,7 @@ pub async fn install_minecraft(
                     min_ram_mb: old_instance.as_ref().and_then(|i| i.min_ram_mb),
                     max_ram_mb: old_instance.as_ref().and_then(|i| i.max_ram_mb),
                     jvm_args: old_instance.as_ref().and_then(|i| i.jvm_args.clone()),
+                    always_offline: old_instance.as_ref().map(|i| i.always_offline).unwrap_or(false),
                 };
 
                 {
@@ -1501,6 +1502,7 @@ pub async fn install_minecraft(
         min_ram_mb: old_instance.as_ref().and_then(|i| i.min_ram_mb),
         max_ram_mb: old_instance.as_ref().and_then(|i| i.max_ram_mb),
         jvm_args: old_instance.as_ref().and_then(|i| i.jvm_args.clone()),
+        always_offline: old_instance.as_ref().map(|i| i.always_offline).unwrap_or(false),
     };
 
     // Save instance to state
@@ -1586,7 +1588,17 @@ pub async fn launch_minecraft(
         ),
     );
 
-    let offline = offline.unwrap_or_else(|| state.settings.lock().unwrap_or_else(|e| e.into_inner()).always_launch_offline);
+    let offline = offline.unwrap_or_else(|| {
+        let inst_offline = state
+            .instances
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .find(|i| i.version_id == version_id)
+            .map(|i| i.always_offline)
+            .unwrap_or(false);
+        inst_offline || state.settings.lock().unwrap_or_else(|e| e.into_inner()).always_launch_offline
+    });
 
     // Only block re-launching the *same* instance while it's already
     // running; different instances are allowed to run side by side, each
@@ -1750,6 +1762,7 @@ pub async fn launch_minecraft(
             min_ram_mb: None,
             max_ram_mb: None,
             jvm_args: None,
+            always_offline: false,
         };
 
         {
@@ -3065,6 +3078,7 @@ fn accumulate_playtime(state: &AppState, version_id: &str, started_at: &str) {
             min_ram_mb: None,
             max_ram_mb: None,
             jvm_args: None,
+            always_offline: false,
         };
         instances.push(new_inst);
     }
@@ -3457,6 +3471,7 @@ pub async fn update_instance(
     min_ram_mb: Option<u32>,
     max_ram_mb: Option<u32>,
     jvm_args: Option<String>,
+    always_offline: Option<bool>,
 ) -> Result<InstalledInstance, String> {
     logger::debug(
         &app,
@@ -3560,6 +3575,9 @@ pub async fn update_instance(
         if let Some(ja) = jvm_args {
             let trimmed = ja.trim();
             inst.jvm_args = if trimmed.is_empty() { None } else { Some(trimmed.to_string()) };
+        }
+        if let Some(ao) = always_offline {
+            inst.always_offline = ao;
         }
         if let Some(ref nvid) = new_version_id {
             inst.version_id = nvid.clone();

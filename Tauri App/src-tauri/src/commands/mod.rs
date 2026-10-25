@@ -45,6 +45,16 @@ pub fn cancel_generic_download(download_id: String, state: State<'_, AppState>) 
 pub fn open_folder_in_file_manager(path: &std::path::Path) -> Result<(), String> {
     let _ = std::fs::create_dir_all(path);
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    // On Windows canonicalize() returns a `\\?\C:\...` verbatim path, which
+    // Explorer does not understand (it opens Documents or fails silently).
+    #[cfg(target_os = "windows")]
+    let canonical = {
+        let t = canonical.to_string_lossy().to_string();
+        match t.strip_prefix(r"\\?\UNC\") {
+            Some(rest) => std::path::PathBuf::from(format!(r"\\{rest}")),
+            None => std::path::PathBuf::from(t.strip_prefix(r"\\?\").unwrap_or(&t)),
+        }
+    };
 
     #[cfg(target_os = "windows")]
     {
@@ -344,55 +354,93 @@ pub fn save_global_stats(stats: crate::models::GlobalStats, state: State<'_, App
     Ok(())
 }
 
+/// Which UI sound to play. `Click` is the normal button press; `Soft` is the
+/// gentler blip used by tab / segment switches (content type, Modrinth /
+/// CurseForge, ...). Both are played natively because WebAudio is silent or
+/// unreliable in WebKitGTK (Linux) and loses the first sound on WebView2.
+#[derive(Clone, Copy)]
+enum UiSound {
+    Click,
+    Soft,
+}
+
 #[cfg(target_os = "linux")]
-fn play_native_click_sound() {
-    static WRITTEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    let sound_path = std::env::temp_dir().join("zerolauncher-click.ogg");
-    if !WRITTEN.load(std::sync::atomic::Ordering::Relaxed) || !sound_path.exists() {
-        let _ = std::fs::write(&sound_path, include_bytes!("../../sounds/click.ogg"));
-        WRITTEN.store(true, std::sync::atomic::Ordering::Relaxed);
+fn play_native_sound(kind: UiSound) {
+    let (file, bytes): (&str, &'static [u8]) = match kind {
+        UiSound::Click => ("zerolauncher-click.ogg", include_bytes!("../../sounds/click.ogg")),
+        UiSound::Soft => ("zerolauncher-soft.wav", include_bytes!("../../sounds/soft.wav")),
+    };
+    let sound_path = std::env::temp_dir().join(file);
+    let need_write = std::fs::metadata(&sound_path)
+        .map(|m| m.len() != bytes.len() as u64)
+        .unwrap_or(true);
+    if need_write {
+        let _ = std::fs::write(&sound_path, bytes);
     }
-    if std::process::Command::new("paplay")
-        .arg(&sound_path)
-        .spawn()
-        .is_ok()
-    {
-        return;
-    }
-    if std::process::Command::new("pw-cat")
-        .args(["-p", &sound_path.to_string_lossy()])
-        .spawn()
-        .is_ok()
-    {
-        return;
-    }
-    let _ = std::process::Command::new("aplay")
-        .arg(&sound_path)
-        .spawn();
+    // Run off the caller's thread and wait for the player so it never
+    // becomes a zombie; if one player is missing or fails (e.g. no PulseAudio
+    // server) fall through to the next one.
+    std::thread::spawn(move || {
+        let path = sound_path.to_string_lossy().to_string();
+        let players: [(&str, Vec<String>); 5] = [
+            ("paplay", vec![path.clone()]),
+            ("pw-play", vec![path.clone()]),
+            ("pw-cat", vec!["-p".into(), path.clone()]),
+            ("aplay", vec!["-q".into(), path.clone()]),
+            ("ffplay", vec!["-nodisp".into(), "-autoexit".into(), "-loglevel".into(), "quiet".into(), path.clone()]),
+        ];
+        for (prog, args) in players {
+            let status = std::process::Command::new(prog)
+                .args(&args)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            if matches!(status, Ok(s) if s.success()) {
+                return;
+            }
+        }
+    });
 }
 
 #[cfg(target_os = "windows")]
-fn play_native_click_sound() {
-    static WAV_BYTES: &[u8] = include_bytes!("../../../src/assets/sounds/click.wav");
+fn play_native_sound(kind: UiSound) {
+    static CLICK_WAV: &[u8] = include_bytes!("../../../src/assets/sounds/click.wav");
+    static SOFT_WAV: &[u8] = include_bytes!("../../sounds/soft.wav");
+    let wav = match kind {
+        UiSound::Click => CLICK_WAV,
+        UiSound::Soft => SOFT_WAV,
+    };
     extern "system" {
         fn PlaySoundA(pszSound: *const u8, hmod: *mut std::ffi::c_void, fdwSound: u32) -> i32;
     }
     // SND_ASYNC (0x1) | SND_MEMORY (0x4) | SND_NODEFAULT (0x2)
     unsafe {
-        PlaySoundA(WAV_BYTES.as_ptr(), std::ptr::null_mut(), 0x0001 | 0x0004 | 0x0002);
+        PlaySoundA(wav.as_ptr(), std::ptr::null_mut(), 0x0001 | 0x0004 | 0x0002);
     }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-fn play_native_click_sound() {
-    let _ = std::process::Command::new("afplay")
-        .arg("/tmp/zerolauncher-click.ogg")
-        .spawn();
+fn play_native_sound(kind: UiSound) {
+    let (file, bytes): (&str, &'static [u8]) = match kind {
+        UiSound::Click => ("zerolauncher-click.ogg", include_bytes!("../../sounds/click.ogg")),
+        UiSound::Soft => ("zerolauncher-soft.wav", include_bytes!("../../sounds/soft.wav")),
+    };
+    let path = std::env::temp_dir().join(file);
+    if std::fs::metadata(&path).map(|m| m.len() != bytes.len() as u64).unwrap_or(true) {
+        let _ = std::fs::write(&path, bytes);
+    }
+    let _ = std::process::Command::new("afplay").arg(&path).spawn();
 }
 
 #[tauri::command]
 pub fn play_click_sound() {
-    play_native_click_sound();
+    play_native_sound(UiSound::Click);
+}
+
+#[tauri::command]
+pub fn play_soft_sound() {
+    play_native_sound(UiSound::Soft);
 }
 
 #[tauri::command]
@@ -508,8 +556,6 @@ pub struct StorageUsage {
 fn storage_locations(state: &AppState) -> Vec<(&'static str, &'static str, &'static str, std::path::PathBuf, bool)> {
     let game_dir = state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory();
     vec![
-        ("versions", "Game files", "Versions and shared libraries", game_dir.join("versions"), false),
-        ("assets", "Assets", "Sounds, languages and textures", game_dir.join("assets"), false),
         ("java", "Java runtimes", "Runtimes downloaded by the launcher", java::managed_java_root(), false),
         ("skins", "Skins", "Imported and cached skins", state.data_dir.join("skins"), false),
         ("cache", "Cache", "Mod icons and temporary downloads", state.data_dir.join("cache"), true),
@@ -529,20 +575,39 @@ pub async fn get_storage_usage(state: State<'_, AppState>) -> Result<StorageUsag
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .iter()
-        .map(|i| std::path::PathBuf::from(&i.directory))
+        .map(|i| {
+            // Instances without their own folder live in the shared game dir.
+            if i.directory.trim().is_empty() {
+                game_dir.clone()
+            } else {
+                std::path::PathBuf::from(i.directory.trim())
+            }
+        })
         .collect();
-    let state_game_dir = game_dir.clone();
     tokio::task::spawn_blocking(move || {
         let mut entries: Vec<StorageEntry> = Vec::new();
         // Instance data: every distinct instance folder (the shared game
         // directory is already covered by the versions/libraries/assets rows
         // so its own size is counted once as "Instance data" minus those).
+        // Paths are compared normalised: on Windows the same folder shows up
+        // as `C:\\x\\.minecraft`, `C:/x/.minecraft`, `c:\\X\\.minecraft\\` or a
+        // `\\\\?\\` verbatim path, which made every instance look distinct
+        // from the game dir (double counting) or unreadable (0 bytes).
+        fn norm(p: &std::path::Path) -> String {
+            let c = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+            let mut t = c.to_string_lossy().replace('\\', "/");
+            if let Some(r) = t.strip_prefix("//?/") { t = r.to_string(); }
+            let t = t.trim_end_matches('/').to_string();
+            if cfg!(windows) { t.to_lowercase() } else { t }
+        }
+        let game_norm = norm(&game_dir);
         let mut seen = std::collections::HashSet::new();
         let mut instance_bytes = 0u64;
         for d in &instance_dirs {
-            if !seen.insert(d.clone()) { continue; }
+            let key = norm(d);
+            if !seen.insert(key.clone()) { continue; }
             let size = minecraft::dir_size_bytes(d);
-            if *d == game_dir {
+            if key == game_norm {
                 let shared: u64 = ["versions", "libraries", "assets"]
                     .iter()
                     .map(|n| minecraft::dir_size_bytes(&game_dir.join(n)))
@@ -569,10 +634,6 @@ pub async fn get_storage_usage(state: State<'_, AppState>) -> Result<StorageUsag
                         .filter_map(|e| e.metadata().ok().map(|m| m.len()))
                         .sum::<u64>())
                     .unwrap_or(0)
-            } else if id == "versions" {
-                // Shared libraries are folded into "Game files".
-                let libs = state_game_dir.join("libraries");
-                minecraft::dir_size_bytes(&path).saturating_add(minecraft::dir_size_bytes(&libs))
             } else {
                 minecraft::dir_size_bytes(&path)
             };

@@ -72,7 +72,9 @@ function isAlreadySelected(el) {
 }
 
 // ── Gentle Soft Switch Sound (for tabs, platform & segment switches) ──
-let softAudioCtx = null;
+// Played natively (like the normal click) instead of through WebAudio:
+// WebKitGTK on Linux has no working WebAudio output in most setups, and
+// WebView2's AudioContext starts suspended so the first sound was lost.
 let lastSoftSwitchTime = 0;
 
 function playSoftSwitchSound() {
@@ -82,34 +84,8 @@ function playSoftSwitchSound() {
   lastSoftSwitchTime = now;
 
   try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    if (!softAudioCtx) {
-      softAudioCtx = new AudioContextClass();
-    }
-    if (softAudioCtx.state === 'suspended') {
-      softAudioCtx.resume().catch(() => {});
-    }
-
-    const t = softAudioCtx.currentTime;
-    const osc = softAudioCtx.createOscillator();
-    const gain = softAudioCtx.createGain();
-
-    osc.type = 'sine';
-    // Very gentle frequency drop from 460Hz to 380Hz over 35ms
-    osc.frequency.setValueAtTime(460, t);
-    osc.frequency.exponentialRampToValueAtTime(380, t + 0.035);
-
-    // Subtle, low-volume envelope (max gain 0.045)
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.045, t + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
-
-    osc.connect(gain);
-    gain.connect(softAudioCtx.destination);
-
-    osc.start(t);
-    osc.stop(t + 0.036);
+    // Fall back to the regular click if the native soft sound is unavailable.
+    invoke('play_soft_sound').catch(() => { invoke('play_click_sound').catch(() => {}); });
   } catch (_) {}
 }
 
@@ -511,7 +487,7 @@ const api = {
       quickPlaySingleplayer: quickPlaySingleplayer || null,
       quickPlayMultiplayer: quickPlayMultiplayer || null,
     }),
-  updateInstance: (versionId, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs, loader, minecraftVersion) =>
+  updateInstance: (versionId, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs, loader, minecraftVersion, alwaysOffline) =>
     invoke('update_instance', {
       versionId,
       name: name || null,
@@ -522,6 +498,7 @@ const api = {
       minRamMb: minRamMb ? Number(minRamMb) : null,
       maxRamMb: maxRamMb ? Number(maxRamMb) : null,
       jvmArgs: jvmArgs !== undefined ? (jvmArgs || null) : null,
+      alwaysOffline: alwaysOffline === undefined ? null : !!alwaysOffline,
     }),
   deleteInstalledVersion: (versionId, directory) => invoke('delete_installed_version', { versionId, directory: directory || null }),
   sendTestCrashReport: (webhookUrl) => invoke('send_test_crash_report', { webhookUrl: webhookUrl || null }),
@@ -6615,48 +6592,6 @@ function initInstanceActions() {
   window.launchSelectedInstance = launchSelectedInstance;
   document.getElementById('btn-play').addEventListener('click', () => launchSelectedInstance(undefined));
 
-  // Gear menu: Launch Offline (one-off) + Always Launch Offline (persisted).
-  const gearBtn = document.getElementById('btn-play-options');
-  const popover = document.getElementById('play-options-popover');
-  const alwaysOfflineChk = document.getElementById('chk-always-offline');
-
-  function closePlayOptionsPopover() {
-    popover.classList.add('hidden');
-    gearBtn.classList.remove('is-open');
-    gearBtn.setAttribute('aria-expanded', 'false');
-  }
-  function openPlayOptionsPopover() {
-    if (alwaysOfflineChk) alwaysOfflineChk.checked = !!(settings && settings.always_launch_offline);
-    popover.classList.remove('hidden');
-    gearBtn.classList.add('is-open');
-    gearBtn.setAttribute('aria-expanded', 'true');
-  }
-
-  gearBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (gearBtn.disabled) return;
-    if (popover.classList.contains('hidden')) openPlayOptionsPopover();
-    else closePlayOptionsPopover();
-  });
-  document.addEventListener('click', (e) => {
-    if (!popover || popover.classList.contains('hidden')) return;
-    if (!popover.contains(e.target) && e.target !== gearBtn) closePlayOptionsPopover();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closePlayOptionsPopover();
-  });
-
-  document.getElementById('btn-launch-offline')?.addEventListener('click', () => {
-    closePlayOptionsPopover();
-    launchSelectedInstance(true);
-  });
-
-  alwaysOfflineChk?.addEventListener('change', () => {
-    if (!settings) return;
-    settings.always_launch_offline = alwaysOfflineChk.checked;
-    saveSettingsNow();
-  });
-
   // Delete
   document.getElementById('btn-delete-instance').addEventListener('click', async () => {
     if (!selectedInstanceId) return;
@@ -6842,6 +6777,8 @@ function initInstanceActions() {
     if (instMinRamInput) instMinRamInput.value = '';
     if (instMaxRamInput) instMaxRamInput.value = '';
     if (instJvmArgsInput) instJvmArgsInput.value = '';
+    const instAlwaysOfflineChk = document.getElementById('inst-always-offline');
+    if (instAlwaysOfflineChk) instAlwaysOfflineChk.checked = false;
     if (btnToggleNewAdvanced && newInstAdvancedIsland) {
       btnToggleNewAdvanced.setAttribute('aria-expanded', 'false');
       newInstAdvancedIsland.classList.add('hidden');
@@ -7011,6 +6948,8 @@ function initInstanceActions() {
     if (editMinRamInput) editMinRamInput.value = inst.min_ram_mb || '';
     if (editMaxRamInput) editMaxRamInput.value = inst.max_ram_mb || '';
     if (editJvmArgsInput) editJvmArgsInput.value = inst.jvm_args || '';
+    const editAlwaysOfflineChk = document.getElementById('edit-inst-always-offline');
+    if (editAlwaysOfflineChk) editAlwaysOfflineChk.checked = !!inst.always_offline;
     populateEditJavaDropdown(inst.java_path);
 
     editMcVersionSelect.innerHTML = '<option>Loading…</option>';
@@ -7063,6 +7002,7 @@ function initInstanceActions() {
     const minRamMb = editMinRamInput && editMinRamInput.value ? parseInt(editMinRamInput.value) : null;
     const maxRamMb = editMaxRamInput && editMaxRamInput.value ? parseInt(editMaxRamInput.value) : null;
     const jvmArgs = editJvmArgsInput ? editJvmArgsInput.value.trim() : '';
+    const alwaysOffline = !!document.getElementById('edit-inst-always-offline')?.checked;
 
     const currentMc = (inst.minecraft_version && isLikelyMcVersion(inst.minecraft_version)) ? inst.minecraft_version : (isLikelyMcVersion(inst.version_id) ? inst.version_id : null);
     const currentLoader = (inst.loader && inst.loader.toLowerCase() !== 'unknown') ? inst.loader.toLowerCase() : null;
@@ -7080,7 +7020,7 @@ function initInstanceActions() {
     try {
       if (!versionOrLoaderChanged) {
         // Nothing that requires a reinstall changed — update metadata & advanced settings
-        await api.updateInstance(selectedInstanceId, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs, newLoader, newMcVersion);
+        await api.updateInstance(selectedInstanceId, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs, newLoader, newMcVersion, alwaysOffline);
       } else {
         // Minecraft version and/or loader changed — reinstall with new version
         closeEditInstanceOverlay();
@@ -7090,7 +7030,7 @@ function initInstanceActions() {
         const newInstance = await api.installVersion(newMcVersion, newLoader, loaderVersion, inst.directory, name || inst.name, inst.version_id, reinstallDlId);
         // Persist advanced settings onto the newly created instance record
         try {
-          await api.updateInstance(newInstance.version_id, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs, newLoader, newMcVersion);
+          await api.updateInstance(newInstance.version_id, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs, newLoader, newMcVersion, alwaysOffline);
         } catch (_) {}
         // DO NOT call deleteInstalledVersion: install_minecraft with old_version_id
         // already safely replaced old_version_id and protected shared vanilla folders!
@@ -8070,6 +8010,7 @@ async function installInstance() {
     const maxRamVal = document.getElementById('inst-max-ram')?.value;
     const maxRamMb = maxRamVal ? parseInt(maxRamVal, 10) : null;
     const jvmArgs = document.getElementById('inst-jvm-args')?.value?.trim() || '';
+    const alwaysOffline = !!document.getElementById('inst-always-offline')?.checked;
 
     // Several installs can run at once, but two of them must never write
     // into the same instance folder.
@@ -8101,9 +8042,9 @@ async function installInstance() {
       if (result && result.version_id) {
         addVanillaOverride(result.version_id);
         try { await api.unhideInstance(result.version_id); } catch (e) { /* not hidden — fine */ }
-        if (javaPath || minRamMb || maxRamMb || jvmArgs) {
+        if (javaPath || minRamMb || maxRamMb || jvmArgs || alwaysOffline) {
           try {
-            await api.updateInstance(result.version_id, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs);
+            await api.updateInstance(result.version_id, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs, undefined, undefined, alwaysOffline);
           } catch (e) {
             console.warn('Could not set initial instance settings:', e);
           }
@@ -9812,93 +9753,145 @@ function createServerCard(server, index = 0) {
   return card;
 }
 
+function isValidServerAddress(addr) {
+  // host or host:port, optional [ipv6]:port. Hostname/IPv4 chars only otherwise.
+  const m = addr.match(/^(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9._-]+)(?::(\d{1,5}))?$/);
+  if (!m) return false;
+  if (m[2] !== undefined && (Number(m[2]) < 1 || Number(m[2]) > 65535)) return false;
+  return true;
+}
+
+let addServerModalBound = false;
+let addServerDirectory = null;
+
+function setupAddServerModal() {
+  if (addServerModalBound) return;
+  const overlay = document.getElementById('add-server-overlay');
+  if (!overlay) return;
+  addServerModalBound = true;
+
+  const nameInput = document.getElementById('add-server-input-name');
+  const ipInput = document.getElementById('add-server-input-ip');
+  const errEl = document.getElementById('add-server-error');
+  const confirmBtn = document.getElementById('btn-confirm-add-server');
+  const pvIcon = document.getElementById('add-server-preview-icon');
+  const pvName = document.getElementById('add-server-preview-name');
+  const pvIp = document.getElementById('add-server-preview-ip');
+
+  const close = () => { overlay.classList.add('hidden'); pingToken++; clearTimeout(pingTimer); };
+  const showError = (msg) => {
+    errEl.textContent = msg || '';
+    errEl.classList.toggle('hidden', !msg);
+    ipInput.classList.toggle('is-invalid', !!msg);
+  };
+  const pvBox = pvIcon.closest('.add-server-preview');
+  const pvMotd = document.getElementById('add-server-preview-motd');
+  let pingTimer = null;
+  let pingToken = 0;
+  const setPreviewIcon = (favicon) => {
+    pvIcon.classList.remove('is-loading');
+    if (favicon) {
+      pvIcon.innerHTML = '';
+      const img = document.createElement('img');
+      img.alt = '';
+      img.src = favicon;
+      img.onerror = () => { pvIcon.textContent = '?'; pvBox.classList.remove('is-found'); };
+      pvIcon.appendChild(img);
+      pvBox.classList.add('is-found');
+    } else {
+      pvIcon.textContent = '?';
+      pvBox.classList.remove('is-found');
+    }
+  };
+  // Looks the server up (same ping the server list uses) so the preview
+  // shows its real icon; falls back to "?" when it has none / is offline.
+  const schedulePing = () => {
+    clearTimeout(pingTimer);
+    const ip = ipInput.value.trim();
+    const token = ++pingToken;
+    pvMotd.textContent = '';
+    if (!ip || !isValidServerAddress(ip)) { setPreviewIcon(null); return; }
+    pvIcon.classList.add('is-loading');
+    pingTimer = setTimeout(async () => {
+      try {
+        const status = await api.pingServer(ip);
+        if (token !== pingToken) return;
+        setPreviewIcon(status && status.online ? status.favicon : null);
+        if (status && status.online && status.motd) {
+          pvMotd.textContent = String(status.motd).replace(/§./g, '').replace(/\s+/g, ' ').trim();
+        }
+      } catch (_) {
+        if (token === pingToken) setPreviewIcon(null);
+      }
+    }, 600);
+  };
+  const refreshPreview = () => {
+    const n = nameInput.value.trim();
+    const ip = ipInput.value.trim();
+    pvName.textContent = n || ip || 'Minecraft Server';
+    pvIp.textContent = ip || 'Enter an address';
+    if (errEl && !errEl.classList.contains('hidden')) showError('');
+  };
+  nameInput.addEventListener('input', refreshPreview);
+  ipInput.addEventListener('input', () => { refreshPreview(); schedulePing(); });
+
+  document.getElementById('btn-close-add-server').addEventListener('click', close);
+  document.getElementById('btn-cancel-add-server').addEventListener('click', close);
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !overlay.classList.contains('hidden')) close();
+  });
+
+  const submit = async () => {
+    const name = nameInput.value.trim();
+    const ip = ipInput.value.trim();
+    if (!ip) { showError('Enter a server address.'); ipInput.focus(); return; }
+    if (!isValidServerAddress(ip)) {
+      showError('That doesn\'t look like a valid address (e.g. mc.example.com or 1.2.3.4:25565).');
+      ipInput.focus();
+      return;
+    }
+    confirmBtn.disabled = true;
+    try {
+      await api.addServer(addServerDirectory, name, ip);
+      close();
+      showToast(`Added server "${name || ip}"`, 'success');
+      await loadServersGrid();
+    } catch (err) {
+      showToast('Failed to add server: ' + err, 'error');
+    } finally {
+      confirmBtn.disabled = false;
+    }
+  };
+  confirmBtn.addEventListener('click', submit);
+  [nameInput, ipInput].forEach(inp => inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
+  }));
+
+  overlay._reset = () => {
+    nameInput.value = '';
+    ipInput.value = '';
+    showError('');
+    refreshPreview();
+    schedulePing();
+  };
+}
+
 async function openAddServerModal() {
   const targetInstance = getModsTargetInstance();
   if (!targetInstance) {
     showToast('Please select an instance first', 'error');
     return;
   }
-  const directory = targetInstance.directory || (settings && settings.game_directory);
-
-  // Simple modal dialog for server name and IP
-  let overlay = document.getElementById('add-server-modal-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'add-server-modal-overlay';
-    overlay.className = 'modal-overlay';
-    overlay.style.zIndex = '9999';
-    overlay.innerHTML = `
-      <div class="modal-card glass-card" style="width: 440px; max-width: 90vw; padding: 24px;">
-        <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-          <h3 style="margin:0; font-size:18px; font-weight:700;">Add Minecraft Server</h3>
-          <button type="button" class="btn-ghost btn-sm btn-close-add-server" style="padding:4px 8px;">✕</button>
-        </div>
-        <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
-          <div>
-            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-muted);">Server Name</label>
-            <input type="text" id="add-server-input-name" class="input-field" style="width:100%; box-sizing:border-box;" placeholder="Minecraft Server" />
-          </div>
-          <div>
-            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-muted);">Server Address (IP or Domain) *</label>
-            <input type="text" id="add-server-input-ip" class="input-field" style="width:100%; box-sizing:border-box;" placeholder="e.g. mc.example.com or 127.0.0.1:25565" />
-          </div>
-        </div>
-        <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; margin-top:22px;">
-          <button type="button" class="btn-ghost btn-close-add-server">Cancel</button>
-          <button type="button" id="btn-confirm-add-server" class="btn-primary" style="padding:8px 18px;">Add Server</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-
-    const close = () => {
-      overlay.style.display = 'none';
-    };
-
-    overlay.querySelectorAll('.btn-close-add-server').forEach(b => b.addEventListener('click', close));
-    overlay.addEventListener('click', e => {
-      if (e.target === overlay) close();
-    });
-
-    const confirmBtn = overlay.querySelector('#btn-confirm-add-server');
-    confirmBtn.addEventListener('click', async () => {
-      const nameInput = overlay.querySelector('#add-server-input-name');
-      const ipInput = overlay.querySelector('#add-server-input-ip');
-      const name = nameInput.value.trim();
-      const ip = ipInput.value.trim();
-
-      if (!ip) {
-        showToast('Please enter a server address', 'error');
-        ipInput.focus();
-        return;
-      }
-
-      try {
-        confirmBtn.disabled = true;
-        await api.addServer(directory, name, ip);
-        close();
-        nameInput.value = '';
-        ipInput.value = '';
-        showToast(`Added server "${name || ip}"`, 'success');
-        await loadServersGrid();
-      } catch (err) {
-        showToast('Failed to add server: ' + err, 'error');
-      } finally {
-        confirmBtn.disabled = false;
-      }
-    });
-
-    overlay.querySelector('#add-server-input-ip').addEventListener('keydown', e => {
-      if (e.key === 'Enter') confirmBtn.click();
-    });
-  }
-
-  const nameInput = overlay.querySelector('#add-server-input-name');
-  const ipInput = overlay.querySelector('#add-server-input-ip');
-  nameInput.value = '';
-  ipInput.value = '';
-  overlay.style.display = 'flex';
-  setTimeout(() => ipInput.focus(), 50);
+  setupAddServerModal();
+  const overlay = document.getElementById('add-server-overlay');
+  if (!overlay) return;
+  addServerDirectory = targetInstance.directory || (settings && settings.game_directory);
+  const sub = document.getElementById('add-server-subtitle');
+  if (sub) sub.textContent = `Add to "${targetInstance.name || targetInstance.version_id}"`;
+  overlay._reset();
+  overlay.classList.remove('hidden');
+  setTimeout(() => document.getElementById('add-server-input-name')?.focus(), 50);
 }
 
 // ── Screenshots ──────────────────────────────────────────────────────────

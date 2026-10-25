@@ -878,6 +878,12 @@ pub struct InstalledInstance {
     /// Optional per-instance custom JVM arguments override.
     #[serde(default)]
     pub jvm_args: Option<String>,
+    /// Per-instance "always launch offline" (skip the libraries/assets
+    /// check and start from what's already on disk). Replaces the old
+    /// global Play-button "Launch options" menu; the legacy global
+    /// `always_launch_offline` setting is still honoured as a fallback.
+    #[serde(default)]
+    pub always_offline: bool,
 }
 
 impl InstalledInstance {

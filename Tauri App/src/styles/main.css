@@ -13798,3 +13798,91 @@ button:focus-visible, [tabindex]:focus-visible, input:focus-visible, select:focu
 html.no-ui-animations button:not(:disabled):active,
 html.no-ui-animations .mod-card:active,
 html.no-ui-animations .instance-card:active { transform: none; }
+
+/* ── Add Server overlay ─────────────────────────────────────────────── */
+.add-server-modal { width: 460px; }
+.add-server-preview-island { padding: 12px 16px; }
+.add-server-preview-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 8px;
+}
+.add-server-preview {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  background: rgba(var(--overlay-rgb), 0.05);
+  border: 1px solid var(--panel-border); border-radius: 10px;
+}
+.add-server-preview-icon {
+  width: 44px; height: 44px; flex: 0 0 44px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 700; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.add-server-preview-text { min-width: 0; }
+.add-server-preview-name { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.add-server-preview-ip { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.add-server-error { color: var(--danger, #ef4444); }
+.add-server-error.hidden { display: none !important; }
+.input-field.is-invalid { border-color: var(--danger, #ef4444); }
+
+/* ── "Always launch offline" tile (advanced options) ─────────────────── */
+.adv-toggle-tile {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin: 4px 0 14px; padding: 11px 14px;
+  background: var(--field-bg); border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition), background var(--transition);
+}
+.adv-toggle-tile:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.adv-toggle-tile:has(input:checked) { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 7%, var(--field-bg)); }
+.adv-toggle-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.adv-toggle-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.adv-toggle-sub { font-size: 11px; line-height: 1.4; color: var(--text-muted); }
+
+/* ── Add Server: accent + animation ──────────────────────────────────── */
+.add-server-modal .hypr-island { border-color: color-mix(in srgb, var(--accent) 22%, var(--panel-border)); }
+.add-server-modal .input-field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+#add-server-overlay:not(.hidden) .hypr-modal { animation: overlay-card-enter 0.22s var(--ease-out-spring) both; }
+#add-server-overlay:not(.hidden) .hypr-modal > .hypr-island,
+#add-server-overlay:not(.hidden) .hypr-modal > .hypr-actions-island {
+  animation: hypr-island-slide 0.28s ease both;
+}
+#add-server-overlay:not(.hidden) .hypr-modal > :nth-child(2) { animation-delay: 0.04s; }
+#add-server-overlay:not(.hidden) .hypr-modal > :nth-child(3) { animation-delay: 0.08s; }
+#add-server-overlay:not(.hidden) .hypr-modal > :nth-child(4) { animation-delay: 0.12s; }
+.add-server-preview { transition: border-color var(--transition), background var(--transition); }
+.add-server-preview.is-found { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.add-server-preview-icon { overflow: hidden; transition: background var(--transition), transform 0.25s var(--ease-out-spring); }
+.add-server-preview-icon img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; animation: hypr-island-slide 0.25s ease both; }
+.add-server-preview-icon.is-loading { animation: add-server-pulse 1s ease-in-out infinite; }
+@keyframes add-server-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+.add-server-preview-motd { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+@media (prefers-reduced-motion: reduce) {
+  #add-server-overlay .hypr-modal, #add-server-overlay .hypr-modal > * { animation: none !important; }
+}
+
+/* Add Server: closing animation (mirror of the open animation) */
+#add-server-overlay .hypr-modal {
+  transition: opacity 0.18s ease, transform 0.2s ease;
+}
+#add-server-overlay.hidden .hypr-modal {
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition: opacity 0.16s ease, transform 0.18s ease;
+}
+#add-server-overlay.hidden { transition: opacity 0.2s ease; }
+
+/* Manage → World "Play" and Server "Join" buttons: always green, independent of the accent color */
+.world-actions .btn-play-world,
+.server-actions .btn-play-server {
+  background: rgba(34, 197, 94, 0.18);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.45);
+}
+.world-actions .btn-play-world:hover,
+.server-actions .btn-play-server:hover {
+  background: #22c55e;
+  color: #ffffff;
+  border-color: #22c55e;
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.4);
+}
