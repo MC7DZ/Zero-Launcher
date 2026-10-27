@@ -1994,69 +1994,8 @@ pub async fn launch_minecraft(
                     &state,
                     &version_id,
                     "LAUNCHER",
-                    &format!("Could not refresh Microsoft session online ({e}) — asking the user whether to re-login or continue anyway..."),
+                    &format!("Could not refresh Microsoft session online ({e}) — continuing in offline mode"),
                 );
-
-                // Pause the launch and let the user decide: re-login (cancel
-                // this launch + open the Accounts Manager) or continue
-                // anyway (offline fallback, the previous automatic behavior).
-                let (prompt_tx, prompt_rx) = tokio::sync::oneshot::channel::<bool>();
-                state
-                    .launch_auth_prompts
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .insert(version_id.clone(), prompt_tx);
-                let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
-                    version_id: version_id.clone(),
-                    active: true,
-                    message: "Authentication failed — waiting for your choice…".to_string(),
-                });
-                let _ = app.emit("launch-auth-failed", &serde_json::json!({
-                    "version_id": version_id,
-                    "instance_name": inst_name,
-                    "account_name": username,
-                    "error": e,
-                }));
-
-                // A dropped sender (instance killed while the prompt is open)
-                // resolves to Err, which is treated the same as "cancel".
-                let continue_anyway = prompt_rx.await.unwrap_or(false);
-                state
-                    .launch_auth_prompts
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .remove(&version_id);
-                let _ = app.emit("launch-auth-prompt-closed", &serde_json::json!({ "version_id": version_id }));
-                let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
-                    version_id: version_id.clone(),
-                    active: false,
-                    message: String::new(),
-                });
-
-                if !continue_anyway {
-                    logger::info_for_instance(
-                        &app,
-                        &state,
-                        &version_id,
-                        "LAUNCHER",
-                        "Launch cancelled — Microsoft authentication failed and the user chose not to continue",
-                    );
-                    // Kill the instance: drop its "starting" entry so it
-                    // doesn't linger as a phantom Running instance.
-                    if let Some(info) = state
-                        .running_instances
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .get_mut(&version_id)
-                    {
-                        if info.pid.is_none() {
-                            info.running = false;
-                        }
-                    }
-                    state.save_running_instances();
-                    let _ = app.emit("running-instances-changed", ());
-                    return Err("Launch cancelled by user".to_string());
-                }
 
                 let _ = app.emit("toast-notification", &serde_json::json!({
                     "message": "Continuing without Microsoft authentication — launching in offline mode",
@@ -3364,29 +3303,6 @@ pub async fn get_running_instances(
     Ok(list)
 }
 
-/// Answers the "Microsoft authentication failed" prompt for a launch that is
-/// currently paused. `continue_anyway = true` resumes the launch (offline
-/// fallback); `false` cancels it.
-#[tauri::command]
-pub fn resolve_launch_auth_prompt(
-    state: State<'_, AppState>,
-    version_id: String,
-    continue_anyway: bool,
-) -> Result<(), String> {
-    let tx = state
-        .launch_auth_prompts
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&version_id);
-    match tx {
-        Some(tx) => {
-            let _ = tx.send(continue_anyway);
-            Ok(())
-        }
-        None => Err("No pending authentication prompt for this instance".to_string()),
-    }
-}
-
 /// Forcibly terminate a running instance's game process, identified by the
 /// PID captured at launch time. If still in pre-launch preparation, gracefully
 /// cancels the launch task.
@@ -3421,14 +3337,6 @@ pub async fn kill_instance(
             state
                 .generic_cancel_flag(&version_id)
                 .store(true, std::sync::atomic::Ordering::Relaxed);
-
-            // If the launch is paused on the auth-failed prompt, dropping
-            // its sender wakes it up as "cancel".
-            state
-                .launch_auth_prompts
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove(&version_id);
 
             let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
                 version_id: version_id.clone(),
