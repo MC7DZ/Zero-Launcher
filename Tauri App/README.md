@@ -56,6 +56,6 @@ reported to a Discord webhook with environment details and a scrubbed log.
 * Uploaded: crash report + backtrace, launcher log of that run, OS/CPU/RAM/GPU,
   WebView version, session type, packaging, filtered env vars, launcher state and
   non-sensitive settings. Home dir, username, account names/UUIDs, tokens, JWTs,
-  e-mails and public IPs are stripped first. A `<report>.sent` file prevents re-uploads.
+  e-mails and public IPs are stripped first. Once a report has been uploaded its file is deleted from `logs/` (`unclean-exit-*` reports are never uploaded and are cleaned up while reporting is enabled).
 * Anyone who can read the binary can extract a compiled-in webhook and spam or delete it.
   For a public release, point the webhook at a small relay you control instead.

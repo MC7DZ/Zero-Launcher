@@ -613,6 +613,8 @@ const api = {
   getDefaultMcDir: () => invoke('get_default_minecraft_dir'),
   getRunningInstances: () => invoke('get_running_instances'),
   killInstance: (versionId) => invoke('kill_instance', { versionId }),
+  resolveLaunchAuthPrompt: (versionId, continueAnyway) =>
+    invoke('resolve_launch_auth_prompt', { versionId, continueAnyway }),
   getInstanceConsoleLogs: (versionId) => invoke('get_instance_console_logs', { versionId }),
   checkLinuxZlibConflict: () => invoke('check_linux_zlib_conflict'),
   installLinuxPackage: (packageType) => invoke('install_linux_package', { packageType }),
@@ -1910,6 +1912,19 @@ function createDeviceSignInFlow({ methodChoiceEl, devicePanelEl, deviceCodeEl, d
   return { start, cancel, openVerificationLink, stopDevicePolling: () => { flowGen++; stopDevicePolling(); } };
 }
 
+// Opens the Accounts Manager modal (same as clicking the account button in
+// the top bar). Shared so other flows — e.g. the "Microsoft sign-in failed"
+// launch prompt — can send the user straight there.
+function openAccountManager() {
+  const modalOverlay = document.getElementById('account-modal-overlay');
+  if (!modalOverlay) return;
+  const card = modalOverlay.querySelector('.account-overlay-card');
+  if (card) card.style.setProperty('--am-on-accent', wzOnAccent(currentAccentColor()));
+  modalOverlay.classList.remove('hidden');
+  refreshAccountUI();
+  startAccountManagerAutoRefresh();
+}
+
 function initAccountDropdown() {
   const accountBtn = document.getElementById('account-btn');
   const modalOverlay = document.getElementById('account-modal-overlay');
@@ -1965,13 +1980,7 @@ function initAccountDropdown() {
   }
   // Open modal on account top-bar button click
   if (accountBtn && modalOverlay) {
-    accountBtn.addEventListener('click', () => {
-      const card = modalOverlay.querySelector('.account-overlay-card');
-      if (card) card.style.setProperty('--am-on-accent', wzOnAccent(currentAccentColor()));
-      modalOverlay.classList.remove('hidden');
-      refreshAccountUI();
-      startAccountManagerAutoRefresh();
-    });
+    accountBtn.addEventListener('click', () => openAccountManager());
   }
 
   // "+ Add Account" (shown once accounts already exist) -> same choice screen
@@ -3414,9 +3423,25 @@ async function refreshInstances() {
     if (inst.version_id) byVersionIdLower.set(inst.version_id.toLowerCase(), inst);
     if (inst.name) byVersionIdLower.set(inst.name.toLowerCase(), inst);
   });
+  // Every loader instance is built on top of a plain vanilla folder
+  // (versions/<minecraft version>) that only exists as its base. Such a
+  // folder is plumbing, not an instance, so don't list it — otherwise it
+  // pops up as a "hidden vanilla instance" (or even a visible duplicate)
+  // after an instance is edited, renamed or reinstalled.
+  const loaderBaseVersions = new Set();
+  tracked.forEach(inst => {
+    const l = (inst.loader || 'vanilla').toLowerCase();
+    if (l !== 'vanilla' && l !== 'unknown' && inst.minecraft_version) {
+      loaderBaseVersions.add(String(inst.minecraft_version).toLowerCase());
+    }
+  });
   scanned.forEach(v => {
     const existing = byVersionId.get(v.id) || (v.id ? byVersionIdLower.get(v.id.toLowerCase()) : null);
     if (existing) return; // already have a tracked entry
+    const scannedLoader = (v.loader || 'vanilla').toLowerCase();
+    if ((scannedLoader === 'vanilla' || scannedLoader === 'unknown') && v.id && loaderBaseVersions.has(v.id.toLowerCase())) {
+      return; // base folder of a tracked loader instance — not an instance
+    }
     byVersionId.set(v.id, {
       name: v.id,
       version_id: v.id,
@@ -6238,6 +6263,7 @@ async function troubleshootReinstallInstance(id) {
       inst.version_id,
       dlId
     );
+    if (inst.version_id !== newInstance.version_id) removeVanillaOverride(inst.version_id);
     await refreshInstances();
     renderInstanceList();
     selectInstance(newInstance.version_id);
@@ -7030,10 +7056,14 @@ function initInstanceActions() {
     saveBtn.disabled = true;
 
     let reinstallDlId = null;
+    // Renaming a loader instance also renames its folder, i.e. changes its
+    // id — keep track of the id it has afterwards so we re-select the right one.
+    let keepId = selectedInstanceId;
     try {
       if (!versionOrLoaderChanged) {
         // Nothing that requires a reinstall changed — update metadata & advanced settings
-        await api.updateInstance(selectedInstanceId, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs, newLoader, newMcVersion, alwaysOffline);
+        const updated = await api.updateInstance(selectedInstanceId, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs, newLoader, newMcVersion, alwaysOffline);
+        if (updated && updated.version_id) keepId = updated.version_id;
       } else {
         // Minecraft version and/or loader changed — reinstall with new version
         closeEditInstanceOverlay();
@@ -7047,6 +7077,9 @@ function initInstanceActions() {
         } catch (_) {}
         // DO NOT call deleteInstalledVersion: install_minecraft with old_version_id
         // already safely replaced old_version_id and protected shared vanilla folders!
+        // The old id is gone for good — forget any "show this vanilla version"
+        // override for it so it can't come back as a second instance.
+        if (inst.version_id !== newInstance.version_id) removeVanillaOverride(inst.version_id);
         await refreshInstances();
         renderInstanceList();
         selectInstance(newInstance.version_id);
@@ -7056,7 +7089,7 @@ function initInstanceActions() {
       }
       await refreshInstances();
       renderInstanceList();
-      selectInstance(selectedInstanceId);
+      selectInstance(keepId);
       closeEditInstanceOverlay();
       showToast('Instance updated', 'success');
     } catch (e) {
@@ -20362,6 +20395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initJvmArgsWindow();
   initInstanceTroubleshootWindow();
   initCrashDialog();
+  initLaunchAuthPrompt();
   initLaunchVerifyStatus();
   await delay(PHASE_DELAY);
 
@@ -20949,6 +20983,143 @@ function initLaunchVerifyStatus() {
     if (p && p.message) {
       showToast(p.message, p.type || 'info', p.title);
     }
+  });
+}
+
+// ── "Microsoft sign-in failed" prompt shown mid-launch ──────────────────
+// The backend pauses the launch and emits `launch-auth-failed`. The user can:
+//   • Re-login        → launch is cancelled, Accounts Manager opens
+//   • Continue anyway → launch resumes in offline mode
+//   • ✕               → only closes the dialog. The launch stays paused and the
+//                       instance is NOT killed; click the "waiting for your
+//                       choice…" status next to Play to reopen the dialog (or
+//                       press Stop to cancel the launch yourself).
+function initLaunchAuthPrompt() {
+  const overlay = document.getElementById('launch-auth-overlay');
+  if (!overlay || typeof listen !== 'function') return;
+
+  const msgEl = document.getElementById('launch-auth-message');
+  const errEl = document.getElementById('launch-auth-error');
+  const continueBtn = document.getElementById('btn-launch-auth-continue');
+  const reloginBtn = document.getElementById('btn-launch-auth-relogin');
+  const closeBtn = document.getElementById('btn-launch-auth-close');
+
+  const queue = []; // simultaneous launches may each need an answer
+  let current = null;
+  // Prompts the user dismissed with ✕. The backend is still waiting for an
+  // answer for these, so they are parked (not answered, not killed) and can
+  // be reopened from the play-status line.
+  const parked = new Map();
+  const statusEls = ['play-status-text', 'play-status-panel']
+    .map((id) => document.getElementById(id))
+    .filter(Boolean);
+  function syncParkedHint() {
+    statusEls.forEach((el) => {
+      el.style.cursor = parked.size ? 'pointer' : '';
+      if (parked.size) el.title = 'Click to answer the Microsoft sign-in prompt';
+      else if (el.title === 'Click to answer the Microsoft sign-in prompt') el.title = '';
+    });
+  }
+
+  function show(next) {
+    current = next;
+    msgEl.textContent = '';
+    const addStrong = (text) => {
+      const b = document.createElement('strong');
+      b.textContent = text;
+      msgEl.appendChild(b);
+    };
+    msgEl.append('Something went wrong while authenticating ');
+    addStrong(next.account_name || 'your Microsoft account');
+    msgEl.append(' to launch ');
+    addStrong(next.instance_name || next.version_id);
+    msgEl.append('.');
+    errEl.textContent = next.error || '';
+    errEl.classList.toggle('hidden', !next.error);
+    overlay.classList.remove('hidden');
+    continueBtn.disabled = false;
+    reloginBtn.disabled = false;
+    // The launch may have been started from a hidden/minimized window
+    // (shortcut / CLI launch) — make sure the user can actually see this.
+    try {
+      const win = window.__TAURI__?.window?.getCurrentWindow?.();
+      if (win) {
+        win.show?.().catch?.(() => {});
+        win.unminimize?.().catch?.(() => {});
+        win.setFocus?.().catch?.(() => {});
+      }
+    } catch (_) { /* best effort */ }
+  }
+
+  function showNext() {
+    const next = queue.shift();
+    if (next) show(next);
+    else {
+      current = null;
+      overlay.classList.add('hidden');
+    }
+  }
+
+  function reopenParked() {
+    if (!parked.size) return;
+    const wanted = (typeof selectedInstanceId !== 'undefined' && selectedInstanceId && parked.get(selectedInstanceId))
+      || parked.values().next().value;
+    if (!wanted) return;
+    parked.delete(wanted.version_id);
+    syncParkedHint();
+    if (current) queue.unshift(wanted);
+    else show(wanted);
+  }
+  statusEls.forEach((el) => el.addEventListener('click', reopenParked));
+
+  async function answer(continueAnyway, openAccounts) {
+    if (!current) return;
+    const answered = current;
+    parked.delete(answered.version_id);
+    syncParkedHint();
+    continueBtn.disabled = true;
+    reloginBtn.disabled = true;
+    try {
+      await api.resolveLaunchAuthPrompt(answered.version_id, continueAnyway);
+    } catch (e) {
+      // Prompt already gone (e.g. the instance was stopped meanwhile).
+      console.warn('resolve_launch_auth_prompt failed:', e);
+    }
+    showNext();
+    if (openAccounts) openAccountManager();
+  }
+
+  continueBtn.addEventListener('click', () => answer(true, false));
+  reloginBtn.addEventListener('click', () => answer(false, true));
+  // ✕ only hides the dialog — it must never cancel the launch / kill the
+  // instance. The prompt is parked until the user answers it for real.
+  closeBtn.addEventListener('click', () => {
+    if (!current) return;
+    parked.set(current.version_id, current);
+    syncParkedHint();
+    showNext();
+  });
+
+  listen('launch-auth-failed', (event) => {
+    const p = event.payload;
+    if (!p || !p.version_id) return;
+    if (parked.has(p.version_id)) return;
+    if (current && current.version_id === p.version_id) return;
+    if (queue.some((q) => q.version_id === p.version_id)) return;
+    if (current) queue.push(p);
+    else show(p);
+  });
+
+  // The backend closes the prompt itself when the launch is stopped from
+  // elsewhere (e.g. the running-instances widget or the mini launcher).
+  listen('launch-auth-prompt-closed', (event) => {
+    const id = event.payload && event.payload.version_id;
+    if (!id) return;
+    parked.delete(id);
+    syncParkedHint();
+    const qi = queue.findIndex((q) => q.version_id === id);
+    if (qi !== -1) queue.splice(qi, 1);
+    if (current && current.version_id === id) showNext();
   });
 }
 

@@ -1037,6 +1037,27 @@
       </div>
     </div>
 
+    <!-- Microsoft authentication failed during launch: lets the user pick
+         between re-logging in (cancels the launch + opens the Accounts
+         Manager) and continuing anyway (offline fallback). -->
+    <div id="launch-auth-overlay" class="overlay hidden" style="z-index: 310; background: rgba(0,0,0,0.55);">
+      <div class="overlay-card" role="alertdialog" aria-modal="true" aria-labelledby="launch-auth-title" style="max-width: 440px; width: 90%;">
+        <div class="overlay-header">
+          <h3 id="launch-auth-title">Microsoft sign-in failed</h3>
+          <button class="overlay-close" id="btn-launch-auth-close" title="Close (the launch keeps waiting)" aria-label="Close">✕</button>
+        </div>
+        <p id="launch-auth-message" style="margin: 14px 0 6px; line-height: 1.5;"></p>
+        <p style="margin: 0 0 6px; line-height: 1.5;">
+          To fix this you may need to <strong>log in again</strong>. Or you can continue anyway and launch in offline mode (online servers and your skin won't work).
+        </p>
+        <p id="launch-auth-error" style="margin: 8px 0 0; font-size: 12px; opacity: 0.6; word-break: break-word;"></p>
+        <div class="overlay-actions" style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+          <button id="btn-launch-auth-continue" class="btn-ghost">Continue anyway</button>
+          <button id="btn-launch-auth-relogin" class="btn-accent">Re-login</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Linux zlib-ng Compatibility Warning Overlay -->
     <!-- JVM Arguments manager -->
     <div id="jvm-args-overlay" class="overlay hidden">

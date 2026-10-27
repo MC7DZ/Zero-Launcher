@@ -508,6 +508,7 @@ pub fn run() {
             commands::minecraft::count_advancements,
             commands::minecraft::get_instance_console_logs,
             commands::minecraft::kill_instance,
+            commands::minecraft::resolve_launch_auth_prompt,
             commands::minecraft::check_linux_zlib_conflict,
             commands::minecraft::install_linux_package,
             commands::minecraft::get_instance_disk_size,

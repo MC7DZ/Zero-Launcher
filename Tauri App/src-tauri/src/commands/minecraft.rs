@@ -771,7 +771,10 @@ pub async fn install_minecraft(
     // so the new install can reclaim the exact same instance-named folder
     // instead of finding it "taken" and falling back to "<name> (2)".
     if let Some(old_id) = payload.old_version_id.clone() {
-        let old_is_loader = {
+        // What kind of instance is being replaced? Prefer the tracked record;
+        // fall back to reading its version json for an instance that was only
+        // picked up by the disk scan (so it never had a tracked record).
+        let old_is_loader: Option<bool> = {
             let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
             instances
                 .iter()
@@ -780,15 +783,57 @@ pub async fn install_minecraft(
                     let l = i.loader.trim().to_lowercase();
                     !l.is_empty() && l != "vanilla" && l != "unknown"
                 })
-        };
-        // Vanilla folders are shared infrastructure other instances may
-        // depend on (see the comment above `reuse_source_id` below) —
-        // never delete those, only an old *loader* instance's own folder.
-        // Also guard against deleting pure MC version folder names.
-        if old_is_loader == Some(true) && !is_likely_mc_version(&old_id) {
+        }
+        .or_else(|| {
+            let json_path = minecraft_dir
+                .join("versions")
+                .join(&old_id)
+                .join(format!("{old_id}.json"));
+            let contents = std::fs::read_to_string(&json_path).ok()?;
+            let parsed: serde_json::Value = serde_json::from_str(&contents).ok()?;
+            let (_, detected) = detect_version_info_from_json(&parsed, &contents, &old_id);
+            Some(matches!(detected.as_str(), "fabric" | "quilt" | "forge" | "neoforge"))
+        });
+
+        // The folder of a *vanilla* install is just the Minecraft version
+        // itself and is shared infrastructure (every loader instance on that
+        // version inherits from it). A loader instance, on the other hand,
+        // owns its folder. NOTE: do not guess "is this a vanilla folder?"
+        // from the name alone — loader instances are named after the user's
+        // display name and can start with a digit too (e.g. "26.2 (3)"), which
+        // used to make this code skip the delete and leave the old folder
+        // behind as a second, duplicate instance.
+        let old_is_vanilla_base_folder = old_instance
+            .as_ref()
+            .map(|i| i.minecraft_version == old_id)
+            .unwrap_or(false);
+
+        if old_is_loader == Some(true) && !old_is_vanilla_base_folder {
             let old_dir = minecraft_dir.join("versions").join(&old_id);
             if old_dir.is_dir() {
                 let _ = std::fs::remove_dir_all(&old_dir);
+            }
+        } else if old_is_loader == Some(false) && old_is_vanilla_base_folder && old_id != mc_version {
+            // A tracked *vanilla* instance is being replaced by a different
+            // Minecraft version. Its record is dropped below; if nothing else
+            // is built on that vanilla folder, remove the folder as well.
+            // Otherwise the disk scan would resurface it as a second
+            // ("hidden") vanilla instance right after the edit. Shared
+            // libraries/ and assets/ are never touched here, so nothing that
+            // is already downloaded has to be fetched again.
+            let still_needed = {
+                let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
+                instances.iter().any(|i| {
+                    i.version_id != old_id
+                        && i.minecraft_version == old_id
+                        && !(i.loader.trim().is_empty() || i.loader.eq_ignore_ascii_case("vanilla"))
+                })
+            };
+            if !still_needed {
+                let old_dir = minecraft_dir.join("versions").join(&old_id);
+                if old_dir.is_dir() {
+                    let _ = std::fs::remove_dir_all(&old_dir);
+                }
             }
         }
         {
@@ -994,6 +1039,14 @@ pub async fn install_minecraft(
     let last_percent_for_progress = last_percent_outer.clone();
     let last_percent_retry = last_percent_outer.clone();
 
+    // How many files were already on disk (reused as-is) vs. actually
+    // downloaded. Logged after the install so a reinstall/edit can be
+    // verified to fetch only what is missing.
+    let files_reused_outer = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let files_reused_for_progress = files_reused_outer.clone();
+    let files_fetched_outer = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let files_fetched_for_progress = files_fetched_outer.clone();
+
     // Run blocking install in a separate thread
     let install_outcome = tokio::task::spawn_blocking(move || {
         let launcher = Launcher::new(&dir);
@@ -1179,9 +1232,11 @@ pub async fn install_minecraft(
                 }
                 PE::TaskSkipped { .. } => {
                     tasks_done += 1;
+                    files_reused_for_progress.fetch_add(1, Ordering::Relaxed);
                 }
                 PE::TaskFinished { label } => {
                     tasks_done += 1;
+                    files_fetched_for_progress.fetch_add(1, Ordering::Relaxed);
                     active_labels.retain(|l| l != &label);
                     label_display.remove(&label);
                     per_label_total.remove(&label);
@@ -1445,17 +1500,40 @@ pub async fn install_minecraft(
         let _ = app.emit("download-progress", &info);
     }
 
+    logger::info(&app, &state, "LAUNCHER", &format!(
+        "Install of {} finished: {} existing file(s) reused as-is, {} file(s) downloaded",
+        label,
+        files_reused_outer.load(Ordering::Relaxed),
+        files_fetched_outer.load(Ordering::Relaxed)
+    ));
+
     // Give the freshly-downloaded loader folder a human-friendly name that
     // matches this instance instead of leaving it as e.g.
     // `fabric-loader-0.19.3-26.1`. Vanilla installs keep their version_id
     // as-is (see the comment above `reuse_source_id`).
     let final_version_id = if is_loader {
         let fresh_id = install_result.version_id.clone();
-        let target_id = unique_version_folder_name(
-            &versions_dir,
-            &sanitize_instance_folder_name(&display_name),
-            Some(fresh_id.as_str()),
-        );
+        // When an existing loader instance is being reinstalled under the
+        // same name, give it its old folder name back so its id (and so every
+        // shortcut pointing at it) stays exactly the same.
+        let preferred_old_id: Option<String> = old_instance.as_ref().and_then(|o| {
+            let same_name = sanitize_instance_folder_name(&o.name)
+                == sanitize_instance_folder_name(&display_name);
+            let owns_folder = o.version_id != o.minecraft_version;
+            if same_name && owns_folder && !versions_dir.join(&o.version_id).exists() {
+                Some(o.version_id.clone())
+            } else {
+                None
+            }
+        });
+        let target_id = match preferred_old_id {
+            Some(id) => id,
+            None => unique_version_folder_name(
+                &versions_dir,
+                &sanitize_instance_folder_name(&display_name),
+                Some(fresh_id.as_str()),
+            ),
+        };
         let versions_dir_for_rename = versions_dir.clone();
         let fresh_id_for_rename = fresh_id.clone();
         let target_id_for_rename = target_id.clone();
@@ -1517,6 +1595,11 @@ pub async fn install_minecraft(
     {
         let mut hidden = state.hidden_instances.lock().unwrap_or_else(|e| e.into_inner());
         hidden.retain(|h| h != &instance.version_id);
+        // The replaced instance no longer exists, so a stale "hidden" entry
+        // for its old id must not linger either.
+        if let Some(ref old_inst) = old_instance {
+            hidden.retain(|h| h != &old_inst.version_id);
+        }
     }
     state.save_hidden_instances();
 
@@ -1526,6 +1609,20 @@ pub async fn install_minecraft(
             if let Some(l) = logs.remove(&old_inst.version_id) {
                 logs.insert(instance.version_id.clone(), l);
             }
+        }
+    }
+
+    // The instance's id changed (different version/loader/folder name):
+    // re-point its shortcuts so they don't end up referencing an instance
+    // that "no longer exists".
+    if let Some(ref old_inst) = old_instance {
+        if old_inst.version_id != instance.version_id {
+            crate::commands::shortcuts::rekey_instance_shortcuts(
+                &app,
+                &state,
+                &old_inst.version_id,
+                &instance.version_id,
+            );
         }
     }
 
@@ -1897,10 +1994,72 @@ pub async fn launch_minecraft(
                     &state,
                     &version_id,
                     "LAUNCHER",
-                    &format!("Could not refresh Microsoft session online ({e}) — falling back to offline launch mode..."),
+                    &format!("Could not refresh Microsoft session online ({e}) — asking the user whether to re-login or continue anyway..."),
                 );
+
+                // Pause the launch and let the user decide: re-login (cancel
+                // this launch + open the Accounts Manager) or continue
+                // anyway (offline fallback, the previous automatic behavior).
+                let (prompt_tx, prompt_rx) = tokio::sync::oneshot::channel::<bool>();
+                state
+                    .launch_auth_prompts
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(version_id.clone(), prompt_tx);
+                let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
+                    version_id: version_id.clone(),
+                    active: true,
+                    message: "Authentication failed — waiting for your choice…".to_string(),
+                });
+                let _ = app.emit("launch-auth-failed", &serde_json::json!({
+                    "version_id": version_id,
+                    "instance_name": inst_name,
+                    "account_name": username,
+                    "error": e,
+                }));
+
+                // A dropped sender (instance killed while the prompt is open)
+                // resolves to Err, which is treated the same as "cancel".
+                let continue_anyway = prompt_rx.await.unwrap_or(false);
+                state
+                    .launch_auth_prompts
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&version_id);
+                let _ = app.emit("launch-auth-prompt-closed", &serde_json::json!({ "version_id": version_id }));
+                let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
+                    version_id: version_id.clone(),
+                    active: false,
+                    message: String::new(),
+                });
+
+                if !continue_anyway {
+                    logger::info_for_instance(
+                        &app,
+                        &state,
+                        &version_id,
+                        "LAUNCHER",
+                        "Launch cancelled — Microsoft authentication failed and the user chose not to continue",
+                    );
+                    // Kill the instance: drop its "starting" entry so it
+                    // doesn't linger as a phantom Running instance.
+                    if let Some(info) = state
+                        .running_instances
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get_mut(&version_id)
+                    {
+                        if info.pid.is_none() {
+                            info.running = false;
+                        }
+                    }
+                    state.save_running_instances();
+                    let _ = app.emit("running-instances-changed", ());
+                    return Err("Launch cancelled by user".to_string());
+                }
+
                 let _ = app.emit("toast-notification", &serde_json::json!({
-                    "message": "Microsoft auth timed out / offline — launching in offline mode",
+                    "message": "Continuing without Microsoft authentication — launching in offline mode",
                     "type": "info"
                 }));
                 if let Some(uuid) = active_mc_uuid {
@@ -3205,6 +3364,29 @@ pub async fn get_running_instances(
     Ok(list)
 }
 
+/// Answers the "Microsoft authentication failed" prompt for a launch that is
+/// currently paused. `continue_anyway = true` resumes the launch (offline
+/// fallback); `false` cancels it.
+#[tauri::command]
+pub fn resolve_launch_auth_prompt(
+    state: State<'_, AppState>,
+    version_id: String,
+    continue_anyway: bool,
+) -> Result<(), String> {
+    let tx = state
+        .launch_auth_prompts
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&version_id);
+    match tx {
+        Some(tx) => {
+            let _ = tx.send(continue_anyway);
+            Ok(())
+        }
+        None => Err("No pending authentication prompt for this instance".to_string()),
+    }
+}
+
 /// Forcibly terminate a running instance's game process, identified by the
 /// PID captured at launch time. If still in pre-launch preparation, gracefully
 /// cancels the launch task.
@@ -3239,6 +3421,14 @@ pub async fn kill_instance(
             state
                 .generic_cancel_flag(&version_id)
                 .store(true, std::sync::atomic::Ordering::Relaxed);
+
+            // If the launch is paused on the auth-failed prompt, dropping
+            // its sender wakes it up as "cancel".
+            state
+                .launch_auth_prompts
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&version_id);
 
             let _ = app.emit("launch-verify-status", &LaunchVerifyStatus {
                 version_id: version_id.clone(),
@@ -3589,6 +3779,10 @@ pub async fn update_instance(
     // Re-key everything else that was tracking the old version_id so it
     // doesn't silently go stale after the rename.
     if let Some((_, old_id, new_id)) = rename_plan {
+        // Shortcuts launch an instance by its id, so follow the rename —
+        // otherwise they'd point at an instance that "no longer exists".
+        crate::commands::shortcuts::rekey_instance_shortcuts(&app, &state, &old_id, &new_id);
+
         {
             let mut hidden = state.hidden_instances.lock().unwrap_or_else(|e| e.into_inner());
             for h in hidden.iter_mut() {

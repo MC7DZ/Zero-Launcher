@@ -44,6 +44,12 @@ pub struct AppState {
     /// can run and be cancelled independently, each shown as its own card
     /// in the downloads menu) and registers/checks its flag here.
     pub generic_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// Launches currently paused on the "Microsoft authentication failed"
+    /// prompt, keyed by version_id. The launch task awaits the receiving
+    /// end; the frontend answers via `resolve_launch_auth_prompt`
+    /// (`true` = continue anyway, `false` = cancel the launch). Dropping
+    /// the sender (e.g. when the instance is killed) counts as cancel.
+    pub launch_auth_prompts: Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
     /// Open handle to `<data_dir>/logs/latest.log`, appended to on every
     /// log line for the lifetime of this run. `None` if the log file
     /// couldn't be opened (never fatal — logging still works in-memory and
@@ -149,6 +155,7 @@ impl AppState {
             install_controls: Mutex::new(HashMap::new()),
             install_dir_locks: Mutex::new(HashMap::new()),
             generic_cancels: Mutex::new(HashMap::new()),
+            launch_auth_prompts: Mutex::new(HashMap::new()),
             log_file: Mutex::new(log_file),
             device_code_session: Mutex::new(None),
             device_code_poll_lock: Arc::new(tokio::sync::Mutex::new(())),

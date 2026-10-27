@@ -745,6 +745,74 @@ fn find_instance(state: &AppState, instance_id: &str) -> Option<crate::models::I
         .cloned()
 }
 
+/// Called whenever an instance's `version_id` changes (it was renamed or
+/// reinstalled under a new folder name). Shortcuts launch an instance *by that
+/// id*, so without this they would be left pointing at an instance that no
+/// longer exists ("The instance ... no longer exists"). Rewrites each affected
+/// shortcut's files and registry record to use `new_id`.
+pub fn rekey_instance_shortcuts(app: &tauri::AppHandle, state: &AppState, old_id: &str, new_id: &str) {
+    if old_id == new_id {
+        return;
+    }
+    let Some(instance) = find_instance(state, new_id) else { return };
+    let mut records = registry_load();
+    let mut changed = false;
+    for rec in records.iter_mut() {
+        if rec.instance_id != old_id {
+            continue;
+        }
+        let rec_id = rec.id.clone();
+        let rec_name = rec.name.clone();
+        let rec_account = rec.account_id.clone();
+        let rec_offline = rec.offline;
+        let old_desktop = rec.desktop_path.clone();
+        let old_app_menu = rec.app_menu_path.clone();
+        let written = write_shortcut_files(app, state, &WriteRequest {
+            id: &rec_id,
+            instance: &instance,
+            instance_id: new_id,
+            title: &rec_name,
+            account_id: rec_account.as_deref(),
+            offline: rec_offline,
+            want_desktop: old_desktop.is_some(),
+            want_app_menu: old_app_menu.is_some(),
+            old_desktop: old_desktop.as_deref(),
+            old_app_menu: old_app_menu.as_deref(),
+        });
+        match written {
+            Ok(w) => {
+                rec.instance_id = new_id.to_string();
+                if old_desktop.is_some() {
+                    rec.desktop_path = w.desktop.map(|p| p.to_string_lossy().to_string()).or(old_desktop);
+                }
+                if old_app_menu.is_some() {
+                    rec.app_menu_path = w.app_menu.map(|p| p.to_string_lossy().to_string()).or(old_app_menu);
+                }
+                changed = true;
+                logger::info(app, state, SRC, &format!(
+                    "Shortcut {rec_id} now launches '{new_id}' (was '{old_id}')"
+                ));
+            }
+            Err(e) => {
+                logger::warn(app, state, SRC, &format!(
+                    "Could not re-point shortcut {rec_id} from '{old_id}' to '{new_id}': {e}"
+                ));
+            }
+        }
+    }
+    if changed {
+        registry_save(&records);
+        // The generated icon of the old id is no longer used by anything.
+        if !records.iter().any(|r| r.instance_id == old_id) {
+            let key = safe_instance_key(old_id);
+            let icons_dir = crate::first_run_setup::install_dir().join("icons").join("instances");
+            for ext in ["png", "ico"] {
+                let _ = fs::remove_file(icons_dir.join(format!("{key}.{ext}")));
+            }
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Commands
 // ─────────────────────────────────────────────────────────────────────────
@@ -884,10 +952,43 @@ pub async fn update_shortcut(
     })?;
     let rec = records[pos].clone();
 
-    let instance = find_instance(&state, &rec.instance_id).ok_or_else(|| {
-        logger::warn(&app, &state, SRC, &format!("Update failed: instance '{}' missing", rec.instance_id));
-        format!("The instance \"{}\" no longer exists — delete this shortcut instead.", rec.instance_id)
-    })?;
+    let instance = match find_instance(&state, &rec.instance_id) {
+        Some(i) => i,
+        None => {
+            // The instance is gone. Rewriting a shortcut needs the instance, but
+            // *removing* a location (e.g. the Delete button on one location of a
+            // shortcut that exists on Desktop + App Menu) does not — so allow that
+            // instead of failing with "no longer exists".
+            let adds_location = (desktop && rec.desktop_path.is_none())
+                || (app_menu && rec.app_menu_path.is_none());
+            if adds_location {
+                logger::warn(&app, &state, SRC, &format!("Update failed: instance '{}' missing", rec.instance_id));
+                return Err(format!("The instance \"{}\" no longer exists — delete this shortcut instead.", rec.instance_id));
+            }
+            logger::info(&app, &state, SRC, &format!(
+                "Instance '{}' is missing — only removing the unselected location(s) of shortcut {id}",
+                rec.instance_id
+            ));
+            let mut trimmed = rec.clone();
+            if !desktop {
+                if let Some(p) = rec.desktop_path.as_deref() {
+                    remove_file_logged(&app, &state, p);
+                }
+                trimmed.desktop_path = None;
+            }
+            if !app_menu {
+                if let Some(p) = rec.app_menu_path.as_deref() {
+                    remove_file_logged(&app, &state, p);
+                }
+                trimmed.app_menu_path = None;
+            }
+            records[pos] = trimmed;
+            registry_save(&records);
+            #[cfg(target_os = "linux")]
+            refresh_desktop_database();
+            return Ok("Shortcut location removed".to_string());
+        }
+    };
 
     let title = sanitize_title(&shortcut_name, &instance.name, &rec.instance_id);
     let account = account_id.as_deref().map(str::trim).filter(|a| !a.is_empty());

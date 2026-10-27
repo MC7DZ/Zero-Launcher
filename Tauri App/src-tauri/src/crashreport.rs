@@ -9,8 +9,10 @@
 //!   uploaded by the dying process — sockets and allocators aren't safe in a
 //!   signal handler and `panic = "abort"` kills the process right after the
 //!   hook. So the report file is written as before and uploaded by the *next*
-//!   launcher start ([`start`] → [`send_pending`]). A `<report>.sent` marker
-//!   file stops it from being uploaded twice.
+//!   launcher start ([`start`] → [`send_pending`]). Once a
+//!   report is uploaded the file is deleted from `logs/` (a `<report>.sent`
+//!   marker is only the fallback if it can't be removed, so it is never
+//!   uploaded twice).
 //! * **UI freezes** happen in a live process, so [`report_freeze`] uploads
 //!   immediately (rate limited).
 //!
@@ -823,6 +825,32 @@ fn mark_sent(path: &Path) {
     let _ = std::fs::write(sent_marker(path), b"");
 }
 
+/// A report that was uploaded successfully is no longer needed on disk, so
+/// delete it (and any leftover `.sent` marker). If the file can't be removed
+/// for some reason, fall back to the `.sent` marker so it is never uploaded
+/// twice.
+fn finish_sent(path: &Path) {
+    let removed = std::fs::remove_file(path).is_ok() || !path.exists();
+    if removed {
+        let _ = std::fs::remove_file(sent_marker(path));
+    } else {
+        mark_sent(path);
+    }
+}
+
+/// `unclean-exit-*` reports are never uploaded (see `REPORT_PREFIXES`), so
+/// they would otherwise pile up in `logs/` forever. When crash reporting is
+/// active they count as handled and are removed, together with any marker.
+fn remove_unclean_exit_reports(dir: &Path) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with("unclean-exit-") && (name.ends_with(".log") || name.ends_with(".log.sent")) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
 // ───────────────────────────── public API ─────────────────────────────
 
 /// Call once after `AppState` is managed. Uploads reports left behind by
@@ -837,6 +865,9 @@ pub fn start(app: AppHandle) {
 async fn send_pending(app: &AppHandle) {
     let Some(dir) = crashlog::logs_dir() else { return };
     let url = configured_url(app);
+    if url.is_some() {
+        remove_unclean_exit_reports(&dir);
+    }
 
     let mut pending: Vec<(PathBuf, SystemTime, String)> = std::fs::read_dir(&dir)
         .into_iter()
@@ -884,7 +915,7 @@ async fn send_pending(app: &AppHandle) {
         clog(app, "INFO", &format!("Uploading crash report {name} to the configured Discord webhook"));
         match send_report(app, &url, &name, &text, Some(&path)).await {
             Ok(()) => {
-                mark_sent(&path);
+                finish_sent(&path);
                 sent += 1;
                 clog(app, "INFO", &format!("Crash report {name} uploaded"));
                 tokio::time::sleep(Duration::from_millis(1500)).await;
@@ -920,7 +951,7 @@ pub fn report_freeze(app: &AppHandle, detail: &str) {
         match send_report(&app, &url, &name, &report, None).await {
             Ok(()) => {
                 if let Some(p) = &path {
-                    mark_sent(p);
+                    finish_sent(p);
                 }
                 clog(&app, "INFO", "UI freeze report uploaded");
             }
@@ -949,7 +980,7 @@ pub fn report_frontend_failure(app: &AppHandle, detail: &str) {
         match send_report(&app, &url, &name, &report, None).await {
             Ok(()) => {
                 if let Some(p) = &path {
-                    mark_sent(p);
+                    finish_sent(p);
                 }
                 clog(&app, "INFO", "Frontend-load-failure report uploaded");
             }
