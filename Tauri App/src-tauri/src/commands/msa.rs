@@ -259,9 +259,9 @@ pub(crate) async fn refresh_microsoft_login(
         msa::complete_refresh(&client_id, None, &refresh_token).map_err(|e| e.to_string())
     });
 
-    let refresh_outcome = match tokio::time::timeout(std::time::Duration::from_secs(6), refresh_task).await {
+    let refresh_outcome = match tokio::time::timeout(std::time::Duration::from_secs(30), refresh_task).await {
         Ok(res) => res.map_err(|e| format!("Refresh task failed: {e}"))?,
-        Err(_) => Err("Microsoft authentication timed out after 6 seconds".to_string()),
+        Err(_) => Err("Microsoft authentication timed out after 30 seconds".to_string()),
     };
 
     let login = match refresh_outcome {
