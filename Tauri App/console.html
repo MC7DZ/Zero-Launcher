@@ -168,10 +168,8 @@
       border-left: none !important;
       /* .log-viewer (main.css) sets an opaque background so the video
          behind this window never showed through — override it with a
-         translucent, blurred glass panel instead. */
+         translucent panel instead. */
       background: rgba(10, 10, 14, 0.42) !important;
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
       /* Explicit here too (not just inherited from .log-viewer in
          main.css) so console log text can actually be selected and
          copied — this window's own html/body reset further down doesn't

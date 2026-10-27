@@ -2743,10 +2743,6 @@
                       <div class="bgimg-slider-head"><label for="setting-bg-image-brightness">Brightness</label><output id="out-bg-image-brightness">100%</output></div>
                       <input type="range" min="50" max="150" step="1" id="setting-bg-image-brightness" class="input-range" />
                     </div>
-                    <div class="bgimg-slider">
-                      <div class="bgimg-slider-head"><label for="setting-bg-image-blur">Blur</label><output id="out-bg-image-blur">0px</output></div>
-                      <input type="range" min="0" max="20" step="1" id="setting-bg-image-blur" class="input-range" />
-                    </div>
 
                     <label class="toggle-row">
                       <input type="checkbox" id="setting-bg-image-tint" />
@@ -2761,6 +2757,19 @@
 
                     <button id="btn-reset-bg-image" type="button" class="btn-ghost btn-sm bgimg-reset">Reset adjustments</button>
                   </div>
+                </div>
+              </section>
+
+              <!-- ═══ Style ═══ -->
+              <section class="appearance-group" id="appearance-group-style">
+                <div class="appearance-group-head"><h4>Style</h4><p>How see-through panels, cards and windows are over your background.</p></div>
+                <div class="bgimg-controls-col ui-style-custom">
+                  <div class="bgimg-slider">
+                    <div class="bgimg-slider-head"><label for="setting-ui-opacity" id="lbl-ui-opacity">Panel Opacity</label><span class="ui-slider-right"><button type="button" class="ui-slider-reset" id="btn-reset-ui-opacity" title="Reset opacity to default">Reset</button><output id="out-ui-opacity">25%</output></span></div>
+                    <input type="range" min="15" max="95" step="1" id="setting-ui-opacity" class="input-range" />
+                    <p class="settings-hint" style="margin:0;">How solid panels and cards look. Lower = more see-through.</p>
+                  </div>
+                  <button id="btn-reset-ui-style" type="button" class="btn-ghost btn-sm bgimg-reset">Reset style settings</button>
                 </div>
               </section>
 

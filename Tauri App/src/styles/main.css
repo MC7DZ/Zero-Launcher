@@ -742,7 +742,7 @@ input, textarea, select, [contenteditable="true"] {
 
 /* ═══ Simple & Lightweight Transparent Mode ═══ */
 .transparent-ui #top-bar {
-  background: rgba(27, 27, 27, 0.8) !important;
+  background: rgba(27, 27, 27, var(--ui-bar-a, 0.8)) !important;
 }
 
 .transparent-ui #tab-bar {
@@ -765,7 +765,7 @@ input, textarea, select, [contenteditable="true"] {
 .transparent-ui .discover-toolbar,
 .transparent-ui .hero-island,
 .transparent-ui .skin-panel {
-  background: rgba(27, 27, 27, 0.65) !important;
+  background: rgba(27, 27, 27, var(--ui-panel-a, 0.65)) !important;
   border-color: rgba(255, 255, 255, 0.08) !important;
   box-shadow: none !important;
 }
@@ -800,7 +800,7 @@ input, textarea, select, [contenteditable="true"] {
 .transparent-ui .palettes-gallery-panel,
 .transparent-ui .discover-filter-panel,
 .transparent-ui .discover-pagesize-panel {
-  background: rgba(27, 27, 27, 0.88) !important;
+  background: rgba(27, 27, 27, var(--ui-win-a, 0.88)) !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
@@ -3810,7 +3810,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
 /* ═══ Bento-style modals (New Instance / Apply Preset) ═══
    No single enclosing card — the whole overlay content IS the bento grid,
    and every field/section is its own floating frosted-glass tile, styled
-   like .mod-card (same var(--panel) glass, same blur, same hover lift). */
+   like .mod-card (same var(--panel) glass, same hover lift). */
 .bento-modal {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4446,8 +4446,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: rgba(33, 33, 33, 0.45);
   background-image: var(--panel-tint);
   border: 1px solid var(--panel-edge);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   position: relative;
   overflow: hidden;
@@ -5185,7 +5183,6 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
   cursor: pointer;
-  backdrop-filter: blur(6px);
   transition: background 0.12s ease, transform 0.12s ease;
 }
 .screenshot-actions button svg {
@@ -5221,7 +5218,6 @@ body.screenshot-lightbox-open {
   align-items: center;
   justify-content: center;
   background: rgba(8, 8, 10, 0.92);
-  backdrop-filter: blur(6px);
   animation: screenshotLightboxIn 0.12s ease;
 }
 .screenshot-lightbox.hidden {
@@ -5277,7 +5273,6 @@ body.screenshot-lightbox-open {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
   cursor: pointer;
-  backdrop-filter: blur(6px);
   transition: background 0.12s ease;
 }
 .screenshot-lightbox-nav:hover {
@@ -5329,7 +5324,6 @@ body.screenshot-lightbox-open {
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  backdrop-filter: blur(6px);
   transition: background 0.12s ease, transform 0.12s ease;
 }
 .screenshot-lightbox-toolbar button svg {
@@ -9248,8 +9242,6 @@ body.screenshot-lightbox-open {
   background-image: var(--panel-tint);
   border: 1px solid var(--panel-edge);
   border-radius: var(--radius, 12px);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
@@ -9612,8 +9604,6 @@ body.screenshot-lightbox-open {
   background-image: var(--panel-tint);
   border: 1px solid var(--panel-edge);
   border-radius: var(--radius, 12px);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
@@ -13930,3 +13920,15 @@ html.no-ui-animations .instance-card:active { transform: none; }
 .shortcut-delete-btn:not(:disabled):hover { color: #f87171; border-color: rgba(239, 68, 68, 0.5); }
 #btn-shortcuts-refresh-icon.is-spinning { animation: about-spin 0.8s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .shortcut-row { animation: none !important; } }
+
+
+/* Style customisation sliders */
+.ui-style-custom { margin-top: 14px; max-width: 460px; }
+.ui-slider-right { display: inline-flex; align-items: center; gap: 8px; }
+.ui-slider-reset {
+  background: transparent; border: 1px solid rgba(var(--overlay-rgb), 0.18); color: var(--text-muted);
+  font: inherit; font-size: 11px; padding: 1px 8px; border-radius: 999px; cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.ui-slider-reset:hover { border-color: var(--accent); color: var(--text); }
+.ui-slider-reset:disabled { opacity: 0.4; pointer-events: none; }

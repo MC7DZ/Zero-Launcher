@@ -264,8 +264,6 @@ pub struct LauncherSettings {
     #[serde(default = "default_bg_brightness")]
     pub background_image_brightness: u32,
     #[serde(default)]
-    pub background_image_blur: u32,
-    #[serde(default)]
     pub background_image_tint: bool,
     #[serde(default = "default_true")]
     pub background_image_vignette: bool,
@@ -275,10 +273,8 @@ pub struct LauncherSettings {
     pub enable_ui_animations: bool,
     #[serde(default = "default_tab_animation")]
     pub tab_animation: String,
-    #[serde(default)]
-    pub enable_blur_effect: bool,
-    #[serde(default = "default_blur_strength")]
-    pub blur_strength: u32,
+    #[serde(default = "default_ui_transparent_opacity")]
+    pub ui_transparent_opacity: u32,
 
     // Behavior
     #[serde(default)]
@@ -551,12 +547,12 @@ fn default_search_bg() -> String { "#1a1a24".to_string() }
 fn default_notif_bg() -> String { "#13131a".to_string() }
 fn default_notif_max() -> u32 { 5 }
 fn default_notif_duration() -> u32 { 5 }
+fn default_ui_transparent_opacity() -> u32 { 25 }
 fn default_notif_style() -> String { "Minimal Outline".to_string() }
 fn default_bg_fit() -> String { "Cover".to_string() }
 fn default_bg_dim() -> u32 { 35 }
 fn default_bg_brightness() -> u32 { 100 }
 fn default_bg_anim_intensity() -> f64 { 1.0 }
-fn default_blur_strength() -> u32 { 10 }
 fn default_ram_gb() -> u32 { 3 }
 fn default_launcher_max_ram() -> u32 { 500 }
 fn default_threads() -> u32 { 3 }
@@ -643,14 +639,12 @@ impl Default for LauncherSettings {
             background_image_fit: default_bg_fit(),
             background_image_dim: 35,
             background_image_brightness: 100,
-            background_image_blur: 0,
             background_image_tint: false,
             background_image_vignette: true,
             enable_transparency: true,
             enable_ui_animations: true,
             tab_animation: default_tab_animation(),
-            enable_blur_effect: false,
-            blur_strength: 10,
+            ui_transparent_opacity: default_ui_transparent_opacity(),
 
             minimize_on_launch: false,
             restore_launcher_on_game_close: true,

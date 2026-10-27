@@ -15199,6 +15199,53 @@ function applyNotifStyle(name, announce = true) {
   if (announce) showToast(`Notifications will now look like this (${styleName}).`, 'success', 'Notification style changed');
 }
 
+// ── Interface transparency (panel opacity) ──
+const UI_OPACITY_DEFAULT = 25;
+function clampInt(v, lo, hi, dflt) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
+}
+function getUiOpacity() {
+  return clampInt(settings && settings.ui_transparent_opacity, 15, 95, UI_OPACITY_DEFAULT);
+}
+
+function syncUiStyleSliders() {
+  const op = document.getElementById('setting-ui-opacity');
+  if (!op) return;
+  op.value = getUiOpacity();
+  document.getElementById('out-ui-opacity').textContent = op.value + '%';
+}
+
+let _uiStyleSaveTimer = null;
+function initUiStyleSliders() {
+  const op = document.getElementById('setting-ui-opacity');
+  const reset = document.getElementById('btn-reset-ui-style');
+  if (!op || op._bound) return;
+  op._bound = true;
+  const commit = () => {
+    clearTimeout(_uiStyleSaveTimer);
+    _uiStyleSaveTimer = setTimeout(() => saveSettingsNow(), 250);
+  };
+  const resetAll = () => {
+    if (!settings) return;
+    settings.ui_transparent_opacity = UI_OPACITY_DEFAULT;
+    syncUiStyleSliders();
+    applyThemeFromSettings();
+    saveSettingsNow();
+  };
+  op.addEventListener('input', () => {
+    if (!settings) return;
+    const v = clampInt(op.value, 15, 95, UI_OPACITY_DEFAULT);
+    settings.ui_transparent_opacity = v;
+    document.getElementById('out-ui-opacity').textContent = v + '%';
+    applyThemeFromSettings();
+    commit();
+  });
+  const resetOp = document.getElementById('btn-reset-ui-opacity');
+  if (resetOp) resetOp.addEventListener('click', resetAll);
+  if (reset) reset.addEventListener('click', resetAll);
+}
+
 function renderNotifPlates() {
   const container = document.getElementById('quick-notif-container');
   if (!container) return;
@@ -15578,6 +15625,8 @@ function populateSettingsUI() {
   document.getElementById('setting-bg-anim-speed').value = settings.background_animation_speed || 1.0;
   document.getElementById('setting-bg-anim-fps').value = settings.background_animation_fps || 60;
   document.getElementById('setting-transparency').checked = settings.enable_transparency !== false;
+  initUiStyleSliders();
+  syncUiStyleSliders();
   document.getElementById('setting-ui-animations-enable').checked = settings.enable_ui_animations !== false;
   document.getElementById('setting-tab-animation').value = TAB_ANIM_NAMES.includes(settings.tab_animation) ? settings.tab_animation : 'swipe';
   renderTabAnimPicker();
@@ -15588,7 +15637,6 @@ function populateSettingsUI() {
   document.getElementById('setting-bg-image-fit').value = settings.background_image_fit || 'Cover';
   document.getElementById('setting-bg-image-dim').value = settings.background_image_dim ?? 35;
   document.getElementById('setting-bg-image-brightness').value = settings.background_image_brightness ?? 100;
-  document.getElementById('setting-bg-image-blur').value = settings.background_image_blur ?? 0;
   document.getElementById('setting-bg-image-tint').checked = !!settings.background_image_tint;
   document.getElementById('setting-bg-image-vignette').checked = settings.background_image_vignette !== false;
   updateBackgroundImagePreview(settings.background_image_path || '');
@@ -15760,9 +15808,15 @@ function applyThemeFromSettings() {
   // Sync active states on Theme Palettes quick plates
   renderQuickThemePalettes();
 
-  // High-performance crystal transparency (no slow backdrop blur on WebKitGTK)
-  const isTransparent = settings && settings.enable_transparency !== false;
+  // High-performance crystal transparency
+  const isTransparent = !!(settings && settings.enable_transparency !== false);
   root.classList.toggle('transparent-ui', isTransparent);
+  {
+    const op = getUiOpacity() / 100;
+    root.style.setProperty('--ui-panel-a', String(op));
+    root.style.setProperty('--ui-win-a', String(Math.min(0.97, op + 0.23)));
+    root.style.setProperty('--ui-bar-a', String(Math.min(0.95, op + 0.15)));
+  }
 
   // UI animations toggle (decorative transitions / slide-ins)
   const uiAnimEnabled = settings && settings.enable_ui_animations !== false;
@@ -15797,13 +15851,6 @@ function applyThemeFromSettings() {
     ? SYSTEM_FONT_STACK
     : `'${font}', 'Noto Sans', ${SYSTEM_FONT_STACK}`;
   root.style.setProperty('--font', fontValue);
-
-  // Blur
-  if (settings.enable_blur_effect) {
-    root.style.setProperty('--blur-amount', (settings.blur_strength || 10) + 'px');
-  } else {
-    root.style.setProperty('--blur-amount', '0px');
-  }
 
   // Background Image Handling (delegated to BG engine)
   if (typeof BG !== 'undefined') {
@@ -15895,7 +15942,6 @@ function updateBgSliderOutputs() {
   };
   set('dim', '%');
   set('brightness', '%');
-  set('blur', 'px');
 }
 
 // Rebuilds the live preview card in Settings → Appearance → Image so it
@@ -15916,7 +15962,6 @@ async function updateBackgroundImagePreview(path) {
   const fit = (val('setting-bg-image-fit') || {}).value || 'Cover';
   const dim = parseInt((val('setting-bg-image-dim') || {}).value, 10);
   const brightness = parseInt((val('setting-bg-image-brightness') || {}).value, 10);
-  const blur = parseInt((val('setting-bg-image-blur') || {}).value, 10);
   const tint = !!(val('setting-bg-image-tint') || {}).checked;
   const vignette = !!(val('setting-bg-image-vignette') || {}).checked;
   updateBgSliderOutputs();
@@ -15943,8 +15988,8 @@ async function updateBackgroundImagePreview(path) {
   imgEl.style.backgroundSize = f.size;
   imgEl.style.backgroundRepeat = f.repeat;
   imgEl.style.backgroundPosition = f.pos;
-  imgEl.style.filter = `brightness(${Number.isFinite(brightness) ? brightness : 100}%) blur(${(Number.isFinite(blur) ? blur : 0) / 3}px)`;
-  imgEl.style.transform = blur > 0 ? 'scale(1.08)' : 'none';
+  imgEl.style.filter = `brightness(${Number.isFinite(brightness) ? brightness : 100}%)`;
+  imgEl.style.transform = 'none';
   tintEl.style.opacity = tint ? '0.28' : '0';
   dimEl.style.opacity = String((Number.isFinite(dim) ? dim : 35) / 100);
   vigEl.style.opacity = vignette ? '1' : '0';
@@ -16061,8 +16106,6 @@ function collectSettingsFromUI() {
   settings.background_image_dim = Number.isFinite(imageDim) ? imageDim : 35;
   const imageBrightness = parseInt(document.getElementById('setting-bg-image-brightness').value);
   settings.background_image_brightness = Number.isFinite(imageBrightness) ? imageBrightness : 100;
-  const imageBlur = parseInt(document.getElementById('setting-bg-image-blur').value);
-  settings.background_image_blur = Number.isFinite(imageBlur) ? imageBlur : 0;
   settings.background_image_tint = document.getElementById('setting-bg-image-tint').checked;
   settings.background_image_vignette = document.getElementById('setting-bg-image-vignette').checked;
 
@@ -16474,7 +16517,7 @@ function initSettings() {
     'setting-bg-anim-speed', 'setting-bg-anim-intensity', 'setting-bg-anim-fps',
     'setting-transparency', 'setting-ui-animations-enable', 'setting-tab-animation',
     'setting-use-bg-image', 'setting-bg-image-fit',
-    'setting-bg-image-dim', 'setting-bg-image-brightness', 'setting-bg-image-blur',
+    'setting-bg-image-dim', 'setting-bg-image-brightness',
     'setting-bg-image-tint', 'setting-bg-image-vignette',
     'setting-font-family',
     'setting-close-on-launch', 'setting-smart-close-on-launch', 'setting-minimize-on-launch',
@@ -16792,7 +16835,6 @@ function initSettings() {
     'setting-bg-image-fit',
     'setting-bg-image-dim',
     'setting-bg-image-brightness',
-    'setting-bg-image-blur',
     'setting-bg-image-tint',
     'setting-bg-image-vignette',
   ].forEach(id => {
@@ -16807,7 +16849,6 @@ function initSettings() {
     setVal('setting-bg-image-fit', 'Cover');
     setVal('setting-bg-image-dim', 35);
     setVal('setting-bg-image-brightness', 100);
-    setVal('setting-bg-image-blur', 0);
     document.getElementById('setting-bg-image-tint').checked = false;
     document.getElementById('setting-bg-image-vignette').checked = true;
     bgLive();
@@ -16969,6 +17010,7 @@ function initSettings() {
           background_animation_intensity: 1.0,
           background_animation_fps: 60,
           enable_transparency: true,
+          ui_transparent_opacity: 25,
           enable_ui_animations: true,
           tab_animation: 'swipe',
           use_background_image: false,
@@ -16976,7 +17018,6 @@ function initSettings() {
           background_image_fit: 'Cover',
           background_image_dim: 20,
           background_image_brightness: 100,
-          background_image_blur: 0,
           background_image_tint: false,
           background_image_vignette: true,
           notification_style: 'Minimal Outline',
@@ -17645,6 +17686,7 @@ const SETTINGS_SEARCH_CATALOG = [
   { label: 'Animation Speed', keywords: 'animation speed velocity fast slow rate', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-speed' },
   { label: 'Animation FPS', keywords: 'animation fps framerate 60 120 30 performance hz', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-fps' },
   { label: 'Animation Intensity', keywords: 'animation intensity brightness glow opacity', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-intensity' },
+  { label: 'Panel Opacity', keywords: 'panel opacity transparent transparency see-through glass panels look', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-ui-opacity' },
   { label: 'Transparent UI Cards', keywords: 'transparent ui cards high performance opacity glass acrylic', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-transparency' },
   { label: 'Tab Switch Animation', keywords: 'tab switch page transition animation slide fade zoom rise swing swipe instances presets manage discover', section: 'appearance', sectionLabel: 'Appearance', targetId: 'tab-anim-grid' },
   { label: 'UI Animations', keywords: 'ui animations transitions slide enable disable decorative effects smooth', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-ui-animations-enable' },
@@ -17653,7 +17695,6 @@ const SETTINGS_SEARCH_CATALOG = [
   { label: 'Background Image Fit', keywords: 'image fit cover contain stretch center tile wallpaper', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-fit' },
   { label: 'Background Image Dim Overlay', keywords: 'dim overlay dark brightness opacity wallpaper', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-dim' },
   { label: 'Background Image Brightness', keywords: 'image brightness contrast light dark wallpaper', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-brightness' },
-  { label: 'Background Image Blur', keywords: 'image blur radius gaussian wallpaper frosted glass', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-image-blur' },
   { label: 'UI Font Family', keywords: 'font typography text typeface font-family noto sans system default minecraft', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-font-family' },
   { label: 'Notification Style', keywords: 'notification toast alert style look gallery modern classic minimal pill neon glass outline banner terminal', section: 'appearance', sectionLabel: 'Appearance', targetId: 'btn-browse-all-notif' },
   { label: 'Max Notifications', keywords: 'notification toast limit maximum on screen at once', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-notif-max' },
@@ -19329,7 +19370,6 @@ const BG = {
     const active = !!(s.use_background_image && s.background_image_path);
     const clamp = (v, lo, hi, d) => { v = Number(v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
     const brightness = clamp(s.background_image_brightness, 50, 150, 100);
-    const blur = clamp(s.background_image_blur, 0, 20, 0);
     const dim = clamp(s.background_image_dim, 0, 100, 35);
 
     if (imgLayer) {
@@ -19342,9 +19382,8 @@ const BG = {
         imgLayer.style.backgroundSize = f.size;
         imgLayer.style.backgroundRepeat = f.repeat;
         imgLayer.style.backgroundPosition = f.pos;
-        imgLayer.style.filter = `brightness(${brightness}%)${blur > 0 ? ` blur(${blur}px)` : ''}`;
-        // Blur pulls transparent edge pixels in; scale up slightly to hide them.
-        imgLayer.style.transform = blur > 0 ? `scale(${1 + blur * 0.006})` : 'none';
+        imgLayer.style.filter = `brightness(${brightness}%)`;
+        imgLayer.style.transform = 'none';
         // If the file is truly gone, fall back to the normal animated
         // background instead of showing a black/empty window.
         resolveBgImage(imgPath).then(u => {
