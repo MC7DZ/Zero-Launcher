@@ -92,16 +92,25 @@ pub async fn save_settings(
 /// Update Discord Rich Presence status.
 #[tauri::command]
 pub async fn update_discord_presence(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
-    rpc_state: State<'_, crate::discord_rpc::DiscordRpcState>,
     tab: String,
     playing_instance: Option<String>,
     mc_version: Option<String>,
 ) -> Result<(), String> {
     let settings = state.settings.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    if let Ok(mut rpc) = rpc_state.0.lock() {
-        rpc.update_presence(&settings, &tab, playing_instance.as_deref(), mc_version.as_deref());
-    }
+    // Discord's IPC socket calls are blocking (connect can take seconds when
+    // Discord is missing or hung). Run them on the blocking pool so they
+    // never occupy an async worker thread that IPC replies depend on.
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        use tauri::Manager as _;
+        if let Some(rpc_state) = app.try_state::<crate::discord_rpc::DiscordRpcState>() {
+            if let Ok(mut rpc) = rpc_state.0.lock() {
+                rpc.update_presence(&settings, &tab, playing_instance.as_deref(), mc_version.as_deref());
+            }
+        }
+    })
+    .await;
     Ok(())
 }
 

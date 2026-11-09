@@ -7,7 +7,7 @@
 //! arriving here.
 //!
 //! A dedicated OS thread (`ui-watchdog`) polls the time since the last
-//! heartbeat. When it exceeds [`FREEZE_THRESHOLD_MS`] (5 seconds) while the
+//! heartbeat. When it exceeds [`FREEZE_THRESHOLD_MS`] (10 seconds) while the
 //! window is actually visible, the watchdog:
 //!
 //!   1. logs a detailed ERROR (what the UI was last doing, pending IPC
@@ -43,7 +43,7 @@ use crate::state::AppState;
 const SRC: &str = "WATCHDOG";
 
 /// No heartbeat for this long (while visible) == frozen.
-pub const FREEZE_THRESHOLD_MS: u64 = 5_000;
+pub const FREEZE_THRESHOLD_MS: u64 = 10_000;
 /// After startup / a reload the page gets this long to send its first beat.
 const STARTUP_GRACE_MS: u64 = 20_000;
 /// How often the watchdog thread wakes up.

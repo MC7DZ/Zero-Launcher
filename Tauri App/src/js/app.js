@@ -11918,6 +11918,21 @@ function initPresetsTabIfNeeded() {
       countEl.textContent = total > 0 ? `0 / ${total}` : '';
     });
 
+    // Coalesces the burst of sync events into one read + one render.
+    let presetsRefreshTimer = null;
+    const schedulePresetsRefresh = () => {
+      if (presetsRefreshTimer) clearTimeout(presetsRefreshTimer);
+      presetsRefreshTimer = setTimeout(async () => {
+        presetsRefreshTimer = null;
+        try {
+          const presets = await api.getLocalPresets();
+          presetsState.presets = presets || [];
+          const tab = document.getElementById('tab-presets');
+          if (tab && tab.classList.contains('active')) renderPresets();
+        } catch (_) {}
+      }, 200);
+    };
+
     // One preset finished: advance bar
     api.onPresetSynced(async (event) => {
       const { done = 0, total = 0 } = event.payload || {};
@@ -11933,12 +11948,7 @@ function initPresetsTabIfNeeded() {
 
       // Use getLocalPresets (NOT listPresets) — listPresets spawns a new background
       // sync which would create an infinite event loop and hide new presets.
-      try {
-        const presets = await api.getLocalPresets();
-        presetsState.presets = presets || [];
-        const tab = document.getElementById('tab-presets');
-        if (tab && tab.classList.contains('active')) renderPresets();
-      } catch (_) {}
+      schedulePresetsRefresh();
     });
 
     // All presets done: complete bar, do a final read of all local presets
@@ -11959,12 +11969,9 @@ function initPresetsTabIfNeeded() {
 
       // Final authoritative read — picks up every preset now on disk,
       // including newly added ones that only appeared during this sync.
-      try {
-        const presets = await api.getLocalPresets();
-        presetsState.presets = presets || [];
-        const tab = document.getElementById('tab-presets');
-        if (tab && tab.classList.contains('active')) renderPresets();
-      } catch (_) {}
+      // Icons may have changed during the sync, so drop the cached ones.
+      presetIconCache.clear();
+      schedulePresetsRefresh();
 
       // Fade banner out after a short delay
       setTimeout(() => {
@@ -12182,12 +12189,24 @@ function buildPresetCard(preset) {
     return card;
 }
 
+const presetIconCache = new Map(); // presetId -> Promise<dataUrl>
+
+function getPresetIconCached(presetId) {
+  if (!presetIconCache.has(presetId)) {
+    const p = api.getPresetIconPath(presetId);
+    presetIconCache.set(presetId, p);
+    p.catch(() => presetIconCache.delete(presetId));
+  }
+  return presetIconCache.get(presetId);
+}
+
 async function loadPresetIconInto(container, presetId) {
   try {
     // Backend now returns a base64 data URL (data:image/png;base64,…) directly
     // so no convertFileSrc is needed — raw asset:// paths broke on preset
-    // folder names that contain '&' or spaces.
-    const dataUrl = await api.getPresetIconPath(presetId);
+    // folder names that contain '&' or spaces. Cached so re-rendering the
+    // grid doesn't re-read and re-send every icon over IPC each time.
+    const dataUrl = await getPresetIconCached(presetId);
     if (!dataUrl) return;
     const img = document.createElement('img');
     img.alt = '';
@@ -13203,13 +13222,26 @@ function discoverTagVariant(tag) {
 
 const discoverVersionCache = new Map();
 
+const discoverVersionInflight = new Map();
+
 async function fetchProjectVersions(projectId) {
   if (discoverVersionCache.has(projectId)) {
     return discoverVersionCache.get(projectId);
   }
-  const versions = await api.discoverGetVersions(projectId, null, null);
-  discoverVersionCache.set(projectId, versions || []);
-  return versions || [];
+  if (discoverVersionInflight.has(projectId)) {
+    return discoverVersionInflight.get(projectId);
+  }
+  const p = (async () => {
+    try {
+      const versions = await api.discoverGetVersions(projectId, null, null);
+      discoverVersionCache.set(projectId, versions || []);
+      return versions || [];
+    } finally {
+      discoverVersionInflight.delete(projectId);
+    }
+  })();
+  discoverVersionInflight.set(projectId, p);
+  return p;
 }
 
 // Native <select> popups (WebView2 / WebKitGTK) are a snapshot: if the
@@ -13263,7 +13295,7 @@ function populateVersionSelect(hit, versionSelect, downloadBtn) {
       const filterLoader = (discoverState.loader || '').trim().toLowerCase();
 
       const frag = document.createDocumentFragment();
-      versions.forEach(v => {
+      versions.slice(0, 100).forEach(v => {
         const primaryFile = (v.files && v.files.find(f => f.primary)) || (v.files && v.files[0]);
         if (!primaryFile) return;
         const opt = document.createElement('option');

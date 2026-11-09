@@ -9,6 +9,10 @@ pub struct DiscordRpcManager {
     /// The app_id the current client was connected with — used to detect
     /// when the user changes the App ID in settings so we can reconnect.
     connected_app_id: String,
+    /// When Discord isn't running, `connect()` fails (sometimes only after
+    /// seconds). Without a back-off every tab switch retried it, which is
+    /// what produced the multi-second `update_discord_presence` calls.
+    next_connect_attempt: Option<std::time::Instant>,
 }
 
 impl DiscordRpcManager {
@@ -22,6 +26,7 @@ impl DiscordRpcManager {
             client: None,
             start_time,
             connected_app_id: String::new(),
+            next_connect_attempt: None,
         }
     }
 
@@ -64,10 +69,21 @@ impl DiscordRpcManager {
         }
 
         if self.client.is_none() {
-            let mut client = DiscordIpcClient::new(app_id);
-            if client.connect().is_ok() {
-                self.connected_app_id = app_id.to_string();
-                self.client = Some(client);
+            let may_try = self
+                .next_connect_attempt
+                .map(|t| std::time::Instant::now() >= t)
+                .unwrap_or(true);
+            if may_try {
+                let mut client = DiscordIpcClient::new(app_id);
+                if client.connect().is_ok() {
+                    self.connected_app_id = app_id.to_string();
+                    self.client = Some(client);
+                    self.next_connect_attempt = None;
+                } else {
+                    // Discord not running — don't try again for 30 s.
+                    self.next_connect_attempt =
+                        Some(std::time::Instant::now() + std::time::Duration::from_secs(30));
+                }
             }
         }
 

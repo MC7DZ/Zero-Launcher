@@ -626,6 +626,17 @@ struct RawVersion {
     dependencies: Vec<RawDependency>,
 }
 
+/// Upper bound on how many versions one `discover_get_versions` call returns.
+/// Modrinth answers newest-first, and some projects have thousands of
+/// versions (one in the freeze reports had 3733). Shipping all of them over
+/// IPC and JSON-parsing them on the webview's main thread froze the UI for
+/// several seconds, so only the newest ones are sent.
+const MAX_DISCOVER_VERSIONS: usize = 100;
+/// Only this many (newest) versions keep their changelog text. The project
+/// modal only ever renders 25 entries, and changelogs are by far the
+/// largest part of each version.
+const MAX_CHANGELOG_VERSIONS: usize = 25;
+
 /// List downloadable versions of a project, optionally narrowed to a loader
 /// and Minecraft version (used to populate the version picker on a Discover
 /// card before download).
@@ -669,11 +680,13 @@ pub async fn discover_get_versions(
 
     Ok(raw
         .into_iter()
-        .map(|v| DiscoverVersion {
+        .take(MAX_DISCOVER_VERSIONS)
+        .enumerate()
+        .map(|(i, v)| DiscoverVersion {
             id: v.id,
             version_number: v.version_number,
             name: v.name,
-            changelog: v.changelog,
+            changelog: if i < MAX_CHANGELOG_VERSIONS { v.changelog } else { None },
             date_published: v.date_published,
             game_versions: v.game_versions,
             loaders: v.loaders,
