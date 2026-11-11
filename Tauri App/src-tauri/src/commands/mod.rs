@@ -170,15 +170,15 @@ pub fn open_url_in_browser(url: String) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        // CREATE_NO_WINDOW (0x08000000) stops the console window that
-        // `cmd /C start` would otherwise briefly flash on screen.
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", url])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("Failed to open URL: {e}"))?;
+        // Do NOT go through `cmd /C start "" <url>`: cmd treats `&` as a
+        // command separator, so any URL with more than one query parameter
+        // (every OAuth authorize URL, e.g. Ely.by's) gets cut off at the
+        // first `&` and the rest is run as separate (failing) commands.
+        // Ely.by then received an authorize request with no response_type /
+        // redirect_uri and answered "Unsupported grant type".
+        // `open::that_detached` uses ShellExecuteW directly, so the URL is
+        // passed through untouched and no console window flashes.
+        open::that_detached(url).map_err(|e| format!("Failed to open URL: {e}"))?;
         return Ok(());
     }
 
