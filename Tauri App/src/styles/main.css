@@ -4338,7 +4338,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--panel);
+  background-color: var(--panel-solid);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius, 12px);
   overflow: hidden;
@@ -4486,7 +4486,7 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   gap: 14px;
   padding: 10px 16px;
   border-radius: var(--radius, 12px);
-  background: var(--panel);
+  background-color: var(--panel-solid);
   background-image: var(--panel-tint);
   border: 1px solid var(--panel-edge);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
@@ -4940,10 +4940,10 @@ select.input-field option { background: var(--bg-darker); color: var(--text); }
   flex: 1 1 0;
   min-height: 0;
   border-radius: var(--radius);
-  background: var(--panel);
+  background-color: var(--panel-solid);
   border: 1px solid var(--panel-border);
   overflow: hidden;
-  transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 /* Distinctive color when viewing Modpack Built-in Mods */
@@ -5918,7 +5918,7 @@ body.screenshot-lightbox-open {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--panel);
+  background-color: var(--panel-solid);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius, 12px);
   overflow: hidden;
@@ -7136,7 +7136,7 @@ body.screenshot-lightbox-open {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--panel);
+  background-color: var(--panel-solid);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius, 12px);
   overflow: hidden;
