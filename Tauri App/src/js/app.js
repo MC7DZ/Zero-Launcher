@@ -21086,7 +21086,26 @@ function initCrashDialog() {
 function showCrashDialog(report) {
   if (!report) return;
   const name = report.instance_name || report.version_id || 'Your game';
-  showToast(`${name} crashed (this might be wrong) — open the console log for details`, 'error', 'Game Crashed');
+  const versionId = report.version_id;
+  const actions = [];
+  if (versionId && api.openInstanceConsoleWindow) {
+    actions.push({
+      label: 'Open Logs',
+      onClick: async () => {
+        try {
+          await api.openInstanceConsoleWindow(versionId, name);
+        } catch (e) {
+          console.error('Failed to open instance console window:', e);
+        }
+      },
+    });
+  }
+  showToast(
+    `${name} crashed (this might be wrong)`,
+    'error',
+    'Game Crashed',
+    actions
+  );
 }
 
 // Above this many affected mods, listing every single one starts to feel
