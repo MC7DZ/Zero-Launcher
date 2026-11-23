@@ -7771,6 +7771,8 @@ body.screenshot-lightbox-open {
   color: var(--text);
   overflow-y: auto;
   height: calc(100vh - 220px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent, rgba(255, 255, 255, 0.35)) transparent;
   /* The rest of the app deliberately disables text selection (see the
      global `user-select: none` on html/body in main.css) so ordinary UI
      doesn't feel like a webpage, but that also blocked selecting/copying
@@ -7781,6 +7783,21 @@ body.screenshot-lightbox-open {
 }
 .log-viewer.dark-mode {
   background: linear-gradient(180deg, rgba(var(--overlay-rgb), 0.16), rgba(var(--overlay-rgb), 0.09));
+}
+.log-viewer::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+.log-viewer::-webkit-scrollbar-track {
+  background: transparent;
+}
+.log-viewer::-webkit-scrollbar-thumb {
+  background: var(--accent, #B7B7B7);
+  opacity: 0.35;
+  border-radius: 999px;
+}
+.log-viewer::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-glow, #ffffff);
 }
 .log-entry { padding: 6px 0; border-bottom: 1px solid rgba(var(--overlay-rgb),0.08); }
 .log-entry:last-child { border-bottom: none; }
@@ -13519,10 +13536,40 @@ body.zl-reveal .tab-page.active:not(:has(.instances-layout)) {
    so existing (including transparent-UI) fills are left untouched.
    ═══════════════════════════════════════════════════════════════════ */
 :root {
-  --panel-tint:        linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%);
-  --panel-tint-soft:   linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%);
-  --panel-edge:        color-mix(in srgb, var(--accent) 24%, transparent);
-  --panel-edge-strong: color-mix(in srgb, var(--accent) 55%, transparent);
+  --panel-tint-color:        color-mix(in srgb, var(--accent) 50%, var(--bg, #0a0a0f));
+  --panel-tint:              linear-gradient(180deg, color-mix(in srgb, var(--panel-tint-color) 10%, transparent), transparent 60%);
+  --panel-tint-soft:         linear-gradient(180deg, color-mix(in srgb, var(--panel-tint-color) 6%, transparent), transparent 70%);
+  --panel-edge:              color-mix(in srgb, var(--panel-tint-color) 24%, transparent);
+  --panel-edge-strong:       color-mix(in srgb, var(--panel-tint-color) 55%, transparent);
+}
+
+:root.no-panel-tint {
+  --panel-tint:              none !important;
+  --panel-tint-soft:         none !important;
+  --panel-edge:              var(--panel-border, rgba(255, 255, 255, 0.08)) !important;
+  --panel-edge-strong:       var(--panel-border, rgba(255, 255, 255, 0.16)) !important;
+}
+
+:root.no-panel-tint #top-bar,
+:root.no-panel-tint .instance-sidebar,
+:root.no-panel-tint .hero-island,
+:root.no-panel-tint .hypr-island,
+:root.no-panel-tint .mods-top-panel,
+:root.no-panel-tint .mods-type-island,
+:root.no-panel-tint .mods-content-island,
+:root.no-panel-tint .discover-content-island,
+:root.no-panel-tint .discover-filter-island,
+:root.no-panel-tint .bento-tile,
+:root.no-panel-tint .glass-card,
+:root.no-panel-tint .settings-modal-window,
+:root.no-panel-tint .overlay-card,
+:root.no-panel-tint .dropdown-panel,
+:root.no-panel-tint .ri-dropdown,
+:root.no-panel-tint .settings-modal-header,
+:root.no-panel-tint .settings-modal-sidebar,
+:root.no-panel-tint .appearance-group,
+:root.no-panel-tint .instance-card.selected {
+  background-image: none !important;
 }
 
 /* Large surfaces */

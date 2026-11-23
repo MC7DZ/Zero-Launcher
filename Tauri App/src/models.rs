@@ -260,6 +260,8 @@ pub struct LauncherSettings {
     #[serde(default = "default_true")]
     pub enable_transparency: bool,
     #[serde(default = "default_true")]
+    pub enable_panel_tint: bool,
+    #[serde(default = "default_true")]
     pub enable_ui_animations: bool,
     #[serde(default = "default_tab_animation")]
     pub tab_animation: String,
@@ -609,6 +611,7 @@ impl Default for LauncherSettings {
             background_image_tint: false,
             background_image_vignette: true,
             enable_transparency: true,
+            enable_panel_tint: true,
             enable_ui_animations: true,
             tab_animation: default_tab_animation(),
 

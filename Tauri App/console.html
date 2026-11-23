@@ -161,6 +161,8 @@
       flex: 1;
       min-height: 0;
       position: relative;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent, rgba(255, 255, 255, 0.35)) transparent;
       /* .log-viewer (main.css) gives this a 4px accent-colored left
          border by default — with a light/near-white accent color that
          reads as a stray white line down the side of the console, so
@@ -220,6 +222,22 @@
 
     .log-entry.log-hidden { display: none; }
     .log-entry mark { background: rgba(255, 214, 0, 0.35); color: inherit; border-radius: 2px; }
+
+    #console-viewer::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    #console-viewer::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    #console-viewer::-webkit-scrollbar-thumb {
+      background: var(--accent, #B7B7B7);
+      opacity: 0.35;
+      border-radius: 999px;
+    }
+    #console-viewer::-webkit-scrollbar-thumb:hover {
+      background: var(--accent-glow, #ffffff);
+    }
   </style>
 </head>
 

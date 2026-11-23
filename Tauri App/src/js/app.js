@@ -15679,6 +15679,8 @@ function populateSettingsUI() {
   document.getElementById('setting-bg-anim-speed').value = settings.background_animation_speed || 1.0;
   document.getElementById('setting-bg-anim-fps').value = settings.background_animation_fps || 60;
   document.getElementById('setting-transparency').checked = settings.enable_transparency !== false;
+  const panelTintEl = document.getElementById('setting-panel-tint');
+  if (panelTintEl) panelTintEl.checked = settings.enable_panel_tint !== false;
   initUiStyleSliders();
   syncUiStyleSliders();
   document.getElementById('setting-ui-animations-enable').checked = settings.enable_ui_animations !== false;
@@ -15865,6 +15867,8 @@ function applyThemeFromSettings() {
   // High-performance crystal transparency
   const isTransparent = !!(settings && settings.enable_transparency !== false);
   root.classList.toggle('transparent-ui', isTransparent);
+  const isPanelTint = !!(settings && settings.enable_panel_tint !== false);
+  root.classList.toggle('no-panel-tint', !isPanelTint);
   {
     const op = getUiOpacity() / 100;
     root.style.setProperty('--ui-panel-a', String(op));
@@ -16149,6 +16153,8 @@ function collectSettingsFromUI() {
   settings.background_animation_intensity = parseFloat(document.getElementById('setting-bg-anim-intensity').value) || 1.0;
   settings.background_animation_fps = parseInt(document.getElementById('setting-bg-anim-fps').value) || 60;
   settings.enable_transparency = document.getElementById('setting-transparency').checked;
+  const panelTintChk = document.getElementById('setting-panel-tint');
+  if (panelTintChk) settings.enable_panel_tint = panelTintChk.checked;
   settings.enable_ui_animations = document.getElementById('setting-ui-animations-enable').checked;
   settings.tab_animation = document.getElementById('setting-tab-animation').value || 'swipe';
 
@@ -16569,7 +16575,7 @@ function initSettings() {
   const immediateIds = [
     'setting-bg-style', 'setting-bg-anim-style', 'setting-notif-max', 'setting-notif-duration',
     'setting-bg-anim-speed', 'setting-bg-anim-intensity', 'setting-bg-anim-fps',
-    'setting-transparency', 'setting-ui-animations-enable', 'setting-tab-animation',
+    'setting-transparency', 'setting-panel-tint', 'setting-ui-animations-enable', 'setting-tab-animation',
     'setting-use-bg-image', 'setting-bg-image-fit',
     'setting-bg-image-dim', 'setting-bg-image-brightness',
     'setting-bg-image-tint', 'setting-bg-image-vignette',
@@ -17064,6 +17070,7 @@ function initSettings() {
           background_animation_intensity: 1.0,
           background_animation_fps: 60,
           enable_transparency: true,
+          enable_panel_tint: true,
           ui_transparent_opacity: 25,
           enable_ui_animations: true,
           tab_animation: 'swipe',
@@ -17742,6 +17749,7 @@ const SETTINGS_SEARCH_CATALOG = [
   { label: 'Animation Intensity', keywords: 'animation intensity brightness glow opacity', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-bg-anim-intensity' },
   { label: 'Panel Opacity', keywords: 'panel opacity transparent transparency see-through glass panels look', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-ui-opacity' },
   { label: 'Transparent UI Cards', keywords: 'transparent ui cards high performance opacity glass acrylic', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-transparency' },
+  { label: 'Tint Panels with Accent & Base Color', keywords: 'panel tint menus accent base color gradient border appearance theme', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-panel-tint' },
   { label: 'Tab Switch Animation', keywords: 'tab switch page transition animation slide fade zoom rise swing swipe instances presets manage discover', section: 'appearance', sectionLabel: 'Appearance', targetId: 'tab-anim-grid' },
   { label: 'UI Animations', keywords: 'ui animations transitions slide enable disable decorative effects smooth', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-ui-animations-enable' },
   { label: 'Use Background Image', keywords: 'custom wallpaper background image photo wallpaper picture', section: 'appearance', sectionLabel: 'Appearance', targetId: 'setting-use-bg-image' },
