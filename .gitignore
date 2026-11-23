@@ -5,6 +5,7 @@
 *.log
 *.downloading
 *.part
+/Tauri App/src-tauri/Cargo.lock
 .DS_Store
 Thumbs.db
 /Tauri App/New Folder/
