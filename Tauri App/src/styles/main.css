@@ -762,12 +762,24 @@ input, textarea, select, [contenteditable="true"] {
 .transparent-ui .mods-toolbar,
 .transparent-ui .mods-top-panel,
 .transparent-ui .mods-bottom-panel,
+.transparent-ui .mods-type-island,
+.transparent-ui .mods-content-island,
 .transparent-ui .discover-toolbar,
+.transparent-ui .discover-content-island,
+.transparent-ui .discover-filter-island,
+.transparent-ui .hypr-island,
 .transparent-ui .hero-island,
 .transparent-ui .skin-panel {
   background: rgba(27, 27, 27, var(--ui-panel-a, 0.65)) !important;
   border-color: rgba(255, 255, 255, 0.08) !important;
   box-shadow: none !important;
+}
+
+.transparent-ui .mods-type-header,
+.transparent-ui .discover-content-header,
+.transparent-ui .discover-filter-header {
+  background: rgba(18, 18, 18, calc(var(--ui-panel-a, 0.65) * 0.8)) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
 }
 .transparent-ui .skin-mini-preview-wrap::before {
   background: rgba(255, 255, 255, 0.05) !important;
@@ -799,7 +811,14 @@ input, textarea, select, [contenteditable="true"] {
 .transparent-ui .quick-launch-window,
 .transparent-ui .palettes-gallery-panel,
 .transparent-ui .discover-filter-panel,
-.transparent-ui .discover-pagesize-panel {
+.transparent-ui .discover-pagesize-panel,
+.transparent-ui .dropdown-panel,
+.transparent-ui .ri-dropdown,
+.transparent-ui .ri-overflow-menu,
+.transparent-ui .custom-context-menu,
+.transparent-ui .play-options-popover,
+.transparent-ui .dressing-room-modal,
+.transparent-ui #dl-files-panel {
   background: rgba(27, 27, 27, var(--ui-win-a, 0.88)) !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
