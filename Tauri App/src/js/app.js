@@ -21078,25 +21078,6 @@ function initLaunchVerifyStatus() {
 
 function initCrashDialog() {
   if (!api.onGameCrashed) return;
-  const overlay = document.getElementById('crash-overlay');
-  if (!overlay) return;
-
-  const close = () => overlay.classList.add('hidden');
-  document.getElementById('btn-crash-close').addEventListener('click', close);
-  document.getElementById('btn-crash-dismiss').addEventListener('click', close);
-
-  document.getElementById('btn-crash-view-log').addEventListener('click', async () => {
-    const versionId = overlay.dataset.versionId;
-    const name = overlay.dataset.instanceName;
-    if (versionId && api.openInstanceConsoleWindow) {
-      await api.openInstanceConsoleWindow(versionId, name);
-    }
-  });
-
-  // Always shown on a real crash — no "likely cause" analysis, no settings
-  // gate. The backend still runs its heuristics (see crash_analysis.rs) to
-  // decide *whether* this exit looked like a crash at all, but the popup
-  // itself intentionally says nothing more than "Your Game Crashed".
   api.onGameCrashed((event) => {
     showCrashDialog(event.payload);
   });
@@ -21104,13 +21085,8 @@ function initCrashDialog() {
 
 function showCrashDialog(report) {
   if (!report) return;
-  const overlay = document.getElementById('crash-overlay');
-  if (!overlay) return;
-
-  overlay.dataset.versionId = report.version_id || '';
-  overlay.dataset.instanceName = report.instance_name || '';
-
-  overlay.classList.remove('hidden');
+  const name = report.instance_name || report.version_id || 'Your game';
+  showToast(`${name} crashed (this might be wrong) — open the console log for details`, 'error', 'Game Crashed');
 }
 
 // Above this many affected mods, listing every single one starts to feel
