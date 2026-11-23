@@ -51,6 +51,10 @@ find squashfs-root/usr/lib -maxdepth 1 \( \
   -name "libwayland-server.so*" \
 \) -exec rm -fv {} \; || true
 
+# Fix permissions on AppDir (required by appimagetool)
+chmod -R a+rX squashfs-root
+[ -f "squashfs-root/AppRun" ] && chmod a+rx "squashfs-root/AppRun"
+
 # Repackage using appimagetool if available; otherwise download it.
 if ! command -v appimagetool > /dev/null 2>&1; then
   echo "appimagetool not found, installing..."
@@ -68,12 +72,13 @@ fi
 # If the env var approach also fails (e.g. mksquashfs doesn't support xz on
 # this host), fall back silently to default compression so the build never
 # breaks just over a size optimisation.
+# We pass --no-appstream to avoid warnings/checks when appstream metadata is absent.
 if APPIMAGETOOL_MKSQUASHFS_ARGS="-comp xz -Xdict-size 100% -Xbcj x86" \
-     $APPIMAGETOOL squashfs-root "patched.AppImage" 2>/dev/null; then
+     $APPIMAGETOOL --no-appstream squashfs-root "patched.AppImage" 2>/dev/null; then
   echo "Repackaged with xz compression."
 else
   echo "xz compression unavailable, falling back to default compression..."
-  $APPIMAGETOOL squashfs-root "patched.AppImage"
+  $APPIMAGETOOL --no-appstream squashfs-root "patched.AppImage"
 fi
 
 popd > /dev/null
