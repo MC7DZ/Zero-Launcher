@@ -1443,15 +1443,6 @@
             <input type="checkbox" id="inst-always-offline" />
             <span class="toggle-slider"></span>
           </label>
-
-          <label class="adv-toggle-tile toggle-row" for="inst-skip-assets">
-            <span class="adv-toggle-text">
-              <span class="adv-toggle-title">Skip installing assets/libraries files</span>
-              <span class="adv-toggle-sub">Automatically enables always launch offline to skip downloading extra assets and library files.</span>
-            </span>
-            <input type="checkbox" id="inst-skip-assets" />
-            <span class="toggle-slider"></span>
-          </label>
         </div>
 
         <!-- Install Progress (if active) -->
@@ -1464,6 +1455,11 @@
 
         <!-- Floating Action Island -->
         <div class="hypr-actions-island">
+          <label class="hypr-action-toggle toggle-row" for="inst-skip-assets" title="Skip downloading assets during install (missing assets will be downloaded when launching the game)">
+            <input type="checkbox" id="inst-skip-assets" />
+            <span class="toggle-slider"></span>
+            <span class="hypr-action-toggle-label">Skip assets/libraries</span>
+          </label>
           <button id="btn-cancel-install-form" class="btn-ghost">Cancel</button>
           <button id="btn-start-install" class="btn-accent">Install &amp; Play</button>
         </div>
@@ -1645,15 +1641,6 @@
             <span class="toggle-slider"></span>
           </label>
 
-          <label class="adv-toggle-tile toggle-row" for="edit-inst-skip-assets">
-            <span class="adv-toggle-text">
-              <span class="adv-toggle-title">Skip installing assets/libraries files</span>
-              <span class="adv-toggle-sub">Automatically enables always launch offline to skip downloading extra assets and library files.</span>
-            </span>
-            <input type="checkbox" id="edit-inst-skip-assets" />
-            <span class="toggle-slider"></span>
-          </label>
-
           <!-- Game Directory Display -->
           <div class="form-group">
             <label class="bento-tile-label">Game Directory</label>
@@ -1667,6 +1654,11 @@
 
         <!-- Floating Action Island -->
         <div class="hypr-actions-island">
+          <label class="hypr-action-toggle toggle-row" for="edit-inst-skip-assets" title="Skip downloading assets during install (missing assets will be downloaded when launching the game)">
+            <input type="checkbox" id="edit-inst-skip-assets" />
+            <span class="toggle-slider"></span>
+            <span class="hypr-action-toggle-label">Skip assets/libraries</span>
+          </label>
           <button id="btn-cancel-edit-instance-2" class="btn-ghost">Cancel</button>
           <button id="btn-save-edit-instance" class="btn-accent">Save Changes</button>
         </div>

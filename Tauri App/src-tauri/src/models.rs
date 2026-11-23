@@ -952,6 +952,10 @@ pub struct InstallRequestPayload {
     /// backend when absent.
     #[serde(default)]
     pub download_id: Option<String>,
+    /// When true, skips downloading assets during instance creation/installation.
+    /// Missing assets are then downloaded during the pre-launch verify check.
+    #[serde(default)]
+    pub skip_assets: Option<bool>,
 }
 
 // ── Install Progress ─────────────────────────────────────────────────────────

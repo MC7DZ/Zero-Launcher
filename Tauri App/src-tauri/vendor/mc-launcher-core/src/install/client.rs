@@ -125,6 +125,23 @@ pub fn install_version_files(
     )
 }
 
+/// Installs version files with an option to skip downloading assets.
+pub fn install_version_files_with_options(
+    version: &VersionJson,
+    minecraft_dir: impl AsRef<Path>,
+    skip_assets: bool,
+    reporter: &mut dyn ProgressReporter,
+) -> Result<()> {
+    install_version_files_for_platform_with_options(
+        version,
+        minecraft_dir,
+        Platform::current(),
+        CompatibilityPolicy::Auto,
+        skip_assets,
+        reporter,
+    )
+}
+
 /// Installs version files for an explicit platform and compatibility policy.
 ///
 /// This is useful for tests and custom launchers that need deterministic
@@ -139,6 +156,25 @@ pub fn install_version_files_for_platform(
     minecraft_dir: impl AsRef<Path>,
     platform: Platform,
     compatibility: CompatibilityPolicy,
+    reporter: &mut dyn ProgressReporter,
+) -> Result<()> {
+    install_version_files_for_platform_with_options(
+        version,
+        minecraft_dir,
+        platform,
+        compatibility,
+        false,
+        reporter,
+    )
+}
+
+/// Installs version files for an explicit platform, compatibility policy, and skip_assets flag.
+pub fn install_version_files_for_platform_with_options(
+    version: &VersionJson,
+    minecraft_dir: impl AsRef<Path>,
+    platform: Platform,
+    compatibility: CompatibilityPolicy,
+    skip_assets: bool,
     reporter: &mut dyn ProgressReporter,
 ) -> Result<()> {
     let minecraft_dir = minecraft_dir.as_ref();
@@ -159,7 +195,9 @@ pub fn install_version_files_for_platform(
         CompatibilityPolicy::Disabled,
     )?;
     execute_plan(&plan, reporter)?;
-    crate::install::assets::install_assets(version, minecraft_dir, reporter)?;
+    if !skip_assets {
+        crate::install::assets::install_assets(version, minecraft_dir, reporter)?;
+    }
     crate::install::natives::extract_natives_for_platform(
         &version.libraries,
         minecraft_dir,

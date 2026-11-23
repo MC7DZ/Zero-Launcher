@@ -27,6 +27,10 @@ pub struct InstallRequest {
     /// about a managed/bundled JRE should set this so the installer doesn't
     /// have to guess.
     pub java_executable: Option<PathBuf>,
+    /// When `true`, asset objects are not downloaded during installation.
+    /// Missing assets will be downloaded on the first game launch via the
+    /// pre-launch verify pass.
+    pub skip_assets: bool,
 }
 
 impl InstallRequest {
@@ -37,6 +41,7 @@ impl InstallRequest {
             loader: None,
             java: JavaInstallPolicy::Auto,
             java_executable: None,
+            skip_assets: false,
         }
     }
 }

@@ -1098,6 +1098,7 @@ pub async fn install_minecraft(
             java_executable: ensured_java_executable
                 .clone()
                 .or_else(crate::commands::java::find_any_managed_java),
+            skip_assets: payload.skip_assets.unwrap_or(false),
         };
 
         // ── Progress tracking state, captured by the reporter closure ──
@@ -2960,6 +2961,7 @@ pub async fn launch_minecraft(
     let app_done = app.clone();
     let vid_done = version_id.clone();
     let game_dir_done = game_dir.clone();
+    let child_pid = pid;
     tokio::spawn(async move {
         let status = child.wait().await;
         let exit_code = match &status {
@@ -2976,26 +2978,32 @@ pub async fn launch_minecraft(
         let _ = app_done.emit("log-entry", &entry);
         let _ = app_done.emit("instance-log", &InstanceLogEvent { version_id: vid_done.clone(), entry });
 
-        // Flip this instance's running flag off (entry stays for history),
-        // and add this session's elapsed time to the instance's total
-        // playtime before we lose track of when it started.
-        let started_at_for_playtime = {
+        // Flip this instance's running flag off if it is still the same process
+        // (if the user force-relaunched the instance, another newer process may now
+        // be running under this version_id with a different pid).
+        let (still_current_process, started_at_for_playtime) = {
             let mut running = state_done.running_instances.lock().unwrap_or_else(|e| e.into_inner());
             let info = running.get_mut(&vid_done);
             let started_at = info.as_ref().map(|i| i.started_at.clone());
-            if let Some(info) = info {
-                info.running = false;
+            let is_match = match (info.as_ref().and_then(|i| i.pid), child_pid) {
+                (Some(current), Some(exited)) => current == exited,
+                _ => true,
+            };
+            if is_match {
+                if let Some(info) = info {
+                    info.running = false;
+                }
             }
-            started_at
+            (is_match, started_at)
         };
         if let Some(started_at) = started_at_for_playtime {
             accumulate_playtime(&state_done, &vid_done, &started_at);
         }
-        // Drop it from the persisted file too — it's no longer something a
-        // future launch needs to rediscover.
-        state_done.save_running_instances();
-        let _ = app_done.emit("instances-changed", ());
-        let _ = app_done.emit("running-instances-changed", ());
+        if still_current_process {
+            state_done.save_running_instances();
+            let _ = app_done.emit("instances-changed", ());
+            let _ = app_done.emit("running-instances-changed", ());
+        }
         let _ = app_done.emit("game-exited", &msg);
 
         // Try to diagnose a crash from this instance's console history.

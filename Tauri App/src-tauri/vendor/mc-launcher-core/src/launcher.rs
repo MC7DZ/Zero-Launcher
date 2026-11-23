@@ -11,7 +11,8 @@ use crate::{
     core::version::VersionJson,
     install::{
         client::{
-            fetch_vanilla_version, install_version_files, load_version_json, write_version_json,
+            fetch_vanilla_version, install_version_files_with_options,
+            load_version_json, write_version_json,
         },
         loader::{run_loader_installer_with_output, write_loader_profile, InstallerInvocation},
         request::{InstallRequest, InstallResult},
@@ -82,7 +83,7 @@ impl Launcher {
         if let Some(loader) = request.loader.clone() {
             match loader {
                 LoaderSpec::Fabric { version } => {
-                    self.install_vanilla_version(&request.minecraft_version, reporter)?;
+                    self.install_vanilla_version(&request.minecraft_version, request.skip_assets, reporter)?;
                     let loader_version = resolve_fabric_loader_version(version)?;
                     let profile = crate::loader::fabric::fetch_profile(
                         &request.minecraft_version,
@@ -91,11 +92,11 @@ impl Launcher {
                     let version_id = version_id(&profile, "loader profile")?.to_string();
                     write_loader_profile(&self.minecraft_dir, &profile)?;
                     let merged = self.load_version(&version_id)?;
-                    install_version_files(&merged, &self.minecraft_dir, reporter)?;
+                    install_version_files_with_options(&merged, &self.minecraft_dir, request.skip_assets, reporter)?;
                     return Ok(InstallResult { version_id });
                 }
                 LoaderSpec::Quilt { version } => {
-                    self.install_vanilla_version(&request.minecraft_version, reporter)?;
+                    self.install_vanilla_version(&request.minecraft_version, request.skip_assets, reporter)?;
                     let loader_version = resolve_quilt_loader_version(version)?;
                     let profile = crate::loader::quilt::fetch_profile(
                         &request.minecraft_version,
@@ -104,11 +105,11 @@ impl Launcher {
                     let version_id = version_id(&profile, "loader profile")?.to_string();
                     write_loader_profile(&self.minecraft_dir, &profile)?;
                     let merged = self.load_version(&version_id)?;
-                    install_version_files(&merged, &self.minecraft_dir, reporter)?;
+                    install_version_files_with_options(&merged, &self.minecraft_dir, request.skip_assets, reporter)?;
                     return Ok(InstallResult { version_id });
                 }
                 LoaderSpec::Forge { version } => {
-                    self.install_vanilla_version(&request.minecraft_version, reporter)?;
+                    self.install_vanilla_version(&request.minecraft_version, request.skip_assets, reporter)?;
                     let loader_version =
                         resolve_forge_loader_version(&request.minecraft_version, version)?;
                     let installer_path = download_installer(
@@ -147,11 +148,11 @@ impl Launcher {
                         crate::loader::forge::forge_installed_version_id(&loader_version)?
                     };
                     let merged = self.load_version(&version_id)?;
-                    install_version_files(&merged, &self.minecraft_dir, reporter)?;
+                    install_version_files_with_options(&merged, &self.minecraft_dir, request.skip_assets, reporter)?;
                     return Ok(InstallResult { version_id });
                 }
                 LoaderSpec::NeoForge { version } => {
-                    self.install_vanilla_version(&request.minecraft_version, reporter)?;
+                    self.install_vanilla_version(&request.minecraft_version, request.skip_assets, reporter)?;
                     let loader_version =
                         resolve_neoforge_loader_version(&request.minecraft_version, version)?;
                     let installer_path = download_installer(
@@ -180,13 +181,13 @@ impl Launcher {
                     }
                     let version_id = expected_version_id;
                     let merged = self.load_version(&version_id)?;
-                    install_version_files(&merged, &self.minecraft_dir, reporter)?;
+                    install_version_files_with_options(&merged, &self.minecraft_dir, request.skip_assets, reporter)?;
                     return Ok(InstallResult { version_id });
                 }
             }
         }
 
-        self.install_vanilla_version(&request.minecraft_version, reporter)?;
+        self.install_vanilla_version(&request.minecraft_version, request.skip_assets, reporter)?;
         Ok(InstallResult {
             version_id: request.minecraft_version,
         })
@@ -225,11 +226,12 @@ impl Launcher {
     fn install_vanilla_version(
         &self,
         version_id: &str,
+        skip_assets: bool,
         reporter: &mut dyn ProgressReporter,
     ) -> Result<()> {
         let version = fetch_vanilla_version(version_id)?;
         write_version_json(&self.minecraft_dir, &version)?;
-        install_version_files(&version, &self.minecraft_dir, reporter)
+        install_version_files_with_options(&version, &self.minecraft_dir, skip_assets, reporter)
     }
 }
 

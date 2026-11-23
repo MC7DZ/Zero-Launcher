@@ -468,7 +468,7 @@ const api = {
   getAvailableVersions: () => invoke('get_available_versions'),
   getCachedVersions: () => invoke('get_cached_versions'),
   getLoaderVersions: (loader, minecraftVersion) => invoke('get_loader_versions', { loader, minecraftVersion }),
-  installVersion: (minecraftVersion, loader, loaderVersion, directory, name, oldVersionId, downloadId) =>
+  installVersion: (minecraftVersion, loader, loaderVersion, directory, name, oldVersionId, downloadId, skipAssets) =>
     invoke('install_minecraft', {
       payload: {
         minecraft_version: minecraftVersion || '',
@@ -478,6 +478,7 @@ const api = {
         name: name || null,
         old_version_id: oldVersionId || null,
         download_id: downloadId || null,
+        skip_assets: !!skipAssets,
       }
     }),
   launchGame: (versionId, offline, quickPlaySingleplayer, quickPlayMultiplayer, force) =>
@@ -6615,7 +6616,8 @@ function initInstanceActions() {
             isDanger: false,
           });
           if (shouldRelaunch) {
-            launchSelectedInstance(offlineOverride, true);
+            await launchSelectedInstance(offlineOverride, true);
+            await refreshRunningInstances();
             return;
           }
         } else if (errStr.includes('xrandr') || errStr.includes('xorg-xrandr')) {
@@ -6845,28 +6847,6 @@ function initInstanceActions() {
   document.getElementById('btn-cancel-new-instance').addEventListener('click', () => overlay.classList.add('hidden'));
   document.getElementById('btn-cancel-install-form').addEventListener('click', () => overlay.classList.add('hidden'));
 
-  const instSkipAssetsEl = document.getElementById('inst-skip-assets');
-  const instAlwaysOfflineEl = document.getElementById('inst-always-offline');
-  if (instSkipAssetsEl && instAlwaysOfflineEl) {
-    instSkipAssetsEl.addEventListener('change', () => {
-      instAlwaysOfflineEl.checked = instSkipAssetsEl.checked;
-    });
-    instAlwaysOfflineEl.addEventListener('change', () => {
-      instSkipAssetsEl.checked = instAlwaysOfflineEl.checked;
-    });
-  }
-
-  const editSkipAssetsEl = document.getElementById('edit-inst-skip-assets');
-  const editAlwaysOfflineEl = document.getElementById('edit-inst-always-offline');
-  if (editSkipAssetsEl && editAlwaysOfflineEl) {
-    editSkipAssetsEl.addEventListener('change', () => {
-      editAlwaysOfflineEl.checked = editSkipAssetsEl.checked;
-    });
-    editAlwaysOfflineEl.addEventListener('change', () => {
-      editSkipAssetsEl.checked = editAlwaysOfflineEl.checked;
-    });
-  }
-
   // Install
   document.getElementById('btn-start-install').addEventListener('click', installInstance);
 
@@ -7080,6 +7060,7 @@ function initInstanceActions() {
     const maxRamMb = editMaxRamInput && editMaxRamInput.value ? parseInt(editMaxRamInput.value) : null;
     const jvmArgs = editJvmArgsInput ? editJvmArgsInput.value.trim() : '';
     const alwaysOffline = !!document.getElementById('edit-inst-always-offline')?.checked;
+    const skipAssets = !!document.getElementById('edit-inst-skip-assets')?.checked;
 
     const currentMc = (inst.minecraft_version && isLikelyMcVersion(inst.minecraft_version)) ? inst.minecraft_version : (isLikelyMcVersion(inst.version_id) ? inst.version_id : null);
     const currentLoader = (inst.loader && inst.loader.toLowerCase() !== 'unknown') ? inst.loader.toLowerCase() : null;
@@ -7108,7 +7089,7 @@ function initInstanceActions() {
         showToast(`Reinstalling ${name || inst.name} as ${newMcVersion} (${loaderLabel(newLoader)})…`, 'info');
         reinstallDlId = newInstallDownloadId();
         if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(reinstallDlId, newMcVersion, newLoader);
-        const newInstance = await api.installVersion(newMcVersion, newLoader, loaderVersion, inst.directory, name || inst.name, inst.version_id, reinstallDlId);
+        const newInstance = await api.installVersion(newMcVersion, newLoader, loaderVersion, inst.directory, name || inst.name, inst.version_id, reinstallDlId, skipAssets);
         // Persist advanced settings onto the newly created instance record
         try {
           await api.updateInstance(newInstance.version_id, name || null, loaderVersion || 'latest', javaPath, minRamMb, maxRamMb, jvmArgs, newLoader, newMcVersion, alwaysOffline);
@@ -8126,6 +8107,7 @@ async function installInstance() {
     const maxRamMb = maxRamVal ? parseInt(maxRamVal, 10) : null;
     const jvmArgs = document.getElementById('inst-jvm-args')?.value?.trim() || '';
     const alwaysOffline = !!document.getElementById('inst-always-offline')?.checked;
+    const skipAssets = !!document.getElementById('inst-skip-assets')?.checked;
 
     // Several installs can run at once, but two of them must never write
     // into the same instance folder.
@@ -8147,7 +8129,7 @@ async function installInstance() {
     if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(dlId, mcVersion, loader);
 
     try {
-      const result = await api.installVersion(mcVersion, loader, loaderVersion, directory, name, null, dlId);
+      const result = await api.installVersion(mcVersion, loader, loaderVersion, directory, name, null, dlId, skipAssets);
 
       // A brand-new instance should never come up hidden — but its
       // version_id can coincide with an entry that was previously hidden
