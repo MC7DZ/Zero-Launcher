@@ -480,12 +480,13 @@ const api = {
         download_id: downloadId || null,
       }
     }),
-  launchGame: (versionId, offline, quickPlaySingleplayer, quickPlayMultiplayer) =>
+  launchGame: (versionId, offline, quickPlaySingleplayer, quickPlayMultiplayer, force) =>
     invoke('launch_minecraft', {
       versionId,
       offline: offline ?? null,
       quickPlaySingleplayer: quickPlaySingleplayer || null,
       quickPlayMultiplayer: quickPlayMultiplayer || null,
+      force: force ?? null,
     }),
   updateInstance: (versionId, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs, loader, minecraftVersion, alwaysOffline) =>
     invoke('update_instance', {
@@ -6504,7 +6505,7 @@ function initInstanceActions() {
   });
 
   // Play
-  async function launchSelectedInstance(offlineOverride) {
+  async function launchSelectedInstance(offlineOverride, force = false) {
     if (!selectedInstanceId) return;
     const btn = document.getElementById('btn-play');
     // Track which instance this launch is for — if the user clicks a different
@@ -6552,7 +6553,7 @@ function initInstanceActions() {
 
       // `undefined` here means "no explicit per-launch choice" — the
       // backend falls back to the saved "Always Launch Offline" setting.
-      const launchPromise = api.launchGame(selectedInstanceId, offlineOverride);
+      const launchPromise = api.launchGame(selectedInstanceId, offlineOverride, null, null, force);
       launchPromise.then(() => {
         if (timedOut) {
           showToast(`"${(inst && (inst.name || inst.version_id)) || selectedInstanceId}" launched (after a delay)`, 'success');
@@ -6604,6 +6605,19 @@ function initInstanceActions() {
         // expected, not an error the user needs to act on.
         if (errStr.toLowerCase().includes('launch cancelled by user') || errStr.toLowerCase().includes('cancelled by user')) {
           // no-op: user intentionally stopped the launch
+        } else if (errStr.toLowerCase().includes('already running')) {
+          const instName = (inst && (inst.name || inst.version_id)) || 'This instance';
+          const shouldRelaunch = await showConfirmDialog({
+            type: 'warning',
+            title: 'Instance Already Running',
+            message: `"${instName}" is already running. Do you want to launch it again?`,
+            confirmText: 'Launch Again',
+            isDanger: false,
+          });
+          if (shouldRelaunch) {
+            launchSelectedInstance(offlineOverride, true);
+            return;
+          }
         } else if (errStr.includes('xrandr') || errStr.includes('xorg-xrandr')) {
           showXrandrWarningModal(() => {
             document.getElementById('btn-play')?.click();
@@ -6815,7 +6829,9 @@ function initInstanceActions() {
     if (instMaxRamInput) instMaxRamInput.value = '';
     if (instJvmArgsInput) instJvmArgsInput.value = '';
     const instAlwaysOfflineChk = document.getElementById('inst-always-offline');
+    const instSkipAssetsChk = document.getElementById('inst-skip-assets');
     if (instAlwaysOfflineChk) instAlwaysOfflineChk.checked = false;
+    if (instSkipAssetsChk) instSkipAssetsChk.checked = false;
     if (btnToggleNewAdvanced && newInstAdvancedIsland) {
       btnToggleNewAdvanced.setAttribute('aria-expanded', 'false');
       newInstAdvancedIsland.classList.add('hidden');
@@ -6828,6 +6844,28 @@ function initInstanceActions() {
   });
   document.getElementById('btn-cancel-new-instance').addEventListener('click', () => overlay.classList.add('hidden'));
   document.getElementById('btn-cancel-install-form').addEventListener('click', () => overlay.classList.add('hidden'));
+
+  const instSkipAssetsEl = document.getElementById('inst-skip-assets');
+  const instAlwaysOfflineEl = document.getElementById('inst-always-offline');
+  if (instSkipAssetsEl && instAlwaysOfflineEl) {
+    instSkipAssetsEl.addEventListener('change', () => {
+      instAlwaysOfflineEl.checked = instSkipAssetsEl.checked;
+    });
+    instAlwaysOfflineEl.addEventListener('change', () => {
+      instSkipAssetsEl.checked = instAlwaysOfflineEl.checked;
+    });
+  }
+
+  const editSkipAssetsEl = document.getElementById('edit-inst-skip-assets');
+  const editAlwaysOfflineEl = document.getElementById('edit-inst-always-offline');
+  if (editSkipAssetsEl && editAlwaysOfflineEl) {
+    editSkipAssetsEl.addEventListener('change', () => {
+      editAlwaysOfflineEl.checked = editSkipAssetsEl.checked;
+    });
+    editAlwaysOfflineEl.addEventListener('change', () => {
+      editSkipAssetsEl.checked = editAlwaysOfflineEl.checked;
+    });
+  }
 
   // Install
   document.getElementById('btn-start-install').addEventListener('click', installInstance);
@@ -6986,7 +7024,9 @@ function initInstanceActions() {
     if (editMaxRamInput) editMaxRamInput.value = inst.max_ram_mb || '';
     if (editJvmArgsInput) editJvmArgsInput.value = inst.jvm_args || '';
     const editAlwaysOfflineChk = document.getElementById('edit-inst-always-offline');
+    const editSkipAssetsChk = document.getElementById('edit-inst-skip-assets');
     if (editAlwaysOfflineChk) editAlwaysOfflineChk.checked = !!inst.always_offline;
+    if (editSkipAssetsChk) editSkipAssetsChk.checked = !!inst.always_offline;
     populateEditJavaDropdown(inst.java_path);
 
     editMcVersionSelect.innerHTML = '<option>Loading…</option>';

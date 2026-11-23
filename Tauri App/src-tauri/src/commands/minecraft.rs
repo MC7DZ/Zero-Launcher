@@ -1672,6 +1672,7 @@ pub async fn launch_minecraft(
     offline: Option<bool>,
     quick_play_singleplayer: Option<String>,
     quick_play_multiplayer: Option<String>,
+    force: Option<bool>,
 ) -> Result<(), String> {
     use mc_launcher_core::prelude::*;
     logger::debug(
@@ -1698,9 +1699,10 @@ pub async fn launch_minecraft(
     });
 
     // Only block re-launching the *same* instance while it's already
-    // running; different instances are allowed to run side by side, each
+    // running unless the user explicitly requested to force relaunch it;
+    // different instances are allowed to run side by side, each
     // tracked independently with its own console.
-    {
+    if !force.unwrap_or(false) {
         let running_instances = state.running_instances.lock().unwrap_or_else(|e| e.into_inner());
         if running_instances
             .get(&version_id)
