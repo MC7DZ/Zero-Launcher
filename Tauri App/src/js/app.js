@@ -20934,6 +20934,21 @@ function initAboutExtras() {
       webRow.addEventListener('click', openWebsite);
     }
   }
+  const ghBtn = document.getElementById('btn-open-github');
+  if (ghBtn && !ghBtn.dataset.ready) {
+    ghBtn.dataset.ready = '1';
+    const openGithub = () => {
+      const url = ghBtn.dataset.url || 'https://github.com/MC7DZ/Zero-Launcher';
+      invoke('open_url_in_browser', { url })
+        .catch(e => showToast('Could not open GitHub: ' + e, 'error'));
+    };
+    ghBtn.addEventListener('click', (e) => { e.stopPropagation(); openGithub(); });
+    const ghRow = ghBtn.closest('.about-row');
+    if (ghRow) {
+      ghRow.classList.add('is-link');
+      ghRow.addEventListener('click', openGithub);
+    }
+  }
 }
 
 function initUpdateChecker() {
