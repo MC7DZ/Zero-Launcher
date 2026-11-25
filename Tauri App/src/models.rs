@@ -243,6 +243,8 @@ pub struct LauncherSettings {
     pub notification_max: u32,
     #[serde(default = "default_notif_duration")]
     pub notification_duration: u32,
+    #[serde(default = "default_notif_animation")]
+    pub notification_animation: String,
     #[serde(default)]
     pub use_background_image: bool,
     #[serde(default)]
@@ -519,7 +521,8 @@ fn default_search_bg() -> String { "#1a1a24".to_string() }
 fn default_notif_bg() -> String { "#13131a".to_string() }
 fn default_notif_max() -> u32 { 5 }
 fn default_notif_duration() -> u32 { 5 }
-fn default_notif_style() -> String { "Minimal Outline".to_string() }
+fn default_notif_animation() -> String { "Slide".to_string() }
+fn default_notif_style() -> String { "Minimal".to_string() }
 fn default_bg_fit() -> String { "Cover".to_string() }
 fn default_bg_dim() -> u32 { 35 }
 fn default_bg_brightness() -> u32 { 100 }
@@ -603,6 +606,7 @@ impl Default for LauncherSettings {
             notification_style: default_notif_style(),
             notification_max: default_notif_max(),
             notification_duration: default_notif_duration(),
+            notification_animation: default_notif_animation(),
             use_background_image: false,
             background_image_path: String::new(),
             background_image_fit: default_bg_fit(),

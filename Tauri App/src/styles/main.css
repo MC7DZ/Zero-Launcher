@@ -8005,9 +8005,33 @@ body.screenshot-lightbox-open {
   border-radius: 6px;
 }
 
+/* ── Selectable notification animations ──
+   Set via <html data-notif-anim="...">. Only the live toast container is
+   affected (not the style-preview stages). Plain transform/opacity
+   transitions: they run once on enter/leave, then nothing is animating. */
+html[data-notif-anim="slide"]  #toast-container .toast { transform: translateX(48px); transition: opacity 0.2s ease-out, transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+html[data-notif-anim="drop"]   #toast-container .toast { transform: translateY(-28px); transition: opacity 0.2s ease-out, transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+html[data-notif-anim="pop"]    #toast-container .toast { transform: scale(0.82); transition: opacity 0.16s ease-out, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
+html[data-notif-anim="bounce"] #toast-container .toast { transform: translateX(72px); transition: opacity 0.18s ease-out, transform 0.42s cubic-bezier(0.34, 1.7, 0.5, 1); }
+html[data-notif-anim="flip"]   #toast-container .toast { transform: perspective(500px) rotateX(-78deg); transform-origin: top center; transition: opacity 0.2s ease-out, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+html[data-notif-anim="none"]   #toast-container .toast { transition: none; }
+html[data-notif-anim="slide"]  #toast-container .toast.toast-visible,
+html[data-notif-anim="drop"]   #toast-container .toast.toast-visible,
+html[data-notif-anim="pop"]    #toast-container .toast.toast-visible,
+html[data-notif-anim="bounce"] #toast-container .toast.toast-visible,
+html[data-notif-anim="flip"]   #toast-container .toast.toast-visible { transform: none; }
+
+/* Settings picker */
+.notif-anim-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.notif-anim-chip { padding: 6px 12px; border-radius: 999px; background: transparent; border: 1px solid rgba(var(--overlay-rgb), 0.14); color: var(--text-muted); font: 500 12px var(--font); cursor: pointer; transition: background 0.18s, border-color 0.18s, color 0.18s; }
+.notif-anim-chip small { margin-left: 4px; font-size: 10px; opacity: 0.7; }
+.notif-anim-chip:hover { color: var(--text); border-color: rgba(var(--overlay-rgb), 0.28); }
+.notif-anim-chip.on { background: var(--accent); border-color: var(--accent); color: var(--wz-on-accent, #0b0b0f); font-weight: 600; }
+.notif-anim-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* Respect reduced-motion preferences */
 @media (prefers-reduced-motion: reduce) {
-  .toast { transition: none !important; opacity: 1 !important; }
+  .toast { transition: none !important; opacity: 1 !important; transform: none !important; }
 }
 
 
@@ -10411,7 +10435,8 @@ body.screenshot-lightbox-open {
 @media (max-height: 700px) { .wz-title-xl { font-size: 34px; } .wz-scroll { padding-top: 26px; } }
 
 /* Transparent UI / WebKitGTK flat panels */
-.transparent-ui .wz-sheet { background: rgba(27, 27, 27, 0.88); box-shadow: none; }
+.transparent-ui .wz-sheet { background: rgba(27, 27, 27, var(--ui-win-a, 0.88)); box-shadow: none; }
+.transparent-ui .wz-rail { background: linear-gradient(180deg, var(--accent-dim), transparent 60%), rgba(0, 0, 0, calc(var(--ui-panel-a, 0.25) * 0.5)); }
 .is-webkit-gtk:not(.transparent-ui) .wz-sheet { background: #1b1b1b; box-shadow: none; }
 
 html.no-ui-animations .wz-sheet *, html.no-ui-animations .wz-sheet { animation: none !important; transition: none !important; }
@@ -14022,3 +14047,55 @@ html.no-ui-animations .instance-card:active { transform: none; }
 }
 .ui-slider-reset:hover { border-color: var(--accent); color: var(--text); }
 .ui-slider-reset:disabled { opacity: 0.4; pointer-events: none; }
+
+/* Wizard · Surfaces toggles */
+.wz-toggles { display: flex; flex-direction: column; gap: 10px; }
+.wz-toggles .wz-group-head { margin-bottom: 0; }
+.wz-toggle-row { font-size: 13px; color: var(--text); }
+
+
+/* ═══ Setup wizard · follows the "Transparent UI cards" and "Tint panels & menus" settings ═══
+   Transparent: the sheet uses the same window opacity as other floating
+   windows (see the .transparent-ui rule near the wizard styles).
+   Tint ON: surfaces use the shared accent + base-color blend (--panel-tint*,
+   --panel-edge*), exactly like every other panel.
+   Tint OFF: wash, tinted borders and tinted fills drop back to neutral. */
+.wz-sheet {
+  background-image: var(--panel-tint);
+  border-color: var(--panel-edge-strong);
+}
+.wz-sheet::before {
+  background:
+    radial-gradient(90% 60% at 0% 0%, color-mix(in srgb, var(--panel-tint-color) 26%, transparent), transparent 62%),
+    radial-gradient(70% 50% at 100% 100%, color-mix(in srgb, var(--panel-tint-color) 18%, transparent), transparent 68%);
+}
+.wz-rail { border-right-color: var(--panel-edge); }
+.wz-foot { border-top-color: var(--panel-edge); }
+
+:root.no-panel-tint .wz-sheet {
+  background-image: none;
+  border-color: var(--wz-line);
+  box-shadow: var(--shadow-lg);
+}
+:root.no-panel-tint .wz-sheet::before { display: none; }
+:root.no-panel-tint .wz-rail {
+  background: rgba(0, 0, 0, 0.22);
+  border-right-color: var(--wz-line);
+}
+:root.no-panel-tint .wz-foot,
+:root.no-panel-tint .wz-outline,
+:root.no-panel-tint .wz-outline li,
+:root.no-panel-tint .wz-map li,
+:root.no-panel-tint .wz-map li:first-child,
+:root.no-panel-tint .wz-summary > div + div { border-color: var(--wz-line); }
+:root.no-panel-tint .wz-panel,
+:root.no-panel-tint .wz-summary,
+:root.no-panel-tint .wz-acc {
+  background: rgba(var(--overlay-rgb), 0.03);
+  border-color: var(--wz-line);
+}
+:root.no-panel-tint .wz-preview,
+:root.no-panel-tint .wz-stepper {
+  border-color: var(--wz-line);
+  box-shadow: none;
+}

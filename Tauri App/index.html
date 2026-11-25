@@ -1531,6 +1531,15 @@
             <input type="text" id="edit-inst-name" class="input-field" placeholder="My Instance" autocomplete="off" spellcheck="false" />
           </div>
 
+          <!-- Permanent instance ID (read-only; shortcuts launch by it) -->
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="bento-tile-label" for="edit-inst-id">Instance ID <span class="bento-tile-hint">(permanent, can't be changed)</span></label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input type="text" id="edit-inst-id" class="input-field" readonly tabindex="-1" spellcheck="false" autocomplete="off" style="flex:1; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing:0.04em; opacity:0.85; cursor:default;" />
+              <button type="button" id="btn-copy-inst-id" class="btn-secondary btn-sm" title="Copy instance ID">Copy</button>
+            </div>
+          </div>
+
           <!-- Mod Loader Buttons Row -->
           <div class="form-group" style="margin-bottom: 14px;">
             <label class="bento-tile-label">Mod Loader <span class="bento-tile-hint">(changing this reinstalls)</span></label>
@@ -2798,6 +2807,12 @@
                   </div>
                 </div>
 
+                <div style="display:flex; flex-direction:column; gap:8px; margin-top:16px;">
+                  <label style="margin:0; font-size:13px; font-weight:700;">Notification Animation</label>
+                  <div id="notif-anim-chips" class="notif-anim-chips" role="radiogroup" aria-label="Notification animation"></div>
+                  <p class="settings-hint" style="margin:0;">How notifications enter and leave the screen. Picking one plays a sample.</p>
+                </div>
+
                 <div class="bgimg-controls-col" style="margin-top:16px; max-width:460px;">
                   <div class="bgimg-slider">
                     <div class="bgimg-slider-head"><label for="setting-notif-max">Max Notifications</label><output id="out-notif-max">5</output></div>
@@ -3592,7 +3607,7 @@
                       </div>
                       <div class="wz-stepper" role="group" aria-label="Notification style">
                         <button type="button" id="wz-notif-prev" aria-label="Previous notification style"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
-                        <div><span class="wz-stepper-k">Notifications</span><span class="wz-stepper-v" id="wz-notif-name">Glass</span></div>
+                        <div><span class="wz-stepper-k">Notifications</span><span class="wz-stepper-v" id="wz-notif-name">Minimal</span></div>
                         <button type="button" id="wz-notif-next" aria-label="Next notification style"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
                       </div>
                     </div>
@@ -3621,6 +3636,19 @@
                       <div class="wz-group" style="--i:6">
                         <div class="wz-group-head"><span>Motion</span></div>
                         <div class="wz-chips" id="wz-bg-anim" role="radiogroup" aria-label="Background animation"></div>
+                      </div>
+                      <div class="wz-group wz-toggles" style="--i:7">
+                        <div class="wz-group-head"><span>Surfaces</span></div>
+                        <label class="toggle-row wz-toggle-row">
+                          <input type="checkbox" id="wz-transparency" checked />
+                          <span class="toggle-slider"></span>
+                          <span>Transparent UI cards</span>
+                        </label>
+                        <label class="toggle-row wz-toggle-row">
+                          <input type="checkbox" id="wz-panel-tint" checked />
+                          <span class="toggle-slider"></span>
+                          <span>Tint panels &amp; menus</span>
+                        </label>
                       </div>
                     </div>
                   </div>

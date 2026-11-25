@@ -130,8 +130,13 @@ impl AppState {
         // launcher.
         let versions_dir = settings.resolved_game_directory().join("versions");
         std::fs::create_dir_all(&versions_dir).ok();
-        let instances = Self::load_json::<Vec<InstalledInstance>>(&versions_dir, "instances.json")
+        let mut instances = Self::load_json::<Vec<InstalledInstance>>(&versions_dir, "instances.json")
             .unwrap_or_default();
+        // Older instances have no permanent ID yet: create one and save it right
+        // away so it is the same on every launch.
+        if crate::models::ensure_instance_ids(&mut instances) {
+            Self::save_json(&versions_dir, "instances.json", &instances);
+        }
         let hidden_instances = Self::load_json::<Vec<String>>(&versions_dir, "hidden_instances.json")
             .unwrap_or_default();
 
@@ -362,9 +367,13 @@ impl AppState {
             settings.resolved_game_directory().join("versions")
         };
         std::fs::create_dir_all(&versions_dir).ok();
-        let loaded = Self::load_json::<Vec<InstalledInstance>>(&versions_dir, "instances.json")
+        let mut loaded = Self::load_json::<Vec<InstalledInstance>>(&versions_dir, "instances.json")
             .unwrap_or_default();
+        let ids_added = crate::models::ensure_instance_ids(&mut loaded);
         *self.instances.lock().unwrap_or_else(|e| e.into_inner()) = loaded;
+        if ids_added {
+            self.save_instances();
+        }
         let loaded_hidden = Self::load_json::<Vec<String>>(&versions_dir, "hidden_instances.json")
             .unwrap_or_default();
         *self.hidden_instances.lock().unwrap_or_else(|e| e.into_inner()) = loaded_hidden;

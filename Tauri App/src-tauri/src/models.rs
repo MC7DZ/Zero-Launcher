@@ -253,6 +253,8 @@ pub struct LauncherSettings {
     pub notification_max: u32,
     #[serde(default = "default_notif_duration")]
     pub notification_duration: u32,
+    #[serde(default = "default_notif_animation")]
+    pub notification_animation: String,
     #[serde(default)]
     pub use_background_image: bool,
     #[serde(default)]
@@ -550,7 +552,8 @@ fn default_notif_bg() -> String { "#13131a".to_string() }
 fn default_notif_max() -> u32 { 5 }
 fn default_notif_duration() -> u32 { 5 }
 fn default_ui_transparent_opacity() -> u32 { 25 }
-fn default_notif_style() -> String { "Minimal Outline".to_string() }
+fn default_notif_animation() -> String { "Slide".to_string() }
+fn default_notif_style() -> String { "Minimal".to_string() }
 fn default_bg_fit() -> String { "Cover".to_string() }
 fn default_bg_dim() -> u32 { 35 }
 fn default_bg_brightness() -> u32 { 100 }
@@ -636,6 +639,7 @@ impl Default for LauncherSettings {
             notification_style: default_notif_style(),
             notification_max: default_notif_max(),
             notification_duration: default_notif_duration(),
+            notification_animation: default_notif_animation(),
             use_background_image: false,
             background_image_path: String::new(),
             background_image_fit: default_bg_fit(),
@@ -805,6 +809,14 @@ pub struct LatestVersion {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledInstance {
+    /// Permanent, unique ID of this instance. Generated once (see
+    /// [`new_instance_id`]) and **never changed** afterwards — renaming the
+    /// instance, changing its Minecraft version/loader or moving its folder
+    /// all leave it alone. Shortcuts launch an instance by this ID.
+    /// `#[serde(default)]` lets older `instances.json` files load; the
+    /// missing ID is then filled in and saved by [`ensure_instance_ids`].
+    #[serde(default)]
+    pub id: String,
     /// User-facing display name (defaults to the version/loader label if
     /// none was given at install time).
     #[serde(default)]
@@ -894,6 +906,69 @@ impl InstalledInstance {
             self.minecraft_directory.clone()
         }
     }
+}
+
+/// Makes a fresh 12-character hex ID that no instance in `existing` uses.
+pub fn new_instance_id(existing: &[InstalledInstance]) -> String {
+    loop {
+        let candidate: String = uuid::Uuid::new_v4().simple().to_string()[..12].to_string();
+        if !existing.iter().any(|i| i.id == candidate) {
+            return candidate;
+        }
+    }
+}
+
+/// Gives every instance that has no ID (older installs) one, and repairs
+/// duplicated IDs. Returns `true` if anything changed, so the caller can
+/// save the list. IDs that already exist are never touched.
+pub fn ensure_instance_ids(instances: &mut Vec<InstalledInstance>) -> bool {
+    let mut changed = false;
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for inst in instances.iter_mut() {
+        let trimmed = inst.id.trim().to_string();
+        if !trimmed.is_empty() && !used.contains(&trimmed) {
+            if inst.id != trimmed {
+                inst.id = trimmed.clone();
+                changed = true;
+            }
+            used.insert(trimmed);
+        } else {
+            inst.id.clear();
+        }
+    }
+    for inst in instances.iter_mut() {
+        if inst.id.is_empty() {
+            let id = loop {
+                let candidate: String = uuid::Uuid::new_v4().simple().to_string()[..12].to_string();
+                if !used.contains(&candidate) {
+                    break candidate;
+                }
+            };
+            used.insert(id.clone());
+            inst.id = id;
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// The ID to give an instance that is being (re)written: the old record's ID
+/// if it has one, else the ID of an existing instance with the same
+/// `version_id`, else a brand-new one.
+pub fn pick_instance_id(
+    existing: &[InstalledInstance],
+    old: Option<&InstalledInstance>,
+    version_id: &str,
+) -> String {
+    if let Some(o) = old {
+        if !o.id.trim().is_empty() {
+            return o.id.clone();
+        }
+    }
+    if let Some(e) = existing.iter().find(|i| i.version_id == version_id && !i.id.trim().is_empty()) {
+        return e.id.clone();
+    }
+    new_instance_id(existing)
 }
 
 // ── Locally Scanned Versions ──────────────────────────────────────────────────

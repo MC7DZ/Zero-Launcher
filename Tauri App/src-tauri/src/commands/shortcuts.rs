@@ -15,7 +15,14 @@ pub const ICON_FALLBACK: &[u8] = include_bytes!("../../icons/shortcut.png");
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CliLaunchArgs {
+    /// The instance's current `version_id`. Shortcuts made by this version
+    /// launch by [`instance_uid`](Self::instance_uid) instead, so this is
+    /// empty straight after parsing and is filled in by
+    /// [`resolve_instance_found`]. Old shortcuts still pass it directly.
     pub version_id: String,
+    /// The instance's permanent ID (`--launch-instance-id`).
+    #[serde(default)]
+    pub instance_uid: Option<String>,
     pub account_id: Option<String>,
     pub offline: bool,
     /// Filled in by the backend (see [`resolve_instance_found`]) before the
@@ -32,6 +39,7 @@ fn default_true() -> bool {
 
 pub fn parse_cli_launch_args(args: &[String]) -> Option<CliLaunchArgs> {
     let mut version_id = None;
+    let mut instance_uid = None;
     let mut account_id = None;
     let mut offline = false;
 
@@ -49,6 +57,19 @@ pub fn parse_cli_launch_args(args: &[String]) -> Option<CliLaunchArgs> {
             let trimmed = val.trim().trim_matches('"').trim_matches('\'').to_string();
             if !trimmed.is_empty() {
                 version_id = Some(trimmed);
+            }
+        } else if arg == "--launch-instance-id" {
+            if let Some(val) = iter.next() {
+                let trimmed = val.trim().trim_matches('"').trim_matches('\'').to_string();
+                if !trimmed.is_empty() {
+                    instance_uid = Some(trimmed);
+                }
+            }
+        } else if arg.starts_with("--launch-instance-id=") {
+            let val = &arg["--launch-instance-id=".len()..];
+            let trimmed = val.trim().trim_matches('"').trim_matches('\'').to_string();
+            if !trimmed.is_empty() {
+                instance_uid = Some(trimmed);
             }
         } else if arg == "--account" {
             if let Some(val) = iter.next() {
@@ -68,8 +89,12 @@ pub fn parse_cli_launch_args(args: &[String]) -> Option<CliLaunchArgs> {
         }
     }
 
-    version_id.map(|vid| CliLaunchArgs {
-        version_id: vid,
+    if version_id.is_none() && instance_uid.is_none() {
+        return None;
+    }
+    Some(CliLaunchArgs {
+        version_id: version_id.unwrap_or_default(),
+        instance_uid,
         account_id,
         offline,
         instance_found: true,
@@ -80,21 +105,47 @@ pub fn parse_cli_launch_args(args: &[String]) -> Option<CliLaunchArgs> {
 /// records the result in `args.instance_found`. Logs what it decided.
 pub fn resolve_instance_found(app: &tauri::AppHandle, mut args: CliLaunchArgs) -> CliLaunchArgs {
     if let Some(state) = app.try_state::<AppState>() {
-        let found = {
+        // Look the instance up by its permanent ID first; shortcuts made by
+        // older versions only carry the (changeable) version_id.
+        let hit = {
             let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
-            instances.iter().any(|i| i.version_id == args.version_id)
+            let by_uid = args
+                .instance_uid
+                .as_deref()
+                .filter(|u| !u.is_empty())
+                .and_then(|u| instances.iter().find(|i| i.id == u));
+            let found = by_uid.or_else(|| {
+                if args.version_id.is_empty() {
+                    None
+                } else {
+                    instances.iter().find(|i| i.version_id == args.version_id)
+                }
+            });
+            let owned = found.map(|i| (i.id.clone(), i.version_id.clone()));
+            owned
         };
-        args.instance_found = found;
-        if found {
-            logger::debug(app, &state, SRC, &format!(
-                "Shortcut target '{}' found (account={:?}, offline={})",
-                args.version_id, args.account_id, args.offline
-            ));
-        } else {
-            logger::warn(app, &state, SRC, &format!(
-                "Shortcut target '{}' NOT found in instance list — launch skipped, user will be asked whether to delete the shortcut",
-                args.version_id
-            ));
+        match hit {
+            Some((uid, version_id)) => {
+                args.instance_uid = Some(uid.clone());
+                args.version_id = version_id;
+                args.instance_found = true;
+                logger::debug(app, &state, SRC, &format!(
+                    "Shortcut target found: id='{}' version_id='{}' (account={:?}, offline={})",
+                    uid, args.version_id, args.account_id, args.offline
+                ));
+            }
+            None => {
+                // Hand the ID over as the "name" so the missing-instance prompt
+                // and the shortcut cleanup still have something to refer to.
+                if args.version_id.is_empty() {
+                    args.version_id = args.instance_uid.clone().unwrap_or_default();
+                }
+                args.instance_found = false;
+                logger::warn(app, &state, SRC, &format!(
+                    "Shortcut target '{}' NOT found in instance list — launch skipped, user will be asked whether to delete the shortcut",
+                    args.version_id
+                ));
+            }
         }
     }
     args
@@ -197,7 +248,13 @@ fn get_launcher_exe() -> PathBuf {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ShortcutRecord {
     pub id: String,
+    /// The target instance's `version_id` as last seen (display / legacy lookup).
     pub instance_id: String,
+    /// The target instance's permanent ID. This is what the shortcut files
+    /// launch by. Empty on records made before instance IDs existed — those
+    /// are upgraded by [`sync_records_with_instances`].
+    #[serde(default)]
+    pub instance_uid: String,
     pub name: String,
     #[serde(default)]
     pub account_id: Option<String>,
@@ -214,6 +271,7 @@ pub struct ShortcutRecord {
 pub struct ShortcutInfo {
     pub id: String,
     pub instance_id: String,
+    pub instance_uid: String,
     pub name: String,
     pub account_id: Option<String>,
     pub offline: bool,
@@ -320,7 +378,13 @@ fn parse_desktop_file(path: &Path) -> Option<(String, CliLaunchArgs)> {
     }
     let tokens = shell_split(&exec?);
     let args = parse_cli_launch_args(&tokens)?;
-    let name = name.filter(|n| !n.is_empty()).unwrap_or_else(|| args.version_id.clone());
+    let name = name.filter(|n| !n.is_empty()).unwrap_or_else(|| {
+        if args.version_id.is_empty() {
+            args.instance_uid.clone().unwrap_or_default()
+        } else {
+            args.version_id.clone()
+        }
+    });
     Some((name, args))
 }
 
@@ -364,6 +428,7 @@ fn import_linux_shortcuts(records: &mut Vec<ShortcutRecord>) -> bool {
             // Merge with a sibling record (same target/options) if its slot is free.
             let sibling = records.iter_mut().find(|r| {
                 r.instance_id == args.version_id
+                    && r.instance_uid == args.instance_uid.clone().unwrap_or_default()
                     && r.name == name
                     && r.account_id == args.account_id
                     && r.offline == args.offline
@@ -379,6 +444,7 @@ fn import_linux_shortcuts(records: &mut Vec<ShortcutRecord>) -> bool {
                 records.push(ShortcutRecord {
                     id: new_shortcut_id(),
                     instance_id: args.version_id,
+                    instance_uid: args.instance_uid.unwrap_or_default(),
                     name,
                     account_id: args.account_id,
                     offline: args.offline,
@@ -423,6 +489,7 @@ fn merge_split_records(records: &mut Vec<ShortcutRecord>) -> bool {
         let mut j = i + 1;
         while j < records.len() {
             let same = records[i].instance_id == records[j].instance_id
+                && records[i].instance_uid == records[j].instance_uid
                 && records[i].name == records[j].name
                 && records[i].account_id == records[j].account_id
                 && records[i].offline == records[j].offline
@@ -469,10 +536,105 @@ fn load_synced_registry(app: &tauri::AppHandle, state: &AppState) -> Vec<Shortcu
         logger::debug(app, state, SRC, "Pruned shortcut registry entries whose files no longer exist");
         changed = true;
     }
+    if sync_records_with_instances(app, state, &mut records) {
+        logger::debug(app, state, SRC, "Upgraded shortcuts to launch by instance ID");
+        changed = true;
+    }
     if changed {
         registry_save(&records);
     }
     records
+}
+
+/// Looks an instance up by its permanent ID, falling back to its version_id
+/// for shortcut records that predate instance IDs.
+fn find_instance_for(state: &AppState, uid: &str, version_id: &str) -> Option<crate::models::InstalledInstance> {
+    let instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
+    if !uid.is_empty() {
+        if let Some(i) = instances.iter().find(|i| i.id == uid) {
+            return Some(i.clone());
+        }
+    }
+    if version_id.is_empty() {
+        return None;
+    }
+    instances.iter().find(|i| i.version_id == version_id).cloned()
+}
+
+/// Makes sure the instance has a permanent ID — creating and saving one if it
+/// somehow has none — and returns the up-to-date record.
+fn find_instance_ensuring_id(state: &AppState, version_id: &str) -> Option<crate::models::InstalledInstance> {
+    let (found, created) = {
+        let mut instances = state.instances.lock().unwrap_or_else(|e| e.into_inner());
+        let pos = instances.iter().position(|i| i.version_id == version_id)?;
+        let mut created = false;
+        if instances[pos].id.trim().is_empty() {
+            let new_id = crate::models::new_instance_id(&instances);
+            instances[pos].id = new_id;
+            created = true;
+        }
+        (instances[pos].clone(), created)
+    };
+    if created {
+        state.save_instances();
+    }
+    Some(found)
+}
+
+/// Upgrades shortcut records to the ID-based form: records that only know the
+/// instance's version_id get the instance's permanent ID and their files are
+/// rewritten to launch by it; records whose instance was renamed just have
+/// their remembered version_id refreshed. Returns `true` if anything changed.
+fn sync_records_with_instances(app: &tauri::AppHandle, state: &AppState, records: &mut Vec<ShortcutRecord>) -> bool {
+    let mut changed = false;
+    for rec in records.iter_mut() {
+        let Some(inst) = find_instance_for(state, &rec.instance_uid, &rec.instance_id) else { continue };
+        if rec.instance_uid != inst.id {
+            let rec_id = rec.id.clone();
+            let rec_name = rec.name.clone();
+            let rec_account = rec.account_id.clone();
+            let rec_offline = rec.offline;
+            let old_desktop = rec.desktop_path.clone();
+            let old_app_menu = rec.app_menu_path.clone();
+            let written = write_shortcut_files(app, state, &WriteRequest {
+                id: &rec_id,
+                instance: &inst,
+                instance_id: &inst.version_id,
+                title: &rec_name,
+                account_id: rec_account.as_deref(),
+                offline: rec_offline,
+                want_desktop: old_desktop.is_some(),
+                want_app_menu: old_app_menu.is_some(),
+                old_desktop: old_desktop.as_deref(),
+                old_app_menu: old_app_menu.as_deref(),
+            });
+            match written {
+                Ok(w) => {
+                    rec.instance_uid = inst.id.clone();
+                    rec.instance_id = inst.version_id.clone();
+                    if old_desktop.is_some() {
+                        rec.desktop_path = w.desktop.map(|p| p.to_string_lossy().to_string()).or(old_desktop);
+                    }
+                    if old_app_menu.is_some() {
+                        rec.app_menu_path = w.app_menu.map(|p| p.to_string_lossy().to_string()).or(old_app_menu);
+                    }
+                    changed = true;
+                    logger::info(app, state, SRC, &format!(
+                        "Shortcut {rec_id} now launches instance ID '{}'", inst.id
+                    ));
+                }
+                Err(e) => {
+                    logger::warn(app, state, SRC, &format!(
+                        "Could not upgrade shortcut {rec_id} to use instance ID '{}': {e}", inst.id
+                    ));
+                }
+            }
+        } else if rec.instance_id != inst.version_id {
+            rec.instance_id = inst.version_id.clone();
+            changed = true;
+        }
+    }
+    changed
 }
 
 #[cfg(target_os = "linux")]
@@ -555,7 +717,14 @@ fn write_shortcut_files(
             _ => ICON_FALLBACK,
         }
     };
-    let key = safe_instance_key(req.instance_id);
+    // Shortcuts launch by the instance's permanent ID (falling back to the
+    // version_id only if the instance somehow has no ID).
+    let (launch_flag, launch_id): (&str, &str) = if instance.id.trim().is_empty() {
+        ("--launch-instance", req.instance_id)
+    } else {
+        ("--launch-instance-id", instance.id.as_str())
+    };
+    let key = safe_instance_key(launch_id);
     let icons_dir = crate::first_run_setup::install_dir().join("icons").join("instances");
     let _ = fs::create_dir_all(&icons_dir);
     let png_icon_path = icons_dir.join(format!("{key}.png"));
@@ -590,13 +759,13 @@ fn write_shortcut_files(
              Type=Application\n\
              Name={title}\n\
              Comment=Launch {title} directly with Zero Launcher\n\
-             Exec=\"{}\" --launch-instance \"{}\"{extra_args}\n\
+             Exec=\"{}\" {launch_flag} \"{}\"{extra_args}\n\
              Icon={}\n\
              Terminal=false\n\
              Categories=Game;\n\
              StartupNotify=true\n",
             target_exe.display(),
-            req.instance_id,
+            launch_id,
             png_icon_path.display()
         );
 
@@ -664,7 +833,7 @@ fn write_shortcut_files(
     {
         use mslnk::ShellLink;
 
-        let args = format!("--launch-instance \"{}\"{extra_args}", req.instance_id);
+        let args = format!("{launch_flag} \"{}\"{extra_args}", launch_id);
         let working_dir = target_exe
             .parent()
             .unwrap_or_else(|| Path::new("."))
@@ -761,6 +930,13 @@ pub fn rekey_instance_shortcuts(app: &tauri::AppHandle, state: &AppState, old_id
         if rec.instance_id != old_id {
             continue;
         }
+        // ID-based shortcuts don't care that the version_id changed: their
+        // files launch by the permanent ID. Only the remembered name moves.
+        if !rec.instance_uid.is_empty() && rec.instance_uid == instance.id {
+            rec.instance_id = new_id.to_string();
+            changed = true;
+            continue;
+        }
         let rec_id = rec.id.clone();
         let rec_name = rec.name.clone();
         let rec_account = rec.account_id.clone();
@@ -782,6 +958,7 @@ pub fn rekey_instance_shortcuts(app: &tauri::AppHandle, state: &AppState, old_id
         match written {
             Ok(w) => {
                 rec.instance_id = new_id.to_string();
+                rec.instance_uid = instance.id.clone();
                 if old_desktop.is_some() {
                     rec.desktop_path = w.desktop.map(|p| p.to_string_lossy().to_string()).or(old_desktop);
                 }
@@ -836,7 +1013,7 @@ pub async fn create_instance_shortcut(
         return Err("Please select at least one shortcut location (Desktop or Search / App Menu).".to_string());
     }
 
-    let instance = find_instance(&state, &instance_id).ok_or_else(|| {
+    let instance = find_instance_ensuring_id(&state, &instance_id).ok_or_else(|| {
         logger::error(&app, &state, SRC, &format!("Create shortcut failed: instance '{instance_id}' not found"));
         format!("Instance '{}' not found", instance_id)
     })?;
@@ -878,6 +1055,7 @@ pub async fn create_instance_shortcut(
     records.push(ShortcutRecord {
         id,
         instance_id: instance_id.clone(),
+        instance_uid: instance.id.clone(),
         name: title,
         account_id: account.map(|a| a.to_string()),
         offline,
@@ -900,19 +1078,20 @@ pub async fn list_shortcuts(
     let mut out: Vec<ShortcutInfo> = records
         .into_iter()
         .map(|r| {
-            let inst = find_instance(&state, &r.instance_id);
+            let inst = find_instance_for(&state, &r.instance_uid, &r.instance_id);
             ShortcutInfo {
                 instance_exists: inst.is_some(),
                 instance_name: inst
                     .as_ref()
                     .map(|i| if i.name.trim().is_empty() { i.version_id.clone() } else { i.name.clone() })
-                    .unwrap_or_else(|| r.instance_id.clone()),
+                    .unwrap_or_else(|| if r.instance_id.is_empty() { r.instance_uid.clone() } else { r.instance_id.clone() }),
                 minecraft_version: inst.as_ref().map(|i| i.minecraft_version.clone()).unwrap_or_default(),
                 loader: inst.as_ref().map(|i| i.loader.clone()).unwrap_or_default(),
                 desktop: r.desktop_path.is_some(),
                 app_menu: r.app_menu_path.is_some(),
                 id: r.id,
                 instance_id: r.instance_id,
+                instance_uid: r.instance_uid,
                 name: r.name,
                 account_id: r.account_id,
                 offline: r.offline,
@@ -952,7 +1131,7 @@ pub async fn update_shortcut(
     })?;
     let rec = records[pos].clone();
 
-    let instance = match find_instance(&state, &rec.instance_id) {
+    let instance = match find_instance_for(&state, &rec.instance_uid, &rec.instance_id) {
         Some(i) => i,
         None => {
             // The instance is gone. Rewriting a shortcut needs the instance, but
@@ -996,7 +1175,7 @@ pub async fn update_shortcut(
     let written = write_shortcut_files(&app, &state, &WriteRequest {
         id: &rec.id,
         instance: &instance,
-        instance_id: &rec.instance_id,
+        instance_id: &instance.version_id,
         title: &title,
         account_id: account,
         offline,
@@ -1012,7 +1191,8 @@ pub async fn update_shortcut(
 
     records[pos] = ShortcutRecord {
         id: rec.id,
-        instance_id: rec.instance_id,
+        instance_id: instance.version_id.clone(),
+        instance_uid: instance.id.clone(),
         name: title,
         account_id: account.map(|a| a.to_string()),
         offline,
@@ -1064,7 +1244,7 @@ pub async fn delete_instance_shortcuts(
     let mut records = load_synced_registry(&app, &state);
     let mut removed = 0usize;
     records.retain(|r| {
-        if r.instance_id != instance_id {
+        if r.instance_id != instance_id && r.instance_uid != instance_id {
             return true;
         }
         for p in [r.desktop_path.as_deref(), r.app_menu_path.as_deref()].into_iter().flatten() {

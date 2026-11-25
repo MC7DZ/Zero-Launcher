@@ -958,6 +958,11 @@ pub async fn install_minecraft(
                 let _ = app.emit("download-progress", &info);
 
                 let instance = InstalledInstance {
+                    id: crate::models::pick_instance_id(
+                        &state.instances.lock().unwrap_or_else(|e| e.into_inner()),
+                        old_instance.as_ref(),
+                        &target_id,
+                    ),
                     name: display_name,
                     version_id: target_id,
                     minecraft_version: payload.minecraft_version.clone(),
@@ -1559,6 +1564,11 @@ pub async fn install_minecraft(
     };
 
     let instance = InstalledInstance {
+        id: crate::models::pick_instance_id(
+            &state.instances.lock().unwrap_or_else(|e| e.into_inner()),
+            old_instance.as_ref(),
+            &final_version_id,
+        ),
         name: display_name,
         version_id: final_version_id,
         minecraft_version: payload.minecraft_version.clone(),
@@ -1846,6 +1856,11 @@ pub async fn launch_minecraft(
         };
 
         let new_instance = InstalledInstance {
+            id: crate::models::pick_instance_id(
+                &state.instances.lock().unwrap_or_else(|e| e.into_inner()),
+                None,
+                &version_id,
+            ),
             name: version_id.clone(),
             version_id: version_id.clone(),
             minecraft_version,
@@ -3166,6 +3181,7 @@ fn accumulate_playtime(state: &AppState, version_id: &str, started_at: &str) {
     if !found {
         let game_dir = state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory();
         let new_inst = InstalledInstance {
+            id: crate::models::pick_instance_id(&instances, None, &version_id.to_string()),
             name: version_id.to_string(),
             version_id: version_id.to_string(),
             minecraft_version: version_id.to_string(),

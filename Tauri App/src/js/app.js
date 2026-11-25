@@ -774,12 +774,13 @@ function showToast(message, type = 'info', title, actions) {
 // what gets stored in settings.notification_style; `cls` is the CSS class;
 // `aliases` keep older saved values (incl. the old Rust default
 // "Minimal Outline") working.
+const NOTIF_DEFAULT_STYLE = 'Minimal';
 const NOTIF_STYLES = [
-  { name: 'Glass',      cls: 'toast-style-glass',      tag: 'Default · soft card',      aliases: ['frosted glass'] },
+  { name: 'Glass',      cls: 'toast-style-glass',      tag: 'Soft card',      aliases: ['frosted glass'] },
   { name: 'Neon',       cls: 'toast-style-neon',       tag: 'Dark · glowing outline',   aliases: [] },
   { name: 'Solid Card', cls: 'toast-style-solid-card', tag: 'Opaque · top accent',      aliases: ['solid'] },
   { name: 'Pill',       cls: 'toast-style-pill',       tag: 'Rounded capsule',          aliases: [] },
-  { name: 'Minimal',    cls: 'toast-style-minimal',    tag: 'Thin · understated',       aliases: ['minimal outline'] },
+  { name: 'Minimal',    cls: 'toast-style-minimal',    tag: 'Default · thin, understated',      aliases: ['minimal outline'] },
   { name: 'Outline',    cls: 'toast-style-outline',    tag: 'Transparent · bold border', aliases: [] },
   { name: 'Tinted',     cls: 'toast-style-tinted',     tag: 'Filled with type color',   aliases: ['accent fill'] },
   { name: 'Compact',    cls: 'toast-style-compact',    tag: 'Slim · dense',             aliases: [] },
@@ -787,15 +788,42 @@ const NOTIF_STYLES = [
   { name: 'Banner',     cls: 'toast-style-banner',     tag: 'Thick top bar',            aliases: [] },
 ];
 
+// Entrance/exit animations for toasts. `id` is the data-notif-anim value used
+// by the CSS, `exit` is how long (ms) the leave transition runs before the
+// element is removed. Pure transform/opacity transitions: nothing keeps
+// animating once a toast has settled.
+const NOTIF_ANIMS = [
+  { name: 'Fade',   id: 'fade',   exit: 130, desc: 'Quick fade' },
+  { name: 'Slide',  id: 'slide',  exit: 240, desc: 'Glide in from the right' },
+  { name: 'Drop',   id: 'drop',   exit: 240, desc: 'Fall from above' },
+  { name: 'Pop',    id: 'pop',    exit: 200, desc: 'Scale up with a pop' },
+  { name: 'Bounce', id: 'bounce', exit: 260, desc: 'Springy overshoot' },
+  { name: 'Flip',   id: 'flip',   exit: 260, desc: '3D flip down' },
+  { name: 'None',   id: 'none',   exit: 0,   desc: 'Instant' },
+];
+const NOTIF_ANIM_DEFAULT = 'Slide';
+function normalizeNotifAnimName(raw) {
+  const key = String(raw || '').trim().toLowerCase();
+  const hit = NOTIF_ANIMS.find(a => a.name.toLowerCase() === key || a.id === key);
+  return hit ? hit.name : NOTIF_ANIM_DEFAULT;
+}
+function currentNotifAnim() {
+  const name = normalizeNotifAnimName(settings && settings.notification_animation);
+  return NOTIF_ANIMS.find(a => a.name === name) || NOTIF_ANIMS[0];
+}
+function applyNotifAnim() {
+  document.documentElement.dataset.notifAnim = currentNotifAnim().id;
+}
+
 function normalizeNotifStyleName(raw) {
   const key = String(raw || '').trim().toLowerCase();
   const hit = NOTIF_STYLES.find(st => st.name.toLowerCase() === key || st.aliases.includes(key));
-  return hit ? hit.name : 'Glass';
+  return hit ? hit.name : NOTIF_DEFAULT_STYLE;
 }
 
 function notifStyleClass(raw) {
   const name = normalizeNotifStyleName(raw);
-  return (NOTIF_STYLES.find(st => st.name === name) || NOTIF_STYLES[0]).cls;
+  return (NOTIF_STYLES.find(st => st.name === name) || NOTIF_STYLES.find(st => st.name === NOTIF_DEFAULT_STYLE)).cls;
 }
 
 function spawnToast(message, type, title, actions) {
@@ -913,7 +941,7 @@ function dismissToast(entry) {
     entry.el.remove();
     activeToasts = activeToasts.filter(e => e !== entry);
     drainToastQueue();
-  }, 130);
+  }, currentNotifAnim().exit);
 }
 window.showToast = showToast;
 
@@ -6991,6 +7019,17 @@ function initInstanceActions() {
     if (!inst) return;
 
     document.getElementById('edit-inst-name').value = inst.name || inst.version_id;
+    // Permanent, read-only instance ID (never sent back on save).
+    const idInput = document.getElementById('edit-inst-id');
+    if (idInput) idInput.value = inst.id || '';
+    const idCopyBtn = document.getElementById('btn-copy-inst-id');
+    if (idCopyBtn) {
+      idCopyBtn.onclick = async () => {
+        if (!inst.id) return;
+        try { await navigator.clipboard.writeText(inst.id); showToast('Instance ID copied.', 'success'); }
+        catch { idInput?.select(); document.execCommand && document.execCommand('copy'); }
+      };
+    }
     if (editInstSubtitle) {
       editInstSubtitle.textContent = inst.name || inst.version_id;
     }
@@ -7371,18 +7410,18 @@ async function handleCliLaunch(args) {
   }
 
   // Make sure the instance list is loaded (frontend may still be starting up)
-  let inst = getInstances().find(i => i.version_id === args.version_id);
+  let inst = getInstances().find(i => (args.instance_uid && i.id === args.instance_uid) || i.version_id === args.version_id);
   if (!inst) {
     console.warn('[CLI Launch] Instance not in frontend list yet — refreshing', args.version_id);
     try { await refreshInstances(); } catch (e) { console.warn('[CLI Launch] refreshInstances failed:', e); }
-    inst = getInstances().find(i => i.version_id === args.version_id);
+    inst = getInstances().find(i => (args.instance_uid && i.id === args.instance_uid) || i.version_id === args.version_id);
   }
   // Fallback: on-disk scan
   if (!inst) {
     try {
       await api.scanMinecraftVersions();
       await refreshInstances();
-      inst = getInstances().find(i => i.version_id === args.version_id);
+      inst = getInstances().find(i => (args.instance_uid && i.id === args.instance_uid) || i.version_id === args.version_id);
     } catch (e) { console.warn('[CLI Launch] disk scan failed:', e); }
   }
 
@@ -12002,9 +12041,10 @@ function initPresetsTabIfNeeded() {
     });
   }
 
+  let presetsFirstLoad = null;
   if (!presetsState.loaded) {
     presetsState.loaded = true;
-    loadPresets();
+    presetsFirstLoad = loadPresets();
   } else if (presetsState.syncedInstanceId !== selectedInstanceId) {
     // Already loaded from an earlier visit, but the selected instance may
     // have changed while Presets wasn't the active tab (that live sync
@@ -12019,6 +12059,8 @@ function initPresetsTabIfNeeded() {
   // merge new presets into presetsState + re-render as they land, so this
   // is fire-and-forget — no loading blocker, no need to wait on it here.
   triggerBackgroundPresetSync();
+  // Returned so the startup pre-warm can wait for the first render.
+  return presetsFirstLoad;
 }
 
 // Kicks off a GitHub preset sync in the background, guarded so we never
@@ -12998,8 +13040,8 @@ function initDiscoverTabIfNeeded() {
     populateDiscoverResolutions();
     populateDiscoverLicenses();
     applyInstanceFiltersToDiscover(currentDiscoverTargetInstance());
-    performDiscoverSearch();
-    return;
+    // Returned so the startup pre-warm can wait for the first results to render.
+    return performDiscoverSearch();
   }
   if (discoverState.syncedInstanceId !== selectedInstanceId) {
     discoverState.syncedInstanceId = selectedInstanceId;
@@ -15214,7 +15256,7 @@ function populateNotifStyleSelects() {
     const sel = document.getElementById(id);
     if (!sel || sel.dataset.populated === '1') return;
     sel.innerHTML = NOTIF_STYLES
-      .map(st => `<option value="${st.name}">${st.name}${st.name === 'Glass' ? ' (Default)' : ''}</option>`)
+      .map(st => `<option value="${st.name}">${st.name}${st.name === NOTIF_DEFAULT_STYLE ? ' (Default)' : ''}</option>`)
       .join('');
     sel.dataset.populated = '1';
   });
@@ -15298,6 +15340,27 @@ function initUiStyleSliders() {
   const resetOp = document.getElementById('btn-reset-ui-opacity');
   if (resetOp) resetOp.addEventListener('click', resetAll);
   if (reset) reset.addEventListener('click', resetAll);
+}
+
+function renderNotifAnimPicker() {
+  const box = document.getElementById('notif-anim-chips');
+  if (!box) return;
+  const cur = currentNotifAnim().name;
+  try { box.style.setProperty('--wz-on-accent', wzOnAccent(currentAccentColor())); } catch (_) {}
+  box.innerHTML = NOTIF_ANIMS.map(a =>
+    `<button type="button" class="notif-anim-chip${a.name === cur ? ' on' : ''}" role="radio" aria-checked="${a.name === cur}" data-anim="${a.name}" title="${a.desc}">${a.name}${a.name === NOTIF_ANIM_DEFAULT ? ' <small>Default</small>' : ''}</button>`
+  ).join('');
+  if (!box._bound) {
+    box._bound = true;
+    box.addEventListener('click', e => {
+      const b = e.target.closest('.notif-anim-chip'); if (!b || !settings) return;
+      settings.notification_animation = b.dataset.anim;
+      applyNotifAnim();
+      renderNotifAnimPicker();
+      saveSettingsDebounced();
+      showToast(`Notifications now use the ${b.dataset.anim} animation.`, 'info', 'Animation changed');
+    });
+  }
 }
 
 function renderNotifPlates() {
@@ -15670,6 +15733,7 @@ function populateSettingsUI() {
   if (notifDurEl) notifDurEl.value = settings.notification_duration ?? 5;
   updateNotifSliderOutputs();
   renderNotifPlates();
+  renderNotifAnimPicker();
 
   // Background & Animation
   document.getElementById('setting-bg-style').value = settings.background_style || 'Default';
@@ -15879,6 +15943,7 @@ function applyThemeFromSettings() {
   // UI animations toggle (decorative transitions / slide-ins)
   const uiAnimEnabled = settings && settings.enable_ui_animations !== false;
   root.classList.toggle('no-ui-animations', !uiAnimEnabled);
+  applyNotifAnim();
   root.dataset.tabAnim = TAB_ANIM_NAMES.includes(settings && settings.tab_animation) ? settings.tab_animation : 'swipe';
 
   if (isTransparent) {
@@ -17081,7 +17146,8 @@ function initSettings() {
           background_image_brightness: 100,
           background_image_tint: false,
           background_image_vignette: true,
-          notification_style: 'Minimal Outline',
+          notification_style: 'Minimal',
+          notification_animation: 'Slide',
           close_after_launch: true,
           minimize_on_launch: false,
           on_game_close: 'show',
@@ -19650,8 +19716,14 @@ function wzSyncAppearance() {
   wzRenderChips('wz-bg-style', WZ_BG_STYLES, WZ_BG_STYLE_LABELS, bgStyle);
   wzRenderChips('wz-bg-anim', WZ_ANIMS, WZ_ANIM_LABELS, anim);
 
+  // Surface toggles
+  const wzTr = document.getElementById('wz-transparency');
+  if (wzTr) wzTr.checked = settings.enable_transparency !== false;
+  const wzTi = document.getElementById('wz-panel-tint');
+  if (wzTi) wzTi.checked = settings.enable_panel_tint !== false;
+
   // Notifications
-  const st = NOTIF_STYLES.find(s => s.name === normalizeNotifStyleName(settings.notification_style)) || NOTIF_STYLES[0];
+  const st = NOTIF_STYLES.find(s => s.name === normalizeNotifStyleName(settings.notification_style)) || NOTIF_STYLES.find(x => x.name === NOTIF_DEFAULT_STYLE);
   const nm = document.getElementById('wz-notif-name'); if (nm) nm.textContent = st.name;
   const stage = document.getElementById('wz-notif-stage');
   if (stage && stage.dataset.style !== st.name) {
@@ -20042,6 +20114,16 @@ function initSetupWizard() {
     const c = e.target.closest('.wz-chip'); if (!c) return;
     settings.background_animation_style = c.dataset.v; wzCommitTheme();
   });
+  $('wz-transparency')?.addEventListener('change', e => {
+    settings.enable_transparency = e.target.checked;
+    const m = $('setting-transparency'); if (m) m.checked = e.target.checked;
+    wzCommitTheme();
+  });
+  $('wz-panel-tint')?.addEventListener('change', e => {
+    settings.enable_panel_tint = e.target.checked;
+    const m = $('setting-panel-tint'); if (m) m.checked = e.target.checked;
+    wzCommitTheme();
+  });
   $('wz-notif-prev')?.addEventListener('click', () => wzStepNotif(-1));
   $('wz-notif-next')?.addEventListener('click', () => wzStepNotif(1));
   $('setup-btn-browse-palettes')?.addEventListener('click', () => openThemePalettesModal());
@@ -20382,6 +20464,115 @@ function playUiReveal() {
   } catch (_) { /* cosmetic only */ }
 }
 
+// ── Startup tab pre-warm ──────────────────────────────────────────
+// Switching to Manage / Discover / Presets for the first time used to cause a
+// lag spike (first data render + first layout/paint of a big page). While the
+// splash is still covering the UI we visit each page once, wait for it to
+// render + paint, then land back on Instances. Pages are toggled directly (not
+// via the tab buttons) so there's no click sound, no Discord presence update,
+// no memory trim and no tab-indicator movement.
+const TAB_PREWARM_ORDER = ['mods', 'discover', 'presets', 'instances'];
+const TAB_PREWARM_BUDGET_MS = 2000;   // hard cap for the whole pre-warm
+const TAB_PREWARM_STEP_MS = 1000;     // cap for one tab's data to render
+let tabPrewarmRestore = null;         // set while a pre-warm is running
+
+function prewarmWaitFrames(maxMs = 150) {
+  // Two rAFs = layout + paint committed. The timeout keeps this from hanging
+  // when the window is hidden (e.g. started minimised to tray) and rAF is paused.
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+    setTimeout(finish, maxMs);
+  });
+}
+
+function prewarmWithTimeout(promise, ms) {
+  return Promise.race([
+    Promise.resolve(promise).catch(() => {}),
+    new Promise(resolve => setTimeout(resolve, ms)),
+  ]);
+}
+
+async function prewarmTabs() {
+  const pages = Array.from(document.querySelectorAll('.tab-page'));
+  const home = document.getElementById('tab-instances');
+  // Only run from the normal Instances landing (not during the setup wizard).
+  if (!home || !home.classList.contains('active')) return;
+
+  const animClasses = ['tab-leave-l', 'tab-leave-r', 'tab-enter-l', 'tab-enter-r'];
+  const showPage = (tab) => {
+    pages.forEach(p => {
+      p.classList.remove(...animClasses);
+      p.classList.toggle('active', p.id === 'tab-' + tab);
+    });
+  };
+  const setPreview = (running) => {
+    if (!skinMiniPreviewInstance) return;
+    skinMiniPreviewInstance.renderPaused = !running;
+    if (running) {
+      try { resizeSkinMiniPreview(); updateSkinMiniPreview(); } catch (_) {}
+    }
+  };
+
+  let restored = false;
+  const restore = () => {
+    if (restored) return;
+    restored = true;
+    showPage('instances');
+    setPreview(true);
+    try { CustomScrollbars.updateAll && CustomScrollbars.updateAll(); } catch (_) {}
+  };
+  tabPrewarmRestore = restore;
+
+  const started = performance.now();
+  try {
+    for (const tab of TAB_PREWARM_ORDER) {
+      if (splashSkipRequested || performance.now() - started > TAB_PREWARM_BUDGET_MS) break;
+      if (tab === 'instances') break; // handled by restore() below
+
+      showPage(tab);
+      setPreview(false);
+
+      let work = null;
+      if (tab === 'mods') {
+        if (typeof window.updateContentTypeAvailability === 'function') window.updateContentTypeAvailability();
+        work = (async () => {
+          await loadModInstances();
+          if (['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world'].includes(activeContentType)) {
+            await loadMods({ auto: false });
+          } else {
+            setContentType(activeContentType);
+          }
+        })();
+      } else if (tab === 'discover') {
+        work = initDiscoverTabIfNeeded();
+      } else if (tab === 'presets') {
+        work = initPresetsTabIfNeeded();
+      }
+
+      await prewarmWithTimeout(work, TAB_PREWARM_STEP_MS);
+      if (tab === 'mods') {
+        // Loading overlay may have been armed by loadMods — make sure it's gone.
+        try { hideModsTabLoading(); } catch (_) {}
+        if (window.refreshContentTypeIndicator) { try { window.refreshContentTypeIndicator(true); } catch (_) {} }
+      }
+      if (tab === 'discover' && window.refreshDiscoverIndicators) {
+        try { window.refreshDiscoverIndicators(); } catch (_) {}
+      }
+      refreshCardCullingIn(document.getElementById('tab-' + tab));
+      await prewarmWaitFrames();
+    }
+  } catch (e) {
+    console.warn('[prewarm] tab pre-warm failed (non-fatal):', e);
+  } finally {
+    restore();
+    tabPrewarmRestore = null;
+  }
+  // Let the Instances page paint once more before the splash fades.
+  await prewarmWaitFrames();
+}
+
 function hideStartupSplashScreen(immediate = false) {
   const splash = document.getElementById('startup-splash-screen');
   if (!splash) return;
@@ -20421,6 +20612,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.stopPropagation();
       e.preventDefault();
       splashSkipRequested = true;
+      if (tabPrewarmRestore) tabPrewarmRestore(); // never reveal a half-warmed tab
       hideStartupSplashScreen(true);
     });
   }
@@ -20519,6 +20711,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     initSetupWizard();
   }
   await delay(PHASE_DELAY);
+
+  // Phase 7.5: Pre-warm Manage / Discover / Presets behind the splash so the
+  // first real tab switch is smooth, then return to Instances.
+  if (isFinished && !splashSkipRequested) {
+    setStartupSplashProgress(98, 'Warming up tabs…');
+    await prewarmTabs();
+  }
 
   // Phase 8: Finalized — one short breath so the 100% arc renders
   // before the splash fades, then dismiss immediately.
