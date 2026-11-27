@@ -638,7 +638,7 @@ async fn download_curseforge_pack_files(
             .post("https://api.curseforge.com/v1/mods/files")
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
-            .header("x-api-key", crate::config::curseforge_api_key().unwrap_or(""))
+            .header("x-api-key", crate::config::curseforge_api_key().unwrap_or_default())
             .json(&payload)
             .send()
             .await

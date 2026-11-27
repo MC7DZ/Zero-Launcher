@@ -33,8 +33,8 @@ use crate::state::AppState;
 const DEFAULT_AZURE_CLIENT_ID: &str = "1b1eda1c-5d4b-4231-8adb-af52aebfb170";
 
 /// This launcher's registered Azure AD "Application (client) ID".
-pub fn azure_client_id() -> &'static str {
-    crate::config::azure_client_id().unwrap_or(DEFAULT_AZURE_CLIENT_ID)
+pub fn azure_client_id() -> String {
+    crate::config::azure_client_id().unwrap_or_else(|| DEFAULT_AZURE_CLIENT_ID.to_string())
 }
 
 /// Saves (or replaces) the account for a completed Microsoft login.
@@ -92,7 +92,7 @@ pub async fn microsoft_device_code_start(
     state: State<'_, AppState>,
 ) -> Result<msa::DeviceCodeStart, String> {
     let start = tokio::task::spawn_blocking(|| {
-        msa::start_device_code(azure_client_id()).map_err(|e| e.to_string())
+        msa::start_device_code(&azure_client_id()).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("Device sign-in failed to start: {e}"))??;
@@ -135,7 +135,7 @@ pub async fn microsoft_device_code_poll(
 
     let code_for_task = device_code.clone();
     let poll_result = tokio::task::spawn_blocking(move || {
-        match msa::poll_device_code_token(azure_client_id(), &code_for_task) {
+        match msa::poll_device_code_token(&azure_client_id(), &code_for_task) {
             Ok(msa::DeviceCodePoll::Pending) => Ok(None),
             Ok(msa::DeviceCodePoll::Success(token)) => Ok(Some(token)),
             Err(e) => Err(e.to_string()),
@@ -253,7 +253,7 @@ pub(crate) async fn refresh_microsoft_login(
             }
         }
     };
-    let client_id = azure_client_id().to_string();
+    let client_id = azure_client_id();
 
     let refresh_task = tokio::task::spawn_blocking(move || {
         msa::complete_refresh(&client_id, None, &refresh_token).map_err(|e| e.to_string())

@@ -141,6 +141,13 @@ impl AppState {
             .unwrap_or_default();
 
         let log_file = crate::logger::init_log_file(&data_dir);
+        crate::config::set_user_api_keys(
+        &settings.modrinth_api_token,
+        &settings.curseforge_api_key,
+        &settings.elyby_client_id,
+        &settings.elyby_client_secret,
+        &settings.azure_client_id,
+    );
 
         Self {
             accounts: Mutex::new(accounts),

@@ -279,6 +279,10 @@ pub struct LauncherSettings {
     pub tab_animation: String,
     #[serde(default = "default_ui_transparent_opacity")]
     pub ui_transparent_opacity: u32,
+    #[serde(default = "default_corner_style")]
+    pub corner_style: String,
+    #[serde(default = "default_corner_custom_radius")]
+    pub corner_custom_radius: u32,
 
     // Behavior
     #[serde(default)]
@@ -499,6 +503,17 @@ pub struct LauncherSettings {
     #[serde(default)]
     pub crash_webhook_url: String,
 
+    #[serde(default)]
+    pub modrinth_api_token: String,
+    #[serde(default)]
+    pub curseforge_api_key: String,
+    #[serde(default)]
+    pub elyby_client_id: String,
+    #[serde(default)]
+    pub elyby_client_secret: String,
+    #[serde(default)]
+    pub azure_client_id: String,
+
     // 3D Skin Standee Settings
     #[serde(default = "default_skin_animation")]
     pub skin_animation: String,
@@ -552,6 +567,8 @@ fn default_notif_bg() -> String { "#13131a".to_string() }
 fn default_notif_max() -> u32 { 5 }
 fn default_notif_duration() -> u32 { 5 }
 fn default_ui_transparent_opacity() -> u32 { 25 }
+fn default_corner_style() -> String { "default".to_string() }
+fn default_corner_custom_radius() -> u32 { 12 }
 fn default_notif_animation() -> String { "Slide".to_string() }
 fn default_notif_style() -> String { "Minimal".to_string() }
 fn default_bg_fit() -> String { "Cover".to_string() }
@@ -652,6 +669,8 @@ impl Default for LauncherSettings {
             enable_ui_animations: true,
             tab_animation: default_tab_animation(),
             ui_transparent_opacity: default_ui_transparent_opacity(),
+            corner_style: default_corner_style(),
+            corner_custom_radius: default_corner_custom_radius(),
 
             minimize_on_launch: false,
             restore_launcher_on_game_close: true,
@@ -726,6 +745,11 @@ impl Default for LauncherSettings {
             ui_watchdog_enabled: true,
             crash_report_enabled: true,
             crash_webhook_url: String::new(),
+            modrinth_api_token: String::new(),
+            curseforge_api_key: String::new(),
+            elyby_client_id: String::new(),
+            elyby_client_secret: String::new(),
+            azure_client_id: String::new(),
 
             skin_animation: default_skin_animation(),
             skin_speed: default_skin_speed(),

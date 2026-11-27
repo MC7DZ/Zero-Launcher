@@ -5,11 +5,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ZeroLauncher</title>
+  <script>try{var c=JSON.parse(localStorage.getItem('zl_corner')||'null');if(c){var d=document.documentElement.style;d.setProperty('--radius',c[0]+'px');d.setProperty('--radius-sm',c[1]+'px');d.setProperty('--rk',c[0]/12);}}catch(e){}</script>
 
   <!-- ══ Splash screen: inline so it renders INSTANTLY before any external CSS/JS ══ -->
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    html,body{background:transparent;overflow:hidden;height:100%;width:100%;border-radius:12px}
+    html,body{background:transparent;overflow:hidden;height:100%;width:100%;border-radius:var(--radius,12px)}
     #startup-splash-screen{
       position:fixed;inset:0;z-index:999999;
       background:#0c0c11 radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.05) 0%, #09090e 70%);
@@ -17,7 +18,7 @@
       user-select:none;-webkit-user-select:none;
       transition:opacity .35s cubic-bezier(0.16, 1, 0.3, 1);
       font-family:'JetBrains Mono','Fira Code',Consolas,Monaco,monospace;
-      border-radius:12px;
+      border-radius:var(--radius,12px);
       overflow:hidden;
       box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.7);
       isolation:isolate;
@@ -95,7 +96,7 @@
     .sl-brand{display:flex;align-items:center;gap:7px;color:#fff;font-weight:800;font-size:17px;letter-spacing:2.5px}
     .sl-brand-sub{font-weight:600;color:rgba(255,255,255,.75);font-size:14px;letter-spacing:1.5px}
     .sl-badge{
-      font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;
+      font-size:9px;font-weight:700;padding:2px 7px;border-radius:calc(4px * var(--rk, 1));
       background:rgba(255,255,255,.07);
       border:1px solid rgba(255,255,255,.18);
       color:#e4e4e7;letter-spacing:1px;
@@ -749,8 +750,8 @@
           <button class="overlay-close" id="btn-close-shortcut-modal">✕</button>
         </div>
 
-        <div style="display:flex; align-items:center; gap:14px; margin: 14px 0 16px; padding: 12px; border-radius: 10px; background: rgba(var(--overlay-rgb), 0.05); border: 1px solid rgba(var(--overlay-rgb), 0.1);">
-          <div id="shortcut-icon-preview" style="width: 44px; height: 44px; border-radius: 8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background: rgba(var(--overlay-rgb), 0.08);">
+        <div style="display:flex; align-items:center; gap:14px; margin: 14px 0 16px; padding: 12px; border-radius: calc(10px * var(--rk, 1)); background: rgba(var(--overlay-rgb), 0.05); border: 1px solid rgba(var(--overlay-rgb), 0.1);">
+          <div id="shortcut-icon-preview" style="width: 44px; height: 44px; border-radius: calc(8px * var(--rk, 1)); display:flex; align-items:center; justify-content:center; flex-shrink:0; background: rgba(var(--overlay-rgb), 0.08);">
             <img id="shortcut-icon-img" src="" alt="Instance Icon" style="width: 32px; height: 32px; object-fit: contain;" />
           </div>
           <div style="flex:1; min-width:0;">
@@ -771,7 +772,7 @@
             <p class="settings-hint" style="margin-top:4px; font-size:11.5px; color:var(--text-muted);">Default uses whichever account is currently active when launched.</p>
           </div>
 
-          <div style="display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:10px; background:rgba(var(--overlay-rgb),0.03); border:1px solid rgba(var(--overlay-rgb),0.08);">
+          <div style="display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:calc(10px * var(--rk, 1)); background:rgba(var(--overlay-rgb),0.03); border:1px solid rgba(var(--overlay-rgb),0.08);">
             <label style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:2px;">Where to Place Shortcut</label>
             <label class="toggle-row" style="cursor:pointer; display:flex; align-items:center; gap:10px;">
               <input type="checkbox" id="shortcut-dest-desktop" checked />
@@ -798,7 +799,7 @@
               <span class="hypr-toggle-chevron">▾</span>
             </button>
             <div id="shortcut-advanced-panel" class="hidden" style="overflow:hidden;">
-              <div style="display:flex; flex-direction:column; gap:10px; padding:12px; margin-top:10px; border-radius:10px; background:rgba(var(--overlay-rgb),0.03); border:1px solid rgba(var(--overlay-rgb),0.08);">
+              <div style="display:flex; flex-direction:column; gap:10px; padding:12px; margin-top:10px; border-radius:calc(10px * var(--rk, 1)); background:rgba(var(--overlay-rgb),0.03); border:1px solid rgba(var(--overlay-rgb),0.08);">
                 <label style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:2px;">Launch Options</label>
                 <label class="toggle-row" style="cursor:pointer; display:flex; align-items:center; gap:10px;">
                   <input type="checkbox" id="shortcut-offline-toggle" />
@@ -847,7 +848,7 @@
             <select id="edit-shortcut-account" class="input-field" style="width:100%; box-sizing:border-box;"></select>
           </div>
 
-          <div style="display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:10px; background:rgba(var(--overlay-rgb),0.03); border:1px solid rgba(var(--overlay-rgb),0.08);">
+          <div style="display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:calc(10px * var(--rk, 1)); background:rgba(var(--overlay-rgb),0.03); border:1px solid rgba(var(--overlay-rgb),0.08);">
             <label style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:2px;">Where to Place Shortcut</label>
             <label class="toggle-row" style="cursor:pointer; display:flex; align-items:center; gap:10px;">
               <input type="checkbox" id="edit-shortcut-desktop" />
@@ -1013,7 +1014,7 @@
           <span id="crash-troubleshoot-instance-name" style="color:var(--text); font-weight:600;"></span>
           failed to launch. We might be able to fix that by reinstalling this Minecraft version.
         </p>
-        <div id="crash-troubleshoot-details" style="margin:10px 0; padding:10px 12px; border-radius:10px; background:rgba(var(--overlay-rgb),0.08); border:1px solid rgba(var(--overlay-rgb),0.12); font-size:12px; font-family:var(--mono-font, monospace); color:var(--text-muted); max-height:120px; overflow-y:auto; white-space:pre-wrap; word-break:break-word;"></div>
+        <div id="crash-troubleshoot-details" style="margin:10px 0; padding:10px 12px; border-radius:calc(10px * var(--rk, 1)); background:rgba(var(--overlay-rgb),0.08); border:1px solid rgba(var(--overlay-rgb),0.12); font-size:12px; font-family:var(--mono-font, monospace); color:var(--text-muted); max-height:120px; overflow-y:auto; white-space:pre-wrap; word-break:break-word;"></div>
         <div class="overlay-actions" style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
           <button id="btn-crash-troubleshoot-no" class="btn-ghost">No, I'll figure it out</button>
           <button id="btn-crash-troubleshoot-yes" class="btn-accent">Yes, Troubleshoot</button>
@@ -1058,22 +1059,22 @@
         <p style="color:var(--text-muted); font-size:13px; line-height:1.6; margin-top:8px;">
           Your Linux system is currently using <code style="color:var(--accent); font-family:var(--mono-font, monospace);">zlib-ng</code> instead of standard <code style="color:var(--accent); font-family:var(--mono-font, monospace);">zlib</code>. Forge's official installer uses strict checksum checks that fail under zlib-ng compression.
         </p>
-        <div style="margin:14px 0; padding:12px; border-radius:10px; background:rgba(var(--overlay-rgb),0.06); border:1px solid rgba(var(--overlay-rgb),0.12);">
+        <div style="margin:14px 0; padding:12px; border-radius:calc(10px * var(--rk, 1)); background:rgba(var(--overlay-rgb),0.06); border:1px solid rgba(var(--overlay-rgb),0.12);">
           <div style="font-size:12px; font-weight:600; color:var(--text); margin-bottom:8px;">Package commands for your distribution:</div>
           <div style="display:flex; flex-direction:column; gap:6px; font-size:12px; font-family:var(--mono-font, monospace); color:var(--text-muted);">
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:calc(6px * var(--rk, 1));">
               <span><b>Arch / CachyOS:</b> echo y | sudo pacman -S zlib lib32-zlib</span>
               <button type="button" class="btn-ghost btn-copy-zlib-cmd" data-cmd="echo y | sudo pacman -S zlib lib32-zlib" style="padding:2px 8px; font-size:11px; height:auto;">Copy</button>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:calc(6px * var(--rk, 1));">
               <span><b>Debian / Ubuntu:</b> sudo apt install zlib1g zlib1g:i386</span>
               <button type="button" class="btn-ghost btn-copy-zlib-cmd" data-cmd="sudo apt install zlib1g zlib1g:i386" style="padding:2px 8px; font-size:11px; height:auto;">Copy</button>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:calc(6px * var(--rk, 1));">
               <span><b>Fedora / RHEL:</b> sudo dnf install zlib zlib.i686</span>
               <button type="button" class="btn-ghost btn-copy-zlib-cmd" data-cmd="sudo dnf install zlib zlib.i686" style="padding:2px 8px; font-size:11px; height:auto;">Copy</button>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:calc(6px * var(--rk, 1));">
               <span><b>openSUSE:</b> sudo zypper install libz1 libz1-32bit</span>
               <button type="button" class="btn-ghost btn-copy-zlib-cmd" data-cmd="sudo zypper install libz1 libz1-32bit" style="padding:2px 8px; font-size:11px; height:auto;">Copy</button>
             </div>
@@ -1116,22 +1117,22 @@
         <p style="color:var(--text-muted); font-size:13px; line-height:1.6; margin-top:8px;">
           This version of Minecraft (LWJGL 2 / 1.8.9 / pre-1.13) requires the system <code style="color:var(--accent); font-family:var(--mono-font, monospace);">xrandr</code> utility to query display resolutions (even on Wayland via XWayland).
         </p>
-        <div style="margin:14px 0; padding:12px; border-radius:10px; background:rgba(var(--overlay-rgb),0.06); border:1px solid rgba(var(--overlay-rgb),0.12);">
+        <div style="margin:14px 0; padding:12px; border-radius:calc(10px * var(--rk, 1)); background:rgba(var(--overlay-rgb),0.06); border:1px solid rgba(var(--overlay-rgb),0.12);">
           <div style="font-size:12px; font-weight:600; color:var(--text); margin-bottom:8px;">Package commands for your distribution:</div>
           <div style="display:flex; flex-direction:column; gap:6px; font-size:12px; font-family:var(--mono-font, monospace); color:var(--text-muted);">
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:calc(6px * var(--rk, 1));">
               <span><b>Arch / CachyOS:</b> sudo pacman -S --noconfirm xorg-xrandr</span>
               <button type="button" class="btn-ghost btn-copy-xrandr-cmd" data-cmd="sudo pacman -S --noconfirm xorg-xrandr" style="padding:2px 8px; font-size:11px; height:auto;">Copy</button>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:calc(6px * var(--rk, 1));">
               <span><b>Debian / Ubuntu:</b> sudo apt install x11-xserver-utils</span>
               <button type="button" class="btn-ghost btn-copy-xrandr-cmd" data-cmd="sudo apt install x11-xserver-utils" style="padding:2px 8px; font-size:11px; height:auto;">Copy</button>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:calc(6px * var(--rk, 1));">
               <span><b>Fedora / RHEL:</b> sudo dnf install xrandr</span>
               <button type="button" class="btn-ghost btn-copy-xrandr-cmd" data-cmd="sudo dnf install xrandr" style="padding:2px 8px; font-size:11px; height:auto;">Copy</button>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:calc(6px * var(--rk, 1));">
               <span><b>openSUSE:</b> sudo zypper install xrandr</span>
               <button type="button" class="btn-ghost btn-copy-xrandr-cmd" data-cmd="sudo zypper install xrandr" style="padding:2px 8px; font-size:11px; height:auto;">Copy</button>
             </div>
@@ -1163,10 +1164,10 @@
         </div>
 
         <!-- Live Preview & Hex/RGB inputs -->
-        <div class="color-picker-preview-row" style="display:flex; align-items:center; gap:12px; margin-bottom:16px; padding:10px 12px; background:rgba(0,0,0,0.3); border-radius:10px; border:1px solid rgba(var(--overlay-rgb),0.08);">
+        <div class="color-picker-preview-row" style="display:flex; align-items:center; gap:12px; margin-bottom:16px; padding:10px 12px; background:rgba(0,0,0,0.3); border-radius:calc(10px * var(--rk, 1)); border:1px solid rgba(var(--overlay-rgb),0.08);">
           <div style="position:relative; flex-shrink:0;">
             <input type="color" id="custom-color-native-input" style="position:absolute; inset:0; opacity:0; width:100%; height:100%; cursor:pointer; z-index:2;" />
-            <div id="custom-color-live-chip" class="color-live-chip" style="width:42px; height:42px; border-radius:10px; border:2px solid rgba(255,255,255,0.25); cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.4);" title="Click to choose visually"></div>
+            <div id="custom-color-live-chip" class="color-live-chip" style="width:42px; height:42px; border-radius:calc(10px * var(--rk, 1)); border:2px solid rgba(255,255,255,0.25); cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.4);" title="Click to choose visually"></div>
           </div>
           <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
             <div style="display:flex; align-items:center; gap:6px;">
@@ -1224,7 +1225,7 @@
         <div id="full-palettes-grid" class="full-palettes-grid"></div>
 
         <div class="palettes-gallery-footer">
-          <button id="btn-done-palettes-modal" class="btn-accent" style="padding:7px 28px; border-radius:8px;">Done</button>
+          <button id="btn-done-palettes-modal" class="btn-accent" style="padding:7px 28px; border-radius:calc(8px * var(--rk, 1));">Done</button>
         </div>
       </div>
     </div>
@@ -1244,8 +1245,8 @@
         </div>
         <div id="full-notif-grid" class="full-notif-grid"></div>
         <div class="palettes-gallery-footer" style="gap:8px;">
-          <button id="btn-gallery-test-notif" class="btn-secondary" style="padding:7px 18px; border-radius:8px;">Send test</button>
-          <button id="btn-done-notif-gallery" class="btn-accent" style="padding:7px 28px; border-radius:8px;">Done</button>
+          <button id="btn-gallery-test-notif" class="btn-secondary" style="padding:7px 18px; border-radius:calc(8px * var(--rk, 1));">Send test</button>
+          <button id="btn-done-notif-gallery" class="btn-accent" style="padding:7px 28px; border-radius:calc(8px * var(--rk, 1));">Done</button>
         </div>
       </div>
     </div>
@@ -1433,7 +1434,7 @@
         <!-- Install Progress (if active) -->
         <div id="install-progress-wrap" class="hypr-island hidden" style="padding: 12px 16px;">
           <div class="progress-text" id="install-status" style="font-size: 12px; margin-bottom: 6px; color: var(--text);">Starting install…</div>
-          <div class="progress-track" style="height: 6px; background: rgba(var(--overlay-rgb), 0.1); border-radius: 99px; overflow: hidden;">
+          <div class="progress-track" style="height: 6px; background: rgba(var(--overlay-rgb), 0.1); border-radius: var(--radius-pill, 999px); overflow: hidden;">
             <div class="progress-bar" id="install-bar" style="height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease;"></div>
           </div>
         </div>
@@ -1707,7 +1708,7 @@
         <!-- Progress Island (when applying) -->
         <div id="apply-preset-progress" class="hypr-island hidden" style="padding: 12px 16px;">
           <div class="progress-text" id="apply-preset-progress-label" style="font-size: 12px; margin-bottom: 6px; color: var(--text);">Applying…</div>
-          <div class="progress-track" style="height: 6px; background: rgba(var(--overlay-rgb), 0.1); border-radius: 99px; overflow: hidden;">
+          <div class="progress-track" style="height: 6px; background: rgba(var(--overlay-rgb), 0.1); border-radius: var(--radius-pill, 999px); overflow: hidden;">
             <div class="progress-bar" id="apply-preset-progress-bar" style="height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease;"></div>
           </div>
         </div>
@@ -2514,6 +2515,10 @@
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.4 4 5.6 4 9s-1.5 6.6-4 9c-2.5-2.4-4-5.6-4-9s1.5-6.6 4-9Z"/></svg>
               <span>Network</span>
             </button>
+            <button class="settings-nav-btn" data-section="apis">
+              <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3"/><path d="M16 7l3 3"/></svg>
+              <span>APIs</span>
+            </button>
             <button class="settings-nav-btn" data-section="shortcuts">
               <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
               <span>Shortcuts</span>
@@ -2775,6 +2780,24 @@
               <!-- ═══ Style ═══ -->
               <section class="appearance-group" id="appearance-group-style">
                 <div class="appearance-group-head"><h4>Style</h4><p>How see-through panels, cards and windows are over your background.</p></div>
+                <div class="corner-row">
+                  <svg class="api-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="4"/></svg>
+                  <div class="api-row-text">
+                    <div class="api-row-title">Corners</div>
+                    <div class="api-row-desc">How rounded cards, buttons and dialogs are.</div>
+                  </div>
+                  <div class="seg-ctrl" id="corner-style-seg" role="radiogroup" aria-label="Corners">
+                    <button type="button" class="seg-btn" role="radio" data-corner="square">Square</button>
+                    <button type="button" class="seg-btn" role="radio" data-corner="subtle">Subtle</button>
+                    <button type="button" class="seg-btn" role="radio" data-corner="default">Default</button>
+                    <button type="button" class="seg-btn" role="radio" data-corner="round">Round</button>
+                    <button type="button" class="seg-btn" role="radio" data-corner="custom">Custom</button>
+                  </div>
+                </div>
+                <div class="bgimg-slider corner-custom-slider" id="corner-custom-wrap" hidden>
+                  <div class="bgimg-slider-head"><label for="setting-corner-radius">Custom Radius</label><output id="out-corner-radius">12px</output></div>
+                  <input type="range" min="0" max="32" step="1" id="setting-corner-radius" class="input-range" />
+                </div>
                 <div class="bgimg-controls-col ui-style-custom">
                   <div class="bgimg-slider">
                     <div class="bgimg-slider-head"><label for="setting-ui-opacity" id="lbl-ui-opacity">Panel Opacity</label><span class="ui-slider-right"><button type="button" class="ui-slider-reset" id="btn-reset-ui-opacity" title="Reset opacity to default">Reset</button><output id="out-ui-opacity">25%</output></span></div>
@@ -3058,10 +3081,10 @@
                     <p>Manage official Java runtimes, system JREs, and custom Java installations.</p>
                   </div>
                   <div style="display:flex; gap:8px;">
-                    <button type="button" id="btn-refresh-java-manager" class="btn-secondary" style="padding:6px 14px; font-size:12px; border-radius:6px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); display:inline-flex; align-items:center; gap:6px;">
+                    <button type="button" id="btn-refresh-java-manager" class="btn-secondary" style="padding:6px 14px; font-size:12px; border-radius:calc(6px * var(--rk, 1)); background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); display:inline-flex; align-items:center; gap:6px;">
                       <span>⟳</span> Refresh
                     </button>
-                    <button type="button" id="btn-open-managed-java-dir" class="btn-secondary" style="padding:6px 14px; font-size:12px; border-radius:6px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); display:inline-flex; align-items:center; gap:6px;">
+                    <button type="button" id="btn-open-managed-java-dir" class="btn-secondary" style="padding:6px 14px; font-size:12px; border-radius:calc(6px * var(--rk, 1)); background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); display:inline-flex; align-items:center; gap:6px;">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg> Open Folder
                     </button>
                   </div>
@@ -3082,7 +3105,7 @@
                     <span style="font-weight:600; font-size:12px; color:var(--text);">Managed Java Folder:</span>
                     <code id="java-managed-root-path-label" style="font-size:11px; margin-left:6px; opacity:0.85; word-break:break-all;">Loading…</code>
                   </div>
-                  <button type="button" id="btn-open-java-dir-link" class="btn-secondary btn-sm" style="font-size:11px; padding:4px 10px; border-radius:6px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); flex-shrink:0;">Open Folder</button>
+                  <button type="button" id="btn-open-java-dir-link" class="btn-secondary btn-sm" style="font-size:11px; padding:4px 10px; border-radius:calc(6px * var(--rk, 1)); background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); flex-shrink:0;">Open Folder</button>
                 </div>
               </div>
               </section>
@@ -3090,7 +3113,7 @@
               <section class="appearance-group">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
                   <div class="appearance-group-head" style="margin:0;"><h4>Custom &amp; System Installations</h4><p>Your own Java installs and ones detected on this system.</p></div>
-                <button type="button" id="btn-add-custom-java" class="btn-secondary btn-sm" style="font-size:12px; padding:5px 14px; border-radius:6px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); display:inline-flex; align-items:center; gap:6px;">
+                <button type="button" id="btn-add-custom-java" class="btn-secondary btn-sm" style="font-size:12px; padding:5px 14px; border-radius:calc(6px * var(--rk, 1)); background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); display:inline-flex; align-items:center; gap:6px;">
                   <span>➕</span> Browse for Java…
                 </button>
               </div>
@@ -3381,6 +3404,66 @@
                 </p>
               </div>
               </section>
+            </div>
+
+            <div id="settings-panel-apis" class="settings-tab-panel">
+              <div class="settings-panel-heading">
+                <h3>APIs</h3>
+                <p>Use your own keys for the services the launcher talks to. Leave a field empty to use the default.</p>
+              </div>
+
+              <div class="api-group-label">Providers</div>
+              <div class="api-rows">
+                <div class="api-row">
+                  <svg class="api-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3"/><path d="M16 7l3 3"/><path d="M14 9l2 2"/></svg>
+                  <div class="api-row-text">
+                    <div class="api-row-title">Modrinth</div>
+                    <div class="api-row-desc">Personal access token used for Modrinth requests.</div>
+                  </div>
+                  <input type="password" id="setting-modrinth-api-token" class="input-field api-row-input" placeholder="Optional" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="api-row-reset" data-reset-for="setting-modrinth-api-token" title="Reset to default"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/></svg></button>
+                </div>
+                <div class="api-row">
+                  <svg class="api-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3"/><path d="M16 7l3 3"/><path d="M14 9l2 2"/></svg>
+                  <div class="api-row-text">
+                    <div class="api-row-title">CurseForge</div>
+                    <div class="api-row-desc">API key used for CurseForge requests.</div>
+                  </div>
+                  <input type="password" id="setting-curseforge-api-key" class="input-field api-row-input" placeholder="Default" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="api-row-reset" data-reset-for="setting-curseforge-api-key" title="Reset to default"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/></svg></button>
+                </div>
+              </div>
+
+              <div class="api-group-label" style="margin-top:22px;">Accounts</div>
+              <div class="api-rows">
+                <div class="api-row">
+                  <svg class="api-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3"/><path d="M16 7l3 3"/><path d="M14 9l2 2"/></svg>
+                  <div class="api-row-text">
+                    <div class="api-row-title">Ely.by Client ID</div>
+                    <div class="api-row-desc">OAuth2 client ID used for Ely.by sign-in.</div>
+                  </div>
+                  <input type="text" id="setting-elyby-client-id" class="input-field api-row-input" placeholder="Default" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="api-row-reset" data-reset-for="setting-elyby-client-id" title="Reset to default"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/></svg></button>
+                </div>
+                <div class="api-row">
+                  <svg class="api-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3"/><path d="M16 7l3 3"/><path d="M14 9l2 2"/></svg>
+                  <div class="api-row-text">
+                    <div class="api-row-title">Ely.by Client Secret</div>
+                    <div class="api-row-desc">OAuth2 client secret used for Ely.by sign-in.</div>
+                  </div>
+                  <input type="password" id="setting-elyby-client-secret" class="input-field api-row-input" placeholder="Default" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="api-row-reset" data-reset-for="setting-elyby-client-secret" title="Reset to default"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/></svg></button>
+                </div>
+                <div class="api-row">
+                  <svg class="api-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3"/><path d="M16 7l3 3"/><path d="M14 9l2 2"/></svg>
+                  <div class="api-row-text">
+                    <div class="api-row-title">Microsoft</div>
+                    <div class="api-row-desc">Azure application (client) ID used for Microsoft sign-in.</div>
+                  </div>
+                  <input type="text" id="setting-azure-client-id" class="input-field api-row-input" placeholder="Default" autocomplete="off" spellcheck="false" />
+                  <button type="button" class="api-row-reset" data-reset-for="setting-azure-client-id" title="Reset to default"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/></svg></button>
+                </div>
+              </div>
             </div>
 
             <!-- Shortcuts Panel -->

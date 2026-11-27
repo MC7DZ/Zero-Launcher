@@ -97,7 +97,7 @@
     #console-search {
       width: 100%;
       padding: 7px 10px 7px 30px;
-      border-radius: var(--radius-pill);
+      border-radius: var(--radius-pill, 999px);
       border: 1px solid rgba(255,255,255,0.09);
       background: rgba(255,255,255,0.04);
       color: var(--text);
@@ -112,7 +112,7 @@
     #console-level-filters { display: flex; gap: 6px; }
     .lvl-chip {
       padding: 6px 11px;
-      border-radius: var(--radius-pill);
+      border-radius: var(--radius-pill, 999px);
       border: 1px solid rgba(255,255,255,0.09);
       background: rgba(255,255,255,0.04);
       color: var(--text-muted);
@@ -205,7 +205,7 @@
       bottom: 16px;
       right: 16px;
       padding: 7px 13px;
-      border-radius: var(--radius-pill);
+      border-radius: var(--radius-pill, 999px);
       background: var(--accent);
       color: #fff;
       font-size: 11.5px;
@@ -221,7 +221,7 @@
     #console-jump-btn.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
 
     .log-entry.log-hidden { display: none; }
-    .log-entry mark { background: rgba(255, 214, 0, 0.35); color: inherit; border-radius: 2px; }
+    .log-entry mark { background: rgba(255, 214, 0, 0.35); color: inherit; border-radius: calc(2px * var(--rk, 1)); }
 
     #console-viewer::-webkit-scrollbar {
       width: 7px;
@@ -233,7 +233,7 @@
     #console-viewer::-webkit-scrollbar-thumb {
       background: var(--accent, #B7B7B7);
       opacity: 0.35;
-      border-radius: 999px;
+      border-radius: var(--radius-pill, 999px);
     }
     #console-viewer::-webkit-scrollbar-thumb:hover {
       background: var(--accent-glow, #ffffff);

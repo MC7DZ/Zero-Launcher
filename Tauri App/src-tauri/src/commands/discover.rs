@@ -77,7 +77,7 @@ async fn send_curseforge_with_retry(
     let client = curseforge_client();
     let mut attempt = 0;
     loop {
-        match build(client).header("x-api-key", crate::config::curseforge_api_key().unwrap_or("")).send().await {
+        match build(client).header("x-api-key", crate::config::curseforge_api_key().unwrap_or_default()).send().await {
             Ok(resp) => return Ok(resp),
             Err(e) if attempt < 2 && (e.is_connect() || e.is_timeout()) => {
                 attempt += 1;
@@ -97,7 +97,11 @@ async fn send_with_retry(
     let client = modrinth_client();
     let mut attempt = 0;
     loop {
-        match build(client).send().await {
+        let mut req = build(client);
+        if let Some(token) = crate::config::modrinth_token() {
+            req = req.header("Authorization", token);
+        }
+        match req.send().await {
             Ok(resp) => return Ok(resp),
             Err(e) if attempt < 2 && (e.is_connect() || e.is_timeout()) => {
                 attempt += 1;

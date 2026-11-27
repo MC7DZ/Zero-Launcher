@@ -15312,6 +15312,71 @@ function syncUiStyleSliders() {
   document.getElementById('out-ui-opacity').textContent = op.value + '%';
 }
 
+const CORNER_PRESETS = {
+  square: [0, 0],
+  subtle: [6, 4],
+  default: [12, 8],
+  round: [20, 14],
+};
+function getCornerRadii() {
+  const style = (settings && settings.corner_style) || 'default';
+  if (style === 'custom') {
+    const r = clampInt(settings.corner_custom_radius, 0, 32, 12);
+    return [r, Math.round(r * 0.66)];
+  }
+  return CORNER_PRESETS[style] || CORNER_PRESETS.default;
+}
+function applyCorners() {
+  if (!settings) return;
+  const [r, rs] = getCornerRadii();
+  const root = document.documentElement;
+  root.style.setProperty('--radius', r + 'px');
+  root.style.setProperty('--radius-sm', rs + 'px');
+  root.style.setProperty('--rk', String(r / 12));
+  try { localStorage.setItem('zl_corner', JSON.stringify([r, rs])); } catch (e) {}
+}
+function syncCornerControls() {
+  const seg = document.getElementById('corner-style-seg');
+  if (!seg || !settings) return;
+  const style = settings.corner_style || 'default';
+  seg.querySelectorAll('.seg-btn').forEach(b => {
+    const on = b.dataset.corner === style;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  const wrap = document.getElementById('corner-custom-wrap');
+  if (wrap) wrap.hidden = style !== 'custom';
+  const slider = document.getElementById('setting-corner-radius');
+  if (slider) slider.value = clampInt(settings.corner_custom_radius, 0, 32, 12);
+  const out = document.getElementById('out-corner-radius');
+  if (out && slider) out.textContent = slider.value + 'px';
+}
+let _cornerSaveTimer = null;
+function initCornerControls() {
+  const seg = document.getElementById('corner-style-seg');
+  if (!seg || seg._bound) return;
+  seg._bound = true;
+  seg.addEventListener('click', e => {
+    const b = e.target.closest('.seg-btn');
+    if (!b || !settings) return;
+    settings.corner_style = b.dataset.corner;
+    applyCorners();
+    syncCornerControls();
+    saveSettingsNow();
+  });
+  const slider = document.getElementById('setting-corner-radius');
+  if (slider) {
+    slider.addEventListener('input', () => {
+      if (!settings) return;
+      settings.corner_custom_radius = clampInt(slider.value, 0, 32, 12);
+      document.getElementById('out-corner-radius').textContent = slider.value + 'px';
+      applyCorners();
+      clearTimeout(_cornerSaveTimer);
+      _cornerSaveTimer = setTimeout(() => saveSettingsNow(), 250);
+    });
+  }
+}
+
 let _uiStyleSaveTimer = null;
 function initUiStyleSliders() {
   const op = document.getElementById('setting-ui-opacity');
@@ -15747,6 +15812,8 @@ function populateSettingsUI() {
   if (panelTintEl) panelTintEl.checked = settings.enable_panel_tint !== false;
   initUiStyleSliders();
   syncUiStyleSliders();
+  initCornerControls();
+  syncCornerControls();
   document.getElementById('setting-ui-animations-enable').checked = settings.enable_ui_animations !== false;
   document.getElementById('setting-tab-animation').value = TAB_ANIM_NAMES.includes(settings.tab_animation) ? settings.tab_animation : 'swipe';
   renderTabAnimPicker();
@@ -15879,6 +15946,17 @@ function populateSettingsUI() {
   const networkModeSelect = document.getElementById('setting-network-mode');
   if (networkModeSelect) networkModeSelect.value = settings.network_mode || 'automatic';
 
+  const modrinthTokenInp = document.getElementById('setting-modrinth-api-token');
+  if (modrinthTokenInp) modrinthTokenInp.value = settings.modrinth_api_token || '';
+  const curseforgeKeyInp = document.getElementById('setting-curseforge-api-key');
+  if (curseforgeKeyInp) curseforgeKeyInp.value = settings.curseforge_api_key || '';
+  const elybyIdInp = document.getElementById('setting-elyby-client-id');
+  if (elybyIdInp) elybyIdInp.value = settings.elyby_client_id || '';
+  const elybySecretInp = document.getElementById('setting-elyby-client-secret');
+  if (elybySecretInp) elybySecretInp.value = settings.elyby_client_secret || '';
+  const azureIdInp = document.getElementById('setting-azure-client-id');
+  if (azureIdInp) azureIdInp.value = settings.azure_client_id || '';
+
   applyThemeFromSettings();
   applyUsernamePrivacy();
 
@@ -15890,6 +15968,7 @@ function populateSettingsUI() {
 function applyThemeFromSettings() {
   if (!settings) return;
   const root = document.documentElement;
+  applyCorners();
 
   const preset = THEME_PRESETS.dark;
 
@@ -16332,6 +16411,16 @@ function collectSettingsFromUI() {
   if (autoOpenConsoleChk) settings.auto_open_console_on_launch = autoOpenConsoleChk.checked;
 
   // Network
+  const modrinthTokenInp2 = document.getElementById('setting-modrinth-api-token');
+  if (modrinthTokenInp2) settings.modrinth_api_token = modrinthTokenInp2.value.trim();
+  const curseforgeKeyInp2 = document.getElementById('setting-curseforge-api-key');
+  if (curseforgeKeyInp2) settings.curseforge_api_key = curseforgeKeyInp2.value.trim();
+  const elybyIdInp2 = document.getElementById('setting-elyby-client-id');
+  if (elybyIdInp2) settings.elyby_client_id = elybyIdInp2.value.trim();
+  const elybySecretInp2 = document.getElementById('setting-elyby-client-secret');
+  if (elybySecretInp2) settings.elyby_client_secret = elybySecretInp2.value.trim();
+  const azureIdInp2 = document.getElementById('setting-azure-client-id');
+  if (azureIdInp2) settings.azure_client_id = azureIdInp2.value.trim();
   const networkModeSelect2 = document.getElementById('setting-network-mode');
   if (networkModeSelect2) settings.network_mode = networkModeSelect2.value;
 
@@ -16514,7 +16603,7 @@ async function renderJavaManager() {
     const customInstalls = (installs || []).filter(i => i.source === 'custom');
     if (customInstalls.length === 0) {
       customContainer.innerHTML = `
-        <div style="font-size:12px; color:var(--text-muted); padding:10px 14px; background:rgba(255,255,255,0.02); border:1px dashed var(--panel-border); border-radius:6px;">
+        <div style="font-size:12px; color:var(--text-muted); padding:10px 14px; background:rgba(255,255,255,0.02); border:1px dashed var(--panel-border); border-radius:calc(6px * var(--rk, 1));">
           No custom Java installations added yet. Click "Browse for Java…" above to select an installed Java path.
         </div>
       `;
@@ -16667,10 +16756,21 @@ function initSettings() {
     'setting-auto-open-console',
     'setting-hardware-acceleration',
     'setting-network-mode',
+    'setting-modrinth-api-token', 'setting-curseforge-api-key',
+    'setting-elyby-client-id', 'setting-elyby-client-secret', 'setting-azure-client-id',
   ];
   immediateIds.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', saveSettingsNow);
+  });
+
+  document.querySelectorAll('.api-row-reset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const inp = document.getElementById(btn.dataset.resetFor);
+      if (!inp) return;
+      inp.value = '';
+      saveSettingsNow();
+    });
   });
 
   // Crash Reports → "Send test report"
@@ -17879,6 +17979,13 @@ const SETTINGS_SEARCH_CATALOG = [
   { label: 'Crash Diagnostics & Auto-Troubleshoot', keywords: 'crash diagnostics troubleshoot automatic analysis error scan fix', section: 'experimental', sectionLabel: 'Experimental', targetId: 'setting-crash-analysis' },
   { label: 'Auto Open Game Console on Launch', keywords: 'auto open console game log output window live terminal', section: 'experimental', sectionLabel: 'Experimental', targetId: 'setting-auto-open-console' },
   { label: 'IP Protocol (Network)', keywords: 'network ipv4 ipv6 automatic protocol internet connection dual stack', section: 'network', sectionLabel: 'Network', targetId: 'setting-network-mode' },
+
+  { label: 'Modrinth API Token', keywords: 'api apis modrinth token personal access key provider', section: 'apis', sectionLabel: 'APIs', targetId: 'setting-modrinth-api-token' },
+  { label: 'Ely.by Client ID', keywords: 'api apis elyby ely.by client id oauth account', section: 'apis', sectionLabel: 'APIs', targetId: 'setting-elyby-client-id' },
+  { label: 'Ely.by Client Secret', keywords: 'api apis elyby ely.by client secret oauth account', section: 'apis', sectionLabel: 'APIs', targetId: 'setting-elyby-client-secret' },
+  { label: 'Microsoft Client ID', keywords: 'api apis microsoft azure client id sign in account', section: 'apis', sectionLabel: 'APIs', targetId: 'setting-azure-client-id' },
+  { label: 'Corners', keywords: 'corners rounded radius square subtle round custom border roundness shape', section: 'appearance', sectionLabel: 'Appearance', targetId: 'corner-style-seg' },
+  { label: 'CurseForge API Key', keywords: 'api apis curseforge key provider', section: 'apis', sectionLabel: 'APIs', targetId: 'setting-curseforge-api-key' },
 
   // About & Updates
   { label: 'Check for Launcher Updates', keywords: 'check launcher updates update zero launcher version github releases download new', section: 'about', sectionLabel: 'About & Updates', targetId: 'btn-check-launcher-updates' },

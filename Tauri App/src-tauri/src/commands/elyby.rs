@@ -187,7 +187,7 @@ pub async fn elyby_login(
 /// https://account.ely.by/dev/applications/new (type "Website", redirect URI
 /// `http://127.0.0.1:38621/callback` to match `OAUTH_REDIRECT_PORT` below).
 /// If unset, `elyby_oauth_start` fails with a message explaining why.
-fn elyby_credentials() -> Option<(&'static str, &'static str)> {
+fn elyby_credentials() -> Option<(String, String)> {
     Some((crate::config::elyby_client_id()?, crate::config::elyby_client_secret()?))
 }
 /// Must exactly match the port baked into the redirect URI registered
@@ -377,7 +377,7 @@ pub async fn elyby_oauth_start(state: State<'_, AppState>) -> Result<String, Str
 
     let mut url = url::Url::parse(OAUTH_AUTHORIZE_URL).map_err(|e| format!("Internal URL error: {e}"))?;
     url.query_pairs_mut()
-        .append_pair("client_id", elyby_client_id)
+        .append_pair("client_id", &elyby_client_id)
         .append_pair("redirect_uri", &oauth_redirect_uri())
         .append_pair("response_type", "code")
         .append_pair("scope", OAUTH_SCOPES)
@@ -411,8 +411,8 @@ async fn exchange_oauth_code(client: &reqwest::Client, code: &str) -> Result<Oau
     let response = client
         .post(OAUTH_TOKEN_URL)
         .form(&[
-            ("client_id", elyby_client_id),
-            ("client_secret", elyby_client_secret),
+            ("client_id", elyby_client_id.as_str()),
+            ("client_secret", elyby_client_secret.as_str()),
             ("redirect_uri", &oauth_redirect_uri()),
             ("grant_type", "authorization_code"),
             ("code", code),
@@ -593,8 +593,8 @@ async fn refresh_elyby_login_oauth(state: &State<'_, AppState>, account_id: &str
     let response = client
         .post(OAUTH_TOKEN_URL)
         .form(&[
-            ("client_id", elyby_client_id),
-            ("client_secret", elyby_client_secret),
+            ("client_id", elyby_client_id.as_str()),
+            ("client_secret", elyby_client_secret.as_str()),
             ("scope", OAUTH_SCOPES),
             ("refresh_token", refresh_token.as_str()),
             ("grant_type", "refresh_token"),
