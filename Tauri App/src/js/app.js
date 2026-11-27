@@ -5612,6 +5612,7 @@ function formatLastPlayed(iso) {
 // session on top of its already-accumulated total (which only updates on
 // disk once that session actually ends).
 function updateSelectedInstancePlaytimeDisplay() {
+  if (document.hidden) return;
   const playtimeEl = document.getElementById('info-playtime');
   if (!playtimeEl || !selectedInstanceId) return;
   const selLower = (selectedInstanceId || '').toLowerCase();
@@ -10676,6 +10677,7 @@ function initMods() {
   // Replaces the old manual Refresh button — the mods/packs/worlds list now keeps
   // itself up to date on its own while the Mods tab is open.
   setInterval(() => {
+    if (document.hidden) return;
     if (getActiveTabId() !== 'mods' || !['mod', 'resourcepack', 'shaderpack', 'screenshot', 'world'].includes(activeContentType)) return;
     // A rebuild throws away every card (and the user's selection), so never do
     // it while something is selected.
@@ -22039,3 +22041,15 @@ function initCustomContextMenu() {
   window.addEventListener('resize', closeCustomMenu);
   window.addEventListener('blur', closeCustomMenu);
 }
+
+
+// ── Perf: pause every CSS animation while the window is hidden/minimised ──
+// (47 infinite animations otherwise keep burning CPU/GPU in the background.)
+(function () {
+  const root = document.documentElement;
+  const sync = () => root.classList.toggle('zl-hidden', document.hidden);
+  document.addEventListener('visibilitychange', sync);
+  window.addEventListener('blur', () => root.classList.add('zl-hidden'));
+  window.addEventListener('focus', sync);
+  sync();
+})();

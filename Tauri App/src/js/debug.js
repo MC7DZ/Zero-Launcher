@@ -44,6 +44,9 @@ const orig = {
 
 const queue = [];
 let debugOn = true;          // Rust tells us whether DEBUG lines are recorded
+// Heavy perf monitors (100 ms drift timer, per-frame FPS loop, stats samplers)
+// are OFF by default. Enable for profiling: localStorage.setItem('zl_debug_perf','1') and reload.
+const PERF_MONITORS = (() => { try { return localStorage.getItem('zl_debug_perf') === '1'; } catch (_) { return false; } })();
 let flushTimer = null;
 let flushing = false;
 let droppedByRateLimit = 0;
@@ -287,6 +290,7 @@ document.addEventListener('webglcontextrestored', () => wrn('WebGL context resto
 window.addEventListener('error', (e) => {
   if (e.target && e.target !== window) return; // resource errors handled above
 }, true);
+if (PERF_MONITORS) {
 try {
   if (typeof PerformanceObserver !== 'undefined') {
     new PerformanceObserver((list) => {
@@ -300,6 +304,7 @@ setInterval(() => {
     if (m) dbg(`js heap used=${Math.round(m.usedJSHeapSize / 1048576)}MB total=${Math.round(m.totalJSHeapSize / 1048576)}MB limit=${Math.round(m.jsHeapSizeLimit / 1048576)}MB`);
   } catch (_) {}
 }, 15000);
+}
 
 document.addEventListener('securitypolicyviolation', (e) => {
   wrn(`CSP violation: ${e.violatedDirective} blocked ${clip(e.blockedURI, 200)}`);
@@ -406,6 +411,7 @@ window.addEventListener('load', () => dbg(`window load at ${Math.round(performan
 
 /* ────────────────────────── stall / perf monitors ────────────────────────── */
 
+if (PERF_MONITORS) {
 let maxLagSinceBeat = 0;
 let lastTick = performance.now();
 const LAG_WARN_MS = 300;
@@ -458,6 +464,7 @@ setInterval(() => {
     dbg(`stats: dom_nodes=${nodes}${mem} pending_ipc=${pending.size} ipc_total=${ipcTotal} ipc_failed=${ipcFailed} queued_logs=${queue.length} hidden=${document.hidden}`);
   } catch (_) { /* ignore */ }
 }, 10000);
+}
 
 /* ────────────────────────── devtools helpers ────────────────────────── */
 
