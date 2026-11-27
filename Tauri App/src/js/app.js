@@ -13160,7 +13160,7 @@ function updateDiscoverPagination() {
   if (info) info.textContent = `Page ${discoverState.page} of ${totalPages}`;
   if (prevBtn) prevBtn.disabled = discoverState.page <= 1;
   if (nextBtn) nextBtn.disabled = discoverState.page >= totalPages;
-  const typeLabel = discoverState.type === 'modpack' ? 'modpacks' : discoverState.type === 'mod' ? 'mods' : discoverState.type === 'shader' ? 'shaders' : 'resourcepacks';
+  const typeLabel = discoverState.type === 'modpack' ? 'modpacks' : discoverState.type === 'mod' ? 'mods' : discoverState.type === 'shader' ? 'shaders' : discoverState.type === 'world' ? 'worlds' : 'resourcepacks';
   if (countLabel) countLabel.textContent = `${formatDiscoverCount(discoverState.totalHits)} ${typeLabel}`;
 }
 
@@ -14864,6 +14864,10 @@ function initDiscover() {
   }
 
   window.refreshDiscoverIndicators = function() {
+    const worldBtn = document.getElementById('discover-type-world');
+    if (worldBtn) {
+      worldBtn.style.display = discoverState.platform === 'curseforge' ? '' : 'none';
+    }
     const activeSource = document.querySelector('.discover-source-btn.active');
     if (activeSource) updateDiscoverSourceIndicator(activeSource);
     const activeType = document.querySelector('.discover-segment.active');
@@ -14942,12 +14946,23 @@ function initDiscover() {
         discoverState.openSourceOnly = false;
       }
 
+      // Sync Worlds button visibility (CurseForge supports worlds/maps, Modrinth does not)
+      const worldBtn = document.getElementById('discover-type-world');
+      if (worldBtn) {
+        worldBtn.style.display = nextPlatform === 'curseforge' ? '' : 'none';
+      }
+      if (nextPlatform !== 'curseforge' && discoverState.type === 'world') {
+        discoverState.type = 'mod';
+      }
+
       // Sync active content-type segment button in UI
       document.querySelectorAll('.discover-segment').forEach(b => {
         b.classList.toggle('active', b.dataset.type === discoverState.type);
       });
-      const activeType = document.querySelector('.discover-segment.active');
-      if (activeType) updateDiscoverTypeIndicator(activeType);
+      requestAnimationFrame(() => {
+        const activeType = document.querySelector('.discover-segment.active');
+        if (activeType) updateDiscoverTypeIndicator(activeType);
+      });
 
       updateDiscoverFiltersUI();
       performDiscoverSearch();
@@ -15337,7 +15352,38 @@ function applyCorners() {
   root.style.setProperty('--rk', String(r / 12));
   try { localStorage.setItem('zl_corner', JSON.stringify([r, rs])); } catch (e) {}
 }
-function syncCornerControls() {
+function updateCornerSegIndicator(seg, animate = true) {
+  if (!seg) return;
+  let ind = seg.querySelector('.seg-indicator');
+  if (!ind) {
+    ind = document.createElement('div');
+    ind.className = 'seg-indicator';
+    seg.prepend(ind);
+  }
+  const activeBtn = seg.querySelector('.seg-btn.active');
+  if (!activeBtn) {
+    ind.classList.remove('ready');
+    return;
+  }
+  const segRect = seg.getBoundingClientRect();
+  const btnRect = activeBtn.getBoundingClientRect();
+  if (segRect.width === 0 || btnRect.width === 0) return;
+  const x = Math.round(btnRect.left - segRect.left);
+  const w = Math.round(btnRect.width);
+  if (!animate) {
+    ind.style.transition = 'none';
+  }
+  ind.style.width = `${w}px`;
+  ind.style.transform = `translate3d(${x}px, 0, 0)`;
+  ind.classList.add('ready');
+  if (!animate) {
+    requestAnimationFrame(() => {
+      ind.style.transition = '';
+    });
+  }
+}
+
+function syncCornerControls(animate = true) {
   const seg = document.getElementById('corner-style-seg');
   if (!seg || !settings) return;
   const style = settings.corner_style || 'default';
@@ -15346,6 +15392,7 @@ function syncCornerControls() {
     b.classList.toggle('active', on);
     b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
+  updateCornerSegIndicator(seg, animate);
   const wrap = document.getElementById('corner-custom-wrap');
   if (wrap) wrap.hidden = style !== 'custom';
   const slider = document.getElementById('setting-corner-radius');
@@ -15358,12 +15405,13 @@ function initCornerControls() {
   const seg = document.getElementById('corner-style-seg');
   if (!seg || seg._bound) return;
   seg._bound = true;
+  updateCornerSegIndicator(seg, false);
   seg.addEventListener('click', e => {
     const b = e.target.closest('.seg-btn');
     if (!b || !settings) return;
     settings.corner_style = b.dataset.corner;
     applyCorners();
-    syncCornerControls();
+    syncCornerControls(true);
     saveSettingsNow();
   });
   const slider = document.getElementById('setting-corner-radius');

@@ -1,0 +1,1128 @@
+/* ══════════════════════════════════════════════════════════════════
+   PRESETS TAB
+   ══════════════════════════════════════════════════════════════════ */
+/* ── Preset GitHub Sync Progress Banner ── */
+.preset-sync-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  background: rgba(var(--overlay-rgb), 0.06);
+  border: 1px solid rgba(var(--overlay-rgb), 0.10);
+  border-radius: var(--radius-sm);
+  transition: opacity 0.4s ease, max-height 0.4s ease;
+  overflow: hidden;
+  max-height: 80px;
+}
+.preset-sync-banner.hidden {
+  display: none;
+}
+.preset-sync-banner.is-done {
+  opacity: 0;
+  max-height: 0;
+  padding: 0;
+  margin-bottom: 0;
+  pointer-events: none;
+}
+.preset-sync-banner-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.preset-sync-banner-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.preset-sync-banner-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.preset-sync-track {
+  height: 5px;
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(var(--overlay-rgb), 0.10);
+  overflow: hidden;
+}
+.preset-sync-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: var(--radius-pill, 999px);
+  background: linear-gradient(90deg, var(--accent), #34e0a1);
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.preset-sync-bar.is-indeterminate {
+  width: 35% !important;
+  animation: preset-sync-indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes preset-sync-indeterminate {
+  0%   { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
+.presets-container { display: block; }
+
+/* Flat row list — matches the main instance list's launcher style instead
+   of an app-store-style card grid. One column, compact rows. */
+.presets-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Each preset type gets its own island — same flat background/border
+   treatment as .instance-sidebar, so "Fabric", "NeoForge", etc. read as
+   separate panels instead of a flat run of rows with only a divider line
+   between them. */
+.preset-type-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--panel, #1b1b1b);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+}
+.preset-type-section:last-child { margin-bottom: 0; }
+
+.preset-type-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--panel-border);
+}
+.preset-type-name {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  text-align: center;
+}
+.preset-type-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--panel-hover);
+  color: var(--text-muted);
+}
+
+/* Same flat-row treatment as .instance-card: subtle overlay tint instead of
+   a solid panel card, no elevation/shadow on hover, no motion — cheap to
+   composite and consistent with the rest of the launcher. Sits nested
+   inside the .preset-type-section island, same relationship .instance-card
+   has to .instance-sidebar. */
+.preset-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(var(--overlay-rgb), 0.035);
+  border: 1px solid rgba(var(--overlay-rgb), 0.05);
+  user-select: none;
+  contain: layout style paint;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 68px;
+  transition: background var(--transition), border-color var(--transition);
+}
+.preset-card:hover {
+  background: rgba(var(--overlay-rgb), 0.065);
+  border-color: rgba(var(--overlay-rgb), 0.09);
+}
+
+.preset-card-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+}
+.preset-card-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: calc(9px * var(--rk, 1));
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+}
+.preset-card-icon img { width: 100%; height: 100%; object-fit: cover; }
+
+.preset-card-title {
+  font-weight: 700;
+  font-size: 14.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preset-card-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preset-pill-row {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: 6px;
+}
+.preset-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(var(--overlay-rgb),0.05);
+  border: 1px solid rgba(var(--overlay-rgb),0.08);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.preset-pill.accent {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+.preset-pill.config {
+  background: rgba(60,200,120,0.18);
+  color: #7be8a4;
+}
+
+.preset-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.preset-card-actions .btn-accent {
+  padding: 8px 20px;
+  font-size: 12.5px;
+}
+
+.preset-card-target {
+  font-size: 11px;
+  color: var(--text-muted);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Apply Preset overlay ── */
+.apply-preset-info {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 0 2px 10px;
+}
+.apply-preset-info .warn { color: #f0be5a; display:block; margin-top:4px; }
+
+.apply-preset-mod-list {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 2px;
+  margin-bottom: 10px;
+}
+
+.apply-preset-mod-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: calc(8px * var(--rk, 1));
+  background: rgba(var(--overlay-rgb),0.04);
+  border: 1px solid var(--panel-border);
+  font-size: 13px;
+}
+.apply-preset-mod-row label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.apply-preset-mod-status {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.apply-preset-mod-status.waiting { color: #9ca3af; }
+.apply-preset-mod-status.downloading { color: #60a5fa; }
+.apply-preset-mod-status.installed { color: #34d399; }
+.apply-preset-mod-status.already_installed { color: #34d399; }
+.apply-preset-mod-status.skipped { color: #f0be5a; }
+.apply-preset-mod-status.failed { color: #f87171; }
+
+.apply-preset-config-row { padding: 4px 2px 10px; }
+
+.apply-preset-progress { padding: 0 2px 10px; }
+.apply-preset-progress-label {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   REMODELED IMPORT MODS UI (MODERN GLASS ISLANDS)
+   ═══════════════════════════════════════════════════════════════════ */
+.import-mods-window {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 620px;
+  max-width: 95vw;
+  max-height: 90vh;
+  padding: 8px;
+  animation: modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.import-mods-header-island,
+.import-mods-banner-island,
+.import-mods-list-island,
+.import-mods-progress-island,
+.import-mods-footer-island {
+  position: relative;
+  background: rgba(28, 28, 32, 0.75);
+  background-image: var(--panel-tint);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius, 12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.import-mods-header-island {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+}
+
+.import-mods-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.import-mods-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: calc(10px * var(--rk, 1));
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.import-mods-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.import-mods-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-mods-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Banner / Meta Information (Source vs Target Instance) */
+.import-mods-banner-island {
+  padding: 12px 16px;
+}
+
+.import-mods-info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-mods-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: calc(8px * var(--rk, 1));
+  padding: 8px 12px;
+}
+
+.import-mods-meta-col {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.import-mods-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: calc(6px * var(--rk, 1));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.import-mods-tag.source {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.import-mods-tag.target {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
+
+.import-mods-arrow {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mods List Island */
+.import-mods-list-island {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  min-height: 200px;
+}
+
+.import-mods-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.import-mods-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 260px;
+  height: 30px;
+  padding: 0 10px;
+  background: rgba(15, 15, 18, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: calc(6px * var(--rk, 1));
+}
+
+.import-mods-filter-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.import-mods-search-icon {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.import-mods-search-input {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  color: var(--text) !important;
+  font-size: 12px;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.import-mods-search-input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.import-mods-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-mods-selected-counter {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.btn-xs {
+  padding: 3px 8px;
+  font-size: 11px;
+  height: 24px;
+  border-radius: calc(5px * var(--rk, 1));
+}
+
+/* Card list */
+.import-mods-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.import-mod-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: calc(8px * var(--rk, 1));
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.15s ease;
+}
+
+.import-mod-card-row:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.import-mod-card-row.is-checked {
+  background: color-mix(in srgb, var(--accent) 7%, rgba(255, 255, 255, 0.02));
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.import-mod-card-row.disabled {
+  opacity: 0.6;
+}
+
+.import-mod-check-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.import-mod-check-wrap input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.import-mod-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-mod-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 999px);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.import-mod-status-pill.waiting {
+  background: rgba(255, 255, 255, 0.06);
+  color: #9ca3af;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.import-mod-status-pill.downloading {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  animation: pulse-badge 1s infinite alternate;
+}
+
+.import-mod-status-pill.installed,
+.import-mod-status-pill.already_installed {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.import-mod-status-pill.skipped {
+  background: rgba(240, 190, 90, 0.15);
+  color: #f0be5a;
+  border: 1px solid rgba(240, 190, 90, 0.35);
+}
+
+.import-mod-status-pill.failed {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+@keyframes pulse-badge {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
+}
+
+/* Progress */
+.import-mods-progress-island {
+  padding: 12px 16px;
+}
+
+.import-mods-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.import-mods-progress-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.import-mods-progress-pct {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.import-mods-progress-track {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-pill, 999px);
+  overflow: hidden;
+}
+
+.import-mods-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+  transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Footer Actions */
+.import-mods-footer-island {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   REMODELED EXPORT MODS UI (MODERN GLASS ISLANDS)
+   ═══════════════════════════════════════════════════════════════════ */
+.export-mods-window {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 620px;
+  max-width: 95vw;
+  max-height: 90vh;
+  padding: 8px;
+  animation: modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.export-mods-header-island,
+.export-mods-banner-island,
+.export-mods-list-island,
+.export-mods-footer-island {
+  position: relative;
+  background: rgba(28, 28, 32, 0.75);
+  background-image: var(--panel-tint);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius, 12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.export-mods-header-island {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+}
+
+.export-mods-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.export-mods-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: calc(10px * var(--rk, 1));
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.export-mods-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.export-mods-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-mods-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.export-mods-banner-island {
+  padding: 12px 16px;
+}
+
+.export-mods-info-grid {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.export-mods-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: calc(6px * var(--rk, 1));
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.export-mods-tag.accent {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
+
+.export-mods-list-island {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  min-height: 200px;
+}
+
+.export-mods-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.export-mods-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 260px;
+  height: 30px;
+  padding: 0 10px;
+  background: rgba(15, 15, 18, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: calc(6px * var(--rk, 1));
+}
+
+.export-mods-filter-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.export-mods-search-icon {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.export-mods-search-input {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  color: var(--text) !important;
+  font-size: 12px;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.export-mods-search-input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.export-mods-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-mods-selected-counter {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.export-mods-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.export-mod-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: calc(8px * var(--rk, 1));
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.15s ease;
+}
+
+.export-mod-card-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.export-mod-card-row.is-checked {
+  background: color-mix(in srgb, var(--accent) 7%, rgba(255, 255, 255, 0.02));
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.export-mod-check-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.export-mod-check-wrap input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.export-mod-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-mod-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 999px);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.export-mod-status-pill.linked {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.export-mod-status-pill.unlinked {
+  background: rgba(240, 190, 90, 0.15);
+  color: #f0be5a;
+  border: 1px solid rgba(240, 190, 90, 0.35);
+}
+
+.export-mods-footer-island {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+}
+
+/* ── Content Type Disabled / Bottom Reordering for Vanilla ── */
+.content-type-segment.is-disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  filter: grayscale(0.85);
+  border-color: transparent !important;
+}
+
+.content-type-segment.is-disabled:hover {
+  background: transparent !important;
+  color: var(--text-muted) !important;
+}
+
+.content-type-segment.is-disabled .content-type-icon-wrap {
+  opacity: 0.6;
+}
+
+.content-type-segment.at-bottom {
+  order: 99;
+}
+
+/* ── Manage Tab No-Instance Selected Overlay ── */
+.mods-no-instance-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 12, 15, 0.88);
+  padding: 20px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.mods-no-instance-overlay.hidden {
+  display: none !important;
+}
+
+.mods-no-instance-panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(26, 26, 32, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius, 12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.mods-no-instance-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.mods-no-instance-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+/* ═══ Crash Dialog ═══ */
+/* Styled to feel like a genuine OS-level crash/error window rather than a
+   normal in-app modal — a title bar, a hard system accent color, and a
+   monospace "problem signature" block. */
+#crash-overlay { z-index: 300; background: rgba(0,0,0,0.55); }
+
+.crash-window {
+  width: 560px;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  background: #1c1d21;
+  border: 1px solid rgba(0,0,0,0.6);
+  border-radius: calc(8px * var(--rk, 1));
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04);
+  animation: crash-window-in 0.18s ease-out;
+}
+@keyframes crash-window-in {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.crash-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  background: linear-gradient(180deg, #3a2426, #2a1618);
+  border-bottom: 1px solid rgba(0,0,0,0.5);
+  color: #f3d9d9;
+  font-size: 12.5px;
+  font-weight: 600;
+  user-select: none;
+}
+.crash-titlebar-icon { color: #f87171; font-size: 14px; }
+.crash-titlebar-text { flex: 1; }
+.crash-titlebar-close {
+  background: none;
+  border: none;
+  color: #e5b8b8;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 3px 9px;
+  border-radius: calc(4px * var(--rk, 1));
+  transition: all var(--transition);
+}
+.crash-titlebar-close:hover { background: #c0392b; color: #fff; }
+
+.crash-body {
+  display: flex;
+  gap: 16px;
+  padding: 20px 22px 6px 22px;
+  overflow-y: auto;
+}
+.crash-icon-col { flex-shrink: 0; }
+.crash-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ff6b6b, #c0392b 70%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: 0 0 0 4px rgba(192,57,43,0.15);
+}
+.crash-content-col { flex: 1; min-width: 0; }
+.crash-heading {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.crash-subheading {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+.crash-signature-label,
+.crash-fixes-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  margin-top: 4px;
+}
+.crash-signature {
+  background: #0e0f12;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: calc(6px * var(--rk, 1));
+  padding: 10px 12px;
+  font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #d38b8b;
+  max-height: 130px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 14px;
+}
+
+.crash-fixes { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.crash-fix {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(var(--overlay-rgb),0.08);
+  border-radius: calc(6px * var(--rk, 1));
+}
+.crash-fix-info {
+  flex: 1;
+  min-width: 0;
+}
+.crash-fix-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.crash-fix-detail { font-size: 11.5px; color: var(--text-muted); line-height: 1.45; }
+.crash-fix-action { flex-shrink: 0; }
+.crash-fix.crash-fix-done .crash-fix-label { color: var(--text-muted); text-decoration: line-through; }
+.crash-fix.crash-fix-done .crash-fix-action button { pointer-events: none; opacity: 0.6; }
+
+.crash-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.15);
+}
+
+.btn-xs {
+  padding: 3px 9px;
+  font-size: 11px;
+  border-radius: calc(5px * var(--rk, 1));
+}
+
+.crash-fix-mod-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.crash-fix-mod-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(var(--overlay-rgb),0.06);
+  border-radius: calc(5px * var(--rk, 1));
+}
+.crash-fix-mod-name {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crash-fix-mod-row.crash-fix-mod-done .crash-fix-mod-name { color: var(--text-muted); text-decoration: line-through; }
+.crash-fix-mod-row.crash-fix-mod-done button { pointer-events: none; opacity: 0.6; }
+.crash-fix-group .crash-fix-action { align-self: flex-start; }

@@ -1,0 +1,487 @@
+/* ═══ Setup Wizard — accent theming ═══════════════════════════════════
+   Driven only by --accent / --accent-dim / --accent-glow (the same vars every
+   other panel uses, and the ones chroma mode rewrites each frame), so the
+   wizard follows the accent live. Everything here is static paint — no new
+   animated properties — to keep it cheap on WebKitGTK. */
+
+/* Sheet: accent edge + soft ambient wash behind the content */
+.wz-sheet {
+  border-color: var(--accent-dim);
+  box-shadow: 0 30px 70px -28px rgba(0, 0, 0, 0.75), 0 0 80px -34px var(--accent-glow);
+}
+.wz-sheet::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(90% 60% at 0% 0%, var(--accent-dim), transparent 62%),
+    radial-gradient(70% 50% at 100% 100%, var(--accent-dim), transparent 68%);
+  opacity: 0.85;
+}
+.wz-rail, .wz-main { position: relative; z-index: 1; }
+
+/* Rail */
+.wz-rail {
+  background: linear-gradient(180deg, var(--accent-dim), transparent 60%), rgba(0, 0, 0, 0.22);
+  border-right-color: var(--accent-dim);
+}
+.wz-rail-head { color: var(--accent); text-transform: uppercase; letter-spacing: 0.14em; font-size: 11px; font-weight: 700; }
+.wz-steps::before { background: rgba(var(--overlay-rgb), 0.1); }
+.wz-steps::after { box-shadow: 0 0 10px var(--accent-glow); }
+.wz-step-btn.done:hover .wz-step-label { text-decoration-color: var(--accent); }
+.wz-step-btn.active .wz-step-num { box-shadow: 0 0 0 4px var(--accent-dim), 0 0 16px var(--accent-glow); }
+.wz-step-btn.done .wz-step-num { background: linear-gradient(var(--accent-dim), var(--accent-dim)), #1b1b1b; }
+.wz-link:hover { color: var(--accent); }
+
+/* Type */
+.wz-eyebrow { color: var(--accent); display: flex; align-items: center; gap: 9px; letter-spacing: 0.04em; }
+.wz-eyebrow::before { content: ""; width: 18px; height: 2px; border-radius: calc(2px * var(--rk, 1)); background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+.wz-outline { border-top-color: var(--accent-dim); }
+.wz-outline li { border-bottom-color: var(--accent-dim); }
+.wz-outline span { color: var(--accent); }
+
+/* Scrollbar */
+.wz-scroll { scrollbar-color: var(--accent-glow) transparent; }
+.wz-scroll::-webkit-scrollbar-thumb { background: var(--accent-glow); background-clip: padding-box; }
+
+/* Appearance step */
+.wz-preview { border-color: var(--accent-dim); box-shadow: 0 14px 34px -16px var(--accent-glow); }
+.wz-stepper { border-color: var(--accent-dim); background: rgba(var(--overlay-rgb), 0.02); }
+.wz-stepper button:hover { background: var(--accent-dim); color: var(--accent); }
+.wz-pal:hover { background: var(--accent-dim); border-color: var(--accent-glow); }
+.wz-pal.on { background: var(--accent-dim); border-color: var(--accent); box-shadow: 0 6px 18px -8px var(--accent-glow); }
+.wz-hex:focus-within, .wz-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.wz-reset:hover { background: var(--accent-dim); color: var(--accent); }
+.wz-chip:hover { background: var(--accent-dim); border-color: var(--accent-glow); }
+.wz-chip.on { box-shadow: 0 4px 14px -4px var(--accent-glow); }
+
+/* Account step */
+.wz-acc { background: linear-gradient(90deg, var(--accent-dim), rgba(var(--overlay-rgb), 0.02) 70%); border-color: var(--accent-dim); }
+.wz-option:hover { background: var(--accent-dim); border-color: var(--accent); }
+.wz-option-ico { background: var(--accent-dim); color: var(--accent); }
+.wz-option:hover .wz-chev { color: var(--accent); }
+.wz-back:hover { color: var(--accent); }
+.wz-panel { border-color: var(--accent-dim); background: linear-gradient(180deg, var(--accent-dim), rgba(var(--overlay-rgb), 0.02) 55%); }
+.wz-howto li > span { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.wz-code { border-color: var(--accent-glow); }
+.wz-code.ready { color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim), 0 0 26px -8px var(--accent-glow); }
+.wz-user-av { box-shadow: 0 6px 18px -6px var(--accent-glow); }
+
+/* Ready step */
+.wz-summary { border-color: var(--accent-dim); background: linear-gradient(180deg, var(--accent-dim), transparent 80%); }
+.wz-summary > div + div { border-top-color: var(--accent-dim); }
+.wz-map li { border-bottom-color: var(--accent-dim); }
+.wz-map li:first-child { border-top-color: var(--accent-dim); }
+.wz-map kbd { background: var(--accent-dim); border-color: var(--accent-dim); color: var(--accent); }
+
+/* Footer + buttons */
+.wz-foot { border-top-color: var(--accent-dim); }
+.wz-btn:hover { background: var(--accent-dim); border-color: var(--accent-glow); }
+.wz-btn-quiet:hover { color: var(--accent); background: transparent; border-color: transparent; }
+.wz-btn-primary { box-shadow: 0 8px 22px -8px var(--accent-glow); }
+.wz-btn-primary:hover { background: var(--accent); border-color: var(--accent); box-shadow: 0 10px 28px -8px var(--accent-glow); }
+
+/* ═══ Soft shadows ════════════════════════════════════════════════════
+   One small scale instead of ad-hoc values. Every level is a tight "contact"
+   shadow plus a wide, faint ambient one with negative spread, so edges stay
+   light, blur radii stay small (cheaper to paint) and nothing looks heavy.
+   Selectors below match the originals; the higher-specificity transparent-ui
+   and WebKitGTK rules (which turn shadows off for perf) still win where they
+   did before. */
+:root {
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.16);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.12), 0 3px 8px -2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.1), 0 8px 18px -6px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.1), 0 18px 36px -14px rgba(0, 0, 0, 0.4);
+  --shadow-drawer-l: 8px 0 24px -10px rgba(0, 0, 0, 0.45);
+  --shadow-drawer-r: -8px 0 24px -10px rgba(0, 0, 0, 0.45);
+}
+
+/* Menus, popovers, tooltips */
+.dropdown-panel, .ri-dropdown, .ri-overflow-menu, .fix-mods-panel, .fix-mods-inline,
+.play-options-popover, .custom-context-menu, .settings-search-results, .dl-widget-panel { box-shadow: var(--shadow-md); }
+.playtime-bar-tooltip, .dl-edge-hint { box-shadow: var(--shadow-sm); }
+.palette-ui-skeleton { box-shadow: var(--shadow-xs); }
+.palettes-gallery-panel { box-shadow: var(--shadow-md); }
+
+/* Modals / windows */
+.overlay-card { box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+.account-overlay-card, .crash-window { box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255, 255, 255, 0.04); }
+.skin-viewer-modal, .settings-modal-window, .screenshot-lightbox-img { box-shadow: var(--shadow-lg); }
+.mods-drag-overlay-inner { box-shadow: 0 0 0 1px var(--accent-dim, var(--accent)), var(--shadow-lg), 0 0 24px -6px var(--accent-glow); }
+.wz-sheet { box-shadow: var(--shadow-lg), 0 0 48px -24px var(--accent-glow); }
+
+/* Side drawers */
+.discover-project-modal, #dl-files-panel, .dressing-room-modal { box-shadow: var(--shadow-drawer-r); }
+#dl-widget-panel { box-shadow: var(--shadow-drawer-l); }
+
+/* WebKitGTK solid-panel variant: single light layer */
+.is-webkit-gtk:not(.transparent-ui) .overlay-card,
+.is-webkit-gtk:not(.transparent-ui) .settings-modal-window,
+.is-webkit-gtk:not(.transparent-ui) .update-overlay-card,
+.is-webkit-gtk:not(.transparent-ui) .account-overlay-card,
+.is-webkit-gtk:not(.transparent-ui) .skin-viewer-modal,
+.is-webkit-gtk:not(.transparent-ui) .dressing-room-modal,
+.is-webkit-gtk:not(.transparent-ui) #dl-files-panel { box-shadow: 0 10px 22px -10px rgba(0, 0, 0, 0.45); }
+
+/* Top bar + panels */
+#top-bar { box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2), 0 6px 14px -8px rgba(0, 0, 0, 0.35); }
+.bento-tile, .bento-tile-header:hover { box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.06), 0 4px 12px -4px rgba(0, 0, 0, 0.2); }
+.bento-tile:hover { box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.08), 0 0 0 1px var(--accent-dim), 0 8px 18px -6px rgba(0, 0, 0, 0.3); }
+.bento-tile:focus-within { box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.08), 0 0 0 2px var(--accent-dim), 0 8px 18px -6px rgba(0, 0, 0, 0.3); }
+.hypr-island { box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.06), 0 4px 12px -4px rgba(0, 0, 0, 0.25); }
+.log-viewer { box-shadow: inset 0 0 0 1px rgba(var(--overlay-rgb), 0.04), 0 6px 16px -8px rgba(0, 0, 0, 0.25); }
+.settings-card.active { box-shadow: var(--shadow-sm); }
+.full-palette-card:hover { box-shadow: var(--shadow-md); }
+.full-palette-card.active { box-shadow: 0 0 0 1.5px var(--accent), var(--shadow-sm); }
+.content-type-indicator { box-shadow: var(--shadow-sm), inset 0 1px 1px rgba(255, 255, 255, 0.15); }
+
+/* Cards (solid mode) — soft lift on hover, lighter when selected */
+.mod-card:hover, .world-card:hover, .server-card:hover { box-shadow: var(--shadow-md); }
+.mod-card.selected, .world-card.selected { box-shadow: var(--shadow-sm); }
+.mods-two-pane-page.modpack-mods-active .mod-card:hover { box-shadow: 0 4px 12px -4px rgba(147, 51, 234, 0.25); }
+.fix-mods-inline .btn-ghost:hover { box-shadow: 0 3px 8px -2px rgba(0, 0, 0, 0.2); }
+
+/* Cards (default glass/transparent mode) are flat on purpose; give hover and
+   selection just a whisper of depth so they still feel responsive. */
+.transparent-ui .mod-card:hover,
+.transparent-ui .world-card:hover,
+.transparent-ui .server-card:hover,
+.transparent-ui .instance-card:hover,
+.transparent-ui .discover-card:hover,
+.transparent-ui .preset-card:hover { box-shadow: 0 6px 14px -6px rgba(0, 0, 0, 0.35) !important; }
+
+/* Buttons: tighter, tinted glow instead of a big halo */
+.btn-play { box-shadow: 0 3px 12px -3px var(--accent-glow); }
+.btn-play:hover:not(:disabled) { box-shadow: 0 6px 18px -4px var(--accent-glow); }
+.btn-play:active:not(:disabled) { box-shadow: 0 1px 4px var(--accent-glow); }
+.btn-play.is-running { box-shadow: 0 3px 12px -3px rgba(245, 166, 35, 0.45); }
+.btn-play.is-running:hover:not(:disabled) { box-shadow: 0 6px 18px -4px rgba(245, 166, 35, 0.55); }
+.btn-accent:hover { box-shadow: 0 3px 12px -3px var(--accent-glow); }
+.btn-danger { box-shadow: 0 3px 10px -3px rgba(239, 68, 68, 0.4); }
+.btn-danger:hover { box-shadow: 0 5px 14px -4px rgba(239, 68, 68, 0.5); }
+.skin-apply-btn:hover { box-shadow: 0 3px 12px -3px var(--accent-glow); }
+.about-check-now-btn:not(:disabled):hover, .about-action-btn:hover { box-shadow: var(--shadow-sm); }
+
+/* "Update available" pulse: same idea, smaller blur radii (it repaints every frame) */
+@keyframes mod-update-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--accent-dim), 0 0 8px 0 var(--accent-glow); }
+  50%      { box-shadow: 0 0 0 1px var(--accent), 0 0 12px 1px var(--accent-glow); }
+}
+
+
+/* ═══ Solid, tactile feel ═══
+   Small, cheap touches so everything responds the instant it's touched:
+   a firm press-down on clickable things, accent-colored keyboard focus, a
+   steady lift on card hover, and no accidental text selection / image
+   dragging on the app chrome. Transform/opacity only. */
+:root { --press-ease: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+button, .btn, .pill-tab, .mod-card, .instance-card, .glass-card[role="button"],
+.tab-anim-card, .appearance-nav-chip {
+  -webkit-tap-highlight-color: transparent;
+}
+img, svg { -webkit-user-drag: none; user-select: none; }
+
+button:not(:disabled):active,
+.mod-card:active,
+.instance-card:active,
+.tab-anim-card:active,
+.appearance-nav-chip:active {
+
+  transition-duration: 0.06s;
+}
+button:disabled { cursor: not-allowed; }
+
+.mod-card, .instance-card, .tab-anim-card {
+  transition: transform 0.16s var(--press-ease), border-color var(--transition),
+              background var(--transition), box-shadow 0.18s ease;
+}
+.mod-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 4px 14px rgba(var(--accent-rgb, 16, 185, 129), 0.18);
+}
+
+button:focus-visible, [tabindex]:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Keep scrolling steady and let the compositor own the sliding indicator. */
+.tab-page { scroll-behavior: auto; }
+.tab-indicator { will-change: transform, width; }
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active, .mod-card:active, .instance-card:active,
+  .tab-anim-card:active, .appearance-nav-chip:active { transform: none; }
+}
+html.no-ui-animations button:not(:disabled):active,
+html.no-ui-animations .mod-card:active,
+html.no-ui-animations .instance-card:active { transform: none; }
+
+/* ── Add Server overlay ─────────────────────────────────────────────── */
+.add-server-modal { width: 460px; }
+.add-server-preview-island { padding: 12px 16px; }
+.add-server-preview-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 8px;
+}
+.add-server-preview {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  background: rgba(var(--overlay-rgb), 0.05);
+  border: 1px solid var(--panel-border); border-radius: calc(10px * var(--rk, 1));
+}
+.add-server-preview-icon {
+  width: 44px; height: 44px; flex: 0 0 44px; border-radius: calc(8px * var(--rk, 1));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 700; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.add-server-preview-text { min-width: 0; }
+.add-server-preview-name { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.add-server-preview-ip { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.add-server-error { color: var(--danger, #ef4444); }
+.add-server-error.hidden { display: none !important; }
+.input-field.is-invalid { border-color: var(--danger, #ef4444); }
+
+/* ── "Always launch offline" tile (advanced options) ─────────────────── */
+.adv-toggle-tile {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin: 4px 0 14px; padding: 11px 14px;
+  background: var(--field-bg); border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition), background var(--transition);
+}
+.adv-toggle-tile:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.adv-toggle-tile:has(input:checked) { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 7%, var(--field-bg)); }
+.adv-toggle-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.adv-toggle-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.adv-toggle-sub { font-size: 11px; line-height: 1.4; color: var(--text-muted); }
+
+/* ── Add Server: accent + animation ──────────────────────────────────── */
+.add-server-modal .hypr-island { border-color: color-mix(in srgb, var(--accent) 22%, var(--panel-border)); }
+.add-server-modal .input-field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+#add-server-overlay:not(.hidden) .hypr-modal { animation: overlay-card-enter 0.22s var(--ease-out-spring) both; }
+#add-server-overlay:not(.hidden) .hypr-modal > .hypr-island,
+#add-server-overlay:not(.hidden) .hypr-modal > .hypr-actions-island {
+  animation: hypr-island-slide 0.28s ease both;
+}
+#add-server-overlay:not(.hidden) .hypr-modal > :nth-child(2) { animation-delay: 0.04s; }
+#add-server-overlay:not(.hidden) .hypr-modal > :nth-child(3) { animation-delay: 0.08s; }
+#add-server-overlay:not(.hidden) .hypr-modal > :nth-child(4) { animation-delay: 0.12s; }
+.add-server-preview { transition: border-color var(--transition), background var(--transition); }
+.add-server-preview.is-found { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.add-server-preview-icon { overflow: hidden; transition: background var(--transition), transform 0.25s var(--ease-out-spring); }
+.add-server-preview-icon img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; animation: hypr-island-slide 0.25s ease both; }
+.add-server-preview-icon.is-loading { animation: add-server-pulse 1s ease-in-out infinite; }
+@keyframes add-server-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+.add-server-preview-motd { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+@media (prefers-reduced-motion: reduce) {
+  #add-server-overlay .hypr-modal, #add-server-overlay .hypr-modal > * { animation: none !important; }
+}
+
+/* Add Server: closing animation (mirror of the open animation) */
+#add-server-overlay .hypr-modal {
+  transition: opacity 0.18s ease, transform 0.2s ease;
+}
+#add-server-overlay.hidden .hypr-modal {
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition: opacity 0.16s ease, transform 0.18s ease;
+}
+#add-server-overlay.hidden { transition: opacity 0.2s ease; }
+
+/* Manage → World "Play" and Server "Join" buttons: always green, independent of the accent color */
+.world-actions .btn-play-world,
+.server-actions .btn-play-server {
+  background: rgba(34, 197, 94, 0.18);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.45);
+}
+.world-actions .btn-play-world:hover,
+.server-actions .btn-play-server:hover {
+  background: #22c55e;
+  color: #ffffff;
+  border-color: #22c55e;
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.4);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   SETTINGS → SHORTCUTS
+   ═══════════════════════════════════════════════════════════════════ */
+.shortcut-list { display: flex; flex-direction: column; border-top: 1px solid rgba(var(--overlay-rgb), 0.1); }
+.shortcut-row {
+  display: flex; align-items: flex-start; gap: 16px; padding: 14px 0;
+  border-bottom: 1px solid rgba(var(--overlay-rgb), 0.1);
+  animation: storage-row-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) var(--row-delay, 0ms) both;
+}
+.shortcut-row-icon {
+  width: 40px; height: 40px; border-radius: calc(8px * var(--rk, 1)); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--overlay-rgb), 0.08);
+}
+.shortcut-row-icon img { width: 28px; height: 28px; object-fit: contain; }
+.shortcut-row-text { flex: 1; min-width: 0; }
+.shortcut-row-title { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shortcut-row-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shortcut-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.shortcut-badge {
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill, 999px);
+  color: var(--text-muted); background: rgba(var(--overlay-rgb), 0.07);
+  border: 1px solid rgba(var(--overlay-rgb), 0.1);
+}
+.shortcut-badge.on { color: var(--text); border-color: rgba(var(--overlay-rgb), 0.22); }
+.shortcut-badge.warn { color: #f59e0b; border-color: rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.1); }
+.shortcut-loc-group { display: flex; flex-direction: column; margin-top: 10px; }
+.shortcut-loc-line {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 0; border-top: 1px solid rgba(var(--overlay-rgb), 0.08);
+}
+.shortcut-loc-name { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); min-width: 0; }
+.shortcut-loc-line.off .shortcut-loc-name { color: var(--text-muted); }
+.shortcut-loc-name .loc-state {
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill, 999px);
+  color: var(--text-muted); background: rgba(var(--overlay-rgb), 0.07); border: 1px solid rgba(var(--overlay-rgb), 0.1);
+}
+.shortcut-row-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.shortcut-delete-btn:not(:disabled):hover { color: #f87171; border-color: rgba(239, 68, 68, 0.5); }
+#btn-shortcuts-refresh-icon.is-spinning { animation: about-spin 0.8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .shortcut-row { animation: none !important; } }
+
+
+/* Style customisation sliders */
+.ui-style-custom { margin-top: 14px; max-width: 460px; }
+.ui-slider-right { display: inline-flex; align-items: center; gap: 8px; }
+.ui-slider-reset {
+  background: transparent; border: 1px solid rgba(var(--overlay-rgb), 0.18); color: var(--text-muted);
+  font: inherit; font-size: 11px; padding: 1px 8px; border-radius: var(--radius-pill, 999px); cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.ui-slider-reset:hover { border-color: var(--accent); color: var(--text); }
+.ui-slider-reset:disabled { opacity: 0.4; pointer-events: none; }
+
+/* Wizard · Surfaces toggles */
+.wz-toggles { display: flex; flex-direction: column; gap: 10px; }
+.wz-toggles .wz-group-head { margin-bottom: 0; }
+.wz-toggle-row { font-size: 13px; color: var(--text); }
+
+
+/* ═══ Setup wizard · follows the "Transparent UI cards" and "Tint panels & menus" settings ═══
+   Transparent: the sheet uses the same window opacity as other floating
+   windows (see the .transparent-ui rule near the wizard styles).
+   Tint ON: surfaces use the shared accent + base-color blend (--panel-tint*,
+   --panel-edge*), exactly like every other panel.
+   Tint OFF: wash, tinted borders and tinted fills drop back to neutral. */
+.wz-sheet {
+  background-image: var(--panel-tint);
+  border-color: var(--panel-edge-strong);
+}
+.wz-sheet::before {
+  background:
+    radial-gradient(90% 60% at 0% 0%, color-mix(in srgb, var(--panel-tint-color) 26%, transparent), transparent 62%),
+    radial-gradient(70% 50% at 100% 100%, color-mix(in srgb, var(--panel-tint-color) 18%, transparent), transparent 68%);
+}
+.wz-rail { border-right-color: var(--panel-edge); }
+.wz-foot { border-top-color: var(--panel-edge); }
+
+:root.no-panel-tint .wz-sheet {
+  background-image: none;
+  border-color: var(--wz-line);
+  box-shadow: var(--shadow-lg);
+}
+:root.no-panel-tint .wz-sheet::before { display: none; }
+:root.no-panel-tint .wz-rail {
+  background: rgba(0, 0, 0, 0.22);
+  border-right-color: var(--wz-line);
+}
+:root.no-panel-tint .wz-foot,
+:root.no-panel-tint .wz-outline,
+:root.no-panel-tint .wz-outline li,
+:root.no-panel-tint .wz-map li,
+:root.no-panel-tint .wz-map li:first-child,
+:root.no-panel-tint .wz-summary > div + div { border-color: var(--wz-line); }
+:root.no-panel-tint .wz-panel,
+:root.no-panel-tint .wz-summary,
+:root.no-panel-tint .wz-acc {
+  background: rgba(var(--overlay-rgb), 0.03);
+  border-color: var(--wz-line);
+}
+:root.no-panel-tint .wz-preview,
+:root.no-panel-tint .wz-stepper {
+  border-color: var(--wz-line);
+  box-shadow: none;
+}
+
+.api-group-label {
+  margin: 4px 0 10px; font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.api-rows { display: flex; flex-direction: column; gap: 8px; }
+.api-row {
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: calc(14px * var(--rk, 1));
+  background: rgba(var(--overlay-rgb), 0.04); border: 1px solid rgba(var(--overlay-rgb), 0.1);
+}
+.api-row-icon { width: 22px; height: 22px; flex: 0 0 auto; color: var(--text); }
+.api-row-text { flex: 1 1 auto; min-width: 0; }
+.api-row-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.api-row-desc { margin-top: 2px; font-size: 12px; color: var(--text-muted); }
+.api-row-input { flex: 0 0 220px; width: 220px; }
+.api-row-reset {
+  flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; padding: 0;
+  border: none; border-radius: calc(8px * var(--rk, 1)); background: transparent; color: var(--text-muted); cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.api-row-reset:hover { background: rgba(var(--overlay-rgb), 0.08); color: var(--accent); }
+.api-row-reset svg { width: 16px; height: 16px; }
+@media (max-width: 720px) {
+  .api-row { flex-wrap: wrap; }
+  .api-row-input { flex: 1 1 100%; width: 100%; }
+}
+
+.corner-row {
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-top: 14px; border-radius: var(--radius);
+  background: rgba(var(--overlay-rgb), 0.04); border: 1px solid rgba(var(--overlay-rgb), 0.1);
+}
+.seg-ctrl {
+  flex: 0 0 auto; display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--radius-sm);
+  background: rgba(var(--overlay-rgb), 0.05); border: 1px solid rgba(var(--overlay-rgb), 0.1);
+  position: relative;
+  isolation: isolate;
+}
+.seg-indicator {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 0;
+  background: rgba(var(--overlay-rgb), 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: calc(var(--radius-sm) - 2px);
+  z-index: 0;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.2, 1),
+              width 0.28s cubic-bezier(0.2, 0.9, 0.2, 1),
+              opacity 0.2s ease;
+  opacity: 0;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, width;
+}
+.seg-indicator.ready {
+  opacity: 1;
+}
+.seg-btn {
+  position: relative;
+  z-index: 1;
+  border: none; background: transparent; color: var(--text-muted); font: inherit; font-size: 13px; font-weight: 600;
+  padding: 7px 14px; border-radius: calc(var(--radius-sm) - 2px); cursor: pointer;
+  transition: color 0.18s ease;
+}
+.seg-btn:hover { color: var(--text); }
+.seg-btn.active { background: transparent; color: #ffffff; }
+.corner-custom-slider { margin-top: 12px; max-width: 460px; }
+.corner-custom-slider[hidden] { display: none; }
+@media (max-width: 720px) {
+  .corner-row { flex-wrap: wrap; }
+  .seg-ctrl { flex: 1 1 100%; overflow-x: auto; }
+}

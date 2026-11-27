@@ -1,0 +1,2065 @@
+/* ═══ Bento-style modals (New Instance / Apply Preset) ═══
+   No single enclosing card — the whole overlay content IS the bento grid,
+   and every field/section is its own floating frosted-glass tile, styled
+   like .mod-card (same var(--panel) glass, same hover lift). */
+.bento-modal {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  gap: 14px;
+  width: 560px;
+  max-width: 92vw;
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.bento-tile {
+  position: relative;
+  border-radius: var(--radius);
+  background: #1b1b1b;
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
+  box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.06), 0 10px 26px rgba(0,0,0,0.16);
+  padding: 16px 18px;
+  will-change: transform;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+.bento-tile:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent-dim);
+  box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.08), 0 0 0 1px var(--accent-dim), 0 16px 36px rgba(0,0,0,0.28);
+  background: var(--panel-hover);
+}
+.bento-tile:focus-within {
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.08), 0 0 0 2px var(--accent-dim), 0 16px 36px rgba(0,0,0,0.28);
+}
+
+.bento-tile-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 9px;
+}
+.bento-tile-hint { color: var(--text-muted); font-size: 11px; text-transform: none; font-weight: 500; letter-spacing: 0; }
+
+/* Header tile — spans full width, sits flush against the top, no lift or
+   glow on hover since it's chrome rather than an input. */
+.bento-tile-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--panel-solid);
+  padding: 16px 16px 16px 20px;
+}
+.bento-tile-header:hover { transform: none; box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.06), 0 10px 26px rgba(0,0,0,0.16); border-color: var(--panel-border); background: var(--panel-solid); }
+.bento-tile-header h3 { font-size: 18px; font-weight: 700; }
+
+/* New Instance layout — name is the hero tile, version/loader pair up,
+   install location is the big tile at the bottom, actions span full width. */
+.bento-tile-name            { grid-column: 1 / -1; }
+.bento-tile-version         { grid-column: 1 / 2; }
+.bento-tile-loader          { grid-column: 2 / 3; }
+.bento-tile-loader-version  { grid-column: 1 / 2; }
+.bento-tile-location        { grid-column: 1 / -1; }
+.bento-tile-progress        { grid-column: 1 / -1; }
+.bento-tile-actions         { grid-column: 1 / -1; display: flex; justify-content: center; gap: 10px; background: transparent; border: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; padding: 4px 2px 0; }
+.bento-tile-actions:hover   { transform: none; box-shadow: none; background: transparent; }
+
+/* Tiles rise into place one after another (top tile first) whenever a
+   bento-style modal is shown — the "hidden" class toggling display:none
+   is enough to restart these on every open. */
+@keyframes bento-tile-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.bento-modal .bento-tile {
+  animation: bento-tile-rise 0.38s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+.bento-modal .bento-tile:nth-child(1) { animation-delay: 0.02s; }
+.bento-modal .bento-tile:nth-child(2) { animation-delay: 0.08s; }
+.bento-modal .bento-tile:nth-child(3) { animation-delay: 0.14s; }
+.bento-modal .bento-tile:nth-child(4) { animation-delay: 0.20s; }
+.bento-modal .bento-tile:nth-child(5) { animation-delay: 0.26s; }
+.bento-modal .bento-tile:nth-child(6) { animation-delay: 0.32s; }
+.bento-modal .bento-tile:nth-child(7) { animation-delay: 0.38s; }
+.bento-modal .bento-tile:nth-child(8) { animation-delay: 0.44s; }
+.bento-modal .bento-tile:nth-child(9) { animation-delay: 0.50s; }
+
+/* Compact variant — single-column, narrower (used by Discover's "Install
+   in custom directory" mini modal, which only needs 2-3 tiles). */
+.bento-modal-compact { width: 420px; grid-template-columns: 1fr; }
+
+.bento-radio-group { display: flex; flex-direction: column; gap: 8px; }
+.bento-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.bento-dir-path-row { display: flex; gap: 10px; margin-top: 10px; }
+.bento-tile-static-value {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 10px 14px;
+  background: rgba(var(--overlay-rgb), 0.04);
+  border: 1px solid rgba(var(--overlay-rgb), 0.08);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.input-field:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: rgba(var(--overlay-rgb), 0.03);
+}
+
+/* Apply Preset layout — info + config toggle sit side by side as compact
+   tiles, mod list is the big scrollable hero tile below. */
+.bento-modal-preset { grid-template-columns: 1.3fr 1fr; }
+.bento-tile-preset-info    { grid-column: 1 / 2; }
+.bento-tile-preset-config  { grid-column: 2 / 3; display: flex; align-items: center; }
+.bento-tile-preset-config.hidden { display: none; }
+.bento-tile-preset-mods    { grid-column: 1 / -1; max-height: 320px; overflow-y: auto; }
+.bento-tile-preset-mods .apply-preset-mod-list { margin: 0; padding: 0; }
+.bento-tile-preset-progress { grid-column: 1 / -1; }
+.bento-tile-preset-actions { grid-column: 1 / -1; justify-content: space-between; align-items: center; }
+
+/* ── Hyprland Floating Islands Modal (Default Theme Colors & WebKitGTK Optimized) ── */
+.hypr-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 560px;
+  max-width: 94vw;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 6px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Base Floating Island using default theme variables */
+.hypr-island {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  box-shadow: inset 0 1px 0 rgba(var(--overlay-rgb), 0.06), 0 10px 26px rgba(0, 0, 0, 0.25);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+
+.hypr-island:hover {
+  border-color: rgba(var(--overlay-rgb), 0.16);
+}
+
+/* Header Island */
+.hypr-header-island {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--panel-solid);
+}
+
+.hypr-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hypr-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent-glow);
+}
+
+.hypr-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hypr-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.hypr-subtitle {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* Mod Loader Icon Buttons Row */
+.hypr-loader-button-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.hypr-loader-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.hypr-loader-btn:hover {
+  background: var(--panel-hover);
+  color: var(--text);
+  border-color: rgba(var(--overlay-rgb), 0.2);
+  transform: translateY(-2px);
+}
+
+.hypr-loader-btn.active {
+  background: var(--panel-hover);
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--accent-dim), inset 0 0 12px var(--accent-dim);
+  transform: translateY(-2px);
+}
+
+.hypr-loader-icon {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* Advanced Options Toggle Wrap */
+.hypr-advanced-toggle-wrap {
+  display: flex;
+}
+
+.hypr-advanced-toggle-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+}
+
+.hypr-toggle-icon {
+  font-size: 13px;
+  color: var(--accent);
+  margin-right: 6px;
+}
+
+.hypr-toggle-chevron {
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.hypr-advanced-toggle-btn[aria-expanded="true"] .hypr-toggle-chevron {
+  transform: rotate(180deg);
+}
+
+/* Advanced Island (Collapsible) */
+.hypr-advanced-island {
+  background: var(--panel);
+  border-color: var(--panel-border);
+  animation: hypr-island-slide 0.2s ease;
+}
+
+@keyframes hypr-island-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hypr-advanced-island.hidden {
+  display: none;
+}
+
+/* Path Box */
+.hypr-path-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--field-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+
+.hypr-path-text {
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+  user-select: text;
+}
+
+/* Actions Island */
+.hypr-actions-island {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 6px 2px 2px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.hypr-action-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  transition: opacity var(--transition-fast);
+}
+
+.hypr-action-toggle:hover {
+  opacity: 0.9;
+}
+
+.hypr-action-toggle-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Custom Directory Selection Options in New Instance Modal */
+.hypr-dir-options-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.hypr-dir-card {
+  position: relative;
+  display: block;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+  border: 1px solid var(--panel-border);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.hypr-dir-card:hover {
+  background: var(--panel-hover);
+  border-color: rgba(var(--overlay-rgb), 0.2);
+}
+
+.hypr-dir-card.active {
+  background: var(--panel-hover);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-dim), inset 0 0 0 1px var(--accent);
+}
+
+.hypr-dir-radio {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hypr-dir-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hypr-dir-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color var(--transition-fast);
+}
+
+.hypr-dir-card.active .hypr-dir-title {
+  color: var(--accent);
+}
+
+.hypr-dir-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.hypr-dir-desc code {
+  font-family: var(--font);
+  background: rgba(var(--overlay-rgb), 0.08);
+  padding: 1px 4px;
+  border-radius: calc(3px * var(--rk, 1));
+  font-size: 11px;
+}
+
+.hypr-pill-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 6px;
+  border-radius: calc(4px * var(--rk, 1));
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent-glow);
+}
+
+/* Progress */
+.progress-track {
+  height: 6px;
+  background: rgba(var(--overlay-rgb),0.06);
+  border-radius: calc(3px * var(--rk, 1));
+  overflow: hidden;
+  margin-top: 8px;
+}
+.progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: calc(3px * var(--rk, 1));
+  width: 0%;
+  transition: width 0.25s ease;
+}
+.progress-text { font-size: 12px; color: var(--accent); }
+
+/* The modpack extractor's status bar is now driven at up to ~10 updates/
+   sec by the same real byte-level downloader "Create Instance" uses (see
+   modpack.rs) — same width-vs-transform fix as .dl-card-bar above,
+   scoped to just this one bar since every other use of the shared
+   .progress-bar class above updates far less often, where the layout
+   cost doesn't matter. */
+#modpack-import-bar {
+  width: 100%;
+  transform-origin: left center;
+  transition: transform 0.25s ease;
+  will-change: transform;
+}
+
+/* ═══ Mods Tab — Two-Panel Layout ═══ */
+
+/* Layout applied only when tab is active (via .active rule below) */
+.mods-two-pane-page {
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+/* ── Content Type Panel (Resource Packs / Mods / Worlds) — right sidebar,
+   styled to match the Discover filter island ── */
+.mods-two-pane-layout {
+  display: flex;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
+.mods-content-island {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.mods-type-island {
+  order: -1;
+  width: 190px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--panel-solid);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius, 12px);
+  overflow: hidden;
+  contain: layout style paint;
+}
+
+.mods-type-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 14px;
+  background: rgba(20, 20, 20, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: center;
+}
+
+.mods-type-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+}
+
+.mods-type-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative; /* positioning context for the sliding indicator */
+}
+
+.content-type-segment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 12px;
+  border-radius: calc(9px * var(--rk, 1));
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+  transition: color 0.18s ease, transform var(--transition-fast), background 0.15s ease, border-color 0.15s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.content-type-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: calc(8px * var(--rk, 1));
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  transition: background 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.content-type-icon {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+.content-type-label {
+  flex: 1;
+  min-width: 0;
+  letter-spacing: 0.01em;
+}
+
+/* Hover effect removed per user request */
+/*
+.content-type-segment:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.content-type-segment:hover .content-type-icon-wrap {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  transform: scale(1.04);
+}
+*/
+
+.content-type-segment:active:not(.active):not(.is-disabled) {
+  /* no scale bounce */
+}
+
+.content-type-segment.active {
+  background: transparent;
+  color: #ffffff;
+  cursor: default;
+  pointer-events: none;
+}
+
+.content-type-segment.active .content-type-icon-wrap {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.content-type-segment.active:hover {
+  background: transparent;
+}
+
+/* ── Sliding indicator for content-type panel ────────────────────────────────
+   Smooth glowing slate/glass pill behind active item.
+   JS controls transform (x,y), width, and height.                     */
+.content-type-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.08) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+  border-radius: calc(9px * var(--rk, 1));
+  z-index: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.2, 1),
+              width    0.28s cubic-bezier(0.2, 0.9, 0.2, 1),
+              height   0.28s cubic-bezier(0.2, 0.9, 0.2, 1),
+              opacity  0.2s ease;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, width, height;
+}
+.content-type-indicator.ready {
+  opacity: 1;
+}
+
+/* ── Top Panel (Toolbar Island) ── */
+.mods-top-panel {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 16px;
+  border-radius: var(--radius, 12px);
+  background-color: var(--panel-solid);
+  background-image: var(--panel-tint);
+  border: 1px solid var(--panel-edge);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  position: relative;
+  overflow: hidden;
+}
+
+.mods-top-panel-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.mods-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mods-panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+  white-space: nowrap;
+  margin: 0;
+}
+
+.mods-count-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, rgba(255, 255, 255, 0.04));
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, rgba(255, 255, 255, 0.08));
+  padding: 2px 9px;
+  border-radius: var(--radius-pill, 999px);
+  white-space: nowrap;
+}
+
+.mods-top-panel-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  max-width: 480px;
+  min-width: 180px;
+}
+
+.mods-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  background: rgba(15, 15, 18, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+}
+
+.mods-search-box:focus-within {
+  background: rgba(18, 18, 22, 0.95);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.mods-search-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color var(--transition);
+}
+
+.mods-search-box:focus-within .mods-search-icon {
+  color: var(--accent);
+}
+
+.mods-search-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.mods-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none !important;
+  background: transparent !important;
+  color: var(--text) !important;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.mods-search-input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.mods-search-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+/* Update All button — modern glow + bounce animations */
+.btn-update-all-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 13px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.32);
+  color: #4ade80;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-update-all-pill:hover:not(:disabled) {
+  background: #16a34a;
+  border-color: #22c55e;
+  color: #fff;
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4);
+}
+
+.btn-update-all-pill:hover:not(:disabled) .update-icon svg {
+  transform: translateY(1.5px);
+}
+
+.btn-update-all-pill:active:not(:disabled) {
+}
+
+.btn-update-all-pill:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+.btn-update-all-pill .update-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-update-all-pill .update-icon svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+/* Pulsing animated download state for Update All button */
+.btn-update-all-pill.is-downloading {
+  pointer-events: none;
+  background: rgba(34, 197, 94, 0.2) !important;
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  color: #4ade80 !important;
+  animation: update-all-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes update-all-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 14px 2px rgba(34, 197, 94, 0.55);
+  }
+}
+
+/* Export button loading animation */
+.btn-pill-export {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-pill-export.is-loading {
+  pointer-events: none;
+  opacity: 0.85;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+.btn-pill-export.is-loading svg {
+  animation: export-spin 0.75s linear infinite;
+}
+
+@keyframes export-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.mods-top-panel-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.mods-actions-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: calc(var(--radius-sm) + 2px);
+}
+
+.mods-top-panel .btn-pill {
+  border-radius: var(--radius-sm);
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 600;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  transition: all var(--transition-fast);
+}
+
+.mods-top-panel .btn-pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.mods-top-panel .btn-fix-more {
+  padding: 0 7px;
+}
+
+.mods-top-panel .btn-pill-export,
+.mods-top-panel .btn-pill-import {
+  font-size: 11.5px;
+}
+
+.mods-top-panel .btn-pill-accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.mods-top-panel .btn-pill-accent:hover {
+  background: var(--accent-hover, #6366f1);
+  border-color: var(--accent-hover, #6366f1);
+}
+
+.mods-top-panel .btn-pill-danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.mods-top-panel .btn-pill-danger:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+}
+
+/* Content Type List & Add Button in Manage Island */
+.content-type-item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  z-index: 1;
+}
+
+.content-type-item-row .content-type-segment {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-content-type-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: calc(7px * var(--rk, 1));
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.btn-content-type-add:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  transform: scale(1.06);
+}
+
+.btn-content-type-add:active {
+
+}
+
+/* ── Modpack Subpanel (Switch between User Mods and Modpack Mods) ── */
+.modpack-mods-subpanel {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, rgba(147, 51, 234, 0.15), rgba(33, 33, 33, 0.65));
+  border: 1px solid rgba(168, 85, 247, 0.28);
+  margin-top: -2px;
+  margin-bottom: 2px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modpack-subpanel-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.modpack-subpanel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 999px);
+  text-transform: uppercase;
+}
+
+.modpack-subpanel-badge svg { flex-shrink: 0; }
+
+.modpack-subpanel-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modpack-subpanel-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.modpack-view-tabs {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: calc(8px * var(--rk, 1));
+  padding: 3px;
+  gap: 4px;
+}
+
+.modpack-view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 14px;
+  border-radius: calc(6px * var(--rk, 1));
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.modpack-view-tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.modpack-view-tab.active {
+  background: #9333ea;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(147, 51, 234, 0.4);
+}
+
+.modpack-tab-count {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+}
+
+.modpack-subpanel-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.modpack-subpanel-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #a855f7;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.modpack-subpanel-hint .hint-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.modpack-subpanel-hint .hint-icon svg { width: 12px; height: 12px; }
+
+/* ── Bottom Panel (Content Island) ──
+   No longer the scrolling element itself — see .mods-scroll-container
+   below. This box only establishes the positioning context so
+   #mods-tab-loading (position:absolute; inset:0) covers the whole panel
+   and stays put regardless of how far the grid inside is scrolled. */
+.mods-bottom-panel {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  border-radius: var(--radius);
+  background-color: var(--panel-solid);
+  border: 1px solid var(--panel-border);
+  overflow: hidden;
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* Distinctive color when viewing Modpack Built-in Mods */
+.mods-two-pane-page.modpack-mods-active .mods-bottom-panel {
+  background: radial-gradient(circle at top right, rgba(147, 51, 234, 0.1), rgba(18, 18, 24, 0.75));
+  border-color: rgba(168, 85, 247, 0.35);
+  box-shadow: 0 0 30px rgba(147, 51, 234, 0.07);
+}
+
+.mods-two-pane-page.modpack-mods-active .mod-card {
+  border-color: rgba(168, 85, 247, 0.22);
+}
+
+.mods-two-pane-page.modpack-mods-active .mod-card:hover {
+  border-color: rgba(168, 85, 247, 0.5);
+  box-shadow: 0 4px 18px rgba(147, 51, 234, 0.15);
+}
+
+/* The actual scrolling element. Previously this scrolling behavior lived
+   on .mods-bottom-panel directly, with #mods-tab-loading absolutely
+   positioned *inside* it — which meant the "fixed" overlay was actually
+   part of the scrolled content and slid out of view on scroll, exposing
+   the already-loaded mods underneath. Splitting the scroll container out
+   from the positioning/overlay container fixes that. */
+.mods-scroll-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px;
+  contain: content;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Mods tab loading overlay ──────────────────────────────────────────
+   Covers the mods grid the instant the Mods tab is entered and stays up
+   until the list has actually been rebuilt, so the old empty→populated
+   pop-in (the "flicker") is replaced by one calm spinner instead. Uses
+   only opacity for its own fade (compositor-only, cheap on WebKitGTK) and
+   a stroke-dashoffset animation for the spinner, which — unlike an
+   animated conic-gradient or filter — WebKitGTK handles smoothly. */
+.mods-tab-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(18, 18, 18, 0.92);
+  border-radius: var(--radius);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.mods-tab-loading.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.mods-tab-loading-spinner {
+  animation: modsLoadingSpin 0.9s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+.mods-tab-loading-track {
+  stroke: rgba(var(--overlay-rgb), 0.08);
+}
+.mods-tab-loading-arc {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 90 40;
+}
+@keyframes modsLoadingSpin {
+  to { transform: rotate(360deg); }
+}
+.mods-tab-loading-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* Legacy toolbar classes kept for backward compat */
+.mods-toolbar { display: none; }
+.mods-toolbar-left { display: flex; align-items: center; gap: 12px; }
+.mods-toolbar-right { display: flex; gap: 8px; align-items: center; }
+.mods-toolbar-instance-row { display:flex; gap:8px; align-items:center; }
+.mods-instance-inline { width: 150px; flex: 0 0 150px; }
+.mods-instance-controls { display:flex; gap:6px; align-items:center; }
+.mods-instance-row { display:flex; gap:8px; align-items:center; }
+
+.btn-pill.hidden { display: none; }
+
+.section-title { font-size: 20px; font-weight: 700; }
+.mods-count { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+/* ── Mods drag & drop ────────────────────────────────────────────────── */
+
+/* Whole-tab overlay that appears while an OS-level file drag is over the
+   window (driven by Tauri's tauri://drag-enter / drag-leave / drag-drop). */
+.mods-drag-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 6, 10, 0.85);
+  animation: modsDragFadeIn 0.15s ease;
+  pointer-events: none;
+}
+.mods-drag-overlay.active { display: flex; }
+@keyframes modsDragFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.mods-drag-overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 44px 60px;
+  border-radius: calc(22px * var(--rk, 1));
+  border: 2px dashed var(--accent);
+  background: var(--panel, rgba(19,19,26,0.8));
+  box-shadow: 0 0 0 1px var(--accent-dim, var(--accent)), 0 24px 70px rgba(0,0,0,0.5), 0 0 40px 4px var(--accent-glow);
+}
+.mods-drag-overlay-icon {
+  width: 68px;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent-glow, rgba(255,255,255,0.08));
+  color: var(--accent);
+}
+.mods-drag-overlay-icon svg { width: 36px; height: 36px; }
+.mods-drag-overlay-title {
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.2px;
+}
+.mods-drag-overlay-sub { font-size: 13px; color: var(--text-muted); }
+
+/* Result badge appended briefly to a freshly-installed mod/pack/world card, or shown
+   in a rejected-file toast list. */
+.mod-card.mod-just-installed, .world-card.mod-just-installed {
+  animation: modJustInstalled 1.4s ease;
+}
+@keyframes modJustInstalled {
+  0% { box-shadow: 0 0 0 2px var(--accent), 0 0 24px 4px var(--accent-glow); }
+  100% { box-shadow: none; }
+}
+
+.mods-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.mods-list .empty-state { grid-column: 1 / -1; }
+
+@media (max-width: 1280px) {
+  .mods-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 780px) {
+  .mods-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Screenshots grid ─────────────────────────────────────────────────── */
+.mods-list.screenshots-mode {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.mods-list.worlds-mode,
+.mods-list.servers-mode {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 780px) {
+  .mods-list.worlds-mode,
+  .mods-list.servers-mode { grid-template-columns: 1fr; }
+}
+.screenshot-card {
+  position: relative;
+  border-radius: calc(12px * var(--rk, 1));
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  cursor: pointer;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.07) 50%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 200% 100%;
+  animation: screenshotShimmer 1.6s infinite ease-in-out;
+  padding: 0;
+}
+@keyframes screenshotShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.screenshot-skeleton {
+  border-radius: calc(12px * var(--rk, 1));
+  aspect-ratio: 16 / 9;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.07) 50%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 200% 100%;
+  animation: screenshotShimmer 1.6s infinite ease-in-out;
+}
+.screenshot-card[data-loaded="1"] {
+  background: rgba(255, 255, 255, 0.04);
+  animation: none;
+}
+.screenshot-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.screenshot-card img.loaded {
+  opacity: 1;
+}
+.screenshot-card.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.screenshot-broken-icon {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.35;
+}
+.screenshot-broken-icon svg {
+  width: 32px;
+  height: 32px;
+}
+.screenshot-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 100%);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.screenshot-card:hover .screenshot-overlay,
+.screenshot-card.selected .screenshot-overlay {
+  opacity: 1;
+}
+.screenshot-name {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.screenshot-actions {
+  display: flex;
+  gap: 6px;
+}
+.screenshot-actions button {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: calc(8px * var(--rk, 1));
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.screenshot-actions button svg {
+  width: 14px;
+  height: 14px;
+}
+.screenshot-actions button:hover {
+  background: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+}
+.screenshot-actions .btn-delete-screenshot {
+  background: rgba(220, 53, 69, 0.7);
+}
+.screenshot-actions .btn-delete-screenshot:hover {
+  background: rgba(220, 53, 69, 0.92);
+}
+
+/* ── Screenshot lightbox ─────────────────────────────────────────────── */
+body.screenshot-lightbox-open {
+  overflow: hidden;
+}
+.screenshot-lightbox {
+  /* Lives inside #app (see openScreenshotLightbox in app.js) rather than
+     directly on <body>. #app has `isolation: isolate` + a transform, so
+     it forms its own stacking context — a z-index here only competes
+     against #app's other children (like #custom-titlebar, z-index
+     99999), which is what keeps the window's min/max/close buttons
+     clickable and visible while a screenshot preview is open. */
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 10, 0.92);
+  animation: screenshotLightboxIn 0.12s ease;
+}
+.screenshot-lightbox.hidden {
+  display: none;
+}
+@keyframes screenshotLightboxIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.screenshot-lightbox-stage {
+  position: relative;
+  width: min(88vw, 1400px);
+  height: min(72vh, 780px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: -48px; /* nudge the whole viewer up so the toolbar below fits without cramping the image */
+  pointer-events: none; /* let clicks pass through to the nav buttons and backdrop behind it */
+}
+.screenshot-lightbox-img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: calc(10px * var(--rk, 1));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none; /* clicks fall through to the lightbox backdrop and close it */
+}
+.screenshot-lightbox-img.loaded {
+  opacity: 1;
+}
+.screenshot-lightbox-status {
+  position: absolute;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  pointer-events: none;
+}
+.screenshot-lightbox-status.hidden {
+  display: none;
+}
+.screenshot-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10; /* sit above the stage div so clicks register */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.screenshot-lightbox-nav:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.screenshot-lightbox-nav svg {
+  width: 22px;
+  height: 22px;
+}
+.screenshot-lightbox-prev { left: 20px; }
+.screenshot-lightbox-next { right: 20px; }
+
+/* Bottom bar: filename + actions, sitting under the stage instead of a
+   floating close button stuck in the corner of the whole window. */
+.screenshot-lightbox-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 90vw;
+}
+.screenshot-lightbox-caption {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  max-width: 70vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.screenshot-lightbox-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.screenshot-lightbox-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: calc(8px * var(--rk, 1));
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.screenshot-lightbox-toolbar button svg {
+  width: 14px;
+  height: 14px;
+}
+.screenshot-lightbox-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+.screenshot-lightbox-toolbar .screenshot-lightbox-delete {
+  background: rgba(220, 53, 69, 0.7);
+}
+.screenshot-lightbox-toolbar .screenshot-lightbox-delete:hover {
+  background: rgba(220, 53, 69, 0.92);
+}
+.screenshot-lightbox-toolbar .screenshot-lightbox-close {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mod-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  padding: 14px;
+  padding-right: 56px;
+  min-height: 132px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  contain: layout style paint;
+  transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+}
+
+.mod-card.is-unloaded {
+  contain: layout style paint;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  pointer-events: none;
+  transition: none !important;
+  min-height: 132px;
+}
+
+/* Staggered card appearance animation — adds a smooth, staggered reveal
+   to eliminate the tiny frame drop / lag spike when many cards render at once. */
+@keyframes cardFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.mod-card.card-appear,
+.discover-card.card-appear,
+.instance-card.card-appear,
+.world-card.card-appear,
+.server-card.card-appear,
+.screenshot-card.card-appear {
+  animation: cardFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--card-stagger-delay, 0ms);
+}
+
+
+.mod-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,0.3); background: var(--panel-hover); }
+.mod-card.disabled { opacity: 0.6; }
+.mod-card.selected { outline: 2px solid var(--accent); box-shadow: 0 8px 18px rgba(0,0,0,0.18); }
+
+/* Mods with an update available get a pulsing accent-colored glow so they
+   stand out in the grid at a glance. */
+.mod-card.mod-update-glow {
+  border-color: var(--accent);
+  animation: mod-update-glow-pulse 2.2s ease-in-out infinite;
+}
+.mod-card.mod-update-glow:hover { animation-play-state: paused; }
+@keyframes mod-update-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--accent-dim), 0 0 10px 1px var(--accent-glow); }
+  50% { box-shadow: 0 0 0 1px var(--accent), 0 0 18px 4px var(--accent-glow); }
+}
+
+.mod-info { display: flex; align-items: flex-start; gap: 12px; min-width: 0; flex: 1; }
+.mod-icon {
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  border-radius: calc(8px * var(--rk, 1));
+  background: rgba(var(--overlay-rgb),0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  overflow: hidden;
+}
+.mod-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mod-icon.loading { opacity: 0.5; }
+.mod-icon svg { width: 44%; height: 44%; opacity: 0.55; }
+.mod-icon.icon-fallback svg { opacity: 0.4; }
+.mod-meta { flex: 1; min-width: 0; }
+.mod-name { font-weight: 600; font-size: 15px; }
+.mod-desc { font-size: 12px; color: var(--text-muted); margin-top: 6px; max-height: 3.6em; overflow: hidden; }
+.mod-version { font-size: 12px; color: var(--text-muted); margin-top:6px; }
+
+/* Toggle sits top-right, update (when available) sits just below it, delete
+   sits bottom-right — absolutely positioned so they don't participate in
+   card layout flow / don't shift when re-rendered. Delete and Update are
+   square icon buttons (rounded corners, not pills) at the same scale. */
+.mod-actions { position: absolute; inset: 0; pointer-events: none; }
+.mod-actions .mod-toggle-wrap { position: absolute; top: 12px; right: 12px; pointer-events: auto; }
+.mod-actions .btn-delete-mod,
+.mod-actions .btn-update-mod {
+  position: absolute;
+  right: 12px;
+  pointer-events: auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--transition), transform var(--transition);
+}
+.mod-actions .btn-delete-mod { bottom: 12px; }
+.mod-actions .btn-update-mod {
+  top: 40px;
+  display: none;
+  background: rgba(22,163,74,0.1);
+  border: 1px solid rgba(22,163,74,0.3);
+  color: #16a34a;
+}
+.mod-actions .btn-update-mod.has-update { display: flex; }
+.mod-actions .btn-update-mod:hover { background: #16a34a; color: #fff; }
+.mod-actions .btn-delete-mod:active,
+.mod-actions .btn-update-mod:active {  }
+.mod-actions .btn-update-mod:disabled { opacity: 0.6; cursor: default; pointer-events: none; }
+
+/* Downloading state: shown on the per-mod update button, the "Update All"
+   button, and the toolbar activity pill any time a download is in flight
+   (single mod update, update-all, or dependency install). */
+.mini-spinner {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: mini-spinner-spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes mini-spinner-spin { to { transform: rotate(360deg); } }
+
+.mod-actions .btn-update-mod.is-downloading,
+.btn-update-all-pill.is-downloading { pointer-events: none; opacity: 0.9; }
+
+/* Fix Mods dropdown panel */
+.fix-mods-panel {
+  position: absolute;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+  padding: 8px;
+  border-radius: calc(8px * var(--rk, 1));
+  display: none;
+  z-index: 50;
+}
+.fix-mods-panel.open { display: block; }
+.fix-mods-panel button { display: block; width: 100%; text-align: left; margin: 4px 0; }
+.mod-select-row { display: none !important; }
+
+/* Inline fix mods buttons that appear to the right of the toolbar button */
+.fix-mods-inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-6px) scale(0.98);
+  opacity: 0;
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: none;
+  background: var(--panel-solid);
+  border: 1px solid var(--panel-border);
+  padding: 6px 8px;
+  border-radius: calc(8px * var(--rk, 1));
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  z-index: 60;
+}
+.fix-mods-inline.open {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0) scale(1);
+  pointer-events: auto;
+}
+.fix-mods-inline .btn-ghost {
+  white-space: nowrap;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: calc(8px * var(--rk, 1));
+  box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+  transition: transform 140ms ease, box-shadow 140ms ease, background 120ms ease;
+}
+
+/* ── Worlds Grid & Cards ─────────────────────────────────────────────── */
+.world-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  padding: 14px;
+  padding-right: 195px;
+  min-height: 110px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  contain: layout style paint;
+  transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+}
+.world-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.3);
+  background: var(--panel-hover);
+}
+.world-card.selected {
+  outline: 2px solid var(--accent);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+}
+.world-icon {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: calc(8px * var(--rk, 1));
+  background: rgba(var(--overlay-rgb), 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.world-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.world-icon svg {
+  width: 32px;
+  height: 32px;
+  opacity: 0.6;
+}
+.world-meta {
+  flex: 1;
+  min-width: 0;
+}
+.world-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.world-details-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+.world-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: calc(5px * var(--rk, 1));
+  background: rgba(var(--overlay-rgb), 0.08);
+  color: var(--text);
+}
+.world-mode-badge.hardcore {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.world-mode-badge.creative {
+  background: rgba(14, 165, 233, 0.18);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+}
+.world-version-tag {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.world-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.world-actions,
+.server-actions {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.world-actions button,
+.server-actions button {
+  pointer-events: auto;
+  height: 32px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: background var(--transition), color var(--transition), transform var(--transition), border-color var(--transition);
+}
+.world-actions button:hover,
+.server-actions button:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.world-actions button:active,
+.server-actions button:active {
+
+}
+.world-actions .btn-play-world,
+.server-actions .btn-play-server {
+  background: rgba(var(--accent-rgb, 16, 185, 129), 0.18);
+  color: var(--accent);
+  border: 1px solid rgba(var(--accent-rgb, 16, 185, 129), 0.4);
+  padding: 0 13px;
+  font-weight: 700;
+}
+.world-actions .btn-play-world:hover,
+.server-actions .btn-play-server:hover {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb, 16, 185, 129), 0.4);
+}
+.world-actions .btn-delete-world:hover,
+.server-actions .btn-delete-server:hover {
+  background: rgba(239, 68, 68, 0.85);
+  color: #ffffff;
+  border-color: rgba(239, 68, 68, 0.85);
+}
+
+/* ── Server Card Styles ─────────────────────────────────────────────── */
+.server-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  padding: 14px;
+  padding-right: 215px;
+  min-height: 94px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  contain: layout style paint;
+  transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+}
+.server-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.3);
+  background: var(--panel-hover);
+}
+.server-card .server-icon {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: calc(8px * var(--rk, 1));
+  background: rgba(var(--overlay-rgb), 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.server-card .server-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.server-card .server-icon svg {
+  width: 32px;
+  height: 32px;
+  opacity: 0.6;
+}
+.server-card .server-meta {
+  flex: 1;
+  min-width: 0;
+  margin-left: 14px;
+}
+.server-card .server-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.server-card .server-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+.server-card .server-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.server-card .server-badge-players {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: calc(4px * var(--rk, 1));
+  background: rgba(16, 185, 129, 0.14);
+  color: #10b981;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.server-card .server-badge-players.offline {
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+}
+.server-card .server-badge-ping {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: calc(4px * var(--rk, 1));
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+}
+.server-card .server-motd {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  max-height: 38px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+  white-space: pre-line;
+  user-select: text;
+}
+.server-card .server-motd.motd-loading {
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+}
+
+/* ── Minecraft Color Codes (§ and & formatting) ────────────────────────── */
+.mc-c-0 { color: #000000; }
+.mc-c-1 { color: #0000AA; }
+.mc-c-2 { color: #00AA00; }
+.mc-c-3 { color: #00AAAA; }
+.mc-c-4 { color: #AA0000; }
+.mc-c-5 { color: #AA00AA; }
+.mc-c-6 { color: #FFAA00; }
+.mc-c-7 { color: #AAAAAA; }
+.mc-c-8 { color: #555555; }
+.mc-c-9 { color: #5555FF; }
+.mc-c-a { color: #55FF55; }
+.mc-c-b { color: #55FFFF; }
+.mc-c-c { color: #FF5555; }
+.mc-c-d { color: #FF55FF; }
+.mc-c-e { color: #FFFF55; }
+.mc-c-f { color: #FFFFFF; }
+.mc-f-l { font-weight: 700; }
+.mc-f-m { text-decoration: line-through; }
+.mc-f-n { text-decoration: underline; }
+.mc-f-o { font-style: italic; }
+.mc-f-k { opacity: 0.8; letter-spacing: 0.5px; }
+
+.fix-mods-inline .btn-ghost:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.12);
+  background: var(--panel-hover);
+}
+
+/* Loader badges */
+.loader-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: calc(4px * var(--rk, 1));
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.loader-badge.fabric  { color: #facc15; background: rgba(250,204,21,0.1); }
+.loader-badge.forge   { color: #f87171; background: rgba(248,113,113,0.1); }
+.loader-badge.quilt   { color: #a78bfa; background: rgba(167,139,250,0.1); }
+.loader-badge.neoforge{ color: #fb923c; background: rgba(251,146,60,0.1); }
+.loader-badge.vanilla { color: #94a3b8; background: rgba(148,163,184,0.1); }

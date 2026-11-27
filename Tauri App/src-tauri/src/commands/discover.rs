@@ -324,6 +324,7 @@ fn cf_mod_to_discover_hit(m: CfMod, default_project_type: &str) -> DiscoverHit {
         Some(4471) => "modpack",
         Some(12) => "resourcepack",
         Some(6552) => "shader",
+        Some(17) => "world",
         _ => default_project_type,
     }.to_string();
 
@@ -498,6 +499,7 @@ async fn search_curseforge(
         "modpack" => 4471,
         "resourcepack" => 12,
         "shader" => 6552,
+        "world" => 17,
         _ => 6, // "mod"
     };
 
@@ -1161,6 +1163,7 @@ async fn get_curseforge_project_details(mod_id: u64) -> Result<DiscoverProjectDe
         Some(4471) => "modpack",
         Some(12) => "resourcepack",
         Some(6552) => "shader",
+        Some(17) => "world",
         _ => "mod",
     }.to_string();
 
@@ -1372,6 +1375,8 @@ pub async fn discover_download(
         base_dir.join("resourcepacks")
     } else if project_type == "shader" {
         base_dir.join("shaderpacks")
+    } else if project_type == "world" {
+        base_dir.join("saves")
     } else {
         base_dir.join("mods")
     };
@@ -1521,6 +1526,30 @@ pub async fn discover_download(
     }
 
     cleanup(&state);
+
+    if project_type == "world" {
+        // If downloaded file is a world archive, extract it directly into saves/
+        let world_results = crate::commands::mods::install_world_files(
+            state,
+            vec![dest.to_string_lossy().to_string()],
+            Some(directory),
+        )
+        .await
+        .map_err(|e| format!("Failed to extract world archive: {e}"))?;
+
+        // Remove the temporary downloaded archive
+        let _ = std::fs::remove_file(&dest);
+
+        if let Some(first) = world_results.into_iter().next() {
+            if !first.success {
+                return Err(first.reason.unwrap_or_else(|| "Failed to install world".to_string()));
+            }
+            if let Some(info) = first.world_info {
+                return Ok(info.folder_name);
+            }
+        }
+    }
+
     Ok(dest.to_string_lossy().to_string())
 }
 

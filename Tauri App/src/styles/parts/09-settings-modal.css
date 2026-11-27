@@ -1,0 +1,1106 @@
+/* ═══ Settings Modal Window (Two-Pane Modernized & WebKitGTK-Optimized) ═══ */
+.settings-modal-window {
+  width: 1180px;
+  max-width: 95vw;
+  height: 86vh;
+  max-height: 880px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel, #1b1b1b);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius, 14px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  position: relative;
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  flex-shrink: 0;
+  background: var(--panel-solid, #161616);
+}
+
+.settings-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.01em;
+}
+
+.settings-modal-title svg {
+  color: var(--accent, #b7b7b7);
+}
+
+.settings-modal-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel, #1b1b1b);
+}
+
+/* ── Left Sidebar ── */
+.settings-modal-sidebar {
+  width: 255px;
+  flex-shrink: 0;
+  background: #141414;
+  border-right: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* ── Sidebar Search Bar (Left Side) ── */
+.settings-search-bar-wrap {
+  position: relative;
+  width: 100%;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.settings-search-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: calc(8px * var(--rk, 1));
+  padding: 0 10px;
+  height: 36px;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.settings-search-bar-inner:focus-within {
+  border-color: var(--accent, #b7b7b7);
+  background: #222222;
+}
+
+.settings-search-icon {
+  color: #8e8e98;
+  flex-shrink: 0;
+}
+
+.settings-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-family: var(--font);
+  font-size: 12.5px;
+  padding: 0;
+  caret-color: var(--accent, #b7b7b7);
+}
+
+.settings-search-input::placeholder {
+  color: #71717a;
+}
+
+.settings-search-clear {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: calc(4px * var(--rk, 1));
+  line-height: 1;
+  transition: color 0.12s ease;
+}
+
+.settings-search-clear:hover {
+  color: #fff;
+}
+
+/* Launcher Gray Search Results Dropdown (Fits within sidebar width) */
+.settings-search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: #1c1c1c;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: calc(10px * var(--rk, 1));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+  z-index: 10500;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.settings-search-results.hidden { display: none; }
+
+.settings-search-result-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: calc(6px * var(--rk, 1));
+  cursor: pointer;
+  transition: background 0.1s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-search-result-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-search-result-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #e4e4e7;
+  width: 100%;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.settings-search-result-label mark {
+  background: transparent;
+  color: var(--accent, #b7b7b7);
+  font-weight: 700;
+}
+
+.settings-search-result-section {
+  font-size: 10px;
+  font-weight: 600;
+  color: #a1a1aa;
+  background: #2a2a34;
+  padding: 2px 6px;
+  border-radius: calc(4px * var(--rk, 1));
+  white-space: nowrap;
+}
+
+.settings-search-no-results {
+  text-align: center;
+  padding: 16px;
+  font-size: 12.5px;
+  color: #71717a;
+}
+
+/* ── Sidebar Navigation Buttons ── */
+.settings-sidebar-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.settings-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: calc(8px * var(--rk, 1));
+  border: 1px solid transparent;
+  background: transparent;
+  color: #a1a1aa;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.settings-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.settings-nav-btn.active {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+  font-weight: 600;
+  border-color: rgba(255, 255, 255, 0.08);
+  cursor: default;
+}
+
+.settings-nav-icon {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.settings-nav-btn.active .settings-nav-icon {
+  opacity: 1;
+  color: var(--accent, #b7b7b7);
+}
+
+/* ── Right Content Panels (Ultra-Smooth WebKitGTK Scrolling) ── */
+.settings-modal-content {
+  flex: 1;
+  min-width: 0;
+  padding: 24px 36px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--panel, #1b1b1b);
+  -webkit-overflow-scrolling: touch;
+  contain: content;
+}
+
+.settings-tab-panel {
+  display: none;
+}
+
+.settings-tab-panel.active {
+  display: block;
+}
+
+.settings-panel-heading {
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+}
+
+.settings-panel-heading h3 {
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  color: #fff;
+  letter-spacing: -0.01em;
+}
+
+.settings-panel-heading p {
+  font-size: 12.5px;
+  color: #a1a1aa;
+  margin: 0;
+  line-height: 1.4;
+}
+
+@keyframes settingHighlightPulse {
+  0% { outline: 2px solid var(--accent, #b7b7b7); box-shadow: 0 0 16px rgba(255, 255, 255, 0.35); }
+  70% { outline: 2px solid var(--accent, #b7b7b7); box-shadow: 0 0 10px rgba(255, 255, 255, 0.15); }
+  100% { outline: 2px solid transparent; box-shadow: none; }
+}
+.setting-highlight-pulse {
+  animation: settingHighlightPulse 1.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  border-radius: calc(8px * var(--rk, 1));
+}
+
+/* ── About & Updates (card sections) ── */
+.about-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+.about-hero-logo {
+  width: 56px; height: 56px; flex-shrink: 0; padding: 6px; border-radius: calc(14px * var(--rk, 1));
+  background: rgba(var(--overlay-rgb), 0.06); border: 1px solid rgba(var(--overlay-rgb), 0.12);
+}
+.about-app-logo { width: 100%; height: 100%; object-fit: contain; border-radius: calc(8px * var(--rk, 1)); display: block; }
+.about-hero-text { flex: 1; min-width: 200px; }
+.about-hero-name { font-size: 17px; font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.about-hero-tag { margin-top: 2px; font-size: 12px; color: var(--text-muted); }
+.about-badge {
+  font-size: 11px; font-weight: 800; padding: 2px 9px; border-radius: var(--radius-pill, 999px);
+  color: var(--accent); background: var(--accent-dim); border: 1px solid var(--accent);
+}
+.about-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.about-chip {
+  display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: calc(10px * var(--rk, 1));
+  background: rgba(var(--overlay-rgb), 0.06); border: 1px solid rgba(var(--overlay-rgb), 0.1); min-width: 0;
+}
+.about-meta-label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.about-meta-val { font-size: 13.5px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.about-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 10px; border-radius: calc(10px * var(--rk, 1));
+  background: rgba(var(--overlay-rgb), 0.05); border: 1px solid rgba(var(--overlay-rgb), 0.08);
+}
+.about-row-icon {
+  width: 34px; height: 34px; flex-shrink: 0; display: grid; place-items: center; border-radius: calc(9px * var(--rk, 1));
+  color: var(--accent); background: var(--accent-dim);
+}
+.about-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.about-row-title { font-size: 13.5px; font-weight: 700; color: var(--text); }
+.about-row-sub { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+.about-update-meta { font-size: 11px; color: var(--text-muted); opacity: 0.8; }
+
+.about-status-icon-wrap {
+  width: 36px; height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: rgba(34, 197, 94, 0.12);
+}
+.about-update-status-line {
+  display: flex; align-items: flex-start; margin: 0 0 10px; padding: 8px 12px; border-radius: calc(8px * var(--rk, 1));
+  background: rgba(var(--overlay-rgb), 0.05); border: 1px solid rgba(var(--overlay-rgb), 0.1);
+  font-size: 12px; font-weight: 500; color: var(--text); white-space: normal; word-break: break-word;
+}
+.about-update-status-line.hidden { display: none !important; }
+.about-update-status-line.is-checking { border-color: rgba(245, 158, 11, 0.35); color: #fbbf24; }
+.about-update-status-line.is-available { border-color: rgba(59, 130, 246, 0.35); color: #60a5fa; }
+.about-update-status-line.is-error { border-color: rgba(239, 68, 68, 0.35); color: #f87171; }
+.about-update-status-line.is-uptodate { border-color: rgba(34, 197, 94, 0.35); color: #4ade80; }
+
+.about-check-now-btn, .about-action-btn {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; cursor: pointer;
+  padding: 7px 14px; border-radius: calc(8px * var(--rk, 1)); font-size: 12.5px; font-weight: 600; font-family: var(--font);
+  color: var(--text); background: rgba(var(--overlay-rgb), 0.08); border: 1px solid rgba(var(--overlay-rgb), 0.14);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.about-check-now-btn:hover, .about-action-btn:hover { background: rgba(var(--overlay-rgb), 0.14); border-color: var(--accent); }
+.about-check-now-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Settings modal open animation ────────────────────────────────────── */
+@keyframes settings-modal-in {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+#settings-modal-overlay:not(.hidden) .settings-modal-window {
+  animation: settings-modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.header-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: calc(8px * var(--rk, 1));
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+/* ═══ Java Manager Styling ═══ */
+.java-managed-list,
+.java-custom-list,
+.java-system-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.java-row-item {
+  position: relative;
+  background: var(--field-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: calc(6px * var(--rk, 1));
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition: all var(--transition-fast);
+}
+
+.java-row-item:hover {
+  background: var(--panel-hover);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.java-row-item.installed {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.java-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.java-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.java-row-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.java-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-java-action {
+  padding: 5px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: calc(6px * var(--rk, 1));
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.btn-java-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.btn-java-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.java-installed-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+}
+
+.java-num-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: calc(6px * var(--rk, 1));
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--accent, #6ee7b7);
+  font-family: var(--font, monospace);
+  font-size: 12.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.java-location-box {
+  padding: 10px 14px;
+  border-radius: calc(6px * var(--rk, 1));
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--panel-border);
+  margin-top: 10px;
+}
+
+/* ── WebKitGTK & Linux Performance Engine ─────────────────────────────────── */
+.is-webkit-gtk {
+  --transition: 0.08s ease;
+  --transition-fast: 0.05s ease;
+}
+
+/* WebKitGTK: Keep containment for isolated layout without spawning hundreds of GPU textures */
+/* Note: .settings-modal-window is intentionally excluded here so its open animation can use transforms */
+.is-webkit-gtk .overlay-card,
+.is-webkit-gtk .hypr-modal,
+.is-webkit-gtk .hypr-island,
+.is-webkit-gtk .edit-instance-modal,
+.is-webkit-gtk .create-instance-modal,
+.is-webkit-gtk .apply-preset-modal,
+.is-webkit-gtk .export-mods-modal,
+.is-webkit-gtk .import-mods-modal,
+.is-webkit-gtk .account-overlay-card,
+.is-webkit-gtk .skin-viewer-modal,
+.is-webkit-gtk #dl-files-panel,
+.is-webkit-gtk .dressing-room-skin-card,
+.is-webkit-gtk .settings-card,
+.is-webkit-gtk .bento-tile,
+.is-webkit-gtk .bento-panel {
+  contain: layout style;
+  transform: none;
+  -webkit-transform: none;
+}
+/* .dressing-room-modal is intentionally excluded — it needs transform for its slide-in animation */
+/* .discover-project-modal is also excluded: it uses translate3d(100%,0,0) for the same slide-in.
+   Re-assert the correct transforms here using an ID selector so they beat the 0,2,0 rule above. */
+.is-webkit-gtk #discover-project-overlay .discover-project-modal {
+  transform: translate3d(100%, 0, 0);
+  -webkit-transform: translate3d(100%, 0, 0);
+  contain: layout style; /* keep containment but allow transform */
+}
+.is-webkit-gtk #discover-project-overlay.dp-open .discover-project-modal {
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+}
+
+/* Settings modal gets containment but keeps transform free for its open animation */
+.is-webkit-gtk .settings-modal-window {
+  contain: layout style;
+}
+
+.is-webkit-gtk #bg-container,
+.is-webkit-gtk #custom-titlebar,
+.is-webkit-gtk #top-bar {
+  contain: layout style paint;
+}
+
+/* All full-screen overlay backdrops — isolate layer and contain strictly */
+.is-webkit-gtk .overlay {
+  contain: strict;
+  background: rgba(0, 0, 0, 0.75) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  /* Keep the opacity transition but skip the card's spring entry animation
+     (scale+translate is expensive on WebKitGTK's compositor path). */
+}
+/* Dressing room is now a standalone drawer (.dressing-room-panel), not .overlay */
+/* Give its backdrop and panel container lightweight containment */
+.is-webkit-gtk .dr-backdrop {
+  contain: layout style paint;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* The panel wrapper uses contain:layout so the child modal can still use transform */
+.is-webkit-gtk .dressing-room-panel {
+  contain: layout;
+}
+/* On WebKitGTK: overlay entry is opacity-only, no spring transform */
+.is-webkit-gtk .overlay:not(.hidden) .overlay-card,
+.is-webkit-gtk .overlay:not(.hidden) .skin-viewer-modal {
+  animation: none;
+}
+
+
+
+/* Make all overlay modal cards opaque when transparency is OFF */
+.is-webkit-gtk:not(.transparent-ui) .hypr-island,
+.is-webkit-gtk:not(.transparent-ui) .overlay-card,
+.is-webkit-gtk:not(.transparent-ui) .settings-modal-window,
+.is-webkit-gtk:not(.transparent-ui) .update-overlay-card,
+.is-webkit-gtk:not(.transparent-ui) .account-overlay-card,
+.is-webkit-gtk:not(.transparent-ui) .skin-viewer-modal,
+.is-webkit-gtk:not(.transparent-ui) .dressing-room-modal,
+.is-webkit-gtk:not(.transparent-ui) #dl-files-panel {
+  background: #1b1b1b;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Content visibility optimizations for large scrollable lists */
+.is-webkit-gtk .discover-card,
+.is-webkit-gtk .mod-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 200px;
+}
+.is-webkit-gtk .preset-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 68px;
+}
+.is-webkit-gtk .discover-grid.view-list .discover-card {
+  contain-intrinsic-size: 0 64px;
+}
+
+.is-webkit-gtk .settings-card:not(.active) {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 60px;
+}
+
+.is-webkit-gtk .settings-card.active {
+  content-visibility: visible;
+}
+
+/* Smooth hardware scrolling for all scroll containers */
+.is-webkit-gtk .dl-files-viewport,
+.is-webkit-gtk .instances-grid,
+.is-webkit-gtk .discover-grid,
+.is-webkit-gtk .mods-list,
+.is-webkit-gtk .tab-page,
+.is-webkit-gtk .logs-container,
+.is-webkit-gtk .presets-grid,
+.is-webkit-gtk .dressing-room-section,
+.is-webkit-gtk #instance-list,
+.is-webkit-gtk #discover-results {
+  overflow-anchor: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* will-change hints the compositor ahead of an accordion open */
+.settings-card.active .settings-card-body {
+  will-change: grid-template-rows;
+}
+
+/* ── WebKitGTK-specific accordion rebuild ───────────────────────────────── */
+.is-webkit-gtk .settings-card-body {
+  transition: visibility 0s linear 0.16s;
+}
+.is-webkit-gtk .settings-card.active .settings-card-body {
+  transition: visibility 0s linear;
+}
+.is-webkit-gtk .settings-card-body-inner {
+  padding: 0 20px;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.is-webkit-gtk .settings-card.active .settings-card-body-inner {
+  padding: 20px;
+}
+
+/* Remove expensive hover transitions on cards under WebKitGTK */
+.is-webkit-gtk .discover-card,
+.is-webkit-gtk .mod-item,
+.is-webkit-gtk .mod-card,
+.is-webkit-gtk .preset-card,
+.is-webkit-gtk .instance-card {
+  transition: none !important;
+}
+
+.is-webkit-gtk .discover-card:hover,
+.is-webkit-gtk .mod-card:hover,
+.is-webkit-gtk .instance-card:hover {
+  transform: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Stop continuous infinite shadow animations that trigger whole-window repaints */
+.is-webkit-gtk .mod-card.mod-update-glow {
+  animation: none !important;
+  outline: 2px solid var(--accent);
+  box-shadow: none !important;
+}
+
+.is-webkit-gtk .account-avatar-needs-reauth {
+  animation: none !important;
+  box-shadow: 0 0 0 2px rgba(245, 197, 24, 0.6) !important;
+}
+
+.is-webkit-gtk .ri-kill-btn.active {
+  animation: none !important;
+  box-shadow: 0 0 0 1px rgba(248,113,113,0.3) inset, 0 2px 8px rgba(248,113,113,0.3) !important;
+}
+
+/* ── WebKitGTK Theme Palettes Overrides ── */
+.is-webkit-gtk .quick-palette-plate,
+.is-webkit-gtk .full-palette-card {
+  transition: none !important;
+  will-change: auto !important;
+}
+.is-webkit-gtk .quick-palette-plate:hover,
+.is-webkit-gtk .full-palette-card:hover {
+  transform: none !important;
+  box-shadow: none !important;
+  background: rgba(var(--overlay-rgb), 0.10) !important;
+}
+.is-webkit-gtk .quick-palette-plate.active,
+.is-webkit-gtk .full-palette-card.active {
+  box-shadow: 0 0 0 1.5px var(--accent) !important;
+}
+.is-webkit-gtk .palettes-gallery-panel {
+  background: #1b1b1b;
+  box-shadow: none;
+}
+.is-webkit-gtk .palette-ui-skeleton {
+  box-shadow: none !important;
+}
+.is-webkit-gtk .quick-palettes-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+.is-webkit-gtk .full-palettes-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* Additional WebKitGTK Performance & Theme Overrides */
+.is-webkit-gtk .settings-modal-content {
+  contain: content;
+  -webkit-overflow-scrolling: touch;
+}
+
+.is-webkit-gtk:not(.transparent-ui) .mod-card,
+.is-webkit-gtk:not(.transparent-ui) .discover-card,
+.is-webkit-gtk:not(.transparent-ui) .glass-card,
+.is-webkit-gtk:not(.transparent-ui) .bento-tile,
+.is-webkit-gtk:not(.transparent-ui) .hero-island,
+.is-webkit-gtk:not(.transparent-ui) .skin-panel,
+.is-webkit-gtk:not(.transparent-ui) .preset-type-section,
+.is-webkit-gtk:not(.transparent-ui) .instance-sidebar {
+  background: #1b1b1b;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+/* .instance-card now sits nested inside .instance-sidebar (same flat panel
+   color), so it needs the lighter "nested card" shade — same idea as the
+   skin-mini-preview-wrap rule right below — instead of matching flat #1b1b1b,
+   which would make every card blend invisibly into the sidebar behind it.
+   .preset-card sits in the exact same relationship to .preset-type-section. */
+.is-webkit-gtk:not(.transparent-ui) .instance-card,
+.is-webkit-gtk:not(.transparent-ui) .preset-card {
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+
+/* Nested preview card gets a slightly lighter flat shade than the island
+   it sits inside, so the two stay visually separated without a shadow. */
+.is-webkit-gtk:not(.transparent-ui) .skin-mini-preview-wrap::before {
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  contain: layout style paint;
+}
+
+/* ═══ Custom Context Menu (Ultra-Lightweight & WebKitGTK Optimized) ═══ */
+.custom-context-menu {
+  position: fixed;
+  z-index: 100000;
+  min-width: 175px;
+  max-width: 260px;
+  background: #1b1b1b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: calc(8px * var(--rk, 1));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  contain: layout style paint;
+  user-select: none;
+  font-family: var(--font);
+  outline: none;
+}
+.custom-context-menu.hidden {
+  display: none;
+}
+
+.ctx-menu-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.ctx-item {
+  display: block;
+  padding: 8px 12px;
+  border-radius: calc(6px * var(--rk, 1));
+  border: none;
+  background: transparent;
+  color: var(--text, #e6e6e6);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.ctx-item:hover,
+.ctx-item:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  outline: none;
+}
+
+.ctx-item.ctx-primary {
+  font-weight: 600;
+}
+.ctx-item.ctx-primary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--accent);
+}
+
+.ctx-item.ctx-danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.ctx-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   WEBKITGTK COMPREHENSIVE PERFORMANCE PASS
+   All rules scoped to .is-webkit-gtk to avoid affecting other platforms.
+   Goal: eliminate every cause of software rendering / compositor stalls.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Kill ALL infinite animations that cause continuous whole-frame repaints ── */
+.is-webkit-gtk .account-avatar-needs-reauth,
+.is-webkit-gtk .ri-logs-open-btn.has-logs,
+.is-webkit-gtk .ri-kill-btn.active,
+.is-webkit-gtk .instance-card.reauth-pulse,
+.is-webkit-gtk .update-icon-badge-spin svg,
+.is-webkit-gtk .update-check-status.is-checking svg,
+.is-webkit-gtk #btn-check-for-updates-icon.is-spinning,
+.is-webkit-gtk .dl-widget-icon,
+.is-webkit-gtk .dl-bar-fill[data-indeterminate],
+.is-webkit-gtk .preset-sync-bar,
+.is-webkit-gtk .mod-card.mod-update-glow {
+  animation: none !important;
+}
+
+/* Substitute static visual cues for the stopped animations */
+.is-webkit-gtk .mod-card.mod-update-glow {
+  outline: 2px solid var(--accent);
+  box-shadow: none !important;
+}
+.is-webkit-gtk .account-avatar-needs-reauth {
+  box-shadow: 0 0 0 2px rgba(245,197,24,0.65) !important;
+}
+.is-webkit-gtk .ri-kill-btn.active {
+  box-shadow: 0 0 0 1px rgba(248,113,113,0.35) inset !important;
+}
+/* Spinners that are active: swap continuous rotate for a single-shot 360 */
+.is-webkit-gtk .update-icon-badge-spin svg,
+.is-webkit-gtk .update-check-status.is-checking svg,
+.is-webkit-gtk #btn-check-for-updates-icon.is-spinning {
+  animation: webkit-gtk-spin-once 0.7s linear !important;
+}
+@keyframes webkit-gtk-spin-once { to { transform: rotate(360deg); } }
+
+/* Active loading spinners must continue spinning while work is in flight */
+.is-webkit-gtk .mini-spinner {
+  animation: mini-spinner-spin 0.7s linear infinite !important;
+}
+
+/* ── 10b. Downloads edge-drawer — keep its open/close motion but make sure
+         nothing about it leaves a permanent extra compositor layer or a
+         non-transform transition lying around when idle. ── */
+.is-webkit-gtk #dl-widget-panel,
+.is-webkit-gtk .dl-widget-backdrop {
+  will-change: auto;
+}
+.is-webkit-gtk .dl-edge-zone {
+  /* Pure hit-target, never painted — keep it out of the paint tree. */
+  contain: strict;
+}
+
+/* ── 2. Remove transition:all — forces the browser to watch every
+         property for changes, killing CSS invalidation perf ── */
+.is-webkit-gtk * {
+  /* Override transition:all wherever it appears */
+  transition-property: transform, opacity, background, border-color, color, box-shadow !important;
+}
+/* Then restore zero-transition on the card/list items we already handle */
+.is-webkit-gtk .discover-card,
+.is-webkit-gtk .mod-item,
+.is-webkit-gtk .mod-card,
+.is-webkit-gtk .preset-card,
+.is-webkit-gtk .instance-card,
+.is-webkit-gtk .quick-palette-plate,
+.is-webkit-gtk .full-palette-card {
+  transition: none !important;
+}
+
+/* ── 3. Add content-visibility to all card types so off-screen items
+         are skipped entirely during layout/paint ── */
+.is-webkit-gtk .instance-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 88px;
+}
+.is-webkit-gtk .mod-card,
+.is-webkit-gtk .mod-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 72px;
+}
+.is-webkit-gtk .dressing-room-skin-card,
+.is-webkit-gtk .dressing-room-cape-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 220px;
+}
+.is-webkit-gtk .screenshot-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 180px;
+}
+
+.is-webkit-gtk .settings-modal-body,
+.is-webkit-gtk .overlay-card,
+.is-webkit-gtk .apply-preset-mod-list,
+.is-webkit-gtk .discover-scroll-area,
+.is-webkit-gtk .presets-container,
+.is-webkit-gtk .discover-project-content,
+.is-webkit-gtk .dl-files-list {
+  -webkit-overflow-scrolling: touch;
+  overflow-anchor: none;
+}
+
+
+
+/* ── 5. Remove expensive hover box-shadows on interactive elements ── */
+.is-webkit-gtk .btn-accent:hover,
+.is-webkit-gtk .btn-play:hover,
+.is-webkit-gtk .btn-play-offline:hover {
+  box-shadow: none !important;
+  filter: brightness(1.1) !important;
+  transform: none !important;
+}
+
+/* ── 6. Clamp all card hover box-shadows to cheap static values ── */
+.is-webkit-gtk .preset-card:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+  transform: none !important;
+}
+.is-webkit-gtk .bento-tile:hover {
+  box-shadow: none !important;
+}
+
+/* ── 7. Isolate the top bar from page repaints without collapsing its height ── */
+.is-webkit-gtk #top-bar {
+  contain: layout style paint;
+  will-change: auto;
+}
+
+/* ── 8. Mods & discover islands — reinforce GPU isolation ── */
+.is-webkit-gtk .mods-top-panel,
+.is-webkit-gtk .mods-bottom-panel,
+.is-webkit-gtk .discover-content-island,
+.is-webkit-gtk .discover-filter-island {
+  contain: layout style;
+  will-change: auto;
+}
+
+/* ── 9. Stop tab fade-in animation — saves a compositor layer rebuild per switch ── */
+.is-webkit-gtk .tab-page {
+  animation: none !important;
+}
+
+/* ── 10. Download widget — stop bounce + ring animations ── */
+.is-webkit-gtk .dl-widget {
+  will-change: auto;
+  contain: layout style paint;
+}
+
+/* ── 10c. Downloads edge-drawer drag path — WebKitGTK's compositor is the
+         slow, more software-bound one of the platforms this app ships on,
+         so the swipe gesture gets extra help staying on a single GPU
+         layer instead of falling back to paint-per-frame:
+         - backface-visibility + a forced 3D transform coax WebKit into
+           promoting the panel/backdrop to their own layer as soon as a
+           drag starts (matches the translate3d() used for the same
+           reason in the base rules above and in the JS drag handler).
+         - contain:paint stops the drag from ever invalidating anything
+           outside the drawer's own box.
+         - perspective on the fixed ancestors is a cheap no-op that some
+           WebKit builds use as another compositing hint. ── */
+/* NOTE: .dressing-room-modal excluded — contain:paint clips overflow which would
+   prevent the translate3d(100%,0,0) off-screen state from animating in correctly.
+   The wrapper .dressing-room-panel gets these compositor hints instead. */
+.is-webkit-gtk #dl-widget-panel,
+.is-webkit-gtk .dl-widget-backdrop {
+  contain: paint;
+}
+
+.is-webkit-gtk #dl-widget-panel.dl-panel-dragging,
+.is-webkit-gtk .dl-widget-backdrop.dl-backdrop-dragging {
+  perspective: 1000px;
+}
+.is-webkit-gtk .dl-edge-zone,
+.is-webkit-gtk #dl-widget .dl-widget-btn,
+.is-webkit-gtk .dl-edge-hint {
+  /* Same 3D-transform compositing hint, applied preemptively to the
+     elements that actually start/show the gesture, so the very first
+     drag/hint frame is already on the fast path instead of promoting
+     mid-gesture. */
+  -webkit-transform: translate3d(0, 0, 0);
+}
+/* The hold-hint bubble and the tab's appear animation are both
+   finite/one-shot (not the continuous per-frame kind rule 1 above kills),
+   so they're left alone here — just given the same static-layer bump as
+   everything else in this block. */
+.is-webkit-gtk .dl-edge-hint {
+  contain: layout style paint;
+}
+
+/* ═══ WebKitGTK Overrides — Instance Hero / Player Card / Buttons ═══
+   Same pattern as the rest of the .is-webkit-gtk block: strip animated
+   box-shadow/filter/backdrop-filter (all expensive on WebKitGTK's
+   software-ish compositor path) and replace hover motion with transform
+   only, which stays on the compositor thread. */
+.is-webkit-gtk .instance-hero,
+.is-webkit-gtk .hero-island,
+.is-webkit-gtk .hero-stat,
+.is-webkit-gtk .skin-panel,
+.is-webkit-gtk .player-card,
+.is-webkit-gtk .account-button-under-preview,
+.is-webkit-gtk .ri-dropdown,
+.is-webkit-gtk .ri-overflow-menu {
+  box-shadow: none;
+}
+.is-webkit-gtk .instance-main-row,
+.is-webkit-gtk .instance-hero-column,
+.is-webkit-gtk .instance-hero,
+.is-webkit-gtk .hero-stat-grid {
+  contain: layout style;
+}
+/* NOTE: .instance-hero-running is deliberately excluded from `contain`.
+   `contain: layout` makes an element both a new stacking context AND a new
+   containing block, which trapped the running-instance dropdown's z-index
+   inside this panel's own stacking context — so the later `.instance-hero-empty`
+   sibling (plain z-index:auto, but later in DOM/paint order) rendered on
+   top of it instead of the dropdown showing above everything. */
+/* The running-instance strip and its popovers use the same cheap
+   transform-only motion as the rest of the launcher on WebKitGTK — no
+   animated box-shadow, no radial-gradient hover blooms, nothing that forces
+   a repaint every frame. */
+.is-webkit-gtk .ri-btn,
+.is-webkit-gtk .ri-btn-more,
+.is-webkit-gtk .ri-overflow-row {
+  transition: background var(--transition), border-color var(--transition);
+}
+.is-webkit-gtk .ri-btn-entering,
+.is-webkit-gtk .ri-btn-leaving {
+  animation-duration: 0.12s;
+}
+.is-webkit-gtk .ri-dropdown,
+.is-webkit-gtk .ri-overflow-menu {
+  animation-duration: 0.08s;
+}
+.is-webkit-gtk .instance-hero::before,
+.is-webkit-gtk .skin-panel::before {
+  /* The 1px gradient hairline is cheap (paints once, doesn't move), keep it. */
+  will-change: auto;
+}
+.is-webkit-gtk .skin-preview-hint {
+  transition: opacity 0.15s ease;
+  transform: none !important;
+}
+.is-webkit-gtk .btn-secondary,
+.is-webkit-gtk .btn-danger-outline,
+.is-webkit-gtk .btn-ghost,
+.is-webkit-gtk .btn-danger-pill {
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+.is-webkit-gtk .btn-danger:hover,
+.is-webkit-gtk .btn-play:hover:not(:disabled) {
+  /* Drop the lift + glow-shadow hover animation; keep the flat brightness
+     swap only, which is a paint-cheap property change. */
+  transform: none;
+  box-shadow: none;
+  filter: none;
+  background: #dc2626;
+}
+.is-webkit-gtk .btn-play:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+.is-webkit-gtk .account-button-under-preview:active {
+  transform: none;
+}
+.is-webkit-gtk .mods-tab-loading {
+  background: #121212;
+}
+.is-webkit-gtk .mods-drag-overlay-inner {
+  box-shadow: none;
+}
