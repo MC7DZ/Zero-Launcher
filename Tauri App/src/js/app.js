@@ -9045,9 +9045,9 @@ function setContentType(type) {
     if (immediate) {
       indicator.style.transition = 'none';
     }
-    indicator.style.transform = `translate(${x}px, ${y}px)`;
-    indicator.style.width     = `${btnRect.width}px`;
-    indicator.style.height    = `${btnRect.height}px`;
+    indicator.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`;
+    indicator.style.width     = `${Math.round(btnRect.width)}px`;
+    indicator.style.height    = `${Math.round(btnRect.height)}px`;
 
     if (!indicator.classList.contains('ready')) {
       indicator.classList.add('ready');
@@ -14820,8 +14820,8 @@ function initDiscover() {
     const x = btnRect.left - barRect.left;
     const w = btnRect.width;
     if (w > 0) {
-      sourceIndicator.style.transform = `translateX(${x}px)`;
-      sourceIndicator.style.width = `${w}px`;
+      sourceIndicator.style.transform = `translate3d(${Math.round(x)}px, 0, 0)`;
+      sourceIndicator.style.width = `${Math.round(w)}px`;
       const platform = btn.dataset.source || 'modrinth';
       sourceIndicator.classList.remove('platform-modrinth', 'platform-curseforge');
       sourceIndicator.classList.add(`platform-${platform}`);
@@ -14852,8 +14852,8 @@ function initDiscover() {
     const x = btnRect.left - barRect.left;
     const w = btnRect.width;
     if (w > 0) {
-      typeIndicator.style.transform = `translateX(${x}px)`;
-      typeIndicator.style.width = `${w}px`;
+      typeIndicator.style.transform = `translate3d(${Math.round(x)}px, 0, 0)`;
+      typeIndicator.style.width = `${Math.round(w)}px`;
       const platform = discoverState.platform || 'modrinth';
       typeIndicator.classList.remove('platform-modrinth', 'platform-curseforge');
       typeIndicator.classList.add(`platform-${platform}`);
