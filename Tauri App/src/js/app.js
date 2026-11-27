@@ -1162,8 +1162,8 @@ function initTabs() {
     const x = btnRect.left - barRect.left;
     const w = btnRect.width;
     if (w > 0) {
-      indicator.style.transform = `translateX(${x}px)`;
-      indicator.style.width = `${w}px`;
+      indicator.style.transform = `translate3d(${Math.round(x)}px, 0, 0)`;
+      indicator.style.width = `${Math.round(w)}px`;
       if (!indicator.classList.contains('ready')) {
         indicator.classList.add('ready');
       }
