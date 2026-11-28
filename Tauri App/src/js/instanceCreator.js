@@ -854,6 +854,16 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       closeTimeout = null;
     }
 
+    document.body.classList.add('creator-active');
+
+    // Pause heavy background systems (Canvas particle loop, WebGL 3D skin viewers)
+    if (typeof BG !== 'undefined' && BG.pause) {
+      try { BG.pause(); } catch (e) {}
+    }
+    if (typeof skinMiniPreviewInstance !== 'undefined' && skinMiniPreviewInstance) {
+      skinMiniPreviewInstance.renderPaused = true;
+    }
+
     if (newInstanceSection) {
       newInstanceSection.classList.remove('creator-closing');
       newInstanceSection.classList.remove('creator-hidden');
@@ -887,9 +897,19 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     // Defer hiding and step reset until the 360ms exit animation completes
     if (closeTimeout) clearTimeout(closeTimeout);
     closeTimeout = setTimeout(() => {
+      document.body.classList.remove('creator-active');
       if (newInstanceSection) {
         newInstanceSection.classList.remove('creator-closing');
         newInstanceSection.classList.add('creator-hidden');
+      }
+      // Resume background engine and 3D player skin preview
+      if (typeof BG !== 'undefined' && BG.resume) {
+        try { BG.resume(); } catch (e) {}
+      }
+      if (typeof showSkinMiniPreview === 'function') {
+        try { showSkinMiniPreview(); } catch (e) {}
+      } else if (typeof skinMiniPreviewInstance !== 'undefined' && skinMiniPreviewInstance) {
+        skinMiniPreviewInstance.renderPaused = false;
       }
       setStep(1);
       closeTimeout = null;

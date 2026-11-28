@@ -714,6 +714,18 @@ input, textarea, select, [contenteditable="true"] {
   flex: 1;
   overflow: hidden;
   position: relative;
+  transition: opacity 0.25s ease;
+}
+
+body.creator-active #tab-content {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+body.creator-active #bg-container {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .tab-page {
