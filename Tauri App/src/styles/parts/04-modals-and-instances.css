@@ -2081,9 +2081,8 @@ body.screenshot-lightbox-open {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
-  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-              visibility 0.35s;
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0.4s;
   visibility: visible;
 }
 
@@ -2091,7 +2090,8 @@ body.screenshot-lightbox-open {
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
-  transform: translateY(-24px);
+  transition: opacity 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              visibility 0.35s;
 }
 
 .new-instance-bg-backdrop {
@@ -2121,7 +2121,8 @@ body.screenshot-lightbox-open {
 }
 
 .new-instance-creator-section.creator-hidden .new-instance-bg-backdrop {
-  transform: scale(1.08);
+  transform: scale(1.06);
+  opacity: 0.3;
 }
 
 .creator-bg-vignette {
@@ -2129,11 +2130,16 @@ body.screenshot-lightbox-open {
   inset: 0;
   pointer-events: none;
   z-index: 3;
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   background:
     /* Deep focused radial vignette focused right behind the UI */
     radial-gradient(ellipse 75% 65% at 50% 50%, rgba(10, 12, 16, 0.6) 0%, rgba(10, 12, 16, 0.25) 55%, rgba(6, 8, 12, 0.75) 100%),
     /* Downward gradient connected to the bottom of the screen */
     linear-gradient(180deg, rgba(8, 10, 14, 0.15) 0%, rgba(8, 10, 14, 0.45) 45%, rgba(6, 8, 10, 0.88) 100%);
+}
+
+.new-instance-creator-section.creator-hidden .creator-bg-vignette {
+  opacity: 0;
 }
 
 /* Modal panel - fully transparent with clean outline (wider layout) */
@@ -2151,14 +2157,19 @@ body.screenshot-lightbox-open {
   flex-direction: column;
   overflow: hidden;
   transform: translateY(0) scale(1);
-  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              filter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   opacity: 1;
 }
 
 .new-instance-creator-section.creator-hidden .new-instance-creator-card {
-  transform: translateY(-48px) scale(0.96);
+  transform: translateY(28px) scale(0.96);
   opacity: 0;
+  filter: blur(2px);
+  transition: transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              filter 0.3s;
 }
 
 .creator-card-header {
@@ -2681,8 +2692,16 @@ body.screenshot-lightbox-open {
   flex-direction: column;
   gap: 8px;
   pointer-events: none;
-  animation: fadeInDown 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+
+.new-instance-creator-section.creator-hidden .creator-summary-panel {
+  opacity: 0;
+  transform: translateY(20px);
 }
 
 .creator-summary-header {
