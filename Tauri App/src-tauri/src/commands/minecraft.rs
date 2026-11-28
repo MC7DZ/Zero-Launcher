@@ -685,8 +685,15 @@ pub async fn install_minecraft(
 
     let minecraft_dir = if let Some(ref old_inst) = old_instance {
         PathBuf::from(old_inst.minecraft_dir())
-    } else {
+    } else if game_dir == default_minecraft_dir {
+        // Shared-default install: data dir IS the .minecraft root.
         game_dir.clone()
+    } else {
+        // Custom / !Instances directory: the instance's own data folder is
+        // separate from the shared .minecraft root where versions/libraries/
+        // assets live. Use the shared root so the two fields are distinct and
+        // `delete_instance_data` can safely wipe just the instance folder.
+        default_minecraft_dir.clone()
     };
 
     // Installs that target the *same* folder (e.g. two "Shared Default"
@@ -3876,7 +3883,7 @@ fn robust_remove_dir(path: &Path) -> Result<(), String> {
 pub async fn delete_instance_data(
     state: State<'_, AppState>,
     directory: String,
-    minecraft_directory: Option<String>,
+    _minecraft_directory: Option<String>,
 ) -> Result<(), String> {
     if directory.trim().is_empty() {
         return Err("No instance directory to delete".to_string());
@@ -3890,29 +3897,33 @@ pub async fn delete_instance_data(
     let canonical_target = std::fs::canonicalize(&target)
         .map_err(|e| format!("Failed to resolve instance directory: {e}"))?;
 
-    // Figure out the shared directory this instance's core files live in,
-    // falling back to the globally configured default game directory when
-    // the instance predates the directory split (same fallback used
-    // elsewhere for `minecraft_dir()`).
-    let shared_dir = match minecraft_directory.filter(|d| !d.trim().is_empty()) {
-        Some(d) => PathBuf::from(d),
-        None => state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory(),
-    };
-    if let Ok(canonical_shared) = std::fs::canonicalize(&shared_dir) {
-        if canonical_target == canonical_shared {
+    // Only refuse when the target IS the .minecraft root itself — wiping that
+    // would destroy every other instance's data. Any path whose last component
+    // is not ".minecraft" (e.g. !Instances/<name>) is safe to delete.
+    // We also guard against the target being exactly the globally configured
+    // default game directory, in case someone named a custom folder ".minecraft"
+    // at a different location.
+    let folder_name = canonical_target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if folder_name.eq_ignore_ascii_case(".minecraft") {
+        return Err(
+            "Refusing to delete: this directory appears to be the shared .minecraft root".to_string()
+        );
+    }
+    let default_dir = state.settings.lock().unwrap_or_else(|e| e.into_inner()).resolved_game_directory();
+    if let Ok(canonical_default) = std::fs::canonicalize(&default_dir) {
+        if canonical_target == canonical_default {
             return Err(
                 "Refusing to delete: this instance shares its data folder with your main .minecraft directory".to_string()
-            );
-        }
-        if canonical_target == canonical_shared.join("!Instances") {
-            return Err(
-                "Refusing to delete: target is the !Instances parent folder".to_string()
             );
         }
     }
 
     robust_remove_dir(&canonical_target)
 }
+
 
 #[cfg(target_os = "linux")]
 fn zlib_probe_input(n: usize) -> Vec<u8> {

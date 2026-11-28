@@ -42,6 +42,7 @@ import defaultOfflineSkin from '../assets/default-offline-skin.png';
 // skin" (Anonymous Skin mode, offline fallback).
 import unknownSkin from '../assets/unknown-skin.png';
 import { initInstanceCreator } from './instanceCreator.js';
+let creatorApi = null;
 // ── Native Click Sound Engine ──
 let lastClickSoundTime = 0;
 
@@ -593,13 +594,14 @@ const api = {
   onDownloadProgress: (cb) => listen('download-progress', cb),
   onLaunchVerifyStatus: (cb) => listen('launch-verify-status', cb),
   previewModpack: (filePath) => invoke('preview_modpack', { filePath }),
-  importModpack: (filePath, instanceName, useCustomDirectory, customDirectory) =>
+  importModpack: (filePath, instanceName, useCustomDirectory, customDirectory, skipAssets) =>
     invoke('import_modpack', {
       payload: {
         file_path: filePath,
         instance_name: instanceName,
         use_custom_directory: !!useCustomDirectory,
         custom_directory: customDirectory || null,
+        skip_assets: typeof skipAssets === 'boolean' ? skipAssets : null,
       },
     }),
   getModpackInfo: (directory) => invoke('get_modpack_info', { directory: directory || null }),
@@ -6187,20 +6189,17 @@ async function syncInstanceSelectionAcrossTabs() {
   }
 }
 
-// Instance data (mods/worlds/saves/etc) lives at inst.directory, separate
-// from the shared versions/libraries/assets in inst.minecraft_directory —
-// see InstalledInstance in models.rs. Deleting it is only ever safe when
-// that directory isn't also the shared default .minecraft folder, which
-// is true for every default-location instance and any instance saved
-// before the directory split existed (empty minecraft_directory).
+// Instance data deletion is only unsafe when inst.directory IS the
+// .minecraft root itself (folder named ".minecraft") — wiping that would
+// destroy every other instance's data. Any path inside !Instances/<name>
+// or a custom subfolder is safe to delete.
 function instanceDataDeletionIsUnsafe(inst) {
   if (!inst) return true;
   const ownDir = (inst.directory || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
   if (!ownDir) return true;
-  const sharedDir = (inst.minecraft_directory || (settings && settings.game_directory) || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
-  if (!sharedDir) return true;
-  if (ownDir.toLowerCase() === sharedDir.toLowerCase()) return true;
-  if (ownDir.toLowerCase() === `${sharedDir.toLowerCase()}/!instances`) return true;
+  // Extract the last path component and compare to ".minecraft".
+  const folderName = ownDir.split('/').pop() || '';
+  if (folderName.toLowerCase() === '.minecraft') return true;
   return false;
 }
 
@@ -6766,7 +6765,7 @@ function initInstanceActions() {
   });
 
   // Initialize Choose a Type / Instance Creator Section
-  initInstanceCreator({
+  creatorApi = initInstanceCreator({
     onProceedWithMinecraftInstance: async (options) => {
       const opts = typeof options === 'string' ? { name: options } : (options || {});
       // Full creation options are provided from Step 5 of the wizard
@@ -6832,6 +6831,94 @@ function initInstanceActions() {
         } finally {
           activeInstallKeys.delete(installKey);
         }
+      }
+    },
+    onImportModpack: async ({ filePath, name, useCustomDir, customDir, skipAssets }) => {
+      const zlibOk = await confirmZlibIfConflict(null);
+      if (!zlibOk) return;
+
+      const installKey = (customDir || name).toLowerCase();
+      if (activeInstallKeys.has(installKey)) {
+        showToast(`"${name}" is already being imported or installed`, 'error');
+        return;
+      }
+      activeInstallKeys.add(installKey);
+
+      showToast(`Importing modpack "${name}"…`, 'info');
+
+      if (dlWidgetGeneric) {
+        dlWidgetGeneric.begin(MODPACK_IMPORT_CARD_ID, `Modpack: ${name}`, 'Reading modpack…', {
+          determinate: true,
+          withStats: true,
+          icon: 'mod',
+          onCancel: async () => {
+            modpackImportTaskRunning = false;
+            activeInstallKeys.delete(installKey);
+            showToast(`Cancelled import of "${name}"`, 'info');
+          },
+        });
+      }
+
+      const unlisten = await api.onModpackImportProgress((e) => {
+        const p = e.payload || {};
+        const pct = Math.max(0, Math.min(100, p.percent || 0));
+
+        if (!dlWidgetGeneric) return;
+        const activeFiles = p.active_files || [];
+        const fileLabel = activeFiles.length === 0
+          ? ''
+          : activeFiles.length === 1
+            ? activeFiles[0].name
+            : `${activeFiles[0].name} +${activeFiles.length - 1} more`;
+        dlWidgetGeneric.update(
+          MODPACK_IMPORT_CARD_ID,
+          `Modpack: ${name}`,
+          p.message || p.stage || '',
+          pct,
+          {
+            file: fileLabel,
+            speed: p.speed_bps ? fmtSpeed(p.speed_bps) : '—',
+            eta: p.eta_seconds != null ? fmtEta(p.eta_seconds) : '—',
+            downloaded: p.downloaded_bytes ? fmtBytes(p.downloaded_bytes) : '—',
+          }
+        );
+        if (p.stage === 'downloading') {
+          dlWidgetGeneric.reconcileActiveFiles(MODPACK_IMPORT_CARD_ID, activeFiles);
+        }
+      });
+
+      try {
+        const result = await api.importModpack(
+          filePath,
+          name,
+          useCustomDir,
+          useCustomDir ? customDir : null,
+          skipAssets
+        );
+        await refreshInstances();
+        renderInstanceList();
+        if (result && result.instance && result.instance.version_id) {
+          selectInstance(result.instance.version_id);
+        }
+        let msg = `Imported "${name}"`;
+        if (result.failed_files && result.failed_files.length > 0) {
+          msg += ` — ${result.failed_files.length} file(s) failed to download`;
+        }
+        if (result.unresolved_curseforge_mods) {
+          msg += ` — ${result.unresolved_curseforge_mods} CurseForge mod(s) need to be added manually (via Discover)`;
+        }
+        showToast(msg, result.failed_files && result.failed_files.length > 0 ? 'warning' : 'success');
+        if (dlWidgetGeneric) {
+          dlWidgetGeneric.end(MODPACK_IMPORT_CARD_ID, true, `Imported "${name}"`);
+        }
+      } catch (e) {
+        showToast('Failed to import modpack: ' + e, 'error');
+        if (dlWidgetGeneric) {
+          dlWidgetGeneric.end(MODPACK_IMPORT_CARD_ID, false, 'Import failed');
+        }
+      } finally {
+        activeInstallKeys.delete(installKey);
+        if (typeof unlisten === 'function') unlisten();
       }
     }
   });
@@ -10797,7 +10884,11 @@ function initModsDragDrop() {
     if (modpackPaths.length > 0 && !canAcceptZipInTab) {
       // A modpack archive takes priority even if other files were dropped
       // alongside it — only the first one is imported at a time.
-      openModpackImportOverlay(modpackPaths[0]);
+      if (creatorApi && creatorApi.openModpackImportSection) {
+        creatorApi.openModpackImportSection(modpackPaths[0]);
+      } else {
+        openModpackImportOverlay(modpackPaths[0]);
+      }
       return;
     }
 
@@ -13474,8 +13565,8 @@ function renderCardContent(card) {
       showCustomMenu(rect.left, rect.bottom + 4, [
         {
           type: 'item',
-          label: 'Install in custom directory',
-          onClick: () => openDiscoverModpackDirOverlay(hit, versionSelect, downloadBtn),
+          label: 'Install / Configure…',
+          onClick: () => downloadDiscoverSelection(hit, versionSelect, downloadBtn),
         },
       ]);
     });
@@ -14218,9 +14309,9 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
   const opt = await resolveDiscoverDownloadOption(hit, versionSelect, downloadBtn, target);
   if (!opt) return;
 
-  // If choosing a modpack, prompt the user for the directory first
+  // If choosing a modpack, run modpack installer (which opens the Create New Instance modpack extractor)
   if (hit.project_type === 'modpack') {
-    openDiscoverModpackDirOverlay(hit, versionSelect, downloadBtn);
+    await installDiscoverModpack(hit, opt, downloadBtn, null);
     return;
   }
 
@@ -14294,6 +14385,19 @@ async function installDiscoverModpack(hit, opt, downloadBtn, customDirectory) {
   try {
     const tempPath = await api.discoverDownloadToTemp(opt.dataset.fileUrl, opt.dataset.fileName, dlId);
 
+    if (downloadBtn) {
+      downloadBtn.textContent = originalText;
+      downloadBtn.disabled = false;
+    }
+    if (dlWidgetGeneric) dlWidgetGeneric.end(dlId, true, `Downloaded ${hit.title}`);
+
+    // Open the new Modpack Extractor (step 1c) in the Create Instance menu
+    if (creatorApi && creatorApi.openModpackImportSection) {
+      creatorApi.openModpackImportSection(tempPath);
+      return;
+    }
+
+    // Fallback if creatorApi is somehow unavailable:
     if (downloadBtn) downloadBtn.textContent = 'Installing…';
     if (dlWidgetGeneric) dlWidgetGeneric.update(dlId, `Modpack: ${hit.title}`, 'Reading modpack…', 0, {});
 
