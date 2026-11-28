@@ -1,3 +1,8 @@
+import iconVanilla from '../assets/loaders/vanilla.png';
+import iconFabric from '../assets/loaders/fabric.png';
+import iconForge from '../assets/loaders/forge.png';
+import iconNeoforge from '../assets/loaders/neoforge.png';
+
 /**
  * Initializes the "Choose a type" / New Instance Creator section:
  * - Downloads / caches background pictures from GitHub into "<Zero Launcher directory>/assets/background/":
@@ -132,7 +137,9 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   let selectedFolderType = ''; // Initially unselected until Step 2 or defaulted
   let customFolderPath = '';
   let selectedMcVersion = '';
-  let selectedLoader = '';
+  let selectedLoader = 'Fabric';
+  let selectedLoaderVersion = 'latest';
+  let loaderVersionsCache = {};
   let versionsManifest = [];
   let isVersionsLoaded = false;
 
@@ -157,6 +164,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const panelStep1 = document.getElementById('creator-panel-step-1');
   const panelStep2 = document.getElementById('creator-panel-step-2');
   const panelStep3 = document.getElementById('creator-panel-step-3');
+  const panelStep4 = document.getElementById('creator-panel-step-4');
   const btnBack = document.getElementById('btn-creator-back');
   const folderOptionCards = document.querySelectorAll('#creator-list-step-2 .creator-option-card');
   const customPathBox = document.getElementById('creator-custom-path-box');
@@ -169,6 +177,21 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const versionSearchInput = document.getElementById('creator-version-search');
   const versionTypeSelect = document.getElementById('creator-version-type-select');
   const versionsScrollable = document.getElementById('creator-versions-scrollable');
+
+  // Step 4 loader elements
+  const loaderCards = document.querySelectorAll('.creator-loader-card');
+  const loaderVersionBox = document.getElementById('creator-loader-version-box');
+  const loaderVersionTitle = document.getElementById('creator-loader-version-title');
+  const loaderVersionSelect = document.getElementById('creator-loader-version-select');
+  const iconImgFabric = document.getElementById('creator-icon-fabric');
+  const iconImgForge = document.getElementById('creator-icon-forge');
+  const iconImgNeoforge = document.getElementById('creator-icon-neoforge');
+  const iconImgVanilla = document.getElementById('creator-icon-vanilla');
+
+  if (iconImgFabric) iconImgFabric.src = iconFabric;
+  if (iconImgForge) iconImgForge.src = iconForge;
+  if (iconImgNeoforge) iconImgNeoforge.src = iconNeoforge;
+  if (iconImgVanilla) iconImgVanilla.src = iconVanilla;
 
   // Live Summary Panel Elements
   const summaryPanel = document.getElementById('creator-summary-panel');
@@ -203,8 +226,17 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       else if (selectedFolderType === 'custom') folderLabel = 'Custom';
     }
 
-    // Loader label: "-" if not yet chosen
-    const loaderLabel = selectedLoader || '-';
+    // Loader label: "-" if not yet chosen or e.g. "Fabric" or "Fabric 0.20.1"
+    let loaderLabel = '-';
+    if (currentStep >= 4 || selectedLoader) {
+      if (selectedLoader === 'Vanilla') {
+        loaderLabel = 'Vanilla';
+      } else if (selectedLoader) {
+        loaderLabel = (selectedLoaderVersion && selectedLoaderVersion !== 'latest')
+          ? `${selectedLoader} ${selectedLoaderVersion}`
+          : selectedLoader;
+      }
+    }
 
     // Header Title and Subtitle
     if (summaryTitle) {
@@ -251,6 +283,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     let targetPanel = panelStep1;
     if (currentStep === 2) targetPanel = panelStep2;
     else if (currentStep === 3) targetPanel = panelStep3;
+    else if (currentStep === 4) targetPanel = panelStep4;
 
     if (targetPanel) {
       const h = targetPanel.offsetHeight;
@@ -364,9 +397,105 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     renderVersionsList();
   });
 
+  async function fetchLoaderVersions(loader, mcVersion) {
+    const l = (loader || '').toLowerCase();
+    const mc = (mcVersion || '').trim();
+    if (!l || l === 'vanilla' || !mc) return [];
+
+    const key = `${l}|${mc}`;
+    if (loaderVersionsCache[key]) return loaderVersionsCache[key];
+
+    try {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (invoke) {
+        const list = await invoke('get_loader_versions', { loader: l, minecraftVersion: mc });
+        if (Array.isArray(list)) {
+          loaderVersionsCache[key] = list;
+          return list;
+        }
+      }
+    } catch (e) {
+      console.warn(`Failed to fetch loader versions for ${l} ${mc}:`, e);
+    }
+    return [];
+  }
+
+  async function updateLoaderStepUI() {
+    loaderCards.forEach(c => {
+      c.classList.toggle('active', c.dataset.loader === selectedLoader);
+    });
+
+    if (selectedLoader === 'Vanilla') {
+      loaderVersionBox?.classList.add('hidden');
+      morphText(creatorFooterInfo, 'Vanilla Minecraft has no loader build to select.');
+      updateSummaryPanel();
+      setTimeout(() => syncViewportHeight(), 30);
+      return;
+    }
+
+    loaderVersionBox?.classList.remove('hidden');
+    if (loaderVersionTitle) {
+      loaderVersionTitle.textContent = `${selectedLoader} version`;
+    }
+
+    // Populate dropdown
+    if (loaderVersionSelect) {
+      loaderVersionSelect.innerHTML = '<option value="latest">Latest</option>';
+      loaderVersionSelect.value = 'latest';
+    }
+
+    updateSummaryPanel();
+    setTimeout(() => syncViewportHeight(), 30);
+
+    const versions = await fetchLoaderVersions(selectedLoader, selectedMcVersion);
+    if (loaderVersionSelect && versions && versions.length > 0) {
+      const frag = document.createDocumentFragment();
+      const latestOpt = document.createElement('option');
+      latestOpt.value = 'latest';
+      latestOpt.textContent = `Latest (${versions[0]})`;
+      frag.appendChild(latestOpt);
+
+      versions.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        frag.appendChild(opt);
+      });
+
+      loaderVersionSelect.innerHTML = '';
+      loaderVersionSelect.appendChild(frag);
+      loaderVersionSelect.value = selectedLoaderVersion || 'latest';
+    }
+
+    const displayedVer = (selectedLoaderVersion && selectedLoaderVersion !== 'latest')
+      ? selectedLoaderVersion
+      : (versions && versions[0] ? versions[0] : 'latest');
+
+    morphText(creatorFooterInfo, `${selectedLoader} ${displayedVer}`);
+    updateSummaryPanel();
+    setTimeout(() => syncViewportHeight(), 30);
+  }
+
+  loaderCards.forEach(card => {
+    card.addEventListener('click', () => {
+      selectedLoader = card.dataset.loader || 'Fabric';
+      selectedLoaderVersion = 'latest';
+      updateLoaderStepUI();
+    });
+  });
+
+  loaderVersionSelect?.addEventListener('change', () => {
+    selectedLoaderVersion = loaderVersionSelect.value;
+    const displayedVer = (selectedLoaderVersion && selectedLoaderVersion !== 'latest')
+      ? selectedLoaderVersion
+      : 'latest';
+    morphText(creatorFooterInfo, `${selectedLoader} ${displayedVer}`);
+    updateSummaryPanel();
+  });
+
   function setStep(step) {
     currentStep = step;
-    stepTrack?.classList.remove('step-1-active', 'step-2-active', 'step-3-active');
+    stepTrack?.classList.remove('step-1-active', 'step-2-active', 'step-3-active', 'step-4-active');
 
     if (step === 1) {
       stepTrack?.classList.add('step-1-active');
@@ -395,6 +524,15 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       morphText(mainSubtitle, 'Every Minecraft version. Switch the release type to reach snapshots, betas and alphas.');
       morphText(creatorFooterInfo, `${selectedMcVersion || 'This version'} downloads the first time you launch it.`);
       loadVersions();
+      requestAnimationFrame(() => syncViewportHeight());
+    } else if (step === 4) {
+      stepTrack?.classList.add('step-4-active');
+      btnCancel?.classList.add('hidden');
+      btnBack?.classList.remove('hidden');
+
+      morphText(mainTitle, 'Choose a mod loader');
+      morphText(mainSubtitle, `Loaders are what packages install into. Only the ones with a build for ${selectedMcVersion || 'this version'} can be picked.`);
+      updateLoaderStepUI();
       requestAnimationFrame(() => syncViewportHeight());
     }
 
@@ -471,7 +609,9 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   });
 
   btnBack?.addEventListener('click', () => {
-    if (currentStep === 3) {
+    if (currentStep === 4) {
+      setStep(3);
+    } else if (currentStep === 3) {
       setStep(2);
     } else if (currentStep === 2) {
       setStep(1);
@@ -552,15 +692,23 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       return;
     }
 
-    // Step 3 (Proceed with selected version & folder)
-    if (currentStep === 3) {
+    // Step 3 -> Step 4: Choose a mod loader
+    if (currentStep === 3 && selectedCreatorType === 'minecraft-instance') {
+      setStep(4);
+      return;
+    }
+
+    // Step 4 (Proceed with selected version, folder, loader & loader version)
+    if (currentStep === 4) {
       closeCreatorSection();
       if (typeof onProceedWithMinecraftInstance === 'function') {
         await onProceedWithMinecraftInstance({
           name: '',
           folderType: selectedFolderType,
           customPath: customFolderPath,
-          version: selectedMcVersion
+          version: selectedMcVersion,
+          loader: selectedLoader,
+          loaderVersion: selectedLoader === 'Vanilla' ? '' : (selectedLoaderVersion || 'latest')
         });
       }
       return;

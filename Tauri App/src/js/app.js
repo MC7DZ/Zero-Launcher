@@ -6855,8 +6855,10 @@ function initInstanceActions() {
 
   async function openNewInstanceModal(folderOptions = null) {
     if (instNameInput) instNameInput.value = '';
-    setNewInstanceLoader('Fabric');
-    if (instLoaderVersionInput) instLoaderVersionInput.value = 'latest';
+    const initialLoader = folderOptions?.loader || 'Fabric';
+    const initialLoaderVersion = folderOptions?.loaderVersion || 'latest';
+    setNewInstanceLoader(initialLoader);
+    if (instLoaderVersionInput) instLoaderVersionInput.value = initialLoaderVersion;
     if (instMinRamInput) instMinRamInput.value = '';
     if (instMaxRamInput) instMaxRamInput.value = '';
     if (instJvmArgsInput) instJvmArgsInput.value = '';
@@ -6871,7 +6873,7 @@ function initInstanceActions() {
     populateNewJavaDropdown();
     overlay.classList.remove('hidden');
     await loadMcVersions(null, folderOptions?.version);
-    refreshNewLoaderVersions('latest');
+    refreshNewLoaderVersions(initialLoaderVersion);
     await initInstanceDirField(folderOptions);
   }
 

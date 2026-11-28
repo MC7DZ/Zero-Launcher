@@ -477,6 +477,75 @@
                 </div>
               </div>
             </div>
+
+            <!-- Step 4: Choose a Mod Loader Options -->
+            <div class="creator-step-panel" id="creator-panel-step-4">
+              <div class="creator-options-list" id="creator-list-step-4">
+                <!-- 2x2 Grid for Mod Loaders -->
+                <div class="creator-loaders-grid">
+                  <!-- Loader 1: Fabric (Selected by default) -->
+                  <div class="creator-loader-card active" data-loader="Fabric" id="creator-loader-fabric">
+                    <div class="creator-loader-card-top">
+                      <div class="creator-loader-left">
+                        <div class="creator-radio-indicator"></div>
+                        <span class="creator-loader-name">Fabric</span>
+                      </div>
+                      <img src="" class="creator-loader-icon" id="creator-icon-fabric" alt="Fabric" />
+                    </div>
+                    <div class="creator-loader-desc">Light and quick to start. The widest package selection on modern versions, and the legacy build covers 1.8.9 and older.</div>
+                  </div>
+
+                  <!-- Loader 2: Forge -->
+                  <div class="creator-loader-card" data-loader="Forge" id="creator-loader-forge">
+                    <div class="creator-loader-card-top">
+                      <div class="creator-loader-left">
+                        <div class="creator-radio-indicator"></div>
+                        <span class="creator-loader-name">Forge</span>
+                      </div>
+                      <img src="" class="creator-loader-icon" id="creator-icon-forge" alt="Forge" />
+                    </div>
+                    <div class="creator-loader-desc">The oldest loader. Most 1.12.2 and 1.8.9 packages need it.</div>
+                  </div>
+
+                  <!-- Loader 3: NeoForge -->
+                  <div class="creator-loader-card" data-loader="NeoForge" id="creator-loader-neoforge">
+                    <div class="creator-loader-card-top">
+                      <div class="creator-loader-left">
+                        <div class="creator-radio-indicator"></div>
+                        <span class="creator-loader-name">NeoForge</span>
+                      </div>
+                      <img src="" class="creator-loader-icon" id="creator-icon-neoforge" alt="NeoForge" />
+                    </div>
+                    <div class="creator-loader-desc">Forge's successor, for 1.20.2 and newer.</div>
+                  </div>
+
+                  <!-- Loader 4: Vanilla -->
+                  <div class="creator-loader-card" data-loader="Vanilla" id="creator-loader-vanilla">
+                    <div class="creator-loader-card-top">
+                      <div class="creator-loader-left">
+                        <div class="creator-radio-indicator"></div>
+                        <span class="creator-loader-name">Vanilla</span>
+                      </div>
+                      <img src="" class="creator-loader-icon" id="creator-icon-vanilla" alt="Vanilla" />
+                    </div>
+                    <div class="creator-loader-desc">Minecraft exactly as Mojang ships it. Packages cannot be installed without a loader.</div>
+                  </div>
+                </div>
+
+                <!-- Loader Version Select Card -->
+                <div class="creator-loader-version-box" id="creator-loader-version-box">
+                  <div class="creator-loader-version-info">
+                    <div class="creator-loader-version-title" id="creator-loader-version-title">Fabric version</div>
+                    <div class="creator-loader-version-desc">The newest build is picked for you. Change it if a package needs an older one.</div>
+                  </div>
+                  <div class="creator-loader-version-select-wrap">
+                    <select id="creator-loader-version-select" class="creator-loader-version-select">
+                      <option value="latest">Latest</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
