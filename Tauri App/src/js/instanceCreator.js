@@ -122,8 +122,8 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   let currentImageKey = '';
   let transitionToken = 0;
 
-  async function transitionBackground(key) {
-    if (!key || key === currentImageKey) return;
+  async function transitionBackground(key, force = false) {
+    if (!key || (!force && key === currentImageKey)) return;
     const thisToken = ++transitionToken;
 
     const url = await resolveImageSrc(key);
@@ -132,7 +132,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     if (!layerA || !layerB) return;
 
     // Ensure the image bitmap is decoded in memory before swapping
-    if (!preloadedImages[key]) {
+    if (!preloadedImages[key] || force) {
       await preloadImageElement(url);
       if (thisToken !== transitionToken) return;
     }
@@ -156,6 +156,35 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       layerB.style.opacity = '0';
       activeLayer = 'a';
     }
+  }
+
+  // Listen for background image updates from GitHub
+  try {
+    const listen = window.__TAURI__?.event?.listen;
+    if (listen) {
+      listen('creator-background-updated', async (event) => {
+        const payload = event?.payload || {};
+        const key = payload.key || payload.fileName;
+        if (!key) return;
+
+        const convertFileSrc = window.__TAURI__?.core?.convertFileSrc;
+        const freshUrl = (convertFileSrc ? convertFileSrc(payload.path) : payload.path) + `?t=${Date.now()}`;
+
+        cachedUrls[key] = freshUrl;
+        delete preloadedImages[key];
+
+        const img = await preloadImageElement(freshUrl);
+        if (img) preloadedImages[key] = img;
+
+        // If the updated image matches the currently visible background, cross-fade to it seamlessly!
+        const currentActiveKey = typeToImageKey(selectedCreatorType);
+        if (currentActiveKey === key || payload.fileName === currentActiveKey) {
+          transitionBackground(key, true);
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('Failed to listen for creator-background-updated:', e);
   }
 
   // Pre-load all images in the background

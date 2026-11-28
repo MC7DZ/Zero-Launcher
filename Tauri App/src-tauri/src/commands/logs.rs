@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use crate::models::LogEntry;
 use crate::state::AppState;
 
@@ -31,16 +31,9 @@ pub async fn resolve_background_path(
     Err(format!("Background file not found: {name}"))
 }
 
-/// Downloads and caches creator backdrop images into `<data_dir>/assets/background/`.
-/// Supports "minecraft-instance" (minecraft-wilderness-bound.jpg) and "oneclient" (oneclient.jpg).
-#[tauri::command]
-pub async fn ensure_creator_background(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    name: Option<String>,
-) -> Result<String, String> {
-    let key = name.unwrap_or_else(|| "minecraft".to_string()).to_ascii_lowercase();
-    let (file_name, url_string) = match key.as_str() {
+pub fn resolve_creator_bg_target(key: &str) -> (String, String) {
+    let lower = key.to_ascii_lowercase();
+    match lower.as_str() {
         "oneclient" => (
             "oneclient.jpg".to_string(),
             "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpg".to_string(),
@@ -83,27 +76,60 @@ pub async fn ensure_creator_background(
             "minecraft-wilderness-bound.jpg".to_string(),
             "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg".to_string(),
         ),
-    };
-    let url = &url_string;
+    }
+}
 
+async fn download_or_update_bg(
+    app: &AppHandle,
+    state: &AppState,
+    key: &str,
+    file_name: &str,
+    url: &str,
+) -> Result<String, String> {
     let bg_dir = state.data_dir.join("assets").join("background");
     let bg_file = bg_dir.join(file_name);
+    let etag_file = bg_dir.join(format!("{file_name}.etag"));
 
-    if bg_file.exists() && std::fs::metadata(&bg_file).map(|m| m.len()).unwrap_or(0) > 0 {
-        return Ok(bg_file.to_string_lossy().to_string());
-    }
+    let file_exists = bg_file.exists() && std::fs::metadata(&bg_file).map(|m| m.len()).unwrap_or(0) > 0;
+    let cached_etag = if file_exists {
+        std::fs::read_to_string(&etag_file).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    } else {
+        None
+    };
 
     std::fs::create_dir_all(&bg_dir)
         .map_err(|e| format!("Failed to create background directory: {e}"))?;
 
-    let resp = crate::network::send(&app, &state, "creator background download", |c| {
-        c.get(url)
+    let req_url = url.to_string();
+    let if_none_match = cached_etag.clone();
+
+    let resp = crate::network::send(app, state, &format!("creator background ({file_name})"), move |c| {
+        let mut r = c.get(&req_url);
+        if let Some(ref tag) = if_none_match {
+            r = r.header("If-None-Match", tag.as_str());
+        }
+        r
     })
     .await?;
 
+    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+        // Image matches GitHub! Nothing to update.
+        return Ok(bg_file.to_string_lossy().to_string());
+    }
+
     if !resp.status().is_success() {
+        if file_exists {
+            // Keep using existing cached file if network fails or returns error
+            return Ok(bg_file.to_string_lossy().to_string());
+        }
         return Err(format!("Failed to download creator background: HTTP {}", resp.status()));
     }
+
+    let new_etag = resp
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
     let bytes = resp
         .bytes()
@@ -116,7 +142,51 @@ pub async fn ensure_creator_background(
     std::fs::rename(&tmp_file, &bg_file)
         .map_err(|e| format!("Failed to finalize background image: {e}"))?;
 
+    if let Some(tag) = new_etag {
+        let _ = std::fs::write(&etag_file, tag.as_bytes());
+    }
+
+    let _ = app.emit("creator-background-updated", serde_json::json!({
+        "key": key,
+        "fileName": file_name,
+        "path": bg_file.to_string_lossy().to_string()
+    }));
+
     Ok(bg_file.to_string_lossy().to_string())
+}
+
+/// Downloads, caches, and automatically updates creator backdrop images from GitHub.
+#[tauri::command]
+pub async fn ensure_creator_background(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: Option<String>,
+) -> Result<String, String> {
+    let key = name.unwrap_or_else(|| "minecraft".to_string());
+    let (file_name, url_string) = resolve_creator_bg_target(&key);
+
+    let bg_dir = state.data_dir.join("assets").join("background");
+    let bg_file = bg_dir.join(&file_name);
+
+    if bg_file.exists() && std::fs::metadata(&bg_file).map(|m| m.len()).unwrap_or(0) > 0 {
+        // Return local file immediately so the UI is instantaneous
+        let local_path = bg_file.to_string_lossy().to_string();
+
+        // In the background, check if the picture on GitHub has changed / updated
+        let app_clone = app.clone();
+        let key_clone = key.clone();
+        let file_name_clone = file_name.clone();
+        let url_clone = url_string.clone();
+        tauri::async_runtime::spawn(async move {
+            let app_state = app_clone.state::<AppState>();
+            let _ = download_or_update_bg(&app_clone, &app_state, &key_clone, &file_name_clone, &url_clone).await;
+        });
+
+        return Ok(local_path);
+    }
+
+    // First time download
+    download_or_update_bg(&app, &state, &key, &file_name, &url_string).await
 }
 
 /// Get log entries, optionally filtered by level and source.
