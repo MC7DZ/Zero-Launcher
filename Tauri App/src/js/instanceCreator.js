@@ -2,6 +2,7 @@ import iconVanilla from '../assets/loaders/vanilla.png';
 import iconFabric from '../assets/loaders/fabric.png';
 import iconForge from '../assets/loaders/forge.png';
 import iconNeoforge from '../assets/loaders/neoforge.png';
+import iconQuilt from '../assets/loaders/quilt.png';
 
 /**
  * Initializes the "Choose a type" / New Instance Creator section:
@@ -186,11 +187,13 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const iconImgFabric = document.getElementById('creator-icon-fabric');
   const iconImgForge = document.getElementById('creator-icon-forge');
   const iconImgNeoforge = document.getElementById('creator-icon-neoforge');
+  const iconImgQuilt = document.getElementById('creator-icon-quilt');
   const iconImgVanilla = document.getElementById('creator-icon-vanilla');
 
   if (iconImgFabric) iconImgFabric.src = iconFabric;
   if (iconImgForge) iconImgForge.src = iconForge;
   if (iconImgNeoforge) iconImgNeoforge.src = iconNeoforge;
+  if (iconImgQuilt) iconImgQuilt.src = iconQuilt;
   if (iconImgVanilla) iconImgVanilla.src = iconVanilla;
 
   // Live Summary Panel Elements
@@ -421,8 +424,43 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   }
 
   async function updateLoaderStepUI() {
+    // 1. Fetch available versions for all loaders in parallel for the current Minecraft version
+    const loadersToCheck = ['Fabric', 'Forge', 'NeoForge', 'Quilt'];
+    const versionResults = await Promise.all(
+      loadersToCheck.map(ldr => fetchLoaderVersions(ldr, selectedMcVersion))
+    );
+
+    const availableLoaders = new Set(['Vanilla']);
+    loadersToCheck.forEach((ldr, idx) => {
+      const builds = versionResults[idx];
+      if (builds && builds.length > 0) {
+        availableLoaders.add(ldr);
+      }
+    });
+
+    // 2. If the current selectedLoader is not available for this version, fallback to an available loader
+    // Preference: Fabric -> Quilt -> Forge -> NeoForge -> Vanilla
+    if (!availableLoaders.has(selectedLoader)) {
+      if (availableLoaders.has('Fabric')) {
+        selectedLoader = 'Fabric';
+      } else if (availableLoaders.has('Quilt')) {
+        selectedLoader = 'Quilt';
+      } else if (availableLoaders.has('Forge')) {
+        selectedLoader = 'Forge';
+      } else if (availableLoaders.has('NeoForge')) {
+        selectedLoader = 'NeoForge';
+      } else {
+        selectedLoader = 'Vanilla';
+      }
+      selectedLoaderVersion = 'latest';
+    }
+
+    // 3. Mark loader cards as active or disabled
     loaderCards.forEach(c => {
-      c.classList.toggle('active', c.dataset.loader === selectedLoader);
+      const ldr = c.dataset.loader;
+      const isAvailable = availableLoaders.has(ldr);
+      c.classList.toggle('disabled', !isAvailable);
+      c.classList.toggle('active', ldr === selectedLoader);
     });
 
     if (selectedLoader === 'Vanilla') {
@@ -438,33 +476,32 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       loaderVersionTitle.textContent = `${selectedLoader} version`;
     }
 
-    // Populate dropdown
-    if (loaderVersionSelect) {
-      loaderVersionSelect.innerHTML = '<option value="latest">Latest</option>';
-      loaderVersionSelect.value = 'latest';
-    }
-
-    updateSummaryPanel();
-    setTimeout(() => syncViewportHeight(), 30);
-
+    // Populate dropdown with versions for the selected loader
     const versions = await fetchLoaderVersions(selectedLoader, selectedMcVersion);
-    if (loaderVersionSelect && versions && versions.length > 0) {
-      const frag = document.createDocumentFragment();
-      const latestOpt = document.createElement('option');
-      latestOpt.value = 'latest';
-      latestOpt.textContent = `Latest (${versions[0]})`;
-      frag.appendChild(latestOpt);
+    if (loaderVersionSelect) {
+      if (versions && versions.length > 0) {
+        const frag = document.createDocumentFragment();
+        const latestOpt = document.createElement('option');
+        latestOpt.value = 'latest';
+        latestOpt.textContent = `Latest (${versions[0]})`;
+        frag.appendChild(latestOpt);
 
-      versions.forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v;
-        opt.textContent = v;
-        frag.appendChild(opt);
-      });
+        versions.forEach(v => {
+          const opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = v;
+          frag.appendChild(opt);
+        });
 
-      loaderVersionSelect.innerHTML = '';
-      loaderVersionSelect.appendChild(frag);
-      loaderVersionSelect.value = selectedLoaderVersion || 'latest';
+        loaderVersionSelect.innerHTML = '';
+        loaderVersionSelect.appendChild(frag);
+        loaderVersionSelect.value = (selectedLoaderVersion && (selectedLoaderVersion === 'latest' || versions.includes(selectedLoaderVersion)))
+          ? selectedLoaderVersion
+          : 'latest';
+      } else {
+        loaderVersionSelect.innerHTML = '<option value="latest">Latest</option>';
+        loaderVersionSelect.value = 'latest';
+      }
     }
 
     const displayedVer = (selectedLoaderVersion && selectedLoaderVersion !== 'latest')
@@ -478,6 +515,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
 
   loaderCards.forEach(card => {
     card.addEventListener('click', () => {
+      if (card.classList.contains('disabled')) return;
       selectedLoader = card.dataset.loader || 'Fabric';
       selectedLoaderVersion = 'latest';
       updateLoaderStepUI();
@@ -619,6 +657,13 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   });
 
   function openCreatorSection() {
+    selectedLoader = 'Fabric';
+    selectedLoaderVersion = 'latest';
+    if (!selectedFolderType) selectedFolderType = 'isolated';
+    if (!selectedMcVersion && versionsManifest.length > 0) {
+      const firstRelease = versionsManifest.find(v => v.type === 'release');
+      selectedMcVersion = firstRelease ? firstRelease.id : (versionsManifest[0]?.id || '1.21.1');
+    }
     setStep(1);
     transitionBackground(typeToImageKey(selectedCreatorType));
 
@@ -629,6 +674,10 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       topBar.classList.add('top-bar-creator-hidden');
     }
     setTimeout(() => syncViewportHeight(), 10);
+    // Background load versions manifest if not loaded yet so default version is ready
+    if (!isVersionsLoaded) {
+      loadVersions();
+    }
   }
 
   function closeCreatorSection() {
