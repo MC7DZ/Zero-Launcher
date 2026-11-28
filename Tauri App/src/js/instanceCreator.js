@@ -1,8 +1,8 @@
-import newInstanceBgImg from '../assets/new-instance-bg.jpg';
-
 /**
  * Initializes the "Choose a type" / New Instance Creator section:
- * - Fullscreen background with screenshot
+ * - Downloads / caches background picture from:
+ *   https://github.com/MC7DZ/ZeroLauncher-Updates/blob/main/pictures/minecraft-wilderness-bound.jpg
+ *   into "<Zero Launcher directory>/assets/background/minecraft-wilderness-bound.jpg"
  * - Hides the top-bar and custom titlebar elements while active
  * - Matches the native Zero Launcher UI design system (panels, borders, radii, fonts, accent colors)
  *
@@ -20,9 +20,30 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const creatorOptionCards = document.querySelectorAll('.creator-option-card');
   const creatorFooterInfo = document.getElementById('creator-footer-info');
 
-  if (creatorBackdrop && newInstanceBgImg) {
-    creatorBackdrop.style.backgroundImage = `url("${newInstanceBgImg}")`;
+  async function loadCreatorBackground() {
+    try {
+      const invoke = window.__TAURI__?.core?.invoke;
+      const convertFileSrc = window.__TAURI__?.core?.convertFileSrc;
+      if (invoke) {
+        const localPath = await invoke('ensure_creator_background');
+        if (localPath && creatorBackdrop) {
+          const url = convertFileSrc ? convertFileSrc(localPath) : localPath;
+          creatorBackdrop.style.backgroundImage = `url("${url}")`;
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch creator background from backend, falling back to direct URL:', e);
+    }
+
+    // Direct fallback if backend download fails or in browser dev preview
+    if (creatorBackdrop) {
+      creatorBackdrop.style.backgroundImage = 'url("https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg")';
+    }
   }
+
+  // Preload/download the background image
+  loadCreatorBackground();
 
   let selectedCreatorType = 'minecraft-instance';
 
@@ -34,6 +55,10 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   };
 
   function openCreatorSection() {
+    // Re-verify image loaded in case first attempt was offline
+    if (creatorBackdrop && !creatorBackdrop.style.backgroundImage) {
+      loadCreatorBackground();
+    }
     if (newInstanceSection) {
       newInstanceSection.classList.remove('creator-hidden');
     }

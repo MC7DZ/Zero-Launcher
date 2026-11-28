@@ -624,6 +624,7 @@ pub fn run() {
             commands::logs::open_logs_folder,
             commands::logs::get_latest_log_contents,
             commands::logs::resolve_background_path,
+            commands::logs::ensure_creator_background,
             commands::open_devtools,
             commands::window_minimize,
             commands::window_toggle_maximize,

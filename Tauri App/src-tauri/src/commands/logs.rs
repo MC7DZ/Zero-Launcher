@@ -31,6 +31,47 @@ pub async fn resolve_background_path(
     Err(format!("Background file not found: {name}"))
 }
 
+/// Downloads and caches the creator backdrop image into `<data_dir>/assets/background/minecraft-wilderness-bound.jpg`.
+/// If it already exists on disk, returns its absolute path immediately.
+#[tauri::command]
+pub async fn ensure_creator_background(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    const BG_URL: &str = "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg";
+    let bg_dir = state.data_dir.join("assets").join("background");
+    let bg_file = bg_dir.join("minecraft-wilderness-bound.jpg");
+
+    if bg_file.exists() && std::fs::metadata(&bg_file).map(|m| m.len()).unwrap_or(0) > 0 {
+        return Ok(bg_file.to_string_lossy().to_string());
+    }
+
+    std::fs::create_dir_all(&bg_dir)
+        .map_err(|e| format!("Failed to create background directory: {e}"))?;
+
+    let resp = crate::network::send(&app, &state, "creator background download", |c| {
+        c.get(BG_URL)
+    })
+    .await?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to download creator background: HTTP {}", resp.status()));
+    }
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read background image stream: {e}"))?;
+
+    let tmp_file = bg_file.with_extension("jpg.part");
+    std::fs::write(&tmp_file, &bytes)
+        .map_err(|e| format!("Failed to write temporary background image: {e}"))?;
+    std::fs::rename(&tmp_file, &bg_file)
+        .map_err(|e| format!("Failed to finalize background image: {e}"))?;
+
+    Ok(bg_file.to_string_lossy().to_string())
+}
+
 /// Get log entries, optionally filtered by level and source.
 #[tauri::command]
 pub async fn get_logs(
