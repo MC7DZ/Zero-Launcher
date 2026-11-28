@@ -11074,7 +11074,27 @@ function openDiscoverModpackDirOverlay(hit, versionSelect, downloadBtn) {
 
   discoverModpackDirState = { hit, versionSelect, downloadBtn };
   document.getElementById('discover-modpack-dir-name').textContent = hit.title || '';
-  document.getElementById('discover-modpack-dir-path').value = '';
+  
+  // Reset directory choice to default
+  const defaultRadio = document.getElementById('discover-modpack-dir-mode-default');
+  const customRadio = document.getElementById('discover-modpack-dir-mode-custom');
+  const defaultCard = document.getElementById('discover-modpack-dir-card-default');
+  const customCard = document.getElementById('discover-modpack-dir-card-custom');
+  const customRow = document.getElementById('discover-modpack-dir-custom-row');
+  const dirPathInput = document.getElementById('discover-modpack-dir-path');
+
+  if (defaultRadio) defaultRadio.checked = true;
+  if (customRadio) customRadio.checked = false;
+  if (defaultCard) defaultCard.classList.add('active');
+  if (customCard) customCard.classList.remove('active');
+  if (customRow) customRow.classList.add('hidden');
+  if (dirPathInput) dirPathInput.value = '';
+
+  const defaultHint = document.getElementById('discover-modpack-dir-default-hint');
+  if (defaultHint && settings && settings.game_directory) {
+    defaultHint.textContent = `Installed into ${settings.game_directory}`;
+  }
+
   document.getElementById('discover-modpack-dir-progress-wrap').classList.add('hidden');
   document.getElementById('btn-confirm-discover-modpack-dir').disabled = false;
   overlayEl.classList.remove('hidden');
@@ -11087,9 +11107,16 @@ function closeDiscoverModpackDirOverlay() {
 
 async function confirmDiscoverModpackDirInstall() {
   if (!discoverModpackDirState) return;
+  const isCustom = document.getElementById('discover-modpack-dir-mode-custom')?.checked;
   const dirInput = document.getElementById('discover-modpack-dir-path');
-  const customDir = dirInput.value.trim();
-  if (!customDir) { showToast('Choose a custom directory', 'error'); return; }
+  let customDir = null;
+  if (isCustom) {
+    customDir = dirInput ? dirInput.value.trim() : '';
+    if (!customDir) {
+      showToast('Please choose or browse for a custom directory', 'warning', 'Custom directory required');
+      return;
+    }
+  }
 
   const { hit, versionSelect, downloadBtn } = discoverModpackDirState;
   const confirmBtn = document.getElementById('btn-confirm-discover-modpack-dir');
@@ -11106,9 +11133,7 @@ async function confirmDiscoverModpackDirInstall() {
   statusEl.textContent = 'Starting…';
   barEl.style.transform = 'scaleX(0)';
 
-  // Mirror the modpack extractor's own progress bar while this mini modal
-  // is open, in addition to the shared downloads-widget card — closing the
-  // modal (below) doesn't cancel the install, it just stops watching it.
+  // Mirror the modpack extractor's progress bar while this modal is open
   const unlisten = await api.onModpackImportProgress((e) => {
     const p = e.payload || {};
     const pct = Math.max(0, Math.min(100, p.percent || 0));
@@ -11132,11 +11157,37 @@ function initDiscoverModpackDirOverlay() {
   document.getElementById('btn-cancel-discover-modpack-dir-form').addEventListener('click', closeDiscoverModpackDirOverlay);
   document.getElementById('btn-confirm-discover-modpack-dir').addEventListener('click', confirmDiscoverModpackDirInstall);
 
+  const defaultCard = document.getElementById('discover-modpack-dir-card-default');
+  const customCard = document.getElementById('discover-modpack-dir-card-custom');
+  const defaultRadio = document.getElementById('discover-modpack-dir-mode-default');
+  const customRadio = document.getElementById('discover-modpack-dir-mode-custom');
+  const customRow = document.getElementById('discover-modpack-dir-custom-row');
+
+  function setMode(mode) {
+    if (mode === 'custom') {
+      if (customRadio) customRadio.checked = true;
+      if (defaultRadio) defaultRadio.checked = false;
+      if (customCard) customCard.classList.add('active');
+      if (defaultCard) defaultCard.classList.remove('active');
+      if (customRow) customRow.classList.remove('hidden');
+    } else {
+      if (defaultRadio) defaultRadio.checked = true;
+      if (customRadio) customRadio.checked = false;
+      if (defaultCard) defaultCard.classList.add('active');
+      if (customCard) customCard.classList.remove('active');
+      if (customRow) customRow.classList.add('hidden');
+    }
+  }
+
+  if (defaultCard) defaultCard.addEventListener('click', () => setMode('default'));
+  if (customCard) customCard.addEventListener('click', () => setMode('custom'));
+
   document.getElementById('discover-modpack-dir-browse').addEventListener('click', async () => {
     try {
       const picked = await window.__TAURI__.dialog.open({ directory: true, multiple: false });
       if (picked) {
         document.getElementById('discover-modpack-dir-path').value = sanitizePickedPath(Array.isArray(picked) ? picked[0] : picked);
+        setMode('custom');
       }
     } catch (e) {
       showToast('Could not open folder picker: ' + e, 'error');
@@ -14167,13 +14218,9 @@ async function downloadDiscoverSelection(hit, versionSelect, downloadBtn) {
   const opt = await resolveDiscoverDownloadOption(hit, versionSelect, downloadBtn, target);
   if (!opt) return;
 
-  // Modpacks aren't dropped into a mods/resourcepacks folder — they go
-  // through the same install-a-whole-instance pipeline the Modpack
-  // Extractor uses (download → preview → install), always into their own
-  // separate folder for a plain click. "Install in custom directory" from
-  // the 3-dot menu is the only way to change that destination.
+  // If choosing a modpack, prompt the user for the directory first
   if (hit.project_type === 'modpack') {
-    await installDiscoverModpack(hit, opt, downloadBtn, null);
+    openDiscoverModpackDirOverlay(hit, versionSelect, downloadBtn);
     return;
   }
 

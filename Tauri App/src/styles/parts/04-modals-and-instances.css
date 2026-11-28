@@ -468,7 +468,8 @@
    scoped to just this one bar since every other use of the shared
    .progress-bar class above updates far less often, where the layout
    cost doesn't matter. */
-#modpack-import-bar {
+#modpack-import-bar,
+#discover-modpack-dir-bar {
   width: 100%;
   transform-origin: left center;
   transition: transform 0.25s ease;

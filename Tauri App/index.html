@@ -4321,20 +4321,55 @@
   <div id="discover-modpack-dir-overlay" class="overlay hidden">
     <div class="bento-modal bento-modal-compact">
       <div class="bento-tile bento-tile-header">
-        <h3>Install in Custom Directory</h3>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div class="hypr-icon-badge" style="width:32px; height:32px;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+          </div>
+          <div>
+            <h3 style="margin:0; font-size:16px;">Install Modpack</h3>
+            <span class="bento-tile-hint">Choose installation directory</span>
+          </div>
+        </div>
         <button class="overlay-close" id="btn-cancel-discover-modpack-dir">✕</button>
       </div>
 
       <div class="bento-tile bento-tile-name">
         <label class="bento-tile-label">Modpack</label>
-        <div id="discover-modpack-dir-name" class="bento-tile-hint">—</div>
+        <div id="discover-modpack-dir-name" style="font-size:14px; font-weight:700; color:var(--text);">—</div>
       </div>
 
       <div class="bento-tile bento-tile-location">
-        <label class="bento-tile-label">Directory</label>
-        <div class="bento-dir-path-row" style="margin-top:0;">
-          <input type="text" id="discover-modpack-dir-path" class="input-field" placeholder="/path/to/folder" style="flex:1;" />
-          <button id="discover-modpack-dir-browse" class="btn-secondary" type="button">Browse…</button>
+        <label class="bento-tile-label">Install Location</label>
+        <div class="hypr-dir-options-grid" style="margin-top:4px;">
+          <label class="hypr-dir-card active" id="discover-modpack-dir-card-default">
+            <input type="radio" name="discover-modpack-dir-mode" id="discover-modpack-dir-mode-default" class="hypr-dir-radio" value="default" checked />
+            <div class="hypr-dir-details">
+              <div class="hypr-dir-title">
+                Default Directory
+                <span class="hypr-pill-badge">Recommended</span>
+              </div>
+              <div class="hypr-dir-desc" id="discover-modpack-dir-default-hint">Installed into launcher instance folder</div>
+            </div>
+          </label>
+
+          <label class="hypr-dir-card" id="discover-modpack-dir-card-custom">
+            <input type="radio" name="discover-modpack-dir-mode" id="discover-modpack-dir-mode-custom" class="hypr-dir-radio" value="custom" />
+            <div class="hypr-dir-details">
+              <div class="hypr-dir-title">Custom Directory</div>
+              <div class="hypr-dir-desc">Select a custom folder anywhere on your computer</div>
+            </div>
+          </label>
+        </div>
+
+        <div id="discover-modpack-dir-custom-row" class="hidden" style="margin-top:12px;">
+          <div class="bento-dir-path-row" style="margin-top:0;">
+            <input type="text" id="discover-modpack-dir-path" class="input-field" placeholder="/path/to/folder" style="flex:1;" />
+            <button id="discover-modpack-dir-browse" class="btn-secondary" type="button">Browse…</button>
+          </div>
         </div>
       </div>
 
@@ -4346,7 +4381,7 @@
       </div>
 
       <div class="bento-tile bento-tile-actions">
-        <button id="btn-confirm-discover-modpack-dir" class="btn-accent">Install</button>
+        <button id="btn-confirm-discover-modpack-dir" class="btn-accent">Install Modpack</button>
         <button id="btn-cancel-discover-modpack-dir-form" class="btn-ghost">Cancel</button>
       </div>
     </div>
