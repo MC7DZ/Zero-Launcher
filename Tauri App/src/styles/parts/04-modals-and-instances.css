@@ -2498,7 +2498,7 @@ body.screenshot-lightbox-open {
 }
 
 .creator-custom-path-input:focus {
-  border-color: var(--accent);
+  border-color: rgba(255, 255, 255, 0.35);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -2560,11 +2560,11 @@ body.screenshot-lightbox-open {
   font-size: 13px;
   color: var(--text);
   outline: none;
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--transition, 0.14s), background var(--transition, 0.14s);
 }
 
 .creator-version-search-input:focus {
-  border-color: var(--accent);
+  border-color: rgba(255, 255, 255, 0.35);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -2581,7 +2581,7 @@ body.screenshot-lightbox-open {
 }
 
 .creator-version-type-select {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: var(--radius-sm, 8px);
   color: var(--text);
@@ -2589,6 +2589,13 @@ body.screenshot-lightbox-open {
   font-size: 12.5px;
   cursor: pointer;
   outline: none;
+  transition: border-color var(--transition, 0.14s), background var(--transition, 0.14s);
+}
+
+.creator-version-type-select:focus,
+.creator-version-type-select:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .creator-version-type-select option {
@@ -2682,31 +2689,34 @@ body.screenshot-lightbox-open {
   font-size: 13px;
 }
 
-/* ═══ Live Summary Floating Panel Under UI (Option A, Columnar/Vertical alignment) ═══ */
+/* ═══ Live Summary Floating Panel Under UI (Centered, Columnar/Vertical alignment) ═══ */
 .creator-summary-panel {
   position: absolute;
-  bottom: 24px;
-  left: 36px;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
   z-index: 100;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
   pointer-events: none;
   opacity: 1;
-  transform: translateY(0);
   transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
 }
 
 .new-instance-creator-section.creator-hidden .creator-summary-panel {
   opacity: 0;
-  transform: translateY(20px);
+  transform: translateX(-50%) translateY(24px);
 }
 
 .creator-summary-header {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
 }
 
@@ -2729,26 +2739,29 @@ body.screenshot-lightbox-open {
 .creator-summary-grid {
   display: flex;
   align-items: flex-start;
-  gap: 24px;
-  margin-top: 4px;
+  justify-content: center;
+  gap: 36px;
+  margin-top: 2px;
 }
 
 .creator-summary-col {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 3px;
+  min-width: 60px;
 }
 
 .creator-summary-label {
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.48);
   font-weight: 600;
 }
 
 .creator-summary-val {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: #ffffff;
 }

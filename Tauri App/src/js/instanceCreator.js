@@ -129,10 +129,10 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
 
   let currentStep = 1; // 1: Choose a type, 2: Choose a game folder, 3: Choose a version
   let selectedCreatorType = 'minecraft-instance';
-  let selectedFolderType = 'isolated'; // 'shared', 'isolated' (default in middle), 'custom'
+  let selectedFolderType = ''; // Initially unselected until Step 2 or defaulted
   let customFolderPath = '';
   let selectedMcVersion = '';
-  let selectedLoader = 'Fabric';
+  let selectedLoader = '';
   let versionsManifest = [];
   let isVersionsLoaded = false;
 
@@ -181,22 +181,58 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
 
   function updateSummaryPanel() {
     if (!summaryPanel) return;
-    if (currentStep === 1) {
-      summaryPanel.classList.add('hidden');
-      return;
+
+    // Type label: "minecraft instance" or "oneclient" or "-"
+    let typeLabel = '-';
+    if (selectedCreatorType === 'minecraft-instance') {
+      typeLabel = 'minecraft instance';
+    } else if (selectedCreatorType === 'oneclient') {
+      typeLabel = 'oneclient';
+    } else if (selectedCreatorType === 'modpack') {
+      typeLabel = 'modpack';
     }
-    summaryPanel.classList.remove('hidden');
 
-    const vName = selectedMcVersion || '26.3';
-    const typeLabel = selectedCreatorType === 'minecraft-instance' ? 'From scratch' : 'OneClient';
-    const folderLabel = selectedFolderType === 'isolated' ? 'Isolated' : (selectedFolderType === 'shared' ? 'Shared' : 'Custom');
+    // Version label: only if chosen/active, else "-"
+    const vName = selectedMcVersion || '-';
 
-    if (summaryTitle) summaryTitle.textContent = `${vName} ${selectedLoader}`;
-    if (summarySubtitle) summarySubtitle.textContent = `${vName} · ${selectedLoader}`;
+    // Folder label: only if chosen (e.g. step 2 onwards), else "-"
+    let folderLabel = '-';
+    if (currentStep >= 2 || selectedFolderType) {
+      if (selectedFolderType === 'isolated') folderLabel = 'Isolated';
+      else if (selectedFolderType === 'shared') folderLabel = 'Shared';
+      else if (selectedFolderType === 'custom') folderLabel = 'Custom';
+    }
+
+    // Loader label: "-" if not yet chosen
+    const loaderLabel = selectedLoader || '-';
+
+    // Header Title and Subtitle
+    if (summaryTitle) {
+      if (vName !== '-' && loaderLabel !== '-') {
+        summaryTitle.textContent = `${vName} ${loaderLabel}`;
+      } else if (vName !== '-') {
+        summaryTitle.textContent = vName;
+      } else if (typeLabel !== '-') {
+        summaryTitle.textContent = typeLabel;
+      } else {
+        summaryTitle.textContent = '-';
+      }
+    }
+
+    if (summarySubtitle) {
+      if (vName !== '-' && loaderLabel !== '-') {
+        summarySubtitle.textContent = `${vName} · ${loaderLabel}`;
+      } else if (vName !== '-') {
+        summarySubtitle.textContent = vName;
+      } else {
+        summarySubtitle.textContent = '-';
+      }
+    }
+
     if (summaryType) summaryType.textContent = typeLabel;
     if (summaryVersion) summaryVersion.textContent = vName;
     if (summaryFolder) summaryFolder.textContent = folderLabel;
-    if (summaryLoader) summaryLoader.textContent = selectedLoader;
+    if (summaryLoader) summaryLoader.textContent = loaderLabel;
   }
 
   // Smoothly morph text with fade-out / fade-in
@@ -267,6 +303,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     const search = (versionSearchInput?.value || '').trim().toLowerCase();
     const filterType = versionTypeSelect?.value || 'release';
 
+    // No artificial limit - display all available versions matching filter
     const filtered = versionsManifest.filter(v => {
       if (filterType !== 'all' && v.type !== filterType) {
         return false;
@@ -275,7 +312,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
         return false;
       }
       return true;
-    }).slice(0, 100);
+    });
 
     if (filtered.length === 0) {
       versionsScrollable.innerHTML = '<div class="creator-version-empty">No versions match your search.</div>';
@@ -283,7 +320,8 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       return;
     }
 
-    versionsScrollable.innerHTML = '';
+    // High performance DOM creation using DocumentFragment
+    const frag = document.createDocumentFragment();
     filtered.forEach(v => {
       const card = document.createElement('div');
       card.className = `creator-version-card ${v.id === selectedMcVersion ? 'active' : ''}`;
@@ -307,11 +345,16 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
         updateSummaryPanel();
       });
 
-      versionsScrollable.appendChild(card);
+      frag.appendChild(card);
     });
+
+    versionsScrollable.innerHTML = '';
+    versionsScrollable.appendChild(frag);
 
     syncViewportHeight();
   }
+
+
 
   versionSearchInput?.addEventListener('input', () => {
     renderVersionsList();
@@ -495,6 +538,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   btnNext?.addEventListener('click', async () => {
     // Step 1 -> Step 2
     if (currentStep === 1 && selectedCreatorType === 'minecraft-instance') {
+      if (!selectedFolderType) selectedFolderType = 'isolated';
       setStep(2);
       return;
     }
