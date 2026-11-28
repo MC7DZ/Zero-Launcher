@@ -6870,7 +6870,7 @@ function initInstanceActions() {
     }
     populateNewJavaDropdown();
     overlay.classList.remove('hidden');
-    await loadMcVersions();
+    await loadMcVersions(null, folderOptions?.version);
     refreshNewLoaderVersions('latest');
     await initInstanceDirField(folderOptions);
   }

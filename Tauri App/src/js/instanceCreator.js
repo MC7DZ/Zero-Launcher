@@ -127,10 +127,14 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
   });
 
-  let currentStep = 1; // 1: Choose a type, 2: Choose a game folder
+  let currentStep = 1; // 1: Choose a type, 2: Choose a game folder, 3: Choose a version
   let selectedCreatorType = 'minecraft-instance';
   let selectedFolderType = 'isolated'; // 'shared', 'isolated' (default in middle), 'custom'
   let customFolderPath = '';
+  let selectedMcVersion = '';
+  let selectedLoader = 'Fabric';
+  let versionsManifest = [];
+  let isVersionsLoaded = false;
 
   const creatorDescriptions = {
     'minecraft-instance': 'Pick a loader and version, then add mods yourself. Has its own game folder.',
@@ -152,6 +156,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const stepTrack = document.getElementById('creator-step-track');
   const panelStep1 = document.getElementById('creator-panel-step-1');
   const panelStep2 = document.getElementById('creator-panel-step-2');
+  const panelStep3 = document.getElementById('creator-panel-step-3');
   const btnBack = document.getElementById('btn-creator-back');
   const folderOptionCards = document.querySelectorAll('#creator-list-step-2 .creator-option-card');
   const customPathBox = document.getElementById('creator-custom-path-box');
@@ -159,6 +164,40 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const customPathError = document.getElementById('creator-custom-path-error');
   const btnBrowseCustom = document.getElementById('btn-creator-browse-custom');
   const sharedPathHint = document.getElementById('creator-shared-path-hint');
+
+  // Step 3 version list elements
+  const versionSearchInput = document.getElementById('creator-version-search');
+  const versionTypeSelect = document.getElementById('creator-version-type-select');
+  const versionsScrollable = document.getElementById('creator-versions-scrollable');
+
+  // Live Summary Panel Elements
+  const summaryPanel = document.getElementById('creator-summary-panel');
+  const summaryTitle = document.getElementById('creator-summary-title');
+  const summarySubtitle = document.getElementById('creator-summary-subtitle');
+  const summaryType = document.getElementById('creator-summary-type');
+  const summaryVersion = document.getElementById('creator-summary-version');
+  const summaryFolder = document.getElementById('creator-summary-folder');
+  const summaryLoader = document.getElementById('creator-summary-loader');
+
+  function updateSummaryPanel() {
+    if (!summaryPanel) return;
+    if (currentStep === 1) {
+      summaryPanel.classList.add('hidden');
+      return;
+    }
+    summaryPanel.classList.remove('hidden');
+
+    const vName = selectedMcVersion || '26.3';
+    const typeLabel = selectedCreatorType === 'minecraft-instance' ? 'From scratch' : 'OneClient';
+    const folderLabel = selectedFolderType === 'isolated' ? 'Isolated' : (selectedFolderType === 'shared' ? 'Shared' : 'Custom');
+
+    if (summaryTitle) summaryTitle.textContent = `${vName} ${selectedLoader}`;
+    if (summarySubtitle) summarySubtitle.textContent = `${vName} · ${selectedLoader}`;
+    if (summaryType) summaryType.textContent = typeLabel;
+    if (summaryVersion) summaryVersion.textContent = vName;
+    if (summaryFolder) summaryFolder.textContent = folderLabel;
+    if (summaryLoader) summaryLoader.textContent = selectedLoader;
+  }
 
   // Smoothly morph text with fade-out / fade-in
   function morphText(el, newText) {
@@ -173,7 +212,10 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   // Smoothly adjust viewport height to match active step panel
   function syncViewportHeight() {
     if (!bodyViewport) return;
-    const targetPanel = currentStep === 1 ? panelStep1 : panelStep2;
+    let targetPanel = panelStep1;
+    if (currentStep === 2) targetPanel = panelStep2;
+    else if (currentStep === 3) targetPanel = panelStep3;
+
     if (targetPanel) {
       const h = targetPanel.offsetHeight;
       if (h > 0) {
@@ -182,10 +224,108 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
   }
 
+  function formatDate(isoStr) {
+    if (!isoStr) return '';
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch {
+      return '';
+    }
+  }
+
+  async function loadVersions() {
+    if (isVersionsLoaded && versionsManifest.length > 0) {
+      renderVersionsList();
+      return;
+    }
+    try {
+      if (versionsScrollable) {
+        versionsScrollable.innerHTML = '<div class="creator-version-loading">Fetching versions…</div>';
+      }
+      const resp = await fetch('https://piston-meta.mojang.com/mc/game/version_manifest_v2.json');
+      const data = await resp.json();
+      versionsManifest = data.versions || [];
+      isVersionsLoaded = true;
+
+      if (!selectedMcVersion) {
+        const firstRelease = versionsManifest.find(v => v.type === 'release');
+        selectedMcVersion = firstRelease ? firstRelease.id : (versionsManifest[0]?.id || '1.21.1');
+      }
+      renderVersionsList();
+    } catch (e) {
+      console.warn('Failed to load version manifest:', e);
+      if (versionsScrollable) {
+        versionsScrollable.innerHTML = '<div class="creator-version-empty">Could not load versions list.</div>';
+      }
+    }
+  }
+
+  function renderVersionsList() {
+    if (!versionsScrollable) return;
+    const search = (versionSearchInput?.value || '').trim().toLowerCase();
+    const filterType = versionTypeSelect?.value || 'release';
+
+    const filtered = versionsManifest.filter(v => {
+      if (filterType !== 'all' && v.type !== filterType) {
+        return false;
+      }
+      if (search && !v.id.toLowerCase().includes(search)) {
+        return false;
+      }
+      return true;
+    }).slice(0, 100);
+
+    if (filtered.length === 0) {
+      versionsScrollable.innerHTML = '<div class="creator-version-empty">No versions match your search.</div>';
+      syncViewportHeight();
+      return;
+    }
+
+    versionsScrollable.innerHTML = '';
+    filtered.forEach(v => {
+      const card = document.createElement('div');
+      card.className = `creator-version-card ${v.id === selectedMcVersion ? 'active' : ''}`;
+      card.dataset.version = v.id;
+
+      const dateFormatted = formatDate(v.releaseTime || v.time);
+
+      card.innerHTML = `
+        <div class="creator-version-left">
+          <div class="creator-radio-indicator"></div>
+          <span class="creator-version-id">${v.id}</span>
+        </div>
+        <span class="creator-version-date">${dateFormatted}</span>
+      `;
+
+      card.addEventListener('click', () => {
+        versionsScrollable.querySelectorAll('.creator-version-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        selectedMcVersion = v.id;
+        morphText(creatorFooterInfo, `${selectedMcVersion} downloads the first time you launch it.`);
+        updateSummaryPanel();
+      });
+
+      versionsScrollable.appendChild(card);
+    });
+
+    syncViewportHeight();
+  }
+
+  versionSearchInput?.addEventListener('input', () => {
+    renderVersionsList();
+  });
+
+  versionTypeSelect?.addEventListener('change', () => {
+    renderVersionsList();
+  });
+
   function setStep(step) {
     currentStep = step;
+    stepTrack?.classList.remove('step-1-active', 'step-2-active', 'step-3-active');
+
     if (step === 1) {
-      stepTrack?.classList.remove('step-2-active');
       stepTrack?.classList.add('step-1-active');
       btnCancel?.classList.remove('hidden');
       btnBack?.classList.add('hidden');
@@ -195,7 +335,6 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       morphText(creatorFooterInfo, creatorDescriptions[selectedCreatorType] || '');
       requestAnimationFrame(() => syncViewportHeight());
     } else if (step === 2) {
-      stepTrack?.classList.remove('step-1-active');
       stepTrack?.classList.add('step-2-active');
       btnCancel?.classList.add('hidden');
       btnBack?.classList.remove('hidden');
@@ -204,7 +343,19 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       morphText(mainSubtitle, 'Where this instance keeps its worlds, settings and packs.');
       updateFolderStepUI();
       requestAnimationFrame(() => syncViewportHeight());
+    } else if (step === 3) {
+      stepTrack?.classList.add('step-3-active');
+      btnCancel?.classList.add('hidden');
+      btnBack?.classList.remove('hidden');
+
+      morphText(mainTitle, 'Choose a version');
+      morphText(mainSubtitle, 'Every Minecraft version. Switch the release type to reach snapshots, betas and alphas.');
+      morphText(creatorFooterInfo, `${selectedMcVersion || 'This version'} downloads the first time you launch it.`);
+      loadVersions();
+      requestAnimationFrame(() => syncViewportHeight());
     }
+
+    updateSummaryPanel();
   }
 
   function updateFolderStepUI() {
@@ -225,7 +376,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
 
     morphText(creatorFooterInfo, folderDescriptions[selectedFolderType] || '');
-    // Delay slightly to let customPathBox render height
+    updateSummaryPanel();
     setTimeout(() => syncViewportHeight(), 30);
   }
 
@@ -277,7 +428,11 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   });
 
   btnBack?.addEventListener('click', () => {
-    setStep(1);
+    if (currentStep === 3) {
+      setStep(2);
+    } else if (currentStep === 2) {
+      setStep(1);
+    }
   });
 
   function openCreatorSection() {
@@ -318,6 +473,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
         creatorFooterInfo.textContent = creatorDescriptions[selectedCreatorType];
       }
       transitionBackground(typeToImageKey(selectedCreatorType));
+      updateSummaryPanel();
     });
 
     // Hover: preview background image smoothly
@@ -337,29 +493,36 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   btnCancel?.addEventListener('click', closeCreatorSection);
 
   btnNext?.addEventListener('click', async () => {
-    // If on Step 1 and selected option is 'minecraft-instance', advance to Step 2: Choose a game folder
+    // Step 1 -> Step 2
     if (currentStep === 1 && selectedCreatorType === 'minecraft-instance') {
       setStep(2);
       return;
     }
 
-    // If on Step 2 (Folder selection for Minecraft instance)
-    if (currentStep === 2) {
+    // Step 2 -> Step 3: Choose a version
+    if (currentStep === 2 && selectedCreatorType === 'minecraft-instance') {
       if (selectedFolderType === 'custom' && !validateCustomPath()) {
         return;
       }
+      setStep(3);
+      return;
+    }
+
+    // Step 3 (Proceed with selected version & folder)
+    if (currentStep === 3) {
       closeCreatorSection();
       if (typeof onProceedWithMinecraftInstance === 'function') {
         await onProceedWithMinecraftInstance({
           name: '',
           folderType: selectedFolderType,
-          customPath: customFolderPath
+          customPath: customFolderPath,
+          version: selectedMcVersion
         });
       }
       return;
     }
 
-    // Other types
+    // Other types (OneClient, Modpack)
     closeCreatorSection();
     if (selectedCreatorType === 'oneclient') {
       if (typeof onProceedWithMinecraftInstance === 'function') {

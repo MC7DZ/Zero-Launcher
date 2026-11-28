@@ -446,6 +446,37 @@
                 </div>
               </div>
             </div>
+
+            <!-- Step 3: Choose a Version Options -->
+            <div class="creator-step-panel" id="creator-panel-step-3">
+              <div class="creator-options-list" id="creator-list-step-3">
+                <!-- Search & Filter Controls -->
+                <div class="creator-version-controls">
+                  <div class="creator-version-search-wrap">
+                    <svg class="creator-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="creator-version-search" class="creator-version-search-input" placeholder="Search versions" autocomplete="off" spellcheck="false" />
+                  </div>
+                  <div class="creator-version-type-wrap">
+                    <span class="creator-filter-label">Show</span>
+                    <select id="creator-version-type-select" class="creator-version-type-select">
+                      <option value="release" selected>Releases</option>
+                      <option value="snapshot">Snapshots</option>
+                      <option value="old_beta">Betas</option>
+                      <option value="old_alpha">Alphas</option>
+                      <option value="all">All</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Scrollable Version List Container -->
+                <div class="creator-versions-scrollable" id="creator-versions-scrollable">
+                  <div class="creator-version-loading">Fetching versions…</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -458,6 +489,32 @@
             <button type="button" class="btn-ghost creator-btn-cancel" id="btn-creator-cancel">Cancel</button>
             <button type="button" class="btn-ghost creator-btn-cancel hidden" id="btn-creator-back">Back</button>
             <button type="button" class="btn-accent creator-btn-next" id="btn-creator-next">Next</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Summary Floating Panel Under UI (Option A, Columnar/Vertical alignment) -->
+      <div class="creator-summary-panel hidden" id="creator-summary-panel">
+        <div class="creator-summary-header">
+          <h1 class="creator-summary-title" id="creator-summary-title">26.3 Fabric</h1>
+          <p class="creator-summary-subtitle" id="creator-summary-subtitle">26.3 · Fabric</p>
+        </div>
+        <div class="creator-summary-grid">
+          <div class="creator-summary-col">
+            <span class="creator-summary-label">type</span>
+            <span class="creator-summary-val" id="creator-summary-type">From scratch</span>
+          </div>
+          <div class="creator-summary-col">
+            <span class="creator-summary-label">version</span>
+            <span class="creator-summary-val" id="creator-summary-version">26.3</span>
+          </div>
+          <div class="creator-summary-col">
+            <span class="creator-summary-label">folder</span>
+            <span class="creator-summary-val" id="creator-summary-folder">Isolated</span>
+          </div>
+          <div class="creator-summary-col">
+            <span class="creator-summary-label">loader</span>
+            <span class="creator-summary-val" id="creator-summary-loader">Fabric</span>
           </div>
         </div>
       </div>

@@ -2228,10 +2228,10 @@ body.screenshot-lightbox-open {
   will-change: height;
 }
 
-/* Horizontal sliding track */
+/* Horizontal sliding track for 3 steps */
 .creator-step-track {
   display: flex;
-  width: 200%;
+  width: 300%;
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
 }
@@ -2241,24 +2241,36 @@ body.screenshot-lightbox-open {
 }
 
 .creator-step-track.step-2-active {
-  transform: translateX(-50%);
+  transform: translateX(-33.3333%);
+}
+
+.creator-step-track.step-3-active {
+  transform: translateX(-66.6666%);
 }
 
 .creator-step-panel {
-  width: 50%;
+  width: 33.3333%;
   flex-shrink: 0;
   box-sizing: border-box;
   opacity: 1;
   transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.creator-step-track.step-1-active #creator-panel-step-2 {
-  opacity: 0.2;
+.creator-step-track.step-1-active #creator-panel-step-2,
+.creator-step-track.step-1-active #creator-panel-step-3 {
+  opacity: 0.15;
   pointer-events: none;
 }
 
-.creator-step-track.step-2-active #creator-panel-step-1 {
-  opacity: 0.2;
+.creator-step-track.step-2-active #creator-panel-step-1,
+.creator-step-track.step-2-active #creator-panel-step-3 {
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+.creator-step-track.step-3-active #creator-panel-step-1,
+.creator-step-track.step-3-active #creator-panel-step-2 {
+  opacity: 0.15;
   pointer-events: none;
 }
 
@@ -2504,6 +2516,222 @@ body.screenshot-lightbox-open {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* ═══ Step 3 Version List & Controls ═══ */
+.creator-version-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.creator-version-search-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.creator-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.creator-version-search-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-sm, 8px);
+  padding: 8px 12px 8px 36px;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.creator-version-search-input:focus {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.creator-version-type-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.creator-filter-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.creator-version-type-select {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-sm, 8px);
+  color: var(--text);
+  padding: 8px 24px 8px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+  outline: none;
+}
+
+.creator-version-type-select option {
+  background: #181a20;
+  color: #fff;
+}
+
+.creator-versions-scrollable {
+  max-height: 290px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-right: 4px;
+}
+
+.creator-versions-scrollable::-webkit-scrollbar {
+  width: 5px;
+}
+
+.creator-versions-scrollable::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.creator-version-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 16px;
+  border-radius: var(--radius-sm, 8px);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.creator-version-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.creator-version-card.active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-dim);
+}
+
+.creator-version-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.creator-radio-indicator {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--text-muted);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.creator-version-card.active .creator-radio-indicator {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2.5px #121212;
+}
+
+.creator-version-id {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.creator-version-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+.creator-version-loading,
+.creator-version-empty {
+  padding: 30px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ═══ Live Summary Floating Panel Under UI (Option A, Columnar/Vertical alignment) ═══ */
+.creator-summary-panel {
+  position: absolute;
+  bottom: 24px;
+  left: 36px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  animation: fadeInDown 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+
+.creator-summary-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.creator-summary-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+}
+
+.creator-summary-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 500;
+}
+
+/* Columnar / Vertical Alignment Table-like Grid */
+.creator-summary-grid {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  margin-top: 4px;
+}
+
+.creator-summary-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.creator-summary-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+}
+
+.creator-summary-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
 }
 
 
