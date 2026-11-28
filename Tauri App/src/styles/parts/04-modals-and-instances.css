@@ -2077,6 +2077,7 @@ body.screenshot-lightbox-open {
   justify-content: center;
   padding: 24px;
   box-sizing: border-box;
+  flex-direction: column;
   background-color: var(--bg, #121212);
   opacity: 1;
   pointer-events: auto;
@@ -2090,8 +2091,31 @@ body.screenshot-lightbox-open {
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
-  transition: opacity 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              visibility 0.35s;
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0.4s;
+}
+
+.creator-top-heading {
+  position: relative;
+  z-index: 10;
+  font-size: 26px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  margin-bottom: 18px;
+  text-align: center;
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  user-select: none;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.new-instance-creator-section.creator-hidden .creator-top-heading {
+  opacity: 0;
+  transform: translateY(-16px);
 }
 
 .new-instance-bg-backdrop {
@@ -2164,12 +2188,12 @@ body.screenshot-lightbox-open {
 }
 
 .new-instance-creator-section.creator-hidden .new-instance-creator-card {
-  transform: translateY(28px) scale(0.96);
+  transform: translateY(24px) scale(0.97);
   opacity: 0;
   filter: blur(2px);
-  transition: transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              filter 0.3s;
+  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              filter 0.38s;
 }
 
 .creator-card-header {

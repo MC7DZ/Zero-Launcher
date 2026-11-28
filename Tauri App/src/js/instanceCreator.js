@@ -33,20 +33,31 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const remoteUrls = {
     'minecraft': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg',
     'oneclient': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpeg',
-    'modpack': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/modpacks.jpg'
+    'modpack': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/modpacks.jpg',
+    'minecarft-tiny-takeover.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecarft-tiny-takeover.png',
+    'minecraft-chaos-cubed.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-chaos-cubed.png',
+    'minecraft-chase-the-skies.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-chase-the-skies.png',
+    'minecraft-mounts-of-mayhem.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-mounts-of-mayhem.png',
+    'minecraft-the-copper-age.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-the-copper-age.png',
+    'minecraft-trails-and-tales.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-trails-and-tales.png',
+    'minecraft-wilderness-bound.jpg': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg'
   };
 
-  const cachedUrls = {
-    'minecraft': '',
-    'oneclient': '',
-    'modpack': ''
-  };
+  const minecraftBackgrounds = [
+    'minecraft-wilderness-bound.jpg',
+    'minecarft-tiny-takeover.png',
+    'minecraft-chaos-cubed.png',
+    'minecraft-chase-the-skies.png',
+    'minecraft-mounts-of-mayhem.png',
+    'minecraft-the-copper-age.png',
+    'minecraft-trails-and-tales.png'
+  ];
 
-  const preloadedImages = {
-    'minecraft': null,
-    'oneclient': null,
-    'modpack': null
-  };
+  let minecraftBgIndex = 0;
+  let mcSlideshowInterval = null;
+
+  const cachedUrls = {};
+  const preloadedImages = {};
 
   function preloadImageElement(url) {
     return new Promise((resolve) => {
@@ -85,7 +96,26 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   function typeToImageKey(type) {
     if (type === 'oneclient') return 'oneclient';
     if (type === 'modpack') return 'modpack';
-    return 'minecraft';
+    return minecraftBackgrounds[minecraftBgIndex] || 'minecraft-wilderness-bound.jpg';
+  }
+
+  function startMinecraftSlideshow() {
+    stopMinecraftSlideshow();
+    mcSlideshowInterval = setInterval(() => {
+      // Only rotate when the selected instance type is minecraft-instance (all its steps 1-4)
+      if (selectedCreatorType === 'minecraft-instance' && !newInstanceSection?.classList.contains('creator-hidden')) {
+        minecraftBgIndex = (minecraftBgIndex + 1) % minecraftBackgrounds.length;
+        const nextKey = minecraftBackgrounds[minecraftBgIndex];
+        transitionBackground(nextKey);
+      }
+    }, 5000);
+  }
+
+  function stopMinecraftSlideshow() {
+    if (mcSlideshowInterval) {
+      clearInterval(mcSlideshowInterval);
+      mcSlideshowInterval = null;
+    }
   }
 
   let activeLayer = 'a'; // 'a' or 'b'
@@ -122,14 +152,14 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
   }
 
-  // Pre-load all three images immediately in the background
-  ['minecraft', 'oneclient', 'modpack'].forEach(async (key) => {
+  // Pre-load all images in the background
+  ['oneclient', 'modpack', ...minecraftBackgrounds].forEach(async (key) => {
     const url = await resolveImageSrc(key);
     const img = await preloadImageElement(url);
     preloadedImages[key] = img;
-    if (key === 'minecraft' && layerA && !layerA.style.backgroundImage) {
+    if (key === minecraftBackgrounds[0] && layerA && !layerA.style.backgroundImage) {
       layerA.style.backgroundImage = `url("${url}")`;
-      currentImageKey = 'minecraft';
+      currentImageKey = key;
     }
   });
 
@@ -666,6 +696,11 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
     setStep(1);
     transitionBackground(typeToImageKey(selectedCreatorType));
+    if (selectedCreatorType === 'minecraft-instance') {
+      startMinecraftSlideshow();
+    } else {
+      stopMinecraftSlideshow();
+    }
 
     if (newInstanceSection) {
       newInstanceSection.classList.remove('creator-hidden');
@@ -681,6 +716,11 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   }
 
   function closeCreatorSection() {
+    stopMinecraftSlideshow();
+    if (hoverBgTimer) {
+      clearTimeout(hoverBgTimer);
+      hoverBgTimer = null;
+    }
     if (newInstanceSection) {
       newInstanceSection.classList.add('creator-hidden');
     }
@@ -709,6 +749,11 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       selectedCreatorType = card.dataset.type || 'minecraft-instance';
       if (creatorFooterInfo && creatorDescriptions[selectedCreatorType]) {
         creatorFooterInfo.textContent = creatorDescriptions[selectedCreatorType];
+      }
+      if (selectedCreatorType === 'minecraft-instance') {
+        startMinecraftSlideshow();
+      } else {
+        stopMinecraftSlideshow();
       }
       transitionBackground(typeToImageKey(selectedCreatorType));
       updateSummaryPanel();

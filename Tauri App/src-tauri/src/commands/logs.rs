@@ -40,20 +40,51 @@ pub async fn ensure_creator_background(
     name: Option<String>,
 ) -> Result<String, String> {
     let key = name.unwrap_or_else(|| "minecraft".to_string()).to_ascii_lowercase();
-    let (file_name, url) = match key.as_str() {
+    let (file_name, url_string) = match key.as_str() {
         "oneclient" => (
-            "oneclient.jpeg",
-            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpeg",
+            "oneclient.jpeg".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpeg".to_string(),
         ),
         "modpack" | "modpacks" => (
-            "modpacks.jpg",
-            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/modpacks.jpg",
+            "modpacks.jpg".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/modpacks.jpg".to_string(),
+        ),
+        k if k.ends_with(".png") || k.ends_with(".jpg") || k.ends_with(".jpeg") => {
+            (
+                k.to_string(),
+                format!("https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/{k}"),
+            )
+        }
+        "tiny-takeover" | "minecraft-tiny-takeover" => (
+            "minecarft-tiny-takeover.png".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecarft-tiny-takeover.png".to_string(),
+        ),
+        "chaos-cubed" | "minecraft-chaos-cubed" => (
+            "minecraft-chaos-cubed.png".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-chaos-cubed.png".to_string(),
+        ),
+        "chase-the-skies" | "minecraft-chase-the-skies" => (
+            "minecraft-chase-the-skies.png".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-chase-the-skies.png".to_string(),
+        ),
+        "mounts-of-mayhem" | "minecraft-mounts-of-mayhem" => (
+            "minecraft-mounts-of-mayhem.png".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-mounts-of-mayhem.png".to_string(),
+        ),
+        "the-copper-age" | "minecraft-the-copper-age" => (
+            "minecraft-the-copper-age.png".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-the-copper-age.png".to_string(),
+        ),
+        "trails-and-tales" | "minecraft-trails-and-tales" => (
+            "minecraft-trails-and-tales.png".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-trails-and-tales.png".to_string(),
         ),
         _ => (
-            "minecraft-wilderness-bound.jpg",
-            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg",
+            "minecraft-wilderness-bound.jpg".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg".to_string(),
         ),
     };
+    let url = &url_string;
 
     let bg_dir = state.data_dir.join("assets").join("background");
     let bg_file = bg_dir.join(file_name);
