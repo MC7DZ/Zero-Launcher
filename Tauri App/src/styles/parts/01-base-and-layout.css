@@ -356,6 +356,8 @@ input, textarea, select, [contenteditable="true"] {
 
 /* ═══ Top Bar (Floating Island) ═══ */
 #top-bar {
+  position: relative;
+  z-index: 9999;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -366,7 +368,13 @@ input, textarea, select, [contenteditable="true"] {
   border-radius: var(--radius, 12px);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
   flex-shrink: 0;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), opacity 0.28s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#top-bar.top-bar-creator-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-24px);
 }
 
 #top-bar #tab-bar {

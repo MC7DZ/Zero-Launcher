@@ -41,6 +41,7 @@ import defaultOfflineSkin from '../assets/default-offline-skin.png';
 // network access. Used anywhere the app shows a stand-in for "no real
 // skin" (Anonymous Skin mode, offline fallback).
 import unknownSkin from '../assets/unknown-skin.png';
+import { initInstanceCreator } from './instanceCreator.js';
 // ── Native Click Sound Engine ──
 let lastClickSoundTime = 0;
 
@@ -6852,7 +6853,7 @@ function initInstanceActions() {
     });
   }
 
-  document.getElementById('btn-new-instance').addEventListener('click', async () => {
+  async function openNewInstanceModal() {
     if (instNameInput) instNameInput.value = '';
     setNewInstanceLoader('Fabric');
     if (instLoaderVersionInput) instLoaderVersionInput.value = 'latest';
@@ -6872,7 +6873,18 @@ function initInstanceActions() {
     await loadMcVersions();
     refreshNewLoaderVersions('latest');
     await initInstanceDirField();
+  }
+
+  // Initialize Choose a Type / Instance Creator Section
+  initInstanceCreator({
+    onProceedWithMinecraftInstance: async (defaultName) => {
+      await openNewInstanceModal();
+      if (defaultName && instNameInput) {
+        instNameInput.value = defaultName;
+      }
+    }
   });
+
   document.getElementById('btn-cancel-new-instance').addEventListener('click', () => overlay.classList.add('hidden'));
   document.getElementById('btn-cancel-install-form').addEventListener('click', () => overlay.classList.add('hidden'));
 
