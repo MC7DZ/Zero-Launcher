@@ -2575,21 +2575,27 @@ body.screenshot-lightbox-open {
 }
 
 .creator-version-type-select {
-  background: rgba(255, 255, 255, 0.05);
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6l3.5 4 3.5-4z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: var(--radius-sm, 8px);
-  color: var(--text);
-  padding: 8px 24px 8px 12px;
+  color: #e2e2ea !important;
+  padding: 8px 28px 8px 12px;
   font-size: 12.5px;
   cursor: pointer;
   outline: none;
-  transition: border-color var(--transition, 0.14s), background var(--transition, 0.14s);
+  transition: border-color var(--transition, 0.14s), background-color var(--transition, 0.14s);
 }
 
 .creator-version-type-select:focus,
 .creator-version-type-select:hover {
   border-color: rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 .creator-version-type-select option {
@@ -2881,22 +2887,28 @@ body.screenshot-lightbox-open {
 }
 
 .creator-loader-version-select {
-  background: rgba(255, 255, 255, 0.06);
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6l3.5 4 3.5-4z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--radius-sm, 8px);
-  color: var(--text, #ffffff);
-  padding: 8px 14px;
+  color: #ffffff !important;
+  padding: 8px 30px 8px 14px;
   font-size: 13px;
   cursor: pointer;
   outline: none;
   min-width: 130px;
-  transition: border-color var(--transition, 0.14s), background var(--transition, 0.14s);
+  transition: border-color var(--transition, 0.14s), background-color var(--transition, 0.14s);
 }
 
 .creator-loader-version-select:hover,
 .creator-loader-version-select:focus {
   border-color: rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.09);
+  background-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 .creator-loader-version-select option {

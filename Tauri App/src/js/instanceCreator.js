@@ -694,10 +694,16 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     openCreatorSection();
   });
 
+  let hoverBgTimer = null;
+
   creatorOptionCards.forEach(card => {
-    // Click: select option and transition background
+    // Click: select option immediately and transition background
     card.addEventListener('click', () => {
       if (card.classList.contains('disabled')) return;
+      if (hoverBgTimer) {
+        clearTimeout(hoverBgTimer);
+        hoverBgTimer = null;
+      }
       creatorOptionCards.forEach(c => c.classList.remove('active'));
       card.classList.add('active');
       selectedCreatorType = card.dataset.type || 'minecraft-instance';
@@ -708,16 +714,33 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       updateSummaryPanel();
     });
 
-    // Hover: preview background image smoothly
+    // Hover: preview background image only after hovering for more than 1 second (1000ms)
     card.addEventListener('mouseenter', () => {
       if (card.classList.contains('disabled')) return;
+      if (hoverBgTimer) {
+        clearTimeout(hoverBgTimer);
+        hoverBgTimer = null;
+      }
       const hoverType = card.dataset.type;
-      transitionBackground(typeToImageKey(hoverType));
+      hoverBgTimer = setTimeout(() => {
+        transitionBackground(typeToImageKey(hoverType));
+      }, 1000);
+    });
+
+    card.addEventListener('mouseleave', () => {
+      if (hoverBgTimer) {
+        clearTimeout(hoverBgTimer);
+        hoverBgTimer = null;
+      }
     });
   });
 
   // When cursor leaves the options list, return to currently selected card's background
   creatorOptionsList?.addEventListener('mouseleave', () => {
+    if (hoverBgTimer) {
+      clearTimeout(hoverBgTimer);
+      hoverBgTimer = null;
+    }
     transitionBackground(typeToImageKey(selectedCreatorType));
   });
 
