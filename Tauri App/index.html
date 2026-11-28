@@ -325,7 +325,7 @@
                     <div class="creator-option-heading">
                       <span class="creator-option-title">Minecraft instance</span>
                     </div>
-                    <div class="creator-option-desc">Pick a loader and version, then add mods yourself. Has its own game folder.</div>
+                    <div class="creator-option-desc">Set up a custom vanilla or modded profile with your choice of loader and version.</div>
                   </div>
                 </div>
 
@@ -343,7 +343,7 @@
                       <span class="creator-option-title">OneClient</span>
                       <span class="creator-badge-recommended">Recommended</span>
                     </div>
-                    <div class="creator-option-desc">The most bleeding edge performance, QoL mods and world hosting in one instance. Shares configs, worlds, and packs with your other OneClient instances, or gets its own folder.</div>
+                    <div class="creator-option-desc">Optimized all-in-one client featuring built-in performance tweaks, essential QoL mods, and seamless world hosting.</div>
                   </div>
                 </div>
 
@@ -360,7 +360,7 @@
                     <div class="creator-option-heading">
                       <span class="creator-option-title">Modpack</span>
                     </div>
-                    <div class="creator-option-desc">Install a pack from Modrinth or CurseForge, or a file you downloaded. Has its own game folder.</div>
+                    <div class="creator-option-desc">Browse and install complete community modpacks directly from Modrinth, CurseForge, or a local package.</div>
                   </div>
                 </div>
 
@@ -377,7 +377,7 @@
                       <span class="creator-option-title">Import</span>
                       <span class="creator-badge-coming-soon">Coming soon</span>
                     </div>
-                    <div class="creator-option-desc">Open an instance someone exported from OneClient, or bring one over from another launcher. Has its own game folder.</div>
+                    <div class="creator-option-desc">Import existing instances or backups from other launchers and external archive files.</div>
                   </div>
                 </div>
               </div>
@@ -399,7 +399,7 @@
                       <span class="creator-option-title">Shared</span>
                       <span class="creator-badge-subtext" id="creator-shared-path-hint">(~/.minecraft)</span>
                     </div>
-                    <div class="creator-option-desc">Uses the default root game folder. Worlds, settings and packs are shared with the standard Minecraft directory.</div>
+                    <div class="creator-option-desc">Stores data in the default global Minecraft directory (~/.minecraft), sharing worlds and configs across profiles.</div>
                   </div>
                 </div>
 
@@ -415,7 +415,7 @@
                       <span class="creator-option-title">Isolated</span>
                       <span class="creator-badge-recommended">Recommended</span>
                     </div>
-                    <div class="creator-option-desc">Gets its own game folder under !Instances. Worlds, settings and packs stay separate from everything else. Can run alongside other instances.</div>
+                    <div class="creator-option-desc">Keeps all saves, configurations, and mods strictly contained in an independent instance directory.</div>
                   </div>
                 </div>
 
@@ -431,7 +431,7 @@
                     <div class="creator-option-heading">
                       <span class="creator-option-title">Custom directory</span>
                     </div>
-                    <div class="creator-option-desc">Choose a specific folder anywhere on your computer for this instance's data.</div>
+                    <div class="creator-option-desc">Specify an exact directory on your storage drive to house this instance.</div>
                   </div>
                 </div>
 
@@ -496,7 +496,7 @@
                       </div>
                       <img src="" class="creator-loader-icon" id="creator-icon-fabric" alt="Fabric" />
                     </div>
-                    <div class="creator-loader-desc">Light and quick to start. The widest package selection on modern versions, and the legacy build covers 1.8.9 and older.</div>
+                    <div class="creator-loader-desc">High-speed, lightweight loader with rapid updates and a massive ecosystem of modern optimization and content mods.</div>
                   </div>
 
                   <!-- Loader 2: Forge -->
@@ -508,7 +508,7 @@
                       </div>
                       <img src="" class="creator-loader-icon" id="creator-icon-forge" alt="Forge" />
                     </div>
-                    <div class="creator-loader-desc">The oldest loader. Most 1.12.2 and 1.8.9 packages need it.</div>
+                    <div class="creator-loader-desc">The classic modding platform with unmatched compatibility across legacy versions like 1.12.2 and 1.7.10.</div>
                   </div>
 
                   <!-- Loader 3: NeoForge -->
@@ -520,7 +520,7 @@
                       </div>
                       <img src="" class="creator-loader-icon" id="creator-icon-neoforge" alt="NeoForge" />
                     </div>
-                    <div class="creator-loader-desc">Forge's successor, for 1.20.2 and newer.</div>
+                    <div class="creator-loader-desc">The modern evolution of Forge built for Minecraft 1.20.2+, featuring cleaner APIs and enhanced stability.</div>
                   </div>
 
                   <!-- Loader 4: Quilt -->
@@ -532,7 +532,7 @@
                       </div>
                       <img src="" class="creator-loader-icon" id="creator-icon-quilt" alt="Quilt" />
                     </div>
-                    <div class="creator-loader-desc">A modular, open-source continuation of Fabric with enhanced tooling and compatibility.</div>
+                    <div class="creator-loader-desc">Community-driven, modular loader offering backward compatibility with most Fabric mods and advanced modding APIs.</div>
                   </div>
 
                   <!-- Loader 5: Vanilla -->
@@ -544,7 +544,7 @@
                       </div>
                       <img src="" class="creator-loader-icon" id="creator-icon-vanilla" alt="Vanilla" />
                     </div>
-                    <div class="creator-loader-desc">Minecraft exactly as Mojang ships it. Packages cannot be installed without a loader.</div>
+                    <div class="creator-loader-desc">Pure, unmodded Minecraft experience straight from Mojang without any additional loader overhead.</div>
                   </div>
                 </div>
 
@@ -552,12 +552,83 @@
                 <div class="creator-loader-version-box" id="creator-loader-version-box">
                   <div class="creator-loader-version-info">
                     <div class="creator-loader-version-title" id="creator-loader-version-title">Fabric version</div>
-                    <div class="creator-loader-version-desc">The newest build is picked for you. Change it if a package needs an older one.</div>
+                    <div class="creator-loader-version-desc">Defaults to the latest stable build. Select an earlier build if a specific mod requires it.</div>
                   </div>
                   <div class="creator-loader-version-select-wrap">
                     <select id="creator-loader-version-select" class="creator-loader-version-select">
                       <option value="latest">Latest</option>
                     </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 5: Name the Instance & Advanced Options -->
+            <div class="creator-step-panel" id="creator-panel-step-5">
+              <div class="creator-options-list" id="creator-list-step-5">
+                <!-- Name Row -->
+                <div class="creator-form-group">
+                  <label class="creator-form-label" for="creator-inst-name">Name</label>
+                  <input type="text" id="creator-inst-name" class="creator-input-field" placeholder="e.g. 26.3 Fabric" autocomplete="off" spellcheck="false" />
+                </div>
+
+                <!-- Advanced Options Collapsible Dropdown -->
+                <div class="creator-advanced-wrap">
+                  <button type="button" id="btn-creator-advanced-toggle" class="creator-advanced-toggle-btn" aria-expanded="false">
+                    <div class="creator-advanced-toggle-left">
+                      <svg class="creator-advanced-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                      </svg>
+                      <span>Advanced options</span>
+                    </div>
+                    <svg class="creator-advanced-chevron-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </button>
+
+                  <div id="creator-advanced-panel" class="creator-advanced-panel hidden">
+                    <!-- Java Runtime -->
+                    <div class="creator-form-group">
+                      <label class="creator-form-label" for="creator-java-select">Java Runtime</label>
+                      <div class="creator-select-wrap">
+                        <select id="creator-java-select" class="creator-select-field">
+                          <option value="">Use Settings (Default)</option>
+                          <option value="__smart__">✦ Smart Java Detection (Auto)</option>
+                        </select>
+                      </div>
+                      <span class="creator-field-hint">Pick a specific Java version for this instance or use launcher Settings.</span>
+                    </div>
+
+                    <!-- RAM Settings (Min / Max) -->
+                    <div class="creator-form-row">
+                      <div class="creator-form-group">
+                        <label class="creator-form-label" for="creator-min-ram">Min RAM (MB)</label>
+                        <input type="number" id="creator-min-ram" class="creator-input-field" placeholder="Default (Settings)" min="256" step="256" />
+                      </div>
+                      <div class="creator-form-group">
+                        <label class="creator-form-label" for="creator-max-ram">Max RAM (MB)</label>
+                        <input type="number" id="creator-max-ram" class="creator-input-field" placeholder="Default (Settings)" min="512" step="256" />
+                      </div>
+                    </div>
+
+                    <!-- Custom JVM Arguments -->
+                    <div class="creator-form-group">
+                      <label class="creator-form-label" for="creator-jvm-args">Custom JVM Arguments</label>
+                      <input type="text" id="creator-jvm-args" class="creator-input-field" placeholder="-XX:+UseZGC ... (leave blank to use Settings)" />
+                    </div>
+
+                    <!-- Always Launch Offline Toggle -->
+                    <label class="creator-toggle-row" for="creator-always-offline">
+                      <div class="creator-toggle-text">
+                        <span class="creator-toggle-title">Always launch offline</span>
+                        <span class="creator-toggle-sub">Skip the libraries/assets check and start from what's already on disk.</span>
+                      </div>
+                      <div class="creator-switch">
+                        <input type="checkbox" id="creator-always-offline" />
+                        <span class="creator-switch-slider"></span>
+                      </div>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -568,9 +639,22 @@
         <!-- Card Footer -->
         <div class="creator-card-footer">
           <div class="creator-footer-info" id="creator-footer-info">
-            Pick a loader and version, then add mods yourself. Has its own game folder.
+            Set up a custom vanilla or modded profile with your choice of loader and version.
           </div>
           <div class="creator-footer-actions">
+            <!-- Skip assets/libraries toggle near the create button with help icon -->
+            <div class="creator-skip-assets-container" id="creator-skip-assets-wrap">
+              <label class="creator-skip-assets-toggle" for="creator-skip-assets">
+                <div class="creator-switch">
+                  <input type="checkbox" id="creator-skip-assets" checked />
+                  <span class="creator-switch-slider"></span>
+                </div>
+                <span class="creator-skip-assets-label">Skip assets/libraries</span>
+              </label>
+              <div class="creator-help-icon" title="Speeds up installation significantly by skipping the asset and library downloads right now. Any missing files will be automatically downloaded when you launch the game.">
+                ?
+              </div>
+            </div>
             <button type="button" class="btn-ghost creator-btn-cancel" id="btn-creator-cancel">Cancel</button>
             <button type="button" class="btn-ghost creator-btn-cancel hidden" id="btn-creator-back">Back</button>
             <button type="button" class="btn-accent creator-btn-next" id="btn-creator-next">Next</button>
@@ -1596,185 +1680,7 @@
       </div>
     </div>
 
-    <!-- New Instance Form (overlay - Hyprland Floating Islands) -->
-    <div id="new-instance-overlay" class="overlay hidden">
-      <div class="hypr-modal create-instance-modal">
-        <!-- Header Island -->
-        <div class="hypr-island hypr-header-island">
-          <div class="hypr-header-left">
-            <div class="hypr-icon-badge">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-            </div>
-            <div class="hypr-header-titles">
-              <h3 class="hypr-title">Create New Instance</h3>
-              <span class="hypr-subtitle">Configure and download a fresh Minecraft installation</span>
-            </div>
-          </div>
-          <button class="overlay-close" id="btn-cancel-new-instance" title="Close">✕</button>
-        </div>
 
-        <!-- Primary Island: Name, Loaders Row, Version & Loader Version -->
-        <div class="hypr-island hypr-main-island">
-          <!-- Name Row -->
-          <div class="form-group" style="margin-bottom: 14px;">
-            <label class="bento-tile-label" for="inst-name">Instance Name <span class="bento-tile-hint">(blank = Loader + Version)</span></label>
-            <input type="text" id="inst-name" class="input-field" placeholder="e.g. Survival 1.21 or Fabric Adventure" autocomplete="off" spellcheck="false" />
-          </div>
-
-          <!-- Mod Loader Buttons Row -->
-          <div class="form-group" style="margin-bottom: 14px;">
-            <label class="bento-tile-label">Mod Loader</label>
-            <div class="hypr-loader-button-row" id="new-inst-loader-buttons">
-              <button type="button" class="hypr-loader-btn" data-loader="Vanilla" title="Vanilla">
-                <img id="new-loader-img-vanilla" class="hypr-loader-icon" alt="Vanilla" />
-                <span>Vanilla</span>
-              </button>
-              <button type="button" class="hypr-loader-btn active" data-loader="Fabric" title="Fabric">
-                <img id="new-loader-img-fabric" class="hypr-loader-icon" alt="Fabric" />
-                <span>Fabric</span>
-              </button>
-              <button type="button" class="hypr-loader-btn" data-loader="Forge" title="Forge">
-                <img id="new-loader-img-forge" class="hypr-loader-icon" alt="Forge" />
-                <span>Forge</span>
-              </button>
-              <button type="button" class="hypr-loader-btn" data-loader="NeoForge" title="NeoForge">
-                <img id="new-loader-img-neoforge" class="hypr-loader-icon" alt="NeoForge" />
-                <span>NeoForge</span>
-              </button>
-              <button type="button" class="hypr-loader-btn" data-loader="Quilt" title="Quilt">
-                <img id="new-loader-img-quilt" class="hypr-loader-icon" alt="Quilt" />
-                <span>Quilt</span>
-              </button>
-            </div>
-            <input type="hidden" id="inst-loader" value="Fabric" />
-          </div>
-
-          <!-- Under loaders: Minecraft Version and Loader Version -->
-          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
-            <div class="form-group">
-              <label class="bento-tile-label" for="inst-mc-version">Minecraft Version</label>
-              <select id="inst-mc-version" class="input-field">
-                <option>Loading…</option>
-              </select>
-            </div>
-
-            <div class="form-group" id="inst-loader-version-tile">
-              <label class="bento-tile-label" for="inst-loader-version">Loader Version</label>
-              <select id="inst-loader-version" class="input-field">
-                <option value="latest">Latest (Recommended)</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Game Directory & Isolation Options (Normal Options) -->
-          <div class="form-group">
-            <label class="bento-tile-label">Game Directory &amp; Isolation</label>
-            <div class="hypr-dir-options-grid">
-              <label class="hypr-dir-card active" id="dir-opt-separated-card">
-                <input type="radio" name="inst-dir-choice" id="inst-dir-separated" checked class="hypr-dir-radio" />
-                <div class="hypr-dir-details">
-                  <div class="hypr-dir-title">Isolated Instance <span class="hypr-pill-badge">Recommended</span></div>
-                  <div class="hypr-dir-desc">Keeps mods, saves, and configs in their own folder under <code>!Instances</code></div>
-                </div>
-              </label>
-
-              <label class="hypr-dir-card" id="dir-opt-default-card">
-                <input type="radio" name="inst-dir-choice" id="inst-dir-default" class="hypr-dir-radio" />
-                <div class="hypr-dir-details">
-                  <div class="hypr-dir-title">Shared Default <span id="inst-dir-default-path" class="bento-tile-hint">(~/.minecraft)</span></div>
-                  <div class="hypr-dir-desc">Stores all files in the standard root Minecraft directory</div>
-                </div>
-              </label>
-
-              <label class="hypr-dir-card" id="dir-opt-custom-card">
-                <input type="radio" name="inst-dir-choice" id="inst-dir-custom" class="hypr-dir-radio" />
-                <div class="hypr-dir-details">
-                  <div class="hypr-dir-title">Custom Directory</div>
-                  <div class="hypr-dir-desc">Specify a custom installation folder on your disk</div>
-                </div>
-              </label>
-            </div>
-
-            <div id="inst-dir-path-row" class="hidden" style="display: flex; gap: 8px; margin-top: 10px;">
-              <input type="text" id="inst-dir-path" class="input-field" placeholder="/path/to/folder" style="flex: 1;" />
-              <button id="inst-dir-browse" class="btn-secondary" type="button" style="padding: 6px 14px; font-size: 12px;">Browse…</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Advanced Options Toggle -->
-        <div class="hypr-advanced-toggle-wrap">
-          <button type="button" id="btn-toggle-new-advanced" class="btn-secondary hypr-advanced-toggle-btn" aria-expanded="false">
-            <span class="hypr-toggle-icon">⚙</span>
-            <span>Advanced Options</span>
-            <span class="hypr-toggle-chevron">▾</span>
-          </button>
-        </div>
-
-        <!-- Advanced Options Island (Collapsible) -->
-        <div id="new-inst-advanced-island" class="hypr-island hypr-advanced-island hidden">
-          <!-- Java Runtime -->
-          <div class="form-group" style="margin-bottom: 14px;">
-            <label class="bento-tile-label" for="inst-java-select">Java Runtime</label>
-            <select id="inst-java-select" class="input-field">
-              <option value="">Use Settings (Default)</option>
-              <option value="__smart__">✦ Smart Java Detection (Auto)</option>
-            </select>
-            <span class="bento-tile-hint" style="margin-top: 4px; display: block;">Pick a specific Java version for this instance or use launcher Settings.</span>
-          </div>
-
-          <!-- RAM Settings (Min / Max) -->
-          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
-            <div class="form-group">
-              <label class="bento-tile-label" for="inst-min-ram">Min RAM (MB)</label>
-              <input type="number" id="inst-min-ram" class="input-field" placeholder="Default (Settings)" min="256" step="256" />
-            </div>
-            <div class="form-group">
-              <label class="bento-tile-label" for="inst-max-ram">Max RAM (MB)</label>
-              <input type="number" id="inst-max-ram" class="input-field" placeholder="Default (Settings)" min="512" step="256" />
-            </div>
-          </div>
-
-          <!-- Custom JVM Arguments -->
-          <div class="form-group" style="margin-bottom: 10px;">
-            <label class="bento-tile-label" for="inst-jvm-args">Custom JVM Arguments</label>
-            <input type="text" id="inst-jvm-args" class="input-field" placeholder="-XX:+UseZGC ... (leave blank to use Settings; ZGC is the default GC)" />
-          </div>
-
-          <!-- Launch Options (moved here from the Play button menu) -->
-          <label class="adv-toggle-tile toggle-row" for="inst-always-offline">
-            <span class="adv-toggle-text">
-              <span class="adv-toggle-title">Always launch offline</span>
-              <span class="adv-toggle-sub">Skip the libraries/assets check and start from what's already on disk. This instance only.</span>
-            </span>
-            <input type="checkbox" id="inst-always-offline" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <!-- Install Progress (if active) -->
-        <div id="install-progress-wrap" class="hypr-island hidden" style="padding: 12px 16px;">
-          <div class="progress-text" id="install-status" style="font-size: 12px; margin-bottom: 6px; color: var(--text);">Starting install…</div>
-          <div class="progress-track" style="height: 6px; background: rgba(var(--overlay-rgb), 0.1); border-radius: var(--radius-pill, 999px); overflow: hidden;">
-            <div class="progress-bar" id="install-bar" style="height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease;"></div>
-          </div>
-        </div>
-
-        <!-- Floating Action Island -->
-        <div class="hypr-actions-island">
-          <label class="hypr-action-toggle toggle-row" for="inst-skip-assets" title="Skip downloading assets during install (missing assets will be downloaded when launching the game)">
-            <input type="checkbox" id="inst-skip-assets" />
-            <span class="toggle-slider"></span>
-            <span class="hypr-action-toggle-label">Skip assets/libraries</span>
-          </label>
-          <button id="btn-cancel-install-form" class="btn-ghost">Cancel</button>
-          <button id="btn-start-install" class="btn-accent">Install &amp; Play</button>
-        </div>
-      </div>
-    </div>
 
     <!-- Add Server overlay (Hyprland Floating Islands) -->
     <div id="add-server-overlay" class="overlay hidden">

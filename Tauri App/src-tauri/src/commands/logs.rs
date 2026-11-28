@@ -32,7 +32,7 @@ pub async fn resolve_background_path(
 }
 
 /// Downloads and caches creator backdrop images into `<data_dir>/assets/background/`.
-/// Supports "minecraft-instance" (minecraft-wilderness-bound.jpg) and "oneclient" (oneclient.jpeg).
+/// Supports "minecraft-instance" (minecraft-wilderness-bound.jpg) and "oneclient" (oneclient.jpg).
 #[tauri::command]
 pub async fn ensure_creator_background(
     app: AppHandle,
@@ -42,8 +42,8 @@ pub async fn ensure_creator_background(
     let key = name.unwrap_or_else(|| "minecraft".to_string()).to_ascii_lowercase();
     let (file_name, url_string) = match key.as_str() {
         "oneclient" => (
-            "oneclient.jpeg".to_string(),
-            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpeg".to_string(),
+            "oneclient.jpg".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpg".to_string(),
         ),
         "modpack" | "modpacks" => (
             "modpacks.jpg".to_string(),

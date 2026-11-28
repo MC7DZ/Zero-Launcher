@@ -2080,19 +2080,19 @@ body.screenshot-lightbox-open {
   flex-direction: column;
   background-color: var(--bg, #121212);
   opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              visibility 0.4s;
   visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0.38s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .new-instance-creator-section.creator-hidden {
   opacity: 0;
-  pointer-events: none;
   visibility: hidden;
-  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              visibility 0.4s;
+  pointer-events: none;
+  /* Delay visibility:hidden so it only triggers after the 0.38s opacity fade has finished */
+  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0s linear 0.38s;
 }
 
 .creator-top-heading {
@@ -2109,13 +2109,13 @@ body.screenshot-lightbox-open {
   user-select: none;
   opacity: 1;
   transform: translateY(-8px);
-  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .new-instance-creator-section.creator-hidden .creator-top-heading {
   opacity: 0;
-  transform: translateY(-24px);
+  transform: translateY(-24px) scale(0.96);
 }
 
 .new-instance-bg-backdrop {
@@ -2129,8 +2129,8 @@ body.screenshot-lightbox-open {
   filter: brightness(0.72) saturate(1.04);
   transform: scale(1.02);
   pointer-events: none;
-  transition: opacity 0.55s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: opacity, transform;
 }
 
@@ -2146,7 +2146,7 @@ body.screenshot-lightbox-open {
 
 .new-instance-creator-section.creator-hidden .new-instance-bg-backdrop {
   transform: scale(1.06);
-  opacity: 0.3;
+  opacity: 0;
 }
 
 .creator-bg-vignette {
@@ -2154,7 +2154,8 @@ body.screenshot-lightbox-open {
   inset: 0;
   pointer-events: none;
   z-index: 3;
-  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 1;
+  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1);
   background:
     /* Deep focused radial vignette focused right behind the UI */
     radial-gradient(ellipse 75% 65% at 50% 50%, rgba(10, 12, 16, 0.6) 0%, rgba(10, 12, 16, 0.25) 55%, rgba(6, 8, 12, 0.75) 100%),
@@ -2181,19 +2182,14 @@ body.screenshot-lightbox-open {
   flex-direction: column;
   overflow: hidden;
   transform: translateY(0) scale(1);
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-              filter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   opacity: 1;
+  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .new-instance-creator-section.creator-hidden .new-instance-creator-card {
-  transform: translateY(24px) scale(0.97);
+  transform: translateY(24px) scale(0.96);
   opacity: 0;
-  filter: blur(2px);
-  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
-              filter 0.38s;
 }
 
 .creator-card-header {
@@ -2263,10 +2259,10 @@ body.screenshot-lightbox-open {
   will-change: height;
 }
 
-/* Horizontal sliding track for 4 steps */
+/* Horizontal sliding track for 5 steps */
 .creator-step-track {
   display: flex;
-  width: 400%;
+  width: 500%;
   transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
 }
@@ -2276,19 +2272,23 @@ body.screenshot-lightbox-open {
 }
 
 .creator-step-track.step-2-active {
-  transform: translateX(-25%);
+  transform: translateX(-20%);
 }
 
 .creator-step-track.step-3-active {
-  transform: translateX(-50%);
+  transform: translateX(-40%);
 }
 
 .creator-step-track.step-4-active {
-  transform: translateX(-75%);
+  transform: translateX(-60%);
+}
+
+.creator-step-track.step-5-active {
+  transform: translateX(-80%);
 }
 
 .creator-step-panel {
-  width: 25%;
+  width: 20%;
   flex-shrink: 0;
   box-sizing: border-box;
   opacity: 1;
@@ -2298,7 +2298,8 @@ body.screenshot-lightbox-open {
 .creator-step-track.step-1-active .creator-step-panel:not(#creator-panel-step-1),
 .creator-step-track.step-2-active .creator-step-panel:not(#creator-panel-step-2),
 .creator-step-track.step-3-active .creator-step-panel:not(#creator-panel-step-3),
-.creator-step-track.step-4-active .creator-step-panel:not(#creator-panel-step-4) {
+.creator-step-track.step-4-active .creator-step-panel:not(#creator-panel-step-4),
+.creator-step-track.step-5-active .creator-step-panel:not(#creator-panel-step-5) {
   opacity: 0.15;
   pointer-events: none;
 }
@@ -2727,8 +2728,8 @@ body.screenshot-lightbox-open {
   gap: 10px;
   pointer-events: none;
   opacity: 1;
-  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
 }
 
@@ -2938,6 +2939,312 @@ body.screenshot-lightbox-open {
 .creator-loader-version-select option {
   background: #181a20;
   color: #fff;
+}
+
+/* ═══ Step 5 Name Instance & Advanced Options ═══ */
+.creator-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.creator-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+}
+
+.creator-form-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #ffffff);
+  letter-spacing: -0.01em;
+}
+
+.creator-input-field {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-sm, 8px);
+  padding: 10px 14px;
+  font-size: 13.5px;
+  color: var(--text, #ffffff);
+  outline: none;
+  transition: border-color var(--transition, 0.14s), background-color var(--transition, 0.14s);
+}
+
+.creator-input-field:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.creator-input-field:focus {
+  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.creator-select-wrap {
+  width: 100%;
+}
+
+.creator-select-field {
+  width: 100%;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6l3.5 4 3.5-4z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-sm, 8px);
+  color: #ffffff !important;
+  padding: 9px 34px 9px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition, 0.14s), background-color var(--transition, 0.14s);
+}
+
+.creator-select-field:hover,
+.creator-select-field:focus {
+  border-color: rgba(255, 255, 255, 0.35);
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.creator-select-field option {
+  background: #181a20;
+  color: #fff;
+}
+
+.creator-field-hint {
+  font-size: 11.5px;
+  color: var(--text-muted, rgba(226, 226, 234, 0.6));
+  line-height: 1.35;
+}
+
+/* Collapsible Advanced Options */
+.creator-advanced-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.creator-advanced-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-sm, 8px);
+  color: var(--text, #ffffff);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: all var(--transition-fast, 0.12s);
+  user-select: none;
+}
+
+.creator-advanced-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.creator-advanced-toggle-btn[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.creator-advanced-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.creator-advanced-icon-svg {
+  color: var(--text-muted, rgba(226, 226, 234, 0.7));
+  transition: color var(--transition-fast);
+}
+
+.creator-advanced-toggle-btn:hover .creator-advanced-icon-svg {
+  color: #ffffff;
+}
+
+.creator-advanced-chevron-svg {
+  color: var(--text-muted, rgba(226, 226, 234, 0.6));
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color var(--transition-fast);
+}
+
+.creator-advanced-toggle-btn[aria-expanded="true"] .creator-advanced-chevron-svg {
+  transform: rotate(180deg);
+  color: #ffffff;
+}
+
+.creator-advanced-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm, 8px);
+  animation: fadeInDown 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.creator-advanced-panel.hidden {
+  display: none !important;
+}
+
+.creator-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+  user-select: none;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm, 8px);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.creator-toggle-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.creator-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.creator-toggle-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #ffffff);
+}
+
+.creator-toggle-sub {
+  font-size: 11.5px;
+  color: var(--text-muted, rgba(226, 226, 234, 0.6));
+}
+
+/* Custom switch component for the creator UI (completely hides native checkbox) */
+.creator-switch {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 20px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.creator-switch input[type="checkbox"] {
+  position: absolute !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  pointer-events: none !important;
+}
+
+.creator-switch-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s;
+}
+
+.creator-switch-slider::before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 2px;
+  bottom: 2px;
+  background-color: #ffffff;
+  border-radius: 50%;
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.creator-switch input:checked + .creator-switch-slider {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+}
+
+.creator-switch input:checked + .creator-switch-slider::before {
+  transform: translateX(18px);
+}
+
+/* Skip assets/libraries container in footer */
+.creator-skip-assets-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 12px;
+  user-select: none;
+}
+
+.creator-skip-assets-container.hidden {
+  display: none !important;
+}
+
+.creator-skip-assets-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.creator-skip-assets-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted, rgba(226, 226, 234, 0.75));
+  transition: color var(--transition-fast);
+}
+
+.creator-skip-assets-toggle:hover .creator-skip-assets-label {
+  color: #ffffff;
+}
+
+/* Question mark tooltip icon */
+.creator-help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-muted, rgba(226, 226, 234, 0.75));
+  font-size: 11px;
+  font-weight: 700;
+  cursor: help;
+  transition: all var(--transition-fast);
+  line-height: 1;
+}
+
+.creator-help-icon:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #ffffff;
+  transform: scale(1.08);
 }
 
 

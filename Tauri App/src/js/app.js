@@ -6765,134 +6765,76 @@ function initInstanceActions() {
     openCreateShortcutModal();
   });
 
-  // New Instance overlay (Hyprland Floating Islands)
-  const overlay = document.getElementById('new-instance-overlay');
-  const instLoaderInput = document.getElementById('inst-loader');
-  const instLoaderVersionTile = document.getElementById('inst-loader-version-tile');
-  const btnToggleNewAdvanced = document.getElementById('btn-toggle-new-advanced');
-  const newInstAdvancedIsland = document.getElementById('new-inst-advanced-island');
-  const instJavaSelect = document.getElementById('inst-java-select');
-  const instMinRamInput = document.getElementById('inst-min-ram');
-  const instMaxRamInput = document.getElementById('inst-max-ram');
-  const instJvmArgsInput = document.getElementById('inst-jvm-args');
-  const instNameInput = document.getElementById('inst-name');
-  const instLoaderVersionInput = document.getElementById('inst-loader-version');
-
-  // Initialize loader button icons for New Instance
-  const newLoaderImgVanilla = document.getElementById('new-loader-img-vanilla');
-  if (newLoaderImgVanilla) newLoaderImgVanilla.src = iconVanilla;
-  const newLoaderImgFabric = document.getElementById('new-loader-img-fabric');
-  if (newLoaderImgFabric) newLoaderImgFabric.src = iconFabric;
-  const newLoaderImgForge = document.getElementById('new-loader-img-forge');
-  if (newLoaderImgForge) newLoaderImgForge.src = iconForge;
-  const newLoaderImgNeoforge = document.getElementById('new-loader-img-neoforge');
-  if (newLoaderImgNeoforge) newLoaderImgNeoforge.src = iconNeoforge;
-  const newLoaderImgQuilt = document.getElementById('new-loader-img-quilt');
-  if (newLoaderImgQuilt) newLoaderImgQuilt.src = iconQuilt;
-
-  function setNewInstanceLoader(loader) {
-    const norm = (loader || 'Fabric').trim();
-    if (instLoaderInput) instLoaderInput.value = norm;
-
-    const btns = document.querySelectorAll('#new-inst-loader-buttons .hypr-loader-btn');
-    btns.forEach(btn => {
-      const match = btn.getAttribute('data-loader').toLowerCase() === norm.toLowerCase();
-      btn.classList.toggle('active', match);
-    });
-
-    const isVanilla = norm.toLowerCase() === 'vanilla';
-    if (instLoaderVersionTile) {
-      instLoaderVersionTile.classList.toggle('hidden', isVanilla);
-    }
-    refreshNewLoaderVersions('');
-  }
-
-  function refreshNewLoaderVersions(preferred) {
-    const mcSel = document.getElementById('inst-mc-version');
-    return loadLoaderVersions(instLoaderVersionInput, instLoaderInput ? instLoaderInput.value : '', mcSel ? mcSel.value : '', preferred);
-  }
-  document.getElementById('inst-mc-version')?.addEventListener('change', () => refreshNewLoaderVersions(instLoaderVersionInput ? instLoaderVersionInput.value : ''));
-
-  const newLoaderBtns = document.querySelectorAll('#new-inst-loader-buttons .hypr-loader-btn');
-  newLoaderBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const loader = btn.getAttribute('data-loader');
-      setNewInstanceLoader(loader);
-    });
-  });
-
-  async function populateNewJavaDropdown() {
-    if (!instJavaSelect) return;
-    instJavaSelect.innerHTML = `
-      <option value="">Use Settings (Default)</option>
-      <option value="__smart__">✦ Smart Java Detection (Auto)</option>
-    `;
-    let installs = _lastJavaInstallations;
-    if (!installs || installs.length === 0) {
-      try {
-        installs = await api.listJavaInstallations();
-        _lastJavaInstallations = installs || [];
-      } catch (_) {
-        installs = [];
-      }
-    }
-    (installs || []).forEach(inst => {
-      const opt = document.createElement('option');
-      opt.value = inst.path;
-      opt.textContent = javaOptionLabel(inst);
-      instJavaSelect.appendChild(opt);
-    });
-    instJavaSelect.value = '';
-  }
-
-  if (btnToggleNewAdvanced && newInstAdvancedIsland) {
-    btnToggleNewAdvanced.addEventListener('click', () => {
-      const isExpanded = btnToggleNewAdvanced.getAttribute('aria-expanded') === 'true';
-      btnToggleNewAdvanced.setAttribute('aria-expanded', String(!isExpanded));
-      newInstAdvancedIsland.classList.toggle('hidden', isExpanded);
-    });
-  }
-
-  async function openNewInstanceModal(folderOptions = null) {
-    if (instNameInput) instNameInput.value = '';
-    const initialLoader = folderOptions?.loader || 'Fabric';
-    const initialLoaderVersion = folderOptions?.loaderVersion || 'latest';
-    setNewInstanceLoader(initialLoader);
-    if (instLoaderVersionInput) instLoaderVersionInput.value = initialLoaderVersion;
-    if (instMinRamInput) instMinRamInput.value = '';
-    if (instMaxRamInput) instMaxRamInput.value = '';
-    if (instJvmArgsInput) instJvmArgsInput.value = '';
-    const instAlwaysOfflineChk = document.getElementById('inst-always-offline');
-    const instSkipAssetsChk = document.getElementById('inst-skip-assets');
-    if (instAlwaysOfflineChk) instAlwaysOfflineChk.checked = false;
-    if (instSkipAssetsChk) instSkipAssetsChk.checked = false;
-    if (btnToggleNewAdvanced && newInstAdvancedIsland) {
-      btnToggleNewAdvanced.setAttribute('aria-expanded', 'false');
-      newInstAdvancedIsland.classList.add('hidden');
-    }
-    populateNewJavaDropdown();
-    overlay.classList.remove('hidden');
-    await loadMcVersions(null, folderOptions?.version);
-    refreshNewLoaderVersions(initialLoaderVersion);
-    await initInstanceDirField(folderOptions);
-  }
-
   // Initialize Choose a Type / Instance Creator Section
   initInstanceCreator({
     onProceedWithMinecraftInstance: async (options) => {
       const opts = typeof options === 'string' ? { name: options } : (options || {});
-      await openNewInstanceModal(opts);
-      if (opts.name && instNameInput) {
-        instNameInput.value = opts.name;
+      // Full creation options are provided from Step 5 of the wizard
+      if (opts.version && opts.name) {
+        const mcVersion = opts.version;
+        let loader = opts.loader || 'Vanilla';
+        let loaderVersion = normalizeLoaderVersionValue(opts.loaderVersion);
+        if (loader.toLowerCase() === 'vanilla') loader = 'vanilla';
+
+        const zlibOk = await confirmZlibIfConflict(loader);
+        if (!zlibOk) return;
+
+        const name = opts.name;
+        let directory = null;
+        if (opts.folderType === 'custom' && opts.customPath) {
+          directory = opts.customPath;
+        } else if (opts.folderType === 'isolated') {
+          const baseDir = defaultMcDirCache || (settings && settings.game_directory) || '';
+          const safeName = name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Instance';
+          directory = baseDir ? `${baseDir}/!Instances/${safeName}` : null;
+        }
+
+        const javaPath = opts.javaPath || '';
+        const minRamMb = opts.minRam || null;
+        const maxRamMb = opts.maxRam || null;
+        const jvmArgs = opts.jvmArgs || '';
+        const alwaysOffline = !!opts.alwaysOffline;
+        const skipAssets = !!opts.skipAssets;
+
+        const installKey = (directory || name).toLowerCase();
+        if (activeInstallKeys.has(installKey)) {
+          showToast(`"${name}" is already being installed — pick a different name or folder`, 'error');
+          return;
+        }
+        activeInstallKeys.add(installKey);
+        const dlId = newInstallDownloadId();
+
+        showToast(`Installing ${name}…`, 'info');
+        if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(dlId, mcVersion, loader);
+
+        try {
+          const result = await api.installVersion(mcVersion, loader, loaderVersion, directory, name, null, dlId, skipAssets);
+          if (result && result.version_id) {
+            addVanillaOverride(result.version_id);
+            try { await api.unhideInstance(result.version_id); } catch (e) { /* fine */ }
+            if (javaPath || minRamMb || maxRamMb || jvmArgs || alwaysOffline) {
+              try {
+                await api.updateInstance(result.version_id, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs, undefined, undefined, alwaysOffline);
+              } catch (e) {
+                console.warn('Could not set initial instance settings:', e);
+              }
+            }
+          }
+          await refreshInstances();
+          showToast('Instance installed!', 'success');
+          renderInstanceList();
+          if (result && result.version_id) {
+            selectInstance(result.version_id);
+          }
+        } catch (e) {
+          console.error('Error in installVersion:', e);
+          showToast(`Install failed: ${e}`, 'error');
+        } finally {
+          activeInstallKeys.delete(installKey);
+        }
       }
     }
   });
-
-  document.getElementById('btn-cancel-new-instance').addEventListener('click', () => overlay.classList.add('hidden'));
-  document.getElementById('btn-cancel-install-form').addEventListener('click', () => overlay.classList.add('hidden'));
-
-  // Install
-  document.getElementById('btn-start-install').addEventListener('click', installInstance);
 
   // Edit Instance overlay
   const editOverlay = document.getElementById('edit-instance-overlay');
@@ -8119,120 +8061,6 @@ function showXrandrWarningModal(onRetry) {
   });
 
   overlay.classList.remove('hidden');
-}
-
-async function installInstance() {
-  const btn = document.getElementById('btn-start-install');
-  if (btn) btn.disabled = true;
-
-  try {
-    const mcVersion = document.getElementById('inst-mc-version')?.value;
-    let loader = document.getElementById('inst-loader')?.value || 'vanilla';
-    let loaderVersion = normalizeLoaderVersionValue(document.getElementById('inst-loader-version')?.value);
-    if (!mcVersion) {
-      showToast('Version required', 'error');
-      if (btn) btn.disabled = false;
-      return;
-    }
-    if (loader.toLowerCase() === 'vanilla') loader = 'vanilla';
-
-    const zlibOk = await confirmZlibIfConflict(loader);
-    if (!zlibOk) {
-      if (btn) btn.disabled = false;
-      return;
-    }
-
-    // No name typed — fall back to "{Loader} {Minecraft version}", e.g.
-    // "Fabric 1.21.1" or "Vanilla 1.20.4", instead of blocking install.
-    const typedName = document.getElementById('inst-name')?.value?.trim();
-    const name = typedName || `${loaderLabel(loader)} ${mcVersion}`;
-
-    const useCustomDir = !!document.getElementById('inst-dir-custom')?.checked;
-    const useSeparatedDir = !!document.getElementById('inst-dir-separated')?.checked;
-    let directory = null; // null => backend uses the default/global Minecraft directory
-    if (useCustomDir) {
-      directory = document.getElementById('inst-dir-path')?.value?.trim() || null;
-    } else if (useSeparatedDir) {
-      // Same mechanism as a custom directory, just auto-computed: puts this
-      // instance's mods/saves/config in their own folder under
-      // <default minecraft dir>/!Instances/<name>/ so a fresh instance can
-      // never inherit or collide with another instance's mods.
-      const baseDir = defaultMcDirCache || (settings && settings.game_directory) || '';
-      const safeName = name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Instance';
-      directory = baseDir ? `${baseDir}/!Instances/${safeName}` : null;
-    }
-
-    const javaPath = document.getElementById('inst-java-select')?.value || '';
-    const minRamVal = document.getElementById('inst-min-ram')?.value;
-    const minRamMb = minRamVal ? parseInt(minRamVal, 10) : null;
-    const maxRamVal = document.getElementById('inst-max-ram')?.value;
-    const maxRamMb = maxRamVal ? parseInt(maxRamVal, 10) : null;
-    const jvmArgs = document.getElementById('inst-jvm-args')?.value?.trim() || '';
-    const alwaysOffline = !!document.getElementById('inst-always-offline')?.checked;
-    const skipAssets = !!document.getElementById('inst-skip-assets')?.checked;
-
-    // Several installs can run at once, but two of them must never write
-    // into the same instance folder.
-    const installKey = (directory || name).toLowerCase();
-    if (activeInstallKeys.has(installKey)) {
-      showToast(`"${name}" is already being installed — pick a different name or folder`, 'error');
-      if (btn) btn.disabled = false;
-      return;
-    }
-    activeInstallKeys.add(installKey);
-    const dlId = newInstallDownloadId();
-
-    // Close the form right away — the floating download widget (bottom-left)
-    // tracks progress from here, so the user is free to keep using the app
-    // and to start another install while this one downloads.
-    document.getElementById('new-instance-overlay')?.classList.add('hidden');
-    if (btn) btn.disabled = false;
-    showToast(`Installing ${name}…`, 'info');
-    if (dlWidgetGeneric) dlWidgetGeneric.beginInstanceInstall(dlId, mcVersion, loader);
-
-    try {
-      const result = await api.installVersion(mcVersion, loader, loaderVersion, directory, name, null, dlId, skipAssets);
-
-      // A brand-new instance should never come up hidden — but its
-      // version_id can coincide with an entry that was previously hidden
-      // (e.g. a bare vanilla version auto-hidden because it only existed to
-      // satisfy a modded instance's dependency, or one the user hid earlier).
-      // Since this was just explicitly installed, make sure it's visible.
-      if (result && result.version_id) {
-        addVanillaOverride(result.version_id);
-        try { await api.unhideInstance(result.version_id); } catch (e) { /* not hidden — fine */ }
-        if (javaPath || minRamMb || maxRamMb || jvmArgs || alwaysOffline) {
-          try {
-            await api.updateInstance(result.version_id, name, loaderVersion, javaPath, minRamMb, maxRamMb, jvmArgs, undefined, undefined, alwaysOffline);
-          } catch (e) {
-            console.warn('Could not set initial instance settings:', e);
-          }
-        }
-      }
-
-      await refreshInstances();
-
-      showToast('Instance installed!', 'success');
-      renderInstanceList();
-      if (result && result.version_id) {
-        selectInstance(result.version_id);
-      }
-    } catch (e) {
-      if (String(e).toLowerCase().includes('cancel')) {
-        showToast('Installation cancelled', 'info');
-      } else {
-        if (dlWidgetGeneric) dlWidgetGeneric.failInstanceInstall(dlId, String(e));
-        showToast('Install failed: ' + e, 'error');
-      }
-    } finally {
-      activeInstallKeys.delete(installKey);
-    }
-  } catch (err) {
-    console.error('Error in installInstance:', err);
-    showToast('Failed to start installation: ' + err, 'error');
-  } finally {
-    if (btn) btn.disabled = false;
-  }
 }
 
 // ══════════════════════════════════════════════════════════════════

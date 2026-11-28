@@ -8,7 +8,7 @@ import iconQuilt from '../assets/loaders/quilt.png';
  * Initializes the "Choose a type" / New Instance Creator section:
  * - Downloads / caches background pictures from GitHub into "<Zero Launcher directory>/assets/background/":
  *     - minecraft-wilderness-bound.jpg (Minecraft instance, Import)
- *     - oneclient.jpeg (OneClient)
+ *     - oneclient.jpg (OneClient)
  *     - modpacks.jpg (Modpack)
  * - Smooth cross-fade animation when switching or hovering over instance types
  * - Hides the top-bar and custom titlebar elements while active
@@ -32,7 +32,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
 
   const remoteUrls = {
     'minecraft': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg',
-    'oneclient': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpeg',
+    'oneclient': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpg',
     'modpack': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/modpacks.jpg',
     'minecarft-tiny-takeover.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecarft-tiny-takeover.png',
     'minecraft-chaos-cubed.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-chaos-cubed.png',
@@ -139,31 +139,22 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
 
     currentImageKey = key;
 
-    // Cross-fade: incoming layer is raised above the current layer, set to the new image,
-    // and faded in to opacity: 1. After it fades in, the bottom layer is hidden.
-    // This guarantees the previous image is NEVER cleared while the transition is happening.
+    // Cross-fade: simultaneously fade out the outgoing layer and fade in the incoming layer.
+    // Both layers transition smoothly with CSS opacity (0.75s ease) for a true cross-fade.
     if (activeLayer === 'a') {
       layerB.style.backgroundImage = `url("${url}")`;
       layerB.style.zIndex = '2';
       layerA.style.zIndex = '1';
       layerB.style.opacity = '1';
+      layerA.style.opacity = '0';
       activeLayer = 'b';
-      setTimeout(() => {
-        if (activeLayer === 'b' && thisToken === transitionToken) {
-          layerA.style.opacity = '0';
-        }
-      }, 550);
     } else {
       layerA.style.backgroundImage = `url("${url}")`;
       layerA.style.zIndex = '2';
       layerB.style.zIndex = '1';
       layerA.style.opacity = '1';
+      layerB.style.opacity = '0';
       activeLayer = 'a';
-      setTimeout(() => {
-        if (activeLayer === 'a' && thisToken === transitionToken) {
-          layerB.style.opacity = '0';
-        }
-      }, 550);
     }
   }
 
@@ -196,16 +187,16 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   let isVersionsLoaded = false;
 
   const creatorDescriptions = {
-    'minecraft-instance': 'Pick a loader and version, then add mods yourself. Has its own game folder.',
-    'oneclient': 'The most bleeding edge performance, QoL mods and world hosting in one instance. Shares configs, worlds, and packs with your other OneClient instances, or gets its own folder.',
-    'modpack': 'Install a pack from Modrinth or CurseForge, or a file you downloaded. Has its own game folder.',
-    'import': 'Open an instance someone exported from OneClient, or bring one over from another launcher. Has its own game folder.'
+    'minecraft-instance': 'Set up a custom vanilla or modded profile with your choice of loader and version.',
+    'oneclient': 'Optimized all-in-one client featuring built-in performance tweaks, essential QoL mods, and seamless world hosting.',
+    'modpack': 'Browse and install complete community modpacks directly from Modrinth, CurseForge, or a local package.',
+    'import': 'Import existing instances or backups from other launchers and external archive files.'
   };
 
   const folderDescriptions = {
-    'shared': 'Uses the standard root game directory (~/.minecraft). All saves and packs are shared.',
-    'isolated': 'Gets its own folder under !Instances. Worlds, settings and mods stay separate and clean.',
-    'custom': 'Uses a custom folder of your choice on disk.'
+    'shared': 'Stores data in the default global Minecraft directory (~/.minecraft), sharing worlds and configs across profiles.',
+    'isolated': 'Keeps all saves, configurations, and mods strictly contained in an independent instance directory.',
+    'custom': 'Specify an exact directory on your storage drive to house this instance.'
   };
 
   // Step DOM elements
@@ -217,6 +208,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const panelStep2 = document.getElementById('creator-panel-step-2');
   const panelStep3 = document.getElementById('creator-panel-step-3');
   const panelStep4 = document.getElementById('creator-panel-step-4');
+  const panelStep5 = document.getElementById('creator-panel-step-5');
   const btnBack = document.getElementById('btn-creator-back');
   const folderOptionCards = document.querySelectorAll('#creator-list-step-2 .creator-option-card');
   const customPathBox = document.getElementById('creator-custom-path-box');
@@ -224,6 +216,18 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const customPathError = document.getElementById('creator-custom-path-error');
   const btnBrowseCustom = document.getElementById('btn-creator-browse-custom');
   const sharedPathHint = document.getElementById('creator-shared-path-hint');
+
+  // Step 5 DOM elements
+  const instNameInput = document.getElementById('creator-inst-name');
+  const btnAdvancedToggle = document.getElementById('btn-creator-advanced-toggle');
+  const advancedPanel = document.getElementById('creator-advanced-panel');
+  const javaSelect = document.getElementById('creator-java-select');
+  const minRamInput = document.getElementById('creator-min-ram');
+  const maxRamInput = document.getElementById('creator-max-ram');
+  const jvmArgsInput = document.getElementById('creator-jvm-args');
+  const alwaysOfflineCheckbox = document.getElementById('creator-always-offline');
+  const skipAssetsWrap = document.getElementById('creator-skip-assets-wrap');
+  const skipAssetsCheckbox = document.getElementById('creator-skip-assets');
 
   // Step 3 version list elements
   const versionSearchInput = document.getElementById('creator-version-search');
@@ -582,46 +586,123 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     updateSummaryPanel();
   });
 
+  async function populateCreatorJavaDropdown() {
+    if (!javaSelect) return;
+    javaSelect.innerHTML = `
+      <option value="">Use Settings (Default)</option>
+      <option value="__smart__">✦ Smart Java Detection (Auto)</option>
+    `;
+    let installs = [];
+    try {
+      if (window.__TAURI__?.invoke) {
+        installs = await window.__TAURI__.invoke('list_java_installations');
+      }
+    } catch (_) {
+      installs = [];
+    }
+    (installs || []).forEach(inst => {
+      const opt = document.createElement('option');
+      opt.value = inst.path;
+      const ver = inst.version ? `Java ${inst.version}` : 'Java';
+      const arch = inst.arch ? ` (${inst.arch})` : '';
+      opt.textContent = `${ver}${arch} — ${inst.path}`;
+      javaSelect.appendChild(opt);
+    });
+    javaSelect.value = '';
+  }
+
+  btnAdvancedToggle?.addEventListener('click', () => {
+    const isExpanded = btnAdvancedToggle.getAttribute('aria-expanded') === 'true';
+    btnAdvancedToggle.setAttribute('aria-expanded', String(!isExpanded));
+    advancedPanel?.classList.toggle('hidden', isExpanded);
+    syncViewportHeight();
+  });
+
   function setStep(step) {
     currentStep = step;
-    stepTrack?.classList.remove('step-1-active', 'step-2-active', 'step-3-active', 'step-4-active');
+    stepTrack?.classList.remove('step-1-active', 'step-2-active', 'step-3-active', 'step-4-active', 'step-5-active');
+
+    // Skip assets toggle only shows on the final creation step
+    if (skipAssetsWrap) {
+      if (step === 5) {
+        skipAssetsWrap.classList.remove('hidden');
+      } else {
+        skipAssetsWrap.classList.add('hidden');
+      }
+    }
 
     if (step === 1) {
       stepTrack?.classList.add('step-1-active');
       btnCancel?.classList.remove('hidden');
       btnBack?.classList.add('hidden');
+      if (btnNext) {
+        btnNext.textContent = 'Next';
+        btnNext.disabled = false;
+      }
 
-      morphText(mainTitle, 'Choose a type');
-      morphText(mainSubtitle, 'Four ways to start. Packages can be added to any of them later.');
+      morphText(mainTitle, 'Choose Instance Type');
+      morphText(mainSubtitle, 'Select how you want to build this profile. Mods and configurations can be customized at any time.');
       morphText(creatorFooterInfo, creatorDescriptions[selectedCreatorType] || '');
       requestAnimationFrame(() => syncViewportHeight());
     } else if (step === 2) {
       stepTrack?.classList.add('step-2-active');
       btnCancel?.classList.add('hidden');
       btnBack?.classList.remove('hidden');
+      if (btnNext) {
+        btnNext.textContent = 'Next';
+        btnNext.disabled = false;
+      }
 
-      morphText(mainTitle, 'Choose a game folder');
-      morphText(mainSubtitle, 'Where this instance keeps its worlds, settings and packs.');
+      morphText(mainTitle, 'Installation Directory');
+      morphText(mainSubtitle, 'Define where this instance will store its worlds, mods, resource packs, and config files.');
       updateFolderStepUI();
       requestAnimationFrame(() => syncViewportHeight());
     } else if (step === 3) {
       stepTrack?.classList.add('step-3-active');
       btnCancel?.classList.add('hidden');
       btnBack?.classList.remove('hidden');
+      if (btnNext) {
+        btnNext.textContent = 'Next';
+        btnNext.disabled = false;
+      }
 
-      morphText(mainTitle, 'Choose a version');
-      morphText(mainSubtitle, 'Every Minecraft version. Switch the release type to reach snapshots, betas and alphas.');
-      morphText(creatorFooterInfo, `${selectedMcVersion || 'This version'} downloads the first time you launch it.`);
+      morphText(mainTitle, 'Minecraft Version');
+      morphText(mainSubtitle, 'Select from official releases or toggle the filter to access snapshots, experimental builds, and legacy versions.');
+      morphText(creatorFooterInfo, `${selectedMcVersion || 'This version'} will be verified and downloaded automatically.`);
       loadVersions();
       requestAnimationFrame(() => syncViewportHeight());
     } else if (step === 4) {
       stepTrack?.classList.add('step-4-active');
       btnCancel?.classList.add('hidden');
       btnBack?.classList.remove('hidden');
+      if (btnNext) {
+        btnNext.textContent = 'Next';
+        btnNext.disabled = false;
+      }
 
-      morphText(mainTitle, 'Choose a mod loader');
-      morphText(mainSubtitle, `Loaders are what packages install into. Only the ones with a build for ${selectedMcVersion || 'this version'} can be picked.`);
+      morphText(mainTitle, 'Mod Loader');
+      morphText(mainSubtitle, `Select a mod loader for ${selectedMcVersion || 'your chosen version'}, or pick Vanilla for an unmodified game experience.`);
       updateLoaderStepUI();
+      requestAnimationFrame(() => syncViewportHeight());
+    } else if (step === 5) {
+      stepTrack?.classList.add('step-5-active');
+      btnCancel?.classList.add('hidden');
+      btnBack?.classList.remove('hidden');
+      if (btnNext) {
+        btnNext.textContent = 'Create instance';
+        btnNext.disabled = false;
+      }
+
+      // Default instance name placeholder based on chosen version and loader
+      const defaultName = `${selectedLoader === 'Vanilla' ? 'Vanilla' : selectedLoader} ${selectedMcVersion || ''}`.trim();
+      if (instNameInput && !instNameInput.value) {
+        instNameInput.placeholder = defaultName || '26.3 Fabric';
+      }
+
+      morphText(mainTitle, 'Configure & Finalize');
+      morphText(mainSubtitle, 'Give your instance a name and optionally tweak Java and memory settings.');
+      morphText(creatorFooterInfo, 'All instance assets and configurations are saved locally on your device.');
+      populateCreatorJavaDropdown();
       requestAnimationFrame(() => syncViewportHeight());
     }
 
@@ -698,7 +779,9 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   });
 
   btnBack?.addEventListener('click', () => {
-    if (currentStep === 4) {
+    if (currentStep === 5) {
+      setStep(4);
+    } else if (currentStep === 4) {
       setStep(3);
     } else if (currentStep === 3) {
       setStep(2);
@@ -711,6 +794,13 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     selectedLoader = 'Fabric';
     selectedLoaderVersion = 'latest';
     if (!selectedFolderType) selectedFolderType = 'isolated';
+    if (skipAssetsCheckbox) skipAssetsCheckbox.checked = true;
+    if (alwaysOfflineCheckbox) alwaysOfflineCheckbox.checked = false;
+    if (instNameInput) instNameInput.value = '';
+    if (btnAdvancedToggle && advancedPanel) {
+      btnAdvancedToggle.setAttribute('aria-expanded', 'false');
+      advancedPanel.classList.add('hidden');
+    }
     if (!selectedMcVersion && versionsManifest.length > 0) {
       const firstRelease = versionsManifest.find(v => v.type === 'release');
       selectedMcVersion = firstRelease ? firstRelease.id : (versionsManifest[0]?.id || '1.21.1');
@@ -721,6 +811,11 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       startMinecraftSlideshow();
     } else {
       stopMinecraftSlideshow();
+    }
+
+    if (closeTimeout) {
+      clearTimeout(closeTimeout);
+      closeTimeout = null;
     }
 
     if (newInstanceSection) {
@@ -736,6 +831,8 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
   }
 
+  let closeTimeout = null;
+
   function closeCreatorSection() {
     stopMinecraftSlideshow();
     if (hoverBgTimer) {
@@ -748,7 +845,12 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     if (topBar) {
       topBar.classList.remove('top-bar-creator-hidden');
     }
-    setStep(1);
+    // Defer reset until after the exit animation (380ms) completes so the fade/slide-out is fully visible
+    if (closeTimeout) clearTimeout(closeTimeout);
+    closeTimeout = setTimeout(() => {
+      setStep(1);
+      closeTimeout = null;
+    }, 380);
   }
 
   btnNewInstance?.addEventListener('click', () => {
@@ -843,17 +945,40 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       return;
     }
 
-    // Step 4 (Proceed with selected version, folder, loader & loader version)
-    if (currentStep === 4) {
+    // Step 4 -> Step 5: Name the instance & advanced options
+    if (currentStep === 4 && selectedCreatorType === 'minecraft-instance') {
+      setStep(5);
+      return;
+    }
+
+    // Step 5: Create and install the instance
+    if (currentStep === 5 && selectedCreatorType === 'minecraft-instance') {
+      const typedName = instNameInput?.value?.trim();
+      const defaultName = `${selectedLoader === 'Vanilla' ? 'Vanilla' : selectedLoader} ${selectedMcVersion || ''}`.trim();
+      const finalName = typedName || defaultName || 'Instance';
+
+      const minRamVal = minRamInput?.value ? parseInt(minRamInput.value, 10) : null;
+      const maxRamVal = maxRamInput?.value ? parseInt(maxRamInput.value, 10) : null;
+      const javaPathVal = javaSelect?.value || '';
+      const jvmArgsVal = jvmArgsInput?.value?.trim() || '';
+      const alwaysOfflineVal = !!alwaysOfflineCheckbox?.checked;
+      const skipAssetsVal = !!skipAssetsCheckbox?.checked;
+
       closeCreatorSection();
       if (typeof onProceedWithMinecraftInstance === 'function') {
         await onProceedWithMinecraftInstance({
-          name: '',
+          name: finalName,
           folderType: selectedFolderType,
           customPath: customFolderPath,
           version: selectedMcVersion,
           loader: selectedLoader,
-          loaderVersion: selectedLoader === 'Vanilla' ? '' : (selectedLoaderVersion || 'latest')
+          loaderVersion: selectedLoader === 'Vanilla' ? '' : (selectedLoaderVersion || 'latest'),
+          javaPath: javaPathVal,
+          minRam: minRamVal,
+          maxRam: maxRamVal,
+          jvmArgs: jvmArgsVal,
+          alwaysOffline: alwaysOfflineVal,
+          skipAssets: skipAssetsVal
         });
       }
       return;
