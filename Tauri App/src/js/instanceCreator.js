@@ -39,7 +39,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     'minecraft-chase-the-skies.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-chase-the-skies.png',
     'minecraft-mounts-of-mayhem.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-mounts-of-mayhem.png',
     'minecraft-the-copper-age.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-the-copper-age.png',
-    'minecraft-trails-and-tales.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-trails-and-tales.png',
+    'minecraft-nether-update.png': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-nether-update.png',
     'minecraft-wilderness-bound.jpg': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg'
   };
 
@@ -50,7 +50,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     'minecraft-chase-the-skies.png',
     'minecraft-mounts-of-mayhem.png',
     'minecraft-the-copper-age.png',
-    'minecraft-trails-and-tales.png'
+    'minecraft-nether-update.png'
   ];
 
   let minecraftBgIndex = 0;

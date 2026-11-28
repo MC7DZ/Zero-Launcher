@@ -68,9 +68,9 @@ pub fn resolve_creator_bg_target(key: &str) -> (String, String) {
             "minecraft-the-copper-age.png".to_string(),
             "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-the-copper-age.png".to_string(),
         ),
-        "trails-and-tales" | "minecraft-trails-and-tales" => (
-            "minecraft-trails-and-tales.png".to_string(),
-            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-trails-and-tales.png".to_string(),
+        "nether-update" | "minecraft-nether-update" => (
+            "minecraft-nether-update.png".to_string(),
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-nether-update.png".to_string(),
         ),
         _ => (
             "minecraft-wilderness-bound.jpg".to_string(),
