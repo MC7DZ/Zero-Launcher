@@ -781,6 +781,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     });
 
     // Hover: preview background image only after hovering for more than 1 second (1000ms)
+    // Also pause the 5-second slideshow while hovering
     card.addEventListener('mouseenter', () => {
       if (card.classList.contains('disabled')) return;
       if (hoverBgTimer) {
@@ -788,6 +789,9 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
         hoverBgTimer = null;
       }
       const hoverType = card.dataset.type;
+      // Pause slideshow while cursor is exploring other options
+      stopMinecraftSlideshow();
+
       hoverBgTimer = setTimeout(() => {
         transitionBackground(typeToImageKey(hoverType));
       }, 1000);
@@ -801,13 +805,16 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     });
   });
 
-  // When cursor leaves the options list, return to currently selected card's background
+  // When cursor leaves the options list, return to currently selected card's background and resume slideshow
   creatorOptionsList?.addEventListener('mouseleave', () => {
     if (hoverBgTimer) {
       clearTimeout(hoverBgTimer);
       hoverBgTimer = null;
     }
     transitionBackground(typeToImageKey(selectedCreatorType));
+    if (selectedCreatorType === 'minecraft-instance') {
+      startMinecraftSlideshow();
+    }
   });
 
   btnClose?.addEventListener('click', closeCreatorSection);
