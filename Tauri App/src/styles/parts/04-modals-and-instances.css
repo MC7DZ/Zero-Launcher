@@ -2182,6 +2182,8 @@ body.screenshot-lightbox-open {
   font-weight: 700;
   color: var(--text, #e2e2ea);
   letter-spacing: -0.01em;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .creator-subtitle {
@@ -2189,6 +2191,13 @@ body.screenshot-lightbox-open {
   font-size: 12px;
   color: var(--text-muted, rgba(226, 226, 234, 0.6));
   font-weight: 400;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.creator-text-changing {
+  opacity: 0 !important;
+  transform: translateY(-4px) !important;
 }
 
 .creator-close-btn {
@@ -2210,12 +2219,56 @@ body.screenshot-lightbox-open {
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* Animated viewport with smooth auto-height expansion/shrinking */
+.creator-body-viewport {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  transition: height 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: height;
+}
+
+/* Horizontal sliding track */
+.creator-step-track {
+  display: flex;
+  width: 200%;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.creator-step-track.step-1-active {
+  transform: translateX(0%);
+}
+
+.creator-step-track.step-2-active {
+  transform: translateX(-50%);
+}
+
+.creator-step-panel {
+  width: 50%;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  opacity: 1;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.creator-step-track.step-1-active #creator-panel-step-2 {
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.creator-step-track.step-2-active #creator-panel-step-1 {
+  opacity: 0.2;
+  pointer-events: none;
+}
+
 .creator-options-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 16px 20px 18px 20px;
   background: transparent;
+  box-sizing: border-box;
 }
 
 /* Option cards - fully transparent with clean outline */
@@ -2328,6 +2381,8 @@ body.screenshot-lightbox-open {
   color: var(--text-muted);
   line-height: 1.4;
   flex: 1;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .creator-footer-actions {

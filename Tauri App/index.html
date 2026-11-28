@@ -287,165 +287,165 @@
       <div class="new-instance-bg-backdrop creator-bg-layer-b"></div>
       <div class="creator-bg-vignette"></div>
       <div class="new-instance-creator-card">
-        <!-- Step 1: Choose a type Header -->
-        <div class="creator-card-header creator-step-1-el" id="creator-header-step-1">
+        <!-- Animated Header Area -->
+        <div class="creator-card-header">
           <div class="creator-header-text">
-            <h2 class="creator-title">Choose a type</h2>
-            <p class="creator-subtitle">Four ways to start. Packages can be added to any of them later.</p>
+            <h2 class="creator-title" id="creator-main-title">Choose a type</h2>
+            <p class="creator-subtitle" id="creator-main-subtitle">Four ways to start. Packages can be added to any of them later.</p>
           </div>
           <button type="button" class="creator-close-btn" id="btn-creator-close" title="Back to Instances">✕</button>
         </div>
 
-        <!-- Step 2: Choose a game folder Header -->
-        <div class="creator-card-header creator-step-2-el hidden" id="creator-header-step-2">
-          <div class="creator-header-text">
-            <h2 class="creator-title">Choose a game folder</h2>
-            <p class="creator-subtitle">Where this instance keeps its worlds, settings and packs.</p>
-          </div>
-          <button type="button" class="creator-close-btn" id="btn-creator-close-step2" title="Back to Instances">✕</button>
-        </div>
+        <!-- Animated Steps Body Container -->
+        <div class="creator-body-viewport" id="creator-body-viewport">
+          <div class="creator-step-track step-1-active" id="creator-step-track">
+            <!-- Step 1: Instance Type Options -->
+            <div class="creator-step-panel" id="creator-panel-step-1">
+              <div class="creator-options-list" id="creator-list-step-1">
+                <!-- Option 1: Minecraft instance (Start from scratch) -->
+                <div class="creator-option-card active" data-type="minecraft-instance" id="creator-opt-minecraft">
+                  <div class="creator-option-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="4" y1="21" x2="4" y2="14"></line>
+                      <line x1="4" y1="10" x2="4" y2="3"></line>
+                      <line x1="12" y1="21" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12" y2="3"></line>
+                      <line x1="20" y1="21" x2="20" y2="16"></line>
+                      <line x1="20" y1="12" x2="20" y2="3"></line>
+                      <line x1="1" y1="14" x2="7" y2="14"></line>
+                      <line x1="9" y1="8" x2="15" y2="8"></line>
+                      <line x1="17" y1="16" x2="23" y2="16"></line>
+                    </svg>
+                  </div>
+                  <div class="creator-option-content">
+                    <div class="creator-option-heading">
+                      <span class="creator-option-title">Minecraft instance</span>
+                    </div>
+                    <div class="creator-option-desc">Pick a loader and version, then add mods yourself. Has its own game folder.</div>
+                  </div>
+                </div>
 
-        <!-- Step 1: Instance Type Options List -->
-        <div class="creator-options-list creator-step-1-el" id="creator-list-step-1">
-          <!-- Option 1: Minecraft instance (formerly Start from scratch, selected by default) -->
-          <div class="creator-option-card active" data-type="minecraft-instance" id="creator-opt-minecraft">
-            <div class="creator-option-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="4" y1="21" x2="4" y2="14"></line>
-                <line x1="4" y1="10" x2="4" y2="3"></line>
-                <line x1="12" y1="21" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12" y2="3"></line>
-                <line x1="20" y1="21" x2="20" y2="16"></line>
-                <line x1="20" y1="12" x2="20" y2="3"></line>
-                <line x1="1" y1="14" x2="7" y2="14"></line>
-                <line x1="9" y1="8" x2="15" y2="8"></line>
-                <line x1="17" y1="16" x2="23" y2="16"></line>
-              </svg>
-            </div>
-            <div class="creator-option-content">
-              <div class="creator-option-heading">
-                <span class="creator-option-title">Minecraft instance</span>
+                <!-- Option 2: OneClient -->
+                <div class="creator-option-card" data-type="oneclient" id="creator-opt-oneclient">
+                  <div class="creator-option-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="2" y1="12" x2="22" y2="12"></line>
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                    </svg>
+                  </div>
+                  <div class="creator-option-content">
+                    <div class="creator-option-heading">
+                      <span class="creator-option-title">OneClient</span>
+                      <span class="creator-badge-recommended">Recommended</span>
+                    </div>
+                    <div class="creator-option-desc">The most bleeding edge performance, QoL mods and world hosting in one instance. Shares configs, worlds, and packs with your other OneClient instances, or gets its own folder.</div>
+                  </div>
+                </div>
+
+                <!-- Option 3: Modpack -->
+                <div class="creator-option-card" data-type="modpack" id="creator-opt-modpack">
+                  <div class="creator-option-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                  </div>
+                  <div class="creator-option-content">
+                    <div class="creator-option-heading">
+                      <span class="creator-option-title">Modpack</span>
+                    </div>
+                    <div class="creator-option-desc">Install a pack from Modrinth or CurseForge, or a file you downloaded. Has its own game folder.</div>
+                  </div>
+                </div>
+
+                <!-- Option 4: Import (Coming soon) -->
+                <div class="creator-option-card disabled" data-type="import" id="creator-opt-import">
+                  <div class="creator-option-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                    </svg>
+                  </div>
+                  <div class="creator-option-content">
+                    <div class="creator-option-heading">
+                      <span class="creator-option-title">Import</span>
+                      <span class="creator-badge-coming-soon">Coming soon</span>
+                    </div>
+                    <div class="creator-option-desc">Open an instance someone exported from OneClient, or bring one over from another launcher. Has its own game folder.</div>
+                  </div>
+                </div>
               </div>
-              <div class="creator-option-desc">Pick a loader and version, then add mods yourself. Has its own game folder.</div>
             </div>
-          </div>
 
-          <!-- Option 2: OneClient -->
-          <div class="creator-option-card" data-type="oneclient" id="creator-opt-oneclient">
-            <div class="creator-option-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="2" y1="12" x2="22" y2="12"></line>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-              </svg>
-            </div>
-            <div class="creator-option-content">
-              <div class="creator-option-heading">
-                <span class="creator-option-title">OneClient</span>
-                <span class="creator-badge-recommended">Recommended</span>
+            <!-- Step 2: Choose a Game Folder Options -->
+            <div class="creator-step-panel" id="creator-panel-step-2">
+              <div class="creator-options-list" id="creator-list-step-2">
+                <!-- Folder Option 1: Shared -->
+                <div class="creator-option-card" data-folder="shared" id="creator-folder-shared">
+                  <div class="creator-option-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                    </svg>
+                  </div>
+                  <div class="creator-option-content">
+                    <div class="creator-option-heading">
+                      <span class="creator-option-title">Shared</span>
+                      <span class="creator-badge-subtext" id="creator-shared-path-hint">(~/.minecraft)</span>
+                    </div>
+                    <div class="creator-option-desc">Uses the default root game folder. Worlds, settings and packs are shared with the standard Minecraft directory.</div>
+                  </div>
+                </div>
+
+                <!-- Folder Option 2: Isolated (Default in the middle) -->
+                <div class="creator-option-card active" data-folder="isolated" id="creator-folder-isolated">
+                  <div class="creator-option-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                  </div>
+                  <div class="creator-option-content">
+                    <div class="creator-option-heading">
+                      <span class="creator-option-title">Isolated</span>
+                      <span class="creator-badge-recommended">Recommended</span>
+                    </div>
+                    <div class="creator-option-desc">Gets its own game folder under !Instances. Worlds, settings and packs stay separate from everything else. Can run alongside other instances.</div>
+                  </div>
+                </div>
+
+                <!-- Folder Option 3: Custom directory -->
+                <div class="creator-option-card" data-folder="custom" id="creator-folder-custom">
+                  <div class="creator-option-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+                      <circle cx="12" cy="13" r="2"></circle>
+                    </svg>
+                  </div>
+                  <div class="creator-option-content">
+                    <div class="creator-option-heading">
+                      <span class="creator-option-title">Custom directory</span>
+                    </div>
+                    <div class="creator-option-desc">Choose a specific folder anywhere on your computer for this instance's data.</div>
+                  </div>
+                </div>
+
+                <!-- Custom Directory Path Picker Box (Appears when Custom is selected) -->
+                <div class="creator-custom-path-box hidden" id="creator-custom-path-box">
+                  <div class="creator-custom-path-input-wrap">
+                    <input type="text" id="creator-custom-path-input" class="input-field creator-custom-path-input" placeholder="Select or enter folder path..." autocomplete="off" spellcheck="false" />
+                    <button type="button" id="btn-creator-browse-custom" class="btn-secondary creator-browse-btn">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                      </svg>
+                      Browse…
+                    </button>
+                  </div>
+                  <span class="creator-custom-path-error hidden" id="creator-custom-path-error">Please select a folder to continue</span>
+                </div>
               </div>
-              <div class="creator-option-desc">The most bleeding edge performance, QoL mods and world hosting in one instance. Shares configs, worlds, and packs with your other OneClient instances, or gets its own folder.</div>
             </div>
-          </div>
-
-          <!-- Option 3: Modpack -->
-          <div class="creator-option-card" data-type="modpack" id="creator-opt-modpack">
-            <div class="creator-option-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-            </div>
-            <div class="creator-option-content">
-              <div class="creator-option-heading">
-                <span class="creator-option-title">Modpack</span>
-              </div>
-              <div class="creator-option-desc">Install a pack from Modrinth or CurseForge, or a file you downloaded. Has its own game folder.</div>
-            </div>
-          </div>
-
-          <!-- Option 4: Import (Note: Coming soon) -->
-          <div class="creator-option-card disabled" data-type="import" id="creator-opt-import">
-            <div class="creator-option-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-              </svg>
-            </div>
-            <div class="creator-option-content">
-              <div class="creator-option-heading">
-                <span class="creator-option-title">Import</span>
-                <span class="creator-badge-coming-soon">Coming soon</span>
-              </div>
-              <div class="creator-option-desc">Open an instance someone exported from OneClient, or bring one over from another launcher. Has its own game folder.</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Step 2: Choose a Game Folder Options List -->
-        <div class="creator-options-list creator-step-2-el hidden" id="creator-list-step-2">
-          <!-- Folder Option 1: Shared -->
-          <div class="creator-option-card" data-folder="shared" id="creator-folder-shared">
-            <div class="creator-option-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-              </svg>
-            </div>
-            <div class="creator-option-content">
-              <div class="creator-option-heading">
-                <span class="creator-option-title">Shared</span>
-                <span class="creator-badge-subtext" id="creator-shared-path-hint">(~/.minecraft)</span>
-              </div>
-              <div class="creator-option-desc">Uses the default root game folder. Worlds, settings and packs are shared with the standard Minecraft directory.</div>
-            </div>
-          </div>
-
-          <!-- Folder Option 2: Isolated (Default in the middle) -->
-          <div class="creator-option-card active" data-folder="isolated" id="creator-folder-isolated">
-            <div class="creator-option-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-              </svg>
-            </div>
-            <div class="creator-option-content">
-              <div class="creator-option-heading">
-                <span class="creator-option-title">Isolated</span>
-                <span class="creator-badge-recommended">Recommended</span>
-              </div>
-              <div class="creator-option-desc">Gets its own game folder under !Instances. Worlds, settings and packs stay separate from everything else. Can run alongside other instances.</div>
-            </div>
-          </div>
-
-          <!-- Folder Option 3: Custom directory -->
-          <div class="creator-option-card" data-folder="custom" id="creator-folder-custom">
-            <div class="creator-option-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
-                <circle cx="12" cy="13" r="2"></circle>
-              </svg>
-            </div>
-            <div class="creator-option-content">
-              <div class="creator-option-heading">
-                <span class="creator-option-title">Custom directory</span>
-              </div>
-              <div class="creator-option-desc">Choose a specific folder anywhere on your computer for this instance's data.</div>
-            </div>
-          </div>
-
-          <!-- Custom Directory Path Picker Box (Appears when Custom is selected) -->
-          <div class="creator-custom-path-box hidden" id="creator-custom-path-box">
-            <div class="creator-custom-path-input-wrap">
-              <input type="text" id="creator-custom-path-input" class="input-field creator-custom-path-input" placeholder="Select or enter folder path..." autocomplete="off" spellcheck="false" />
-              <button type="button" id="btn-creator-browse-custom" class="btn-secondary creator-browse-btn">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                </svg>
-                Browse…
-              </button>
-            </div>
-            <span class="creator-custom-path-error hidden" id="creator-custom-path-error">Please select a folder to continue</span>
           </div>
         </div>
 
@@ -455,8 +455,8 @@
             Pick a loader and version, then add mods yourself. Has its own game folder.
           </div>
           <div class="creator-footer-actions">
-            <button type="button" class="btn-ghost creator-btn-cancel creator-step-1-el" id="btn-creator-cancel">Cancel</button>
-            <button type="button" class="btn-ghost creator-btn-cancel creator-step-2-el hidden" id="btn-creator-back">Back</button>
+            <button type="button" class="btn-ghost creator-btn-cancel" id="btn-creator-cancel">Cancel</button>
+            <button type="button" class="btn-ghost creator-btn-cancel hidden" id="btn-creator-back">Back</button>
             <button type="button" class="btn-accent creator-btn-next" id="btn-creator-next">Next</button>
           </div>
         </div>

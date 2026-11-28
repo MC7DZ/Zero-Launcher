@@ -146,9 +146,12 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   };
 
   // Step DOM elements
-  const step1Elements = document.querySelectorAll('.creator-step-1-el');
-  const step2Elements = document.querySelectorAll('.creator-step-2-el');
-  const btnCloseStep2 = document.getElementById('btn-creator-close-step2');
+  const mainTitle = document.getElementById('creator-main-title');
+  const mainSubtitle = document.getElementById('creator-main-subtitle');
+  const bodyViewport = document.getElementById('creator-body-viewport');
+  const stepTrack = document.getElementById('creator-step-track');
+  const panelStep1 = document.getElementById('creator-panel-step-1');
+  const panelStep2 = document.getElementById('creator-panel-step-2');
   const btnBack = document.getElementById('btn-creator-back');
   const folderOptionCards = document.querySelectorAll('#creator-list-step-2 .creator-option-card');
   const customPathBox = document.getElementById('creator-custom-path-box');
@@ -157,18 +160,50 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const btnBrowseCustom = document.getElementById('btn-creator-browse-custom');
   const sharedPathHint = document.getElementById('creator-shared-path-hint');
 
+  // Smoothly morph text with fade-out / fade-in
+  function morphText(el, newText) {
+    if (!el || el.textContent === newText) return;
+    el.classList.add('creator-text-changing');
+    setTimeout(() => {
+      el.textContent = newText;
+      el.classList.remove('creator-text-changing');
+    }, 120);
+  }
+
+  // Smoothly adjust viewport height to match active step panel
+  function syncViewportHeight() {
+    if (!bodyViewport) return;
+    const targetPanel = currentStep === 1 ? panelStep1 : panelStep2;
+    if (targetPanel) {
+      const h = targetPanel.offsetHeight;
+      if (h > 0) {
+        bodyViewport.style.height = `${h}px`;
+      }
+    }
+  }
+
   function setStep(step) {
     currentStep = step;
     if (step === 1) {
-      step1Elements.forEach(el => el.classList.remove('hidden'));
-      step2Elements.forEach(el => el.classList.add('hidden'));
-      if (creatorFooterInfo) {
-        creatorFooterInfo.textContent = creatorDescriptions[selectedCreatorType] || '';
-      }
+      stepTrack?.classList.remove('step-2-active');
+      stepTrack?.classList.add('step-1-active');
+      btnCancel?.classList.remove('hidden');
+      btnBack?.classList.add('hidden');
+
+      morphText(mainTitle, 'Choose a type');
+      morphText(mainSubtitle, 'Four ways to start. Packages can be added to any of them later.');
+      morphText(creatorFooterInfo, creatorDescriptions[selectedCreatorType] || '');
+      requestAnimationFrame(() => syncViewportHeight());
     } else if (step === 2) {
-      step1Elements.forEach(el => el.classList.add('hidden'));
-      step2Elements.forEach(el => el.classList.remove('hidden'));
+      stepTrack?.classList.remove('step-1-active');
+      stepTrack?.classList.add('step-2-active');
+      btnCancel?.classList.add('hidden');
+      btnBack?.classList.remove('hidden');
+
+      morphText(mainTitle, 'Choose a game folder');
+      morphText(mainSubtitle, 'Where this instance keeps its worlds, settings and packs.');
       updateFolderStepUI();
+      requestAnimationFrame(() => syncViewportHeight());
     }
   }
 
@@ -189,9 +224,9 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       if (btnNext) btnNext.disabled = false;
     }
 
-    if (creatorFooterInfo) {
-      creatorFooterInfo.textContent = folderDescriptions[selectedFolderType] || '';
-    }
+    morphText(creatorFooterInfo, folderDescriptions[selectedFolderType] || '');
+    // Delay slightly to let customPathBox render height
+    setTimeout(() => syncViewportHeight(), 30);
   }
 
   function validateCustomPath() {
@@ -203,10 +238,12 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     if (!val) {
       customPathError?.classList.remove('hidden');
       if (btnNext) btnNext.disabled = true;
+      syncViewportHeight();
       return false;
     }
     customPathError?.classList.add('hidden');
     if (btnNext) btnNext.disabled = false;
+    syncViewportHeight();
     return true;
   }
 
@@ -253,6 +290,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     if (topBar) {
       topBar.classList.add('top-bar-creator-hidden');
     }
+    setTimeout(() => syncViewportHeight(), 10);
   }
 
   function closeCreatorSection() {
@@ -296,7 +334,6 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   });
 
   btnClose?.addEventListener('click', closeCreatorSection);
-  btnCloseStep2?.addEventListener('click', closeCreatorSection);
   btnCancel?.addEventListener('click', closeCreatorSection);
 
   btnNext?.addEventListener('click', async () => {
