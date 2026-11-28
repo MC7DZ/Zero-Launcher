@@ -2077,6 +2077,7 @@ body.screenshot-lightbox-open {
   justify-content: center;
   padding: 24px;
   box-sizing: border-box;
+  background-color: var(--bg, #121212);
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);

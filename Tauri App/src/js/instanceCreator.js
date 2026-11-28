@@ -36,6 +36,22 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     'modpack': ''
   };
 
+  const preloadedImages = {
+    'minecraft': null,
+    'oneclient': null,
+    'modpack': null
+  };
+
+  function preloadImageElement(url) {
+    return new Promise((resolve) => {
+      if (!url) return resolve(null);
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(img);
+      img.src = url;
+    });
+  }
+
   async function resolveImageSrc(key) {
     if (cachedUrls[key]) return cachedUrls[key];
     try {
@@ -46,6 +62,8 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
         if (localPath) {
           const url = convertFileSrc ? convertFileSrc(localPath) : localPath;
           cachedUrls[key] = url;
+          // Preload into browser image cache
+          preloadImageElement(url).then(img => { preloadedImages[key] = img; });
           return url;
         }
       }
@@ -54,6 +72,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
     const fallback = remoteUrls[key] || remoteUrls['minecraft'];
     cachedUrls[key] = fallback;
+    preloadImageElement(fallback).then(img => { preloadedImages[key] = img; });
     return fallback;
   }
 
@@ -65,13 +84,24 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
 
   let activeLayer = 'a'; // 'a' or 'b'
   let currentImageKey = '';
+  let transitionToken = 0;
 
   async function transitionBackground(key) {
-    if (key === currentImageKey) return;
-    currentImageKey = key;
+    if (!key || key === currentImageKey) return;
+    const thisToken = ++transitionToken;
 
     const url = await resolveImageSrc(key);
+    // If a newer switch occurred while awaiting, abort
+    if (thisToken !== transitionToken) return;
     if (!layerA || !layerB) return;
+
+    // Ensure the image bitmap is decoded in memory before swapping
+    if (!preloadedImages[key]) {
+      await preloadImageElement(url);
+      if (thisToken !== transitionToken) return;
+    }
+
+    currentImageKey = key;
 
     if (activeLayer === 'a') {
       layerB.style.backgroundImage = `url("${url}")`;
@@ -86,15 +116,16 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
   }
 
-  // Pre-load all three images in the background
-  resolveImageSrc('minecraft').then(url => {
-    if (layerA && !layerA.style.backgroundImage) {
+  // Pre-load all three images immediately in the background
+  ['minecraft', 'oneclient', 'modpack'].forEach(async (key) => {
+    const url = await resolveImageSrc(key);
+    const img = await preloadImageElement(url);
+    preloadedImages[key] = img;
+    if (key === 'minecraft' && layerA && !layerA.style.backgroundImage) {
       layerA.style.backgroundImage = `url("${url}")`;
       currentImageKey = 'minecraft';
     }
   });
-  resolveImageSrc('oneclient');
-  resolveImageSrc('modpack');
 
   let selectedCreatorType = 'minecraft-instance';
 
