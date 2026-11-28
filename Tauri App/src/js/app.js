@@ -6853,7 +6853,7 @@ function initInstanceActions() {
     });
   }
 
-  async function openNewInstanceModal() {
+  async function openNewInstanceModal(folderOptions = null) {
     if (instNameInput) instNameInput.value = '';
     setNewInstanceLoader('Fabric');
     if (instLoaderVersionInput) instLoaderVersionInput.value = 'latest';
@@ -6872,15 +6872,16 @@ function initInstanceActions() {
     overlay.classList.remove('hidden');
     await loadMcVersions();
     refreshNewLoaderVersions('latest');
-    await initInstanceDirField();
+    await initInstanceDirField(folderOptions);
   }
 
   // Initialize Choose a Type / Instance Creator Section
   initInstanceCreator({
-    onProceedWithMinecraftInstance: async (defaultName) => {
-      await openNewInstanceModal();
-      if (defaultName && instNameInput) {
-        instNameInput.value = defaultName;
+    onProceedWithMinecraftInstance: async (options) => {
+      const opts = typeof options === 'string' ? { name: options } : (options || {});
+      await openNewInstanceModal(opts);
+      if (opts.name && instNameInput) {
+        instNameInput.value = opts.name;
       }
     }
   });
@@ -7586,7 +7587,7 @@ async function handleCliLaunch(args) {
 }
 
 let defaultMcDirCache = null;
-async function initInstanceDirField() {
+async function initInstanceDirField(folderOptions = null) {
   const dirDefaultRadio = document.getElementById('inst-dir-default');
   const dirSeparatedRadio = document.getElementById('inst-dir-separated');
   const dirCustomRadio = document.getElementById('inst-dir-custom');
@@ -7598,21 +7599,28 @@ async function initInstanceDirField() {
   const dirCustomCard = document.getElementById('dir-opt-custom-card');
   if (!dirDefaultRadio) return;
 
-  // Reset every time the form is (re)opened. If the user already has at
-  // least one instance, "Separated folder" is picked by default so a new
-  // instance's mods/saves/config can't collide with an existing one's —
-  // otherwise (first-ever instance) there's nothing to collide with yet,
-  // so the plain default directory is simplest.
   const hasExistingInstances = getInstances().length > 0;
-  dirDefaultRadio.checked = !hasExistingInstances;
-  if (dirSeparatedRadio) dirSeparatedRadio.checked = hasExistingInstances;
-  dirCustomRadio.checked = false;
-  if (dirPathRow) dirPathRow.classList.add('hidden');
-  if (dirPathInput) dirPathInput.value = '';
+  let useShared = !hasExistingInstances;
+  let useIsolated = hasExistingInstances;
+  let useCustom = false;
+  let customPath = '';
 
-  if (dirSeparatedCard) dirSeparatedCard.classList.toggle('active', hasExistingInstances);
-  if (dirDefaultCard) dirDefaultCard.classList.toggle('active', !hasExistingInstances);
-  if (dirCustomCard) dirCustomCard.classList.remove('active');
+  if (folderOptions && folderOptions.folderType) {
+    useShared = folderOptions.folderType === 'shared';
+    useIsolated = folderOptions.folderType === 'isolated';
+    useCustom = folderOptions.folderType === 'custom';
+    customPath = folderOptions.customPath || '';
+  }
+
+  dirDefaultRadio.checked = useShared;
+  if (dirSeparatedRadio) dirSeparatedRadio.checked = useIsolated;
+  dirCustomRadio.checked = useCustom;
+  if (dirPathRow) dirPathRow.classList.toggle('hidden', !useCustom);
+  if (dirPathInput) dirPathInput.value = customPath;
+
+  if (dirSeparatedCard) dirSeparatedCard.classList.toggle('active', useIsolated);
+  if (dirDefaultCard) dirDefaultCard.classList.toggle('active', useShared);
+  if (dirCustomCard) dirCustomCard.classList.toggle('active', useCustom);
 
   try {
     if (!defaultMcDirCache) defaultMcDirCache = await api.getDefaultMcDir();

@@ -127,7 +127,10 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
   });
 
+  let currentStep = 1; // 1: Choose a type, 2: Choose a game folder
   let selectedCreatorType = 'minecraft-instance';
+  let selectedFolderType = 'isolated'; // 'shared', 'isolated' (default in middle), 'custom'
+  let customFolderPath = '';
 
   const creatorDescriptions = {
     'minecraft-instance': 'Pick a loader and version, then add mods yourself. Has its own game folder.',
@@ -136,7 +139,112 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     'import': 'Open an instance someone exported from OneClient, or bring one over from another launcher. Has its own game folder.'
   };
 
+  const folderDescriptions = {
+    'shared': 'Uses the standard root game directory (~/.minecraft). All saves and packs are shared.',
+    'isolated': 'Gets its own folder under !Instances. Worlds, settings and mods stay separate and clean.',
+    'custom': 'Uses a custom folder of your choice on disk.'
+  };
+
+  // Step DOM elements
+  const step1Elements = document.querySelectorAll('.creator-step-1-el');
+  const step2Elements = document.querySelectorAll('.creator-step-2-el');
+  const btnCloseStep2 = document.getElementById('btn-creator-close-step2');
+  const btnBack = document.getElementById('btn-creator-back');
+  const folderOptionCards = document.querySelectorAll('#creator-list-step-2 .creator-option-card');
+  const customPathBox = document.getElementById('creator-custom-path-box');
+  const customPathInput = document.getElementById('creator-custom-path-input');
+  const customPathError = document.getElementById('creator-custom-path-error');
+  const btnBrowseCustom = document.getElementById('btn-creator-browse-custom');
+  const sharedPathHint = document.getElementById('creator-shared-path-hint');
+
+  function setStep(step) {
+    currentStep = step;
+    if (step === 1) {
+      step1Elements.forEach(el => el.classList.remove('hidden'));
+      step2Elements.forEach(el => el.classList.add('hidden'));
+      if (creatorFooterInfo) {
+        creatorFooterInfo.textContent = creatorDescriptions[selectedCreatorType] || '';
+      }
+    } else if (step === 2) {
+      step1Elements.forEach(el => el.classList.add('hidden'));
+      step2Elements.forEach(el => el.classList.remove('hidden'));
+      updateFolderStepUI();
+    }
+  }
+
+  function updateFolderStepUI() {
+    folderOptionCards.forEach(c => {
+      c.classList.toggle('active', c.dataset.folder === selectedFolderType);
+    });
+
+    if (selectedFolderType === 'custom') {
+      customPathBox?.classList.remove('hidden');
+      if (customPathInput && !customPathInput.value && customFolderPath) {
+        customPathInput.value = customFolderPath;
+      }
+      validateCustomPath();
+    } else {
+      customPathBox?.classList.add('hidden');
+      customPathError?.classList.add('hidden');
+      if (btnNext) btnNext.disabled = false;
+    }
+
+    if (creatorFooterInfo) {
+      creatorFooterInfo.textContent = folderDescriptions[selectedFolderType] || '';
+    }
+  }
+
+  function validateCustomPath() {
+    if (selectedFolderType !== 'custom') {
+      if (btnNext) btnNext.disabled = false;
+      return true;
+    }
+    const val = (customPathInput?.value || customFolderPath || '').trim();
+    if (!val) {
+      customPathError?.classList.remove('hidden');
+      if (btnNext) btnNext.disabled = true;
+      return false;
+    }
+    customPathError?.classList.add('hidden');
+    if (btnNext) btnNext.disabled = false;
+    return true;
+  }
+
+  customPathInput?.addEventListener('input', () => {
+    customFolderPath = customPathInput.value.trim();
+    validateCustomPath();
+  });
+
+  btnBrowseCustom?.addEventListener('click', async () => {
+    try {
+      const openDialog = window.__TAURI__?.dialog?.open;
+      if (openDialog) {
+        const picked = await openDialog({ directory: true, multiple: false });
+        if (picked) {
+          const path = Array.isArray(picked) ? picked[0] : picked;
+          if (customPathInput) customPathInput.value = path;
+          customFolderPath = path;
+          validateCustomPath();
+        }
+      }
+    } catch (e) {
+      console.warn('Folder browse error:', e);
+    }
+  });
+
+  folderOptionCards.forEach(card => {
+    card.addEventListener('click', () => {
+      selectedFolderType = card.dataset.folder || 'isolated';
+      updateFolderStepUI();
+    });
+  });
+
+  btnBack?.addEventListener('click', () => {
+    setStep(1);
+  });
+
   function openCreatorSection() {
+    setStep(1);
     transitionBackground(typeToImageKey(selectedCreatorType));
 
     if (newInstanceSection) {
@@ -154,6 +262,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     if (topBar) {
       topBar.classList.remove('top-bar-creator-hidden');
     }
+    setStep(1);
   }
 
   btnNewInstance?.addEventListener('click', () => {
@@ -187,17 +296,41 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   });
 
   btnClose?.addEventListener('click', closeCreatorSection);
+  btnCloseStep2?.addEventListener('click', closeCreatorSection);
   btnCancel?.addEventListener('click', closeCreatorSection);
 
   btnNext?.addEventListener('click', async () => {
-    closeCreatorSection();
-    if (selectedCreatorType === 'minecraft-instance') {
-      if (typeof onProceedWithMinecraftInstance === 'function') {
-        await onProceedWithMinecraftInstance('');
+    // If on Step 1 and selected option is 'minecraft-instance', advance to Step 2: Choose a game folder
+    if (currentStep === 1 && selectedCreatorType === 'minecraft-instance') {
+      setStep(2);
+      return;
+    }
+
+    // If on Step 2 (Folder selection for Minecraft instance)
+    if (currentStep === 2) {
+      if (selectedFolderType === 'custom' && !validateCustomPath()) {
+        return;
       }
-    } else if (selectedCreatorType === 'oneclient') {
+      closeCreatorSection();
       if (typeof onProceedWithMinecraftInstance === 'function') {
-        await onProceedWithMinecraftInstance('OneClient');
+        await onProceedWithMinecraftInstance({
+          name: '',
+          folderType: selectedFolderType,
+          customPath: customFolderPath
+        });
+      }
+      return;
+    }
+
+    // Other types
+    closeCreatorSection();
+    if (selectedCreatorType === 'oneclient') {
+      if (typeof onProceedWithMinecraftInstance === 'function') {
+        await onProceedWithMinecraftInstance({
+          name: 'OneClient',
+          folderType: 'isolated',
+          customPath: ''
+        });
       }
     } else if (selectedCreatorType === 'modpack') {
       const discoverModpackBtn = document.getElementById('discover-type-modpack');
@@ -214,6 +347,9 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   return {
     openCreatorSection,
     closeCreatorSection,
-    getSelectedType: () => selectedCreatorType
+    setStep,
+    getSelectedType: () => selectedCreatorType,
+    getSelectedFolderType: () => selectedFolderType,
+    getCustomFolderPath: () => customFolderPath
   };
 }
