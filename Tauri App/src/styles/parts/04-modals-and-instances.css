@@ -2246,7 +2246,7 @@ body.screenshot-lightbox-open {
   max-width: 92vw;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: clamp(10px, 0.9vw, 16px);
+  border-radius: calc(var(--rk, 1) * clamp(10px, 0.9vw, 16px));
   /* Stronger connected ambient shadow behind the UI to merge with the downside tint */
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.75), 0 10px 30px rgba(0, 0, 0, 0.6);
   display: flex;
@@ -2399,7 +2399,7 @@ body.screenshot-lightbox-open {
   align-items: flex-start;
   gap: clamp(10px, 1vw, 16px);
   padding: clamp(10px, 1.1vh, 15px) clamp(12px, 1.2vw, 18px);
-  border-radius: clamp(7px, 0.65vw, 11px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 11px));
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.16);
   cursor: pointer;
@@ -2526,7 +2526,7 @@ body.screenshot-lightbox-open {
   color: var(--text-muted);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: clamp(7px, 0.65vw, 11px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 11px));
   cursor: pointer;
   transition: all var(--transition-fast, 0.08s);
 }
@@ -2543,7 +2543,7 @@ body.screenshot-lightbox-open {
   color: #fff;
   background: var(--accent);
   border: none;
-  border-radius: clamp(7px, 0.65vw, 11px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 11px));
   cursor: pointer;
   transition: filter var(--transition), transform var(--transition), box-shadow var(--transition);
 }
@@ -2575,7 +2575,7 @@ body.screenshot-lightbox-open {
   padding: clamp(10px, 1.1vh, 14px) clamp(12px, 1.2vw, 18px);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: clamp(7px, 0.65vw, 11px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 11px));
 }
 
 .creator-import-file-info {
@@ -2602,7 +2602,7 @@ body.screenshot-lightbox-open {
   padding: clamp(9px, 1vh, 13px) clamp(12px, 1.2vw, 18px);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: clamp(7px, 0.65vw, 11px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 11px));
   color: var(--text-muted);
   font-size: clamp(11px, 0.75vw, 12px);
   line-height: 1.5;
@@ -2659,14 +2659,14 @@ body.screenshot-lightbox-open {
 .creator-import-progress-track {
   height: 4px;
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
+  border-radius: var(--radius-pill, 999px);
   overflow: hidden;
 }
 
 .creator-import-progress-bar {
   height: 100%;
   background: var(--accent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill, 999px);
   transform: scaleX(0);
   transform-origin: left;
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -2689,7 +2689,7 @@ body.screenshot-lightbox-open {
   padding: clamp(9px, 1vh, 14px) clamp(10px, 1.1vw, 16px);
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: clamp(7px, 0.65vw, 11px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 11px));
   animation: fadeInDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -2704,7 +2704,7 @@ body.screenshot-lightbox-open {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: var(--text);
-  border-radius: clamp(7px, 0.65vw, 11px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 11px));
   padding: clamp(7px, 0.8vh, 10px) clamp(9px, 0.9vw, 14px);
   font-size: clamp(12px, 0.8vw, 13px);
   outline: none;
@@ -2722,7 +2722,7 @@ body.screenshot-lightbox-open {
   padding: clamp(7px, 0.8vh, 10px) clamp(10px, 1vw, 15px);
   font-size: clamp(11.5px, 0.78vw, 12.5px);
   font-weight: 600;
-  border-radius: clamp(7px, 0.65vw, 11px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 11px));
   cursor: pointer;
 }
 
@@ -2771,7 +2771,7 @@ body.screenshot-lightbox-open {
   width: 100%;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   padding: clamp(7px, 0.8vh, 10px) clamp(8px, 0.9vw, 14px) clamp(7px, 0.8vh, 10px) clamp(30px, 2.3vw, 38px);
   font-size: clamp(12px, 0.8vw, 13px);
   color: var(--text);
@@ -2805,7 +2805,7 @@ body.screenshot-lightbox-open {
   background-repeat: no-repeat;
   background-position: right 8px center;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   color: #e2e2ea !important;
   padding: clamp(7px, 0.8vh, 10px) clamp(26px, 2vw, 32px) clamp(7px, 0.8vh, 10px) clamp(8px, 0.9vw, 14px);
   font-size: clamp(11.5px, 0.78vw, 12.5px);
@@ -2840,7 +2840,7 @@ body.screenshot-lightbox-open {
 
 .creator-versions-scrollable::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--rk, 1));
 }
 
 .creator-version-card {
@@ -2848,7 +2848,7 @@ body.screenshot-lightbox-open {
   align-items: center;
   justify-content: space-between;
   padding: clamp(7px, 0.9vh, 12px) clamp(10px, 1.1vw, 16px);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.14);
   cursor: pointer;
@@ -3008,7 +3008,7 @@ body.screenshot-lightbox-open {
   padding: clamp(10px, 1.1vh, 15px) clamp(12px, 1.1vw, 18px);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   cursor: pointer;
   user-select: none;
   transition: all var(--transition-fast, 0.12s);
@@ -3076,7 +3076,7 @@ body.screenshot-lightbox-open {
   padding: clamp(10px, 1.1vh, 15px) clamp(12px, 1.2vw, 18px);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   gap: clamp(10px, 1vw, 16px);
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -3117,7 +3117,7 @@ body.screenshot-lightbox-open {
   background-repeat: no-repeat;
   background-position: right 8px center;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   color: #ffffff !important;
   padding: clamp(7px, 0.8vh, 10px) clamp(26px, 2vw, 34px) clamp(7px, 0.8vh, 10px) clamp(10px, 0.9vw, 15px);
   font-size: clamp(12px, 0.8vw, 13px);
@@ -3165,7 +3165,7 @@ body.screenshot-lightbox-open {
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   padding: clamp(7px, 0.9vh, 12px) clamp(10px, 1vw, 15px);
   font-size: clamp(12px, 0.82vw, 13.5px);
   color: var(--text, #ffffff);
@@ -3197,7 +3197,7 @@ body.screenshot-lightbox-open {
   background-repeat: no-repeat;
   background-position: right 10px center;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   color: #ffffff !important;
   padding: clamp(7px, 0.9vh, 12px) clamp(28px, 2.1vw, 36px) clamp(7px, 0.9vh, 12px) clamp(10px, 1vw, 15px);
   font-size: clamp(12px, 0.82vw, 13px);
@@ -3240,7 +3240,7 @@ body.screenshot-lightbox-open {
   padding: clamp(8px, 1vh, 13px) clamp(12px, 1.1vw, 18px);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   color: var(--text, #ffffff);
   cursor: pointer;
   font-size: clamp(12.5px, 0.85vw, 13.5px);
@@ -3295,7 +3295,7 @@ body.screenshot-lightbox-open {
   padding: clamp(12px, 1.3vh, 18px) clamp(14px, 1.3vw, 20px);
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   animation: fadeInDown 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   box-sizing: border-box;
 }
@@ -3314,7 +3314,7 @@ body.screenshot-lightbox-open {
   padding: clamp(7px, 0.8vh, 10px) clamp(8px, 0.9vw, 14px);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: clamp(7px, 0.65vw, 12px);
+  border-radius: calc(var(--rk, 1) * clamp(7px, 0.65vw, 12px));
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
@@ -3365,7 +3365,7 @@ body.screenshot-lightbox-open {
   inset: 0;
   background: rgba(255, 255, 255, 0.16);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 20px;
+  border-radius: calc(20px * var(--rk, 1));
   transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s;
 }
 
