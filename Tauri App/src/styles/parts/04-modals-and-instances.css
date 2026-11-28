@@ -2329,10 +2329,10 @@ body.screenshot-lightbox-open {
   will-change: height;
 }
 
-/* Horizontal sliding track for 5 steps */
+/* Horizontal sliding track for 7 steps (step 1, step 1b, step 1c, steps 2–5) */
 .creator-step-track {
   display: flex;
-  width: 500%;
+  width: 700%;
   transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
 }
@@ -2341,24 +2341,32 @@ body.screenshot-lightbox-open {
   transform: translateX(0%);
 }
 
+.creator-step-track.step-1b-active {
+  transform: translateX(-14.2857%);
+}
+
+.creator-step-track.step-1c-active {
+  transform: translateX(-28.5714%);
+}
+
 .creator-step-track.step-2-active {
-  transform: translateX(-20%);
+  transform: translateX(-42.8571%);
 }
 
 .creator-step-track.step-3-active {
-  transform: translateX(-40%);
+  transform: translateX(-57.1429%);
 }
 
 .creator-step-track.step-4-active {
-  transform: translateX(-60%);
+  transform: translateX(-71.4286%);
 }
 
 .creator-step-track.step-5-active {
-  transform: translateX(-80%);
+  transform: translateX(-85.7143%);
 }
 
 .creator-step-panel {
-  width: 20%;
+  width: 14.2857%;
   flex-shrink: 0;
   box-sizing: border-box;
   opacity: 1;
@@ -2366,6 +2374,8 @@ body.screenshot-lightbox-open {
 }
 
 .creator-step-track.step-1-active .creator-step-panel:not(#creator-panel-step-1),
+.creator-step-track.step-1b-active .creator-step-panel:not(#creator-panel-step-1b),
+.creator-step-track.step-1c-active .creator-step-panel:not(#creator-panel-step-1c),
 .creator-step-track.step-2-active .creator-step-panel:not(#creator-panel-step-2),
 .creator-step-track.step-3-active .creator-step-panel:not(#creator-panel-step-3),
 .creator-step-track.step-4-active .creator-step-panel:not(#creator-panel-step-4),
@@ -2550,6 +2560,116 @@ body.screenshot-lightbox-open {
   filter: grayscale(0.5);
   box-shadow: none;
   transform: none;
+}
+
+/* ── Step 1c: Modpack Import Form ── */
+.creator-import-form {
+  gap: clamp(10px, 1.1vh, 14px);
+}
+
+.creator-import-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(8px, 0.8vw, 14px);
+  padding: clamp(10px, 1.1vh, 14px) clamp(12px, 1.2vw, 18px);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: clamp(7px, 0.65vw, 11px);
+}
+
+.creator-import-file-info {
+  display: flex;
+  align-items: center;
+  gap: clamp(7px, 0.7vw, 10px);
+  color: var(--text-muted);
+  min-width: 0;
+  flex: 1;
+}
+
+.creator-import-filename {
+  font-size: clamp(11.5px, 0.78vw, 13px);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.creator-import-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(6px, 0.6vw, 9px);
+  padding: clamp(9px, 1vh, 13px) clamp(12px, 1.2vw, 18px);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: clamp(7px, 0.65vw, 11px);
+  color: var(--text-muted);
+  font-size: clamp(11px, 0.75vw, 12px);
+  line-height: 1.5;
+}
+
+.creator-import-summary svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.creator-import-summary.summary-ready {
+  border-color: rgba(var(--accent-rgb, 100, 162, 255), 0.3);
+  background: rgba(var(--accent-rgb, 100, 162, 255), 0.06);
+}
+
+.creator-import-summary.summary-error {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.creator-import-summary.summary-error svg {
+  color: #ef4444;
+}
+
+.creator-import-section-label {
+  font-size: clamp(10.5px, 0.72vw, 11.5px);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 clamp(16px, 1.5vw, 22px);
+}
+
+.creator-import-location-cards {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 0.7vh, 10px);
+  padding: 0 clamp(16px, 1.5vw, 22px);
+}
+
+.creator-import-progress-wrap {
+  margin: 0 clamp(16px, 1.5vw, 22px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(5px, 0.6vh, 8px);
+}
+
+.creator-import-progress-status {
+  font-size: clamp(11px, 0.75vw, 12px);
+  color: var(--text-muted);
+}
+
+.creator-import-progress-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.creator-import-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Step 2 Game Folder Specific Styles */

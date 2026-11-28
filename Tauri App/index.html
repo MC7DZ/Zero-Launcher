@@ -329,8 +329,8 @@
                   </div>
                 </div>
 
-                <!-- Option 2: OneClient -->
-                <div class="creator-option-card" data-type="oneclient" id="creator-opt-oneclient">
+                <!-- Option 2: OneClient (Coming soon) -->
+                <div class="creator-option-card disabled" data-type="oneclient" id="creator-opt-oneclient">
                   <div class="creator-option-icon">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <circle cx="12" cy="12" r="10"></circle>
@@ -341,7 +341,7 @@
                   <div class="creator-option-content">
                     <div class="creator-option-heading">
                       <span class="creator-option-title">OneClient</span>
-                      <span class="creator-badge-recommended">Recommended</span>
+                      <span class="creator-badge-coming-soon">Coming soon</span>
                     </div>
                     <div class="creator-option-desc">Optimized all-in-one client featuring built-in performance tweaks, essential QoL mods, and seamless world hosting.</div>
                   </div>
@@ -380,6 +380,141 @@
                     <div class="creator-option-desc">Import existing instances or backups from other launchers and external archive files.</div>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <!-- Step 1b: Modpack Method Selection (Browse or Import) -->
+            <div class="creator-step-panel" id="creator-panel-step-1b">
+              <div class="creator-options-list" id="creator-list-step-1b">
+                <!-- Option A: Browse modpacks -->
+                <div class="creator-option-card active" data-modpack-method="browse" id="creator-modpack-browse">
+                  <div class="creator-option-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="2" y1="12" x2="22" y2="12"></line>
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                    </svg>
+                  </div>
+                  <div class="creator-option-content">
+                    <div class="creator-option-heading">
+                      <span class="creator-option-title">Browse modpacks</span>
+                    </div>
+                    <div class="creator-option-desc">Search Modrinth and CurseForge. Installing a pack from there creates its instance. Opens the browser on the Modpacks tab.</div>
+                  </div>
+                </div>
+
+                <!-- Option B: Import a file -->
+                <div class="creator-option-card" data-modpack-method="import" id="creator-modpack-import">
+                  <div class="creator-option-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="12" y1="18" x2="12" y2="12"></line>
+                      <line x1="9" y1="15" x2="15" y2="15"></line>
+                    </svg>
+                  </div>
+                  <div class="creator-option-content">
+                    <div class="creator-option-heading">
+                      <span class="creator-option-title">Import a file</span>
+                    </div>
+                    <div class="creator-option-desc">Use a modpack you already downloaded or got from someone else. Modrinth .mrpack or CurseForge .zip.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 1c: Modpack Import Form (embedded in creator) -->
+            <div class="creator-step-panel" id="creator-panel-step-1c">
+              <div class="creator-options-list creator-import-form" id="creator-list-step-1c">
+
+                <!-- File picker row -->
+                <div class="creator-import-file-row">
+                  <div class="creator-import-file-info">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>
+                    <span id="creator-import-filename" class="creator-import-filename">No file selected</span>
+                  </div>
+                  <button type="button" id="btn-creator-import-pick" class="btn-secondary creator-browse-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    Browse…
+                  </button>
+                </div>
+
+                <!-- Modpack summary badge -->
+                <div class="creator-import-summary" id="creator-import-summary">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                  <span id="creator-import-summary-text">Select a .mrpack or .zip file to continue.</span>
+                </div>
+
+                <!-- Instance name -->
+                <div class="creator-form-group" style="padding: 0 clamp(16px,1.5vw,22px);">
+                  <label class="creator-form-label" for="creator-import-inst-name">Instance name</label>
+                  <input type="text" id="creator-import-inst-name" class="creator-input-field" placeholder="e.g. All the Mods 9" autocomplete="off" spellcheck="false" />
+                </div>
+
+                <!-- Install Location cards -->
+                <div class="creator-import-section-label">Install location</div>
+                <div class="creator-import-location-cards" id="creator-import-location-cards">
+                  <div class="creator-option-card active" data-import-dir="isolated" id="creator-import-dir-isolated">
+                    <div class="creator-option-icon">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                      </svg>
+                    </div>
+                    <div class="creator-option-content">
+                      <div class="creator-option-heading">
+                        <span class="creator-option-title">Isolated folder</span>
+                        <span class="creator-badge-recommended">Recommended</span>
+                      </div>
+                      <div class="creator-option-desc">Keeps mods, saves, and config separate from other instances.</div>
+                    </div>
+                  </div>
+                  <div class="creator-option-card" data-import-dir="custom" id="creator-import-dir-custom">
+                    <div class="creator-option-icon">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+                        <circle cx="12" cy="13" r="2"></circle>
+                      </svg>
+                    </div>
+                    <div class="creator-option-content">
+                      <div class="creator-option-heading">
+                        <span class="creator-option-title">Custom directory</span>
+                      </div>
+                      <div class="creator-option-desc">Specify an exact folder on your drive.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Custom directory path picker (shown when Custom is selected) -->
+                <div class="creator-custom-path-box hidden" id="creator-import-custom-path-box">
+                  <div class="creator-custom-path-input-wrap">
+                    <input type="text" id="creator-import-custom-path-input" class="input-field creator-custom-path-input" placeholder="Select or enter folder path..." autocomplete="off" spellcheck="false" />
+                    <button type="button" id="btn-creator-import-browse-custom" class="btn-secondary creator-browse-btn">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                      </svg>
+                      Browse…
+                    </button>
+                  </div>
+                  <span class="creator-custom-path-error hidden" id="creator-import-custom-path-error">Please select a folder to continue</span>
+                </div>
+
+                <!-- Progress bar (shown while installing) -->
+                <div class="creator-import-progress-wrap hidden" id="creator-import-progress-wrap">
+                  <div class="creator-import-progress-status" id="creator-import-progress-status">Starting…</div>
+                  <div class="creator-import-progress-track">
+                    <div class="creator-import-progress-bar" id="creator-import-progress-bar"></div>
+                  </div>
+                </div>
+
               </div>
             </div>
 

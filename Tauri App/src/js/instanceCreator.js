@@ -16,8 +16,9 @@ import iconQuilt from '../assets/loaders/quilt.png';
  *
  * @param {Object} options
  * @param {Function} options.onProceedWithMinecraftInstance Callback when proceeding with Minecraft/OneClient instance
+ * @param {Function} options.onImportModpack Callback when importing a modpack from the creator
  */
-export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
+export function initInstanceCreator({ onProceedWithMinecraftInstance, onImportModpack } = {}) {
   const newInstanceSection = document.getElementById('new-instance-section');
   const layerA = document.querySelector('.creator-bg-layer-a');
   const layerB = document.querySelector('.creator-bg-layer-b');
@@ -26,8 +27,8 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const btnClose = document.getElementById('btn-creator-close');
   const btnCancel = document.getElementById('btn-creator-cancel');
   const btnNext = document.getElementById('btn-creator-next');
-  const creatorOptionCards = document.querySelectorAll('.creator-option-card');
-  const creatorOptionsList = document.querySelector('.creator-options-list');
+  const creatorOptionCards = document.querySelectorAll('#creator-list-step-1 .creator-option-card');
+  const creatorOptionsList = document.getElementById('creator-list-step-1');
   const creatorFooterInfo = document.getElementById('creator-footer-info');
 
   const remoteUrls = {
@@ -204,8 +205,9 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
   });
 
-  let currentStep = 1; // 1: Choose a type, 2: Choose a game folder, 3: Choose a version
+  let currentStep = 1; // 1: Choose a type, 1b: Modpack method, 2: Choose a game folder, 3: Choose a version
   let selectedCreatorType = 'minecraft-instance';
+  let selectedModpackMethod = 'browse'; // 'browse' or 'import'
   let selectedFolderType = ''; // Initially unselected until Step 2 or defaulted
   let customFolderPath = '';
   let selectedMcVersion = '';
@@ -214,6 +216,13 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   let loaderVersionsCache = {};
   let versionsManifest = [];
   let isVersionsLoaded = false;
+
+  // Step 1c: Modpack import state
+  let importFilePath = '';
+  let importPreview = null;
+  let importSelectedDir = 'isolated'; // 'isolated' | 'custom'
+  let importCustomPath = '';
+  let importTaskRunning = false;
 
   const creatorDescriptions = {
     'minecraft-instance': 'Set up a custom vanilla or modded profile with your choice of loader and version.',
@@ -234,6 +243,8 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const bodyViewport = document.getElementById('creator-body-viewport');
   const stepTrack = document.getElementById('creator-step-track');
   const panelStep1 = document.getElementById('creator-panel-step-1');
+  const panelStep1b = document.getElementById('creator-panel-step-1b');
+  const panelStep1c = document.getElementById('creator-panel-step-1c');
   const panelStep2 = document.getElementById('creator-panel-step-2');
   const panelStep3 = document.getElementById('creator-panel-step-3');
   const panelStep4 = document.getElementById('creator-panel-step-4');
@@ -245,6 +256,20 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const customPathError = document.getElementById('creator-custom-path-error');
   const btnBrowseCustom = document.getElementById('btn-creator-browse-custom');
   const sharedPathHint = document.getElementById('creator-shared-path-hint');
+
+  // Step 1c: Modpack import form DOM elements
+  const importFilenameEl = document.getElementById('creator-import-filename');
+  const importSummaryEl = document.getElementById('creator-import-summary');
+  const importSummaryText = document.getElementById('creator-import-summary-text');
+  const importInstNameInput = document.getElementById('creator-import-inst-name');
+  const btnImportPick = document.getElementById('btn-creator-import-pick');
+  const importCustomPathBox = document.getElementById('creator-import-custom-path-box');
+  const importCustomPathInput = document.getElementById('creator-import-custom-path-input');
+  const importCustomPathError = document.getElementById('creator-import-custom-path-error');
+  const btnImportBrowseCustom = document.getElementById('btn-creator-import-browse-custom');
+  const importProgressWrap = document.getElementById('creator-import-progress-wrap');
+  const importProgressStatus = document.getElementById('creator-import-progress-status');
+  const importProgressBar = document.getElementById('creator-import-progress-bar');
 
   // Step 5 DOM elements
   const instNameInput = document.getElementById('creator-inst-name');
@@ -368,7 +393,9 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   function syncViewportHeight() {
     if (!bodyViewport) return;
     let targetPanel = panelStep1;
-    if (currentStep === 2) targetPanel = panelStep2;
+    if (currentStep === '1b') targetPanel = panelStep1b;
+    else if (currentStep === '1c') targetPanel = panelStep1c;
+    else if (currentStep === 2) targetPanel = panelStep2;
     else if (currentStep === 3) targetPanel = panelStep3;
     else if (currentStep === 4) targetPanel = panelStep4;
     else if (currentStep === 5) targetPanel = panelStep5;
@@ -656,12 +683,14 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
 
   function setStep(step) {
     currentStep = step;
-    stepTrack?.classList.remove('step-1-active', 'step-2-active', 'step-3-active', 'step-4-active', 'step-5-active');
+    stepTrack?.classList.remove('step-1-active', 'step-1b-active', 'step-1c-active', 'step-2-active', 'step-3-active', 'step-4-active', 'step-5-active');
 
-    // Skip assets toggle only shows on the final creation step
+    // Skip assets toggle shows on the final Minecraft instance step AND the modpack import step
     if (skipAssetsWrap) {
-      if (step === 5) {
+      if (step === 5 || step === '1c') {
         skipAssetsWrap.classList.remove('hidden');
+        // Reset to checked (default) whenever entering these steps fresh
+        if (skipAssetsCheckbox) skipAssetsCheckbox.checked = true;
       } else {
         skipAssetsWrap.classList.add('hidden');
       }
@@ -679,6 +708,67 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       morphText(mainTitle, 'Choose Instance Type');
       morphText(mainSubtitle, 'Select how you want to build this profile. Mods and configurations can be customized at any time.');
       morphText(creatorFooterInfo, creatorDescriptions[selectedCreatorType] || '');
+      requestAnimationFrame(() => syncViewportHeight());
+    } else if (step === '1b') {
+      stepTrack?.classList.add('step-1b-active');
+      btnCancel?.classList.add('hidden');
+      btnBack?.classList.remove('hidden');
+
+      // Reset selection to 'browse' and sync card active states
+      selectedModpackMethod = 'browse';
+      document.querySelectorAll('#creator-list-step-1b .creator-option-card').forEach(c => {
+        c.classList.toggle('active', c.dataset.modpackMethod === 'browse');
+      });
+
+      if (btnNext) {
+        btnNext.textContent = 'Browse modpacks';
+        btnNext.disabled = false;
+      }
+
+      morphText(mainTitle, 'Add a modpack');
+      morphText(mainSubtitle, 'The pack decides the version, the loader and the mods. The instance is named after it.');
+      morphText(creatorFooterInfo, 'Installing a modpack from the browser creates its instance.');
+      requestAnimationFrame(() => syncViewportHeight());
+    } else if (step === '1c') {
+      stepTrack?.classList.add('step-1c-active');
+      btnCancel?.classList.add('hidden');
+      btnBack?.classList.remove('hidden');
+
+      // Reset import form UI
+      importSelectedDir = 'isolated';
+      importCustomPath = '';
+      importTaskRunning = false;
+      if (importInstNameInput) importInstNameInput.value = '';
+      if (importCustomPathInput) importCustomPathInput.value = '';
+      if (importCustomPathBox) importCustomPathBox.classList.add('hidden');
+      if (importCustomPathError) importCustomPathError.classList.add('hidden');
+      if (importProgressWrap) importProgressWrap.classList.add('hidden');
+      if (importProgressBar) importProgressBar.style.transform = 'scaleX(0)';
+      // Sync location card active states
+      document.querySelectorAll('#creator-import-location-cards .creator-option-card').forEach(c => {
+        c.classList.toggle('active', c.dataset.importDir === 'isolated');
+      });
+
+      if (btnNext) {
+        btnNext.textContent = 'Extract & Install';
+        btnNext.disabled = !importFilePath;
+      }
+
+      // If a file was already picked (user came from clicking Import file in 1b),
+      // show the filename and trigger a preview fetch
+      if (importFilePath) {
+        const fname = importFilePath.split(/[\\/]/).pop();
+        if (importFilenameEl) importFilenameEl.textContent = fname;
+        setSummaryLoading();
+        fetchImportPreview(importFilePath);
+      } else {
+        if (importFilenameEl) importFilenameEl.textContent = 'No file selected';
+        setSummaryIdle();
+      }
+
+      morphText(mainTitle, 'Import a modpack');
+      morphText(mainSubtitle, 'Configure the name and install location before extracting.');
+      morphText(creatorFooterInfo, 'Supports Modrinth .mrpack and CurseForge .zip files.');
       requestAnimationFrame(() => syncViewportHeight());
     } else if (step === 2) {
       stepTrack?.classList.add('step-2-active');
@@ -746,6 +836,17 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   }
 
   function updateFolderStepUI() {
+    const isModpack = selectedCreatorType === 'modpack';
+    const sharedCard = document.getElementById('creator-folder-shared');
+    if (sharedCard) {
+      sharedCard.style.display = isModpack ? 'none' : '';
+    }
+
+    // If shared was selected but we are on modpack, switch to isolated
+    if (isModpack && selectedFolderType === 'shared') {
+      selectedFolderType = 'isolated';
+    }
+
     folderOptionCards.forEach(c => {
       c.classList.toggle('active', c.dataset.folder === selectedFolderType);
     });
@@ -814,6 +915,163 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     });
   });
 
+  // Modpack method selection cards (Browse / Import)
+  document.querySelectorAll('#creator-list-step-1b .creator-option-card').forEach(card => {
+    card.addEventListener('click', () => {
+      selectedModpackMethod = card.dataset.modpackMethod || 'browse';
+      document.querySelectorAll('#creator-list-step-1b .creator-option-card').forEach(c => {
+        c.classList.toggle('active', c.dataset.modpackMethod === selectedModpackMethod);
+      });
+      // Update Next button label to reflect choice
+      if (btnNext) {
+        btnNext.textContent = selectedModpackMethod === 'import' ? 'Import file' : 'Browse modpacks';
+      }
+      morphText(creatorFooterInfo,
+        selectedModpackMethod === 'import'
+          ? 'Open a Modrinth .mrpack or CurseForge .zip file from your device.'
+          : 'Installing a modpack from the browser creates its instance.'
+      );
+    });
+  });
+
+  // ── Step 1c helpers ──────────────────────────────────────────────────────
+
+
+  function setSummaryLoading() {
+    if (!importSummaryEl) return;
+    importSummaryEl.className = 'creator-import-summary';
+    if (importSummaryText) importSummaryText.textContent = 'Reading modpack…';
+  }
+
+  function setSummaryIdle() {
+    if (!importSummaryEl) return;
+    importSummaryEl.className = 'creator-import-summary';
+    if (importSummaryText) importSummaryText.textContent = 'Select a .mrpack or .zip file to continue.';
+  }
+
+  function setSummaryReady(text) {
+    if (!importSummaryEl) return;
+    importSummaryEl.className = 'creator-import-summary summary-ready';
+    if (importSummaryText) importSummaryText.textContent = text;
+  }
+
+  function setSummaryError(text) {
+    if (!importSummaryEl) return;
+    importSummaryEl.className = 'creator-import-summary summary-error';
+    if (importSummaryText) importSummaryText.textContent = text;
+  }
+
+  function loaderLabelLocal(l) {
+    if (!l) return '';
+    const m = { fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge', quilt: 'Quilt', vanilla: 'Vanilla' };
+    return m[l.toLowerCase()] || l;
+  }
+
+  async function fetchImportPreview(filePath) {
+    if (btnNext) btnNext.disabled = true;
+    setSummaryLoading();
+    try {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (!invoke) throw new Error('Tauri not available');
+      const preview = await invoke('preview_modpack', { filePath });
+      importPreview = preview;
+
+      const fileName = filePath.split(/[/\\]/).pop();
+      let guessedName = (preview.name || fileName.replace(/\.(mrpack|zip)$/i, ''))
+        .replace(/^\s*\[[^\]]+\]\s*/, '').trim();
+      if (!guessedName) guessedName = preview.name || fileName.replace(/\.(mrpack|zip)$/i, '');
+      if (importInstNameInput && !importInstNameInput.value) importInstNameInput.value = guessedName;
+
+      let summary;
+      if (preview.format === 'generic') {
+        summary = `${fileName} — no modpack manifest (plain .zip). Recognized folders extracted; set version/loader afterward.`;
+      } else {
+        const lp = preview.loader && preview.loader !== 'vanilla'
+          ? `${loaderLabelLocal(preview.loader)}${preview.loader_version ? ' ' + preview.loader_version : ''}`
+          : 'Vanilla';
+        const fmt = preview.format === 'mrpack' ? 'Modrinth' : 'CurseForge';
+        summary = `${fmt} · ${preview.minecraft_version || '?'} · ${lp} · ${preview.file_count} file(s)`;
+      }
+      setSummaryReady(summary);
+      if (btnNext) btnNext.disabled = false;
+    } catch (e) {
+      importPreview = null;
+      setSummaryError('Could not read this file: ' + e);
+      if (btnNext) btnNext.disabled = true;
+    }
+    setTimeout(() => syncViewportHeight(), 30);
+  }
+
+  // File pick button in step 1c
+  btnImportPick?.addEventListener('click', async () => {
+    try {
+      const openDialog = window.__TAURI__?.dialog?.open;
+      if (openDialog) {
+        const picked = await openDialog({
+          multiple: false,
+          filters: [{ name: 'Modpack', extensions: ['mrpack', 'zip'] }]
+        });
+        if (picked) {
+          importFilePath = Array.isArray(picked) ? picked[0] : picked;
+          const fname = importFilePath.split(/[/\\]/).pop();
+          if (importFilenameEl) importFilenameEl.textContent = fname;
+          if (importInstNameInput) importInstNameInput.value = '';
+          importPreview = null;
+          fetchImportPreview(importFilePath);
+        }
+      }
+    } catch (e) {
+      console.warn('File pick error:', e);
+    }
+  });
+
+  // Location card selection in step 1c
+  document.querySelectorAll('#creator-import-location-cards .creator-option-card').forEach(card => {
+    card.addEventListener('click', () => {
+      importSelectedDir = card.dataset.importDir || 'isolated';
+      document.querySelectorAll('#creator-import-location-cards .creator-option-card').forEach(c => {
+        c.classList.toggle('active', c.dataset.importDir === importSelectedDir);
+      });
+      if (importSelectedDir === 'custom') {
+        importCustomPathBox?.classList.remove('hidden');
+        if (importCustomPathInput && importCustomPath) importCustomPathInput.value = importCustomPath;
+      } else {
+        importCustomPathBox?.classList.add('hidden');
+        importCustomPathError?.classList.add('hidden');
+        if (btnNext) btnNext.disabled = !importFilePath;
+      }
+      setTimeout(() => syncViewportHeight(), 30);
+    });
+  });
+
+  // Custom path input for step 1c
+  importCustomPathInput?.addEventListener('input', () => {
+    importCustomPath = importCustomPathInput.value.trim();
+    if (importCustomPath) {
+      importCustomPathError?.classList.add('hidden');
+      if (btnNext) btnNext.disabled = !importFilePath;
+    } else {
+      if (btnNext) btnNext.disabled = true;
+    }
+  });
+
+  btnImportBrowseCustom?.addEventListener('click', async () => {
+    try {
+      const openDialog = window.__TAURI__?.dialog?.open;
+      if (openDialog) {
+        const picked = await openDialog({ directory: true, multiple: false });
+        if (picked) {
+          importCustomPath = Array.isArray(picked) ? picked[0] : picked;
+          if (importCustomPathInput) importCustomPathInput.value = importCustomPath;
+          importCustomPathError?.classList.add('hidden');
+          if (btnNext) btnNext.disabled = !importFilePath;
+        }
+      }
+    } catch (e) {
+      console.warn('Folder browse error:', e);
+    }
+  });
+
   btnBack?.addEventListener('click', () => {
     if (currentStep === 5) {
       setStep(4);
@@ -822,6 +1080,16 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     } else if (currentStep === 3) {
       setStep(2);
     } else if (currentStep === 2) {
+      if (selectedCreatorType === 'modpack') {
+        setStep('1b');
+      } else {
+        setStep(1);
+      }
+    } else if (currentStep === '1c') {
+      importFilePath = '';
+      importPreview = null;
+      setStep('1b');
+    } else if (currentStep === '1b') {
       setStep(1);
     }
   });
@@ -876,6 +1144,16 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     if (!isVersionsLoaded) {
       loadVersions();
     }
+  }
+
+  function openModpackImportSection(filePath) {
+    openCreatorSection();
+    selectedCreatorType = 'modpack';
+    transitionBackground('modpack');
+    stopMinecraftSlideshow();
+    importFilePath = filePath || '';
+    importPreview = null;
+    setStep('1c');
   }
 
   let closeTimeout = null;
@@ -986,15 +1264,73 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   btnCancel?.addEventListener('click', closeCreatorSection);
 
   btnNext?.addEventListener('click', async () => {
-    // Step 1 -> Step 2
+    // Step 1 -> Step 1b (modpack method selection) for modpack type
+    if (currentStep === 1 && selectedCreatorType === 'modpack') {
+      setStep('1b');
+      return;
+    }
+
+    // Step 1 -> Step 2 for minecraft-instance
     if (currentStep === 1 && selectedCreatorType === 'minecraft-instance') {
       if (!selectedFolderType) selectedFolderType = 'isolated';
       setStep(2);
       return;
     }
 
-    // Step 2 -> Step 3: Choose a version
-    if (currentStep === 2 && selectedCreatorType === 'minecraft-instance') {
+    // Step 1b: Modpack method -> execute
+    if (currentStep === '1b') {
+      if (selectedModpackMethod === 'import') {
+        // Navigate to step 1c (embedded import form) — file pick happens there
+        importFilePath = '';
+        importPreview = null;
+        setStep('1c');
+      } else {
+        // Browse modpacks: close creator and open discover → modpacks tab
+        closeCreatorSection();
+        const discoverModpackBtn = document.getElementById('discover-type-modpack');
+        const discoverTabBtn = document.querySelector('.pill-tab[data-tab="discover"]');
+        if (discoverTabBtn) {
+          discoverTabBtn.click();
+          if (discoverModpackBtn) {
+            setTimeout(() => discoverModpackBtn.click(), 120);
+          }
+        }
+      }
+      return;
+    }
+
+    // Step 1c: Run the modpack import
+    if (currentStep === '1c') {
+      if (!importFilePath) return;
+      const name = importInstNameInput?.value?.trim() || importPreview?.name || importFilePath.split(/[\\/]/).pop().replace(/\.(mrpack|zip)$/i, '');
+      if (!name) { return; }
+      if (importSelectedDir === 'custom' && !importCustomPath) {
+        if (importCustomPathError) importCustomPathError.classList.remove('hidden');
+        return;
+      }
+
+      const filePath = importFilePath;
+      const useCustomDir = importSelectedDir === 'custom';
+      const customDir = useCustomDir ? importCustomPath : null;
+      const skipAssetsVal = !!skipAssetsCheckbox?.checked;
+
+      // Close creator menu immediately when starting extraction
+      closeCreatorSection();
+
+      if (typeof onImportModpack === 'function') {
+        onImportModpack({
+          filePath,
+          name,
+          useCustomDir,
+          customDir,
+          skipAssets: skipAssetsVal
+        });
+      }
+      return;
+    }
+
+    // Step 2 -> Step 3: Choose a version (minecraft-instance)
+    if (currentStep === 2) {
       if (selectedFolderType === 'custom' && !validateCustomPath()) {
         return;
       }
@@ -1047,7 +1383,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       return;
     }
 
-    // Other types (OneClient, Modpack)
+    // Other types (OneClient)
     closeCreatorSection();
     if (selectedCreatorType === 'oneclient') {
       if (typeof onProceedWithMinecraftInstance === 'function') {
@@ -1057,20 +1393,12 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
           customPath: ''
         });
       }
-    } else if (selectedCreatorType === 'modpack') {
-      const discoverModpackBtn = document.getElementById('discover-type-modpack');
-      const discoverTabBtn = document.querySelector('.pill-tab[data-tab="discover"]');
-      if (discoverTabBtn) {
-        discoverTabBtn.click();
-        if (discoverModpackBtn) {
-          setTimeout(() => discoverModpackBtn.click(), 120);
-        }
-      }
     }
   });
 
   return {
     openCreatorSection,
+    openModpackImportSection,
     closeCreatorSection,
     setStep,
     getSelectedType: () => selectedCreatorType,
