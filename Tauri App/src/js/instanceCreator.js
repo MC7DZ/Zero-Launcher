@@ -342,6 +342,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     if (currentStep === 2) targetPanel = panelStep2;
     else if (currentStep === 3) targetPanel = panelStep3;
     else if (currentStep === 4) targetPanel = panelStep4;
+    else if (currentStep === 5) targetPanel = panelStep5;
 
     if (targetPanel) {
       const h = targetPanel.offsetHeight;
@@ -350,6 +351,12 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       }
     }
   }
+
+  window.addEventListener('resize', () => {
+    if (newInstanceSection && !newInstanceSection.classList.contains('creator-hidden')) {
+      syncViewportHeight();
+    }
+  });
 
   function formatDate(isoStr) {
     if (!isoStr) return '';

@@ -2182,11 +2182,11 @@ body.screenshot-lightbox-open {
 .creator-top-heading {
   position: relative;
   z-index: 10;
-  font-size: 26px;
+  font-size: clamp(24px, 2.2vw, 40px);
   font-weight: 800;
   color: #ffffff;
   letter-spacing: -0.02em;
-  margin-bottom: 24px;
+  margin-bottom: clamp(16px, 2.2vh, 32px);
   text-align: center;
   text-shadow: 0 4px 16px rgba(0, 0, 0, 0.8);
   pointer-events: none;
@@ -2237,15 +2237,15 @@ body.screenshot-lightbox-open {
     linear-gradient(180deg, rgba(8, 10, 14, 0.15) 0%, rgba(8, 10, 14, 0.45) 45%, rgba(6, 8, 10, 0.88) 100%);
 }
 
-/* Modal panel - fully transparent with clean outline (wider layout) */
+/* Modal panel - fully transparent with clean outline (wider layout, resolution-scaled) */
 .new-instance-creator-card {
   position: relative;
   z-index: 10;
-  width: 760px;
+  width: clamp(740px, 58vw, 1140px);
   max-width: 94vw;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: var(--radius, 12px);
+  border-radius: clamp(12px, 1.1vw, 20px);
   /* Stronger connected ambient shadow behind the UI to merge with the downside tint */
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.75), 0 10px 30px rgba(0, 0, 0, 0.6);
   display: flex;
@@ -2265,7 +2265,7 @@ body.screenshot-lightbox-open {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 20px 22px 14px 22px;
+  padding: clamp(16px, 1.8vh, 26px) clamp(20px, 1.8vw, 32px);
   background: transparent;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
@@ -2273,12 +2273,12 @@ body.screenshot-lightbox-open {
 .creator-header-text {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: clamp(2px, 0.4vh, 6px);
 }
 
 .creator-title {
   margin: 0;
-  font-size: 18px;
+  font-size: clamp(17px, 1.35vw, 24px);
   font-weight: 700;
   color: var(--text, #e2e2ea);
   letter-spacing: -0.01em;
@@ -2288,7 +2288,7 @@ body.screenshot-lightbox-open {
 
 .creator-subtitle {
   margin: 0;
-  font-size: 12px;
+  font-size: clamp(12px, 0.95vw, 16px);
   color: var(--text-muted, rgba(226, 226, 234, 0.6));
   font-weight: 400;
   transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
@@ -2304,9 +2304,9 @@ body.screenshot-lightbox-open {
   background: transparent;
   border: none;
   color: var(--text-muted, rgba(226, 226, 234, 0.6));
-  font-size: 15px;
+  font-size: clamp(15px, 1.1vw, 20px);
   cursor: pointer;
-  padding: 6px;
+  padding: clamp(6px, 0.6vh, 10px);
   border-radius: var(--radius-sm, 8px);
   display: flex;
   align-items: center;
@@ -2376,19 +2376,19 @@ body.screenshot-lightbox-open {
 .creator-options-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px 20px 18px 20px;
+  gap: clamp(8px, 1vh, 16px);
+  padding: clamp(14px, 1.6vh, 24px) clamp(18px, 1.8vw, 30px);
   background: transparent;
   box-sizing: border-box;
 }
 
-/* Option cards - fully transparent with clean outline */
+/* Option cards - fully transparent with clean outline (resolution-scaled) */
 .creator-option-card {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: var(--radius-sm, 8px);
+  gap: clamp(12px, 1.1vw, 20px);
+  padding: clamp(12px, 1.3vh, 20px) clamp(14px, 1.4vw, 24px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.16);
   cursor: pointer;
@@ -2421,13 +2421,18 @@ body.screenshot-lightbox-open {
 
 .creator-option-icon {
   margin-top: 2px;
-  width: 22px;
-  height: 22px;
+  width: clamp(20px, 1.6vw, 28px);
+  height: clamp(20px, 1.6vw, 28px);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--accent);
   flex-shrink: 0;
+}
+
+.creator-option-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .creator-option-card:not(.active) .creator-option-icon {
@@ -2438,41 +2443,41 @@ body.screenshot-lightbox-open {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: clamp(2px, 0.4vh, 6px);
 }
 
 .creator-option-heading {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: clamp(6px, 0.6vw, 12px);
 }
 
 .creator-option-title {
-  font-size: 14px;
+  font-size: clamp(13.5px, 1.05vw, 18px);
   font-weight: 600;
   color: var(--text);
 }
 
 .creator-badge-recommended {
-  font-size: 11px;
+  font-size: clamp(11px, 0.85vw, 14px);
   font-weight: 500;
   color: var(--text-muted);
 }
 
 .creator-badge-coming-soon {
-  font-size: 10px;
+  font-size: clamp(10px, 0.78vw, 13px);
   font-weight: 700;
   color: #f59e0b;
   background: rgba(245, 158, 11, 0.14);
   border: 1px solid rgba(245, 158, 11, 0.28);
-  padding: 2px 7px;
+  padding: clamp(2px, 0.25vh, 4px) clamp(6px, 0.6vw, 10px);
   border-radius: var(--radius-pill, 999px);
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
 .creator-option-desc {
-  font-size: 11.5px;
+  font-size: clamp(11.5px, 0.9vw, 15px);
   color: var(--text-muted);
   line-height: 1.45;
 }
@@ -2481,14 +2486,14 @@ body.screenshot-lightbox-open {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: clamp(14px, 1.6vh, 22px) clamp(18px, 1.8vw, 30px);
   background: transparent;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
-  gap: 16px;
+  gap: clamp(12px, 1.2vw, 20px);
 }
 
 .creator-footer-info {
-  font-size: 11.5px;
+  font-size: clamp(11.5px, 0.88vw, 15px);
   color: var(--text-muted);
   line-height: 1.4;
   flex: 1;
@@ -2499,18 +2504,18 @@ body.screenshot-lightbox-open {
 .creator-footer-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: clamp(8px, 0.8vw, 14px);
   flex-shrink: 0;
 }
 
 .creator-btn-cancel {
-  padding: 8px 16px;
-  font-size: 12.5px;
+  padding: clamp(8px, 0.9vh, 12px) clamp(14px, 1.3vw, 22px);
+  font-size: clamp(12px, 0.92vw, 15.5px);
   font-weight: 600;
   color: var(--text-muted);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   cursor: pointer;
   transition: all var(--transition-fast, 0.08s);
 }
@@ -2521,13 +2526,13 @@ body.screenshot-lightbox-open {
 }
 
 .creator-btn-next {
-  padding: 8px 22px;
-  font-size: 12.5px;
+  padding: clamp(8px, 0.9vh, 12px) clamp(18px, 1.7vw, 28px);
+  font-size: clamp(12px, 0.92vw, 15.5px);
   font-weight: 700;
   color: #fff;
   background: var(--accent);
   border: none;
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   cursor: pointer;
   transition: filter var(--transition), transform var(--transition), box-shadow var(--transition);
 }
@@ -2548,7 +2553,7 @@ body.screenshot-lightbox-open {
 
 /* Step 2 Game Folder Specific Styles */
 .creator-badge-subtext {
-  font-size: 11.5px;
+  font-size: clamp(11.5px, 0.88vw, 15px);
   font-weight: 400;
   color: var(--text-muted);
   opacity: 0.8;
@@ -2559,18 +2564,18 @@ body.screenshot-lightbox-open {
   margin-top: 4px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
+  gap: clamp(7px, 0.8vh, 12px);
+  padding: clamp(10px, 1.1vh, 18px) clamp(12px, 1.2vw, 20px);
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   animation: fadeInDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .creator-custom-path-input-wrap {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: clamp(6px, 0.6vw, 12px);
 }
 
 .creator-custom-path-input {
@@ -2578,9 +2583,9 @@ body.screenshot-lightbox-open {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: var(--text);
-  border-radius: var(--radius-sm, 8px);
-  padding: 9px 12px;
-  font-size: 12.5px;
+  border-radius: clamp(8px, 0.75vw, 14px);
+  padding: clamp(8px, 0.9vh, 12px) clamp(10px, 1vw, 16px);
+  font-size: clamp(12.5px, 0.95vw, 16px);
   outline: none;
   transition: border-color var(--transition-fast);
 }
@@ -2593,15 +2598,15 @@ body.screenshot-lightbox-open {
 .creator-browse-btn {
   display: inline-flex;
   align-items: center;
-  padding: 9px 14px;
-  font-size: 12px;
+  padding: clamp(8px, 0.9vh, 12px) clamp(12px, 1.1vw, 18px);
+  font-size: clamp(12px, 0.9vw, 15px);
   font-weight: 600;
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   cursor: pointer;
 }
 
 .creator-custom-path-error {
-  font-size: 11px;
+  font-size: clamp(11px, 0.85vw, 14px);
   color: #f87171;
   display: block;
 }
@@ -2617,12 +2622,12 @@ body.screenshot-lightbox-open {
   }
 }
 
-/* ═══ Step 3 Version List & Controls ═══ */
+/* ═══ Step 3 Version List & Controls (resolution-scaled) ═══ */
 .creator-version-controls {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: clamp(10px, 1vw, 18px);
+  margin-bottom: clamp(7px, 0.9vh, 14px);
 }
 
 .creator-version-search-wrap {
@@ -2634,7 +2639,9 @@ body.screenshot-lightbox-open {
 
 .creator-search-icon {
   position: absolute;
-  left: 12px;
+  left: clamp(10px, 0.9vw, 16px);
+  width: clamp(15px, 1.1vw, 20px);
+  height: clamp(15px, 1.1vw, 20px);
   color: var(--text-muted);
   pointer-events: none;
 }
@@ -2643,9 +2650,9 @@ body.screenshot-lightbox-open {
   width: 100%;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: var(--radius-sm, 8px);
-  padding: 8px 12px 8px 36px;
-  font-size: 13px;
+  border-radius: clamp(8px, 0.75vw, 14px);
+  padding: clamp(8px, 0.9vh, 12px) clamp(10px, 1vw, 16px) clamp(8px, 0.9vh, 12px) clamp(34px, 2.7vw, 44px);
+  font-size: clamp(12.5px, 0.95vw, 16px);
   color: var(--text);
   outline: none;
   transition: border-color var(--transition, 0.14s), background var(--transition, 0.14s);
@@ -2659,12 +2666,12 @@ body.screenshot-lightbox-open {
 .creator-version-type-wrap {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: clamp(6px, 0.6vw, 12px);
   flex-shrink: 0;
 }
 
 .creator-filter-label {
-  font-size: 12px;
+  font-size: clamp(11.5px, 0.9vw, 15px);
   color: var(--text-muted);
 }
 
@@ -2677,10 +2684,10 @@ body.screenshot-lightbox-open {
   background-repeat: no-repeat;
   background-position: right 8px center;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   color: #e2e2ea !important;
-  padding: 8px 28px 8px 12px;
-  font-size: 12.5px;
+  padding: clamp(8px, 0.9vh, 12px) clamp(28px, 2.2vw, 36px) clamp(8px, 0.9vh, 12px) clamp(10px, 1vw, 16px);
+  font-size: clamp(12px, 0.92vw, 15.5px);
   cursor: pointer;
   outline: none;
   transition: border-color var(--transition, 0.14s), background-color var(--transition, 0.14s);
@@ -2698,11 +2705,11 @@ body.screenshot-lightbox-open {
 }
 
 .creator-versions-scrollable {
-  max-height: 290px;
+  max-height: clamp(270px, 34vh, 460px);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: clamp(6px, 0.7vh, 10px);
   padding-right: 4px;
 }
 
@@ -2719,8 +2726,8 @@ body.screenshot-lightbox-open {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 11px 16px;
-  border-radius: var(--radius-sm, 8px);
+  padding: clamp(9px, 1.1vh, 16px) clamp(12px, 1.2vw, 20px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.14);
   cursor: pointer;
@@ -2742,12 +2749,12 @@ body.screenshot-lightbox-open {
 .creator-version-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: clamp(8px, 0.9vw, 14px);
 }
 
 .creator-radio-indicator {
-  width: 14px;
-  height: 14px;
+  width: clamp(14px, 1.1vw, 18px);
+  height: clamp(14px, 1.1vw, 18px);
   border-radius: 50%;
   border: 2px solid var(--text-muted);
   box-sizing: border-box;
@@ -2764,29 +2771,29 @@ body.screenshot-lightbox-open {
 }
 
 .creator-version-id {
-  font-size: 13.5px;
+  font-size: clamp(13px, 1vw, 17px);
   font-weight: 600;
   color: var(--text);
 }
 
 .creator-version-date {
-  font-size: 12px;
+  font-size: clamp(11.5px, 0.88vw, 15px);
   color: var(--text-muted);
   opacity: 0.8;
 }
 
 .creator-version-loading,
 .creator-version-empty {
-  padding: 30px;
+  padding: clamp(24px, 3vh, 40px);
   text-align: center;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: clamp(12.5px, 0.95vw, 16px);
 }
 
 /* ═══ Live Summary Floating Panel Under UI (Centered, Columnar/Vertical alignment) ═══ */
 .creator-summary-panel {
   position: absolute;
-  bottom: 22px;
+  bottom: clamp(16px, 2vh, 32px);
   left: 50%;
   transform: translateX(-50%) translateY(0);
   z-index: 100;
@@ -2794,7 +2801,7 @@ body.screenshot-lightbox-open {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 10px;
+  gap: clamp(8px, 1vh, 14px);
   pointer-events: none;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
 }
@@ -2816,7 +2823,7 @@ body.screenshot-lightbox-open {
 
 .creator-summary-title {
   margin: 0;
-  font-size: 26px;
+  font-size: clamp(22px, 2vw, 36px);
   font-weight: 800;
   color: #ffffff;
   letter-spacing: -0.02em;
@@ -2824,7 +2831,7 @@ body.screenshot-lightbox-open {
 
 .creator-summary-subtitle {
   margin: 0;
-  font-size: 13px;
+  font-size: clamp(12px, 0.95vw, 16px);
   color: rgba(255, 255, 255, 0.65);
   font-weight: 500;
 }
@@ -2834,7 +2841,7 @@ body.screenshot-lightbox-open {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: 36px;
+  gap: clamp(24px, 2.6vw, 48px);
   margin-top: 2px;
 }
 
@@ -2843,11 +2850,11 @@ body.screenshot-lightbox-open {
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  min-width: 60px;
+  min-width: clamp(55px, 4.5vw, 85px);
 }
 
 .creator-summary-label {
-  font-size: 11px;
+  font-size: clamp(10px, 0.8vw, 13.5px);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: rgba(255, 255, 255, 0.48);
@@ -2855,17 +2862,17 @@ body.screenshot-lightbox-open {
 }
 
 .creator-summary-val {
-  font-size: 13.5px;
+  font-size: clamp(13px, 1vw, 17px);
   font-weight: 600;
   color: #ffffff;
 }
 
-/* ═══ Step 4 Mod Loader Grid & Version Selector ═══ */
+/* ═══ Step 4 Mod Loader Grid & Version Selector (resolution-scaled) ═══ */
 .creator-loaders-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: clamp(10px, 1vw, 16px);
+  margin-bottom: clamp(10px, 1.1vh, 16px);
 }
 
 /* If 5 cards, Vanilla spans the full row nicely or stays 2-col */
@@ -2876,11 +2883,11 @@ body.screenshot-lightbox-open {
 .creator-loader-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
+  gap: clamp(6px, 0.7vh, 10px);
+  padding: clamp(12px, 1.3vh, 18px) clamp(14px, 1.3vw, 22px);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   cursor: pointer;
   user-select: none;
   transition: all var(--transition-fast, 0.12s);
@@ -2913,7 +2920,7 @@ body.screenshot-lightbox-open {
 .creator-loader-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: clamp(8px, 0.8vw, 14px);
 }
 
 .creator-loader-card.active .creator-radio-indicator {
@@ -2923,20 +2930,20 @@ body.screenshot-lightbox-open {
 }
 
 .creator-loader-name {
-  font-size: 14px;
+  font-size: clamp(13.5px, 1.05vw, 18px);
   font-weight: 600;
   color: var(--text, #ffffff);
 }
 
 .creator-loader-icon {
-  width: 22px;
-  height: 22px;
+  width: clamp(20px, 1.6vw, 28px);
+  height: clamp(20px, 1.6vw, 28px);
   object-fit: contain;
   opacity: 0.9;
 }
 
 .creator-loader-desc {
-  font-size: 12px;
+  font-size: clamp(11.5px, 0.9vw, 15px);
   line-height: 1.45;
   color: var(--text-muted, rgba(226, 226, 234, 0.65));
 }
@@ -2945,11 +2952,11 @@ body.screenshot-lightbox-open {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: clamp(12px, 1.3vh, 18px) clamp(14px, 1.4vw, 22px);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: var(--radius-sm, 8px);
-  gap: 16px;
+  border-radius: clamp(8px, 0.75vw, 14px);
+  gap: clamp(12px, 1.2vw, 20px);
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -2961,18 +2968,18 @@ body.screenshot-lightbox-open {
 .creator-loader-version-info {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: clamp(2px, 0.4vh, 6px);
   flex: 1;
 }
 
 .creator-loader-version-title {
-  font-size: 13.5px;
+  font-size: clamp(13px, 1vw, 17px);
   font-weight: 600;
   color: var(--text, #ffffff);
 }
 
 .creator-loader-version-desc {
-  font-size: 12px;
+  font-size: clamp(11.5px, 0.88vw, 15px);
   color: var(--text-muted, rgba(226, 226, 234, 0.65));
 }
 
@@ -2989,13 +2996,13 @@ body.screenshot-lightbox-open {
   background-repeat: no-repeat;
   background-position: right 10px center;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   color: #ffffff !important;
-  padding: 8px 30px 8px 14px;
-  font-size: 13px;
+  padding: clamp(8px, 0.9vh, 12px) clamp(30px, 2.4vw, 40px) clamp(8px, 0.9vh, 12px) clamp(12px, 1.1vw, 18px);
+  font-size: clamp(12.5px, 0.95vw, 16px);
   cursor: pointer;
   outline: none;
-  min-width: 130px;
+  min-width: clamp(120px, 11vw, 180px);
   transition: border-color var(--transition, 0.14s), background-color var(--transition, 0.14s);
 }
 
@@ -3010,23 +3017,23 @@ body.screenshot-lightbox-open {
   color: #fff;
 }
 
-/* ═══ Step 5 Name Instance & Advanced Options ═══ */
+/* ═══ Step 5 Name Instance & Advanced Options (resolution-scaled) ═══ */
 .creator-form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: clamp(5px, 0.7vh, 10px);
   width: 100%;
 }
 
 .creator-form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: clamp(10px, 1vw, 16px);
   width: 100%;
 }
 
 .creator-form-label {
-  font-size: 13px;
+  font-size: clamp(12.5px, 0.95vw, 16px);
   font-weight: 600;
   color: var(--text, #ffffff);
   letter-spacing: -0.01em;
@@ -3037,9 +3044,9 @@ body.screenshot-lightbox-open {
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: var(--radius-sm, 8px);
-  padding: 10px 14px;
-  font-size: 13.5px;
+  border-radius: clamp(8px, 0.75vw, 14px);
+  padding: clamp(9px, 1vh, 14px) clamp(12px, 1.1vw, 18px);
+  font-size: clamp(13px, 1vw, 17px);
   color: var(--text, #ffffff);
   outline: none;
   transition: border-color var(--transition, 0.14s), background-color var(--transition, 0.14s);
@@ -3069,10 +3076,10 @@ body.screenshot-lightbox-open {
   background-repeat: no-repeat;
   background-position: right 12px center;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   color: #ffffff !important;
-  padding: 9px 34px 9px 12px;
-  font-size: 13px;
+  padding: clamp(9px, 1vh, 14px) clamp(32px, 2.4vw, 42px) clamp(9px, 1vh, 14px) clamp(12px, 1.1vw, 18px);
+  font-size: clamp(12.5px, 0.95vw, 16px);
   cursor: pointer;
   outline: none;
   transition: border-color var(--transition, 0.14s), background-color var(--transition, 0.14s);
@@ -3090,7 +3097,7 @@ body.screenshot-lightbox-open {
 }
 
 .creator-field-hint {
-  font-size: 11.5px;
+  font-size: clamp(11px, 0.85vw, 14px);
   color: var(--text-muted, rgba(226, 226, 234, 0.6));
   line-height: 1.35;
 }
@@ -3099,7 +3106,7 @@ body.screenshot-lightbox-open {
 .creator-advanced-wrap {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: clamp(6px, 0.8vh, 12px);
   margin-top: 6px;
   width: 100%;
 }
@@ -3109,13 +3116,13 @@ body.screenshot-lightbox-open {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 12px 16px;
+  padding: clamp(10px, 1.2vh, 16px) clamp(14px, 1.3vw, 22px);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   color: var(--text, #ffffff);
   cursor: pointer;
-  font-size: 13.5px;
+  font-size: clamp(13px, 1vw, 17px);
   font-weight: 600;
   transition: all var(--transition-fast, 0.12s);
   user-select: none;
@@ -3134,10 +3141,12 @@ body.screenshot-lightbox-open {
 .creator-advanced-toggle-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: clamp(8px, 0.8vw, 14px);
 }
 
 .creator-advanced-icon-svg {
+  width: clamp(16px, 1.2vw, 22px);
+  height: clamp(16px, 1.2vw, 22px);
   color: var(--text-muted, rgba(226, 226, 234, 0.7));
   transition: color var(--transition-fast);
 }
@@ -3147,6 +3156,8 @@ body.screenshot-lightbox-open {
 }
 
 .creator-advanced-chevron-svg {
+  width: clamp(14px, 1.1vw, 18px);
+  height: clamp(14px, 1.1vw, 18px);
   color: var(--text-muted, rgba(226, 226, 234, 0.6));
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color var(--transition-fast);
 }
@@ -3159,11 +3170,11 @@ body.screenshot-lightbox-open {
 .creator-advanced-panel {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px 18px;
+  gap: clamp(10px, 1.2vh, 18px);
+  padding: clamp(14px, 1.5vh, 22px) clamp(16px, 1.5vw, 24px);
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   animation: fadeInDown 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   box-sizing: border-box;
 }
@@ -3176,13 +3187,13 @@ body.screenshot-lightbox-open {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: clamp(12px, 1.2vw, 20px);
   cursor: pointer;
   user-select: none;
-  padding: 8px 12px;
+  padding: clamp(8px, 0.9vh, 12px) clamp(10px, 1vw, 16px);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: clamp(8px, 0.75vw, 14px);
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
@@ -3198,13 +3209,13 @@ body.screenshot-lightbox-open {
 }
 
 .creator-toggle-title {
-  font-size: 13px;
+  font-size: clamp(12.5px, 0.95vw, 16px);
   font-weight: 600;
   color: var(--text, #ffffff);
 }
 
 .creator-toggle-sub {
-  font-size: 11.5px;
+  font-size: clamp(11px, 0.85vw, 14px);
   color: var(--text-muted, rgba(226, 226, 234, 0.6));
 }
 
@@ -3212,8 +3223,8 @@ body.screenshot-lightbox-open {
 .creator-switch {
   position: relative;
   display: inline-block;
-  width: 38px;
-  height: 20px;
+  width: clamp(36px, 2.7vw, 46px);
+  height: clamp(19px, 1.4vw, 24px);
   flex-shrink: 0;
   cursor: pointer;
 }
@@ -3240,8 +3251,8 @@ body.screenshot-lightbox-open {
 .creator-switch-slider::before {
   position: absolute;
   content: "";
-  height: 14px;
-  width: 14px;
+  height: clamp(13px, 1vw, 17px);
+  width: clamp(13px, 1vw, 17px);
   left: 2px;
   bottom: 2px;
   background-color: #ffffff;
@@ -3256,15 +3267,15 @@ body.screenshot-lightbox-open {
 }
 
 .creator-switch input:checked + .creator-switch-slider::before {
-  transform: translateX(18px);
+  transform: translateX(clamp(17px, 1.3vw, 22px));
 }
 
 /* Skip assets/libraries container in footer */
 .creator-skip-assets-container {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-right: 12px;
+  gap: clamp(6px, 0.6vw, 10px);
+  margin-right: clamp(8px, 0.9vw, 16px);
   user-select: none;
 }
 
@@ -3275,13 +3286,13 @@ body.screenshot-lightbox-open {
 .creator-skip-assets-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: clamp(6px, 0.6vw, 10px);
   cursor: pointer;
   user-select: none;
 }
 
 .creator-skip-assets-label {
-  font-size: 12.5px;
+  font-size: clamp(12px, 0.92vw, 15.5px);
   font-weight: 500;
   color: var(--text-muted, rgba(226, 226, 234, 0.75));
   transition: color var(--transition-fast);
@@ -3296,13 +3307,13 @@ body.screenshot-lightbox-open {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 17px;
-  height: 17px;
+  width: clamp(16px, 1.2vw, 20px);
+  height: clamp(16px, 1.2vw, 20px);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: var(--text-muted, rgba(226, 226, 234, 0.75));
-  font-size: 11px;
+  font-size: clamp(10.5px, 0.8vw, 13.5px);
   font-weight: 700;
   cursor: help;
   transition: all var(--transition-fast);
