@@ -31,16 +31,28 @@ pub async fn resolve_background_path(
     Err(format!("Background file not found: {name}"))
 }
 
-/// Downloads and caches the creator backdrop image into `<data_dir>/assets/background/minecraft-wilderness-bound.jpg`.
-/// If it already exists on disk, returns its absolute path immediately.
+/// Downloads and caches creator backdrop images into `<data_dir>/assets/background/`.
+/// Supports "minecraft-instance" (minecraft-wilderness-bound.jpg) and "oneclient" (oneclient.jpeg).
 #[tauri::command]
 pub async fn ensure_creator_background(
     app: AppHandle,
     state: State<'_, AppState>,
+    name: Option<String>,
 ) -> Result<String, String> {
-    const BG_URL: &str = "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg";
+    let key = name.unwrap_or_else(|| "minecraft".to_string()).to_ascii_lowercase();
+    let (file_name, url) = match key.as_str() {
+        "oneclient" => (
+            "oneclient.jpeg",
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpeg",
+        ),
+        _ => (
+            "minecraft-wilderness-bound.jpg",
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg",
+        ),
+    };
+
     let bg_dir = state.data_dir.join("assets").join("background");
-    let bg_file = bg_dir.join("minecraft-wilderness-bound.jpg");
+    let bg_file = bg_dir.join(file_name);
 
     if bg_file.exists() && std::fs::metadata(&bg_file).map(|m| m.len()).unwrap_or(0) > 0 {
         return Ok(bg_file.to_string_lossy().to_string());
@@ -50,7 +62,7 @@ pub async fn ensure_creator_background(
         .map_err(|e| format!("Failed to create background directory: {e}"))?;
 
     let resp = crate::network::send(&app, &state, "creator background download", |c| {
-        c.get(BG_URL)
+        c.get(url)
     })
     .await?;
 
@@ -63,7 +75,7 @@ pub async fn ensure_creator_background(
         .await
         .map_err(|e| format!("Failed to read background image stream: {e}"))?;
 
-    let tmp_file = bg_file.with_extension("jpg.part");
+    let tmp_file = bg_file.with_extension("part");
     std::fs::write(&tmp_file, &bytes)
         .map_err(|e| format!("Failed to write temporary background image: {e}"))?;
     std::fs::rename(&tmp_file, &bg_file)

@@ -1,8 +1,9 @@
 /**
  * Initializes the "Choose a type" / New Instance Creator section:
- * - Downloads / caches background picture from:
- *   https://github.com/MC7DZ/ZeroLauncher-Updates/blob/main/pictures/minecraft-wilderness-bound.jpg
- *   into "<Zero Launcher directory>/assets/background/minecraft-wilderness-bound.jpg"
+ * - Downloads / caches background pictures from GitHub into "<Zero Launcher directory>/assets/background/":
+ *     - minecraft-wilderness-bound.jpg (Minecraft instance, Modpack, Import)
+ *     - oneclient.jpeg (OneClient)
+ * - Smooth cross-fade animation when switching between instance types
  * - Hides the top-bar and custom titlebar elements while active
  * - Matches the native Zero Launcher UI design system (panels, borders, radii, fonts, accent colors)
  *
@@ -11,7 +12,8 @@
  */
 export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const newInstanceSection = document.getElementById('new-instance-section');
-  const creatorBackdrop = document.querySelector('.new-instance-bg-backdrop');
+  const layerA = document.querySelector('.creator-bg-layer-a');
+  const layerB = document.querySelector('.creator-bg-layer-b');
   const topBar = document.getElementById('top-bar');
   const btnNewInstance = document.getElementById('btn-new-instance');
   const btnClose = document.getElementById('btn-creator-close');
@@ -20,30 +22,68 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const creatorOptionCards = document.querySelectorAll('.creator-option-card');
   const creatorFooterInfo = document.getElementById('creator-footer-info');
 
-  async function loadCreatorBackground() {
+  const remoteUrls = {
+    'minecraft': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg',
+    'oneclient': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpeg'
+  };
+
+  const cachedUrls = {
+    'minecraft': '',
+    'oneclient': ''
+  };
+
+  async function resolveImageSrc(key) {
+    if (cachedUrls[key]) return cachedUrls[key];
     try {
       const invoke = window.__TAURI__?.core?.invoke;
       const convertFileSrc = window.__TAURI__?.core?.convertFileSrc;
       if (invoke) {
-        const localPath = await invoke('ensure_creator_background');
-        if (localPath && creatorBackdrop) {
+        const localPath = await invoke('ensure_creator_background', { name: key });
+        if (localPath) {
           const url = convertFileSrc ? convertFileSrc(localPath) : localPath;
-          creatorBackdrop.style.backgroundImage = `url("${url}")`;
-          return;
+          cachedUrls[key] = url;
+          return url;
         }
       }
     } catch (e) {
-      console.warn('Failed to fetch creator background from backend, falling back to direct URL:', e);
+      console.warn(`Failed to resolve background image '${key}':`, e);
     }
+    const fallback = remoteUrls[key] || remoteUrls['minecraft'];
+    cachedUrls[key] = fallback;
+    return fallback;
+  }
 
-    // Direct fallback if backend download fails or in browser dev preview
-    if (creatorBackdrop) {
-      creatorBackdrop.style.backgroundImage = 'url("https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg")';
+  let activeLayer = 'a'; // 'a' or 'b'
+  let currentImageKey = '';
+
+  async function transitionBackground(key) {
+    if (key === currentImageKey) return;
+    currentImageKey = key;
+
+    const url = await resolveImageSrc(key);
+    if (!layerA || !layerB) return;
+
+    if (activeLayer === 'a') {
+      layerB.style.backgroundImage = `url("${url}")`;
+      layerB.style.opacity = '1';
+      layerA.style.opacity = '0';
+      activeLayer = 'b';
+    } else {
+      layerA.style.backgroundImage = `url("${url}")`;
+      layerA.style.opacity = '1';
+      layerB.style.opacity = '0';
+      activeLayer = 'a';
     }
   }
 
-  // Preload/download the background image
-  loadCreatorBackground();
+  // Pre-load both images in the background
+  resolveImageSrc('minecraft').then(url => {
+    if (layerA && !layerA.style.backgroundImage) {
+      layerA.style.backgroundImage = `url("${url}")`;
+      currentImageKey = 'minecraft';
+    }
+  });
+  resolveImageSrc('oneclient');
 
   let selectedCreatorType = 'minecraft-instance';
 
@@ -55,10 +95,9 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   };
 
   function openCreatorSection() {
-    // Re-verify image loaded in case first attempt was offline
-    if (creatorBackdrop && !creatorBackdrop.style.backgroundImage) {
-      loadCreatorBackground();
-    }
+    const desiredKey = selectedCreatorType === 'oneclient' ? 'oneclient' : 'minecraft';
+    transitionBackground(desiredKey);
+
     if (newInstanceSection) {
       newInstanceSection.classList.remove('creator-hidden');
     }
@@ -88,6 +127,13 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       selectedCreatorType = card.dataset.type || 'minecraft-instance';
       if (creatorFooterInfo && creatorDescriptions[selectedCreatorType]) {
         creatorFooterInfo.textContent = creatorDescriptions[selectedCreatorType];
+      }
+
+      // Smoothly transition background image based on selected option
+      if (selectedCreatorType === 'oneclient') {
+        transitionBackground('oneclient');
+      } else {
+        transitionBackground('minecraft');
       }
     });
   });

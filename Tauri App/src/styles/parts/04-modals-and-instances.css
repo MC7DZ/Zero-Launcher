@@ -2103,25 +2103,36 @@ body.screenshot-lightbox-open {
   background-repeat: no-repeat;
   filter: brightness(0.72) saturate(1.04);
   transform: scale(1.02);
-  z-index: 1;
   pointer-events: none;
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.55s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.creator-bg-layer-a {
+  z-index: 1;
+  opacity: 1;
+}
+
+.creator-bg-layer-b {
+  z-index: 2;
+  opacity: 0;
 }
 
 .new-instance-creator-section.creator-hidden .new-instance-bg-backdrop {
   transform: scale(1.08);
 }
 
-.new-instance-bg-backdrop::after {
-  content: '';
+.creator-bg-vignette {
   position: absolute;
   inset: 0;
+  pointer-events: none;
+  z-index: 3;
   background:
     /* Deep focused radial vignette focused right behind the UI */
     radial-gradient(ellipse 75% 65% at 50% 50%, rgba(10, 12, 16, 0.6) 0%, rgba(10, 12, 16, 0.25) 55%, rgba(6, 8, 12, 0.75) 100%),
     /* Downward gradient connected to the bottom of the screen */
     linear-gradient(180deg, rgba(8, 10, 14, 0.15) 0%, rgba(8, 10, 14, 0.45) 45%, rgba(6, 8, 10, 0.88) 100%);
-  z-index: 2;
 }
 
 /* Modal panel - fully transparent with clean outline (wider layout) */
