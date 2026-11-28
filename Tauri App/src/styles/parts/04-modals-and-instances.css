@@ -2102,20 +2102,20 @@ body.screenshot-lightbox-open {
   font-weight: 800;
   color: #ffffff;
   letter-spacing: -0.02em;
-  margin-bottom: 18px;
+  margin-bottom: 24px;
   text-align: center;
   text-shadow: 0 4px 16px rgba(0, 0, 0, 0.8);
   pointer-events: none;
   user-select: none;
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(-8px);
   transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .new-instance-creator-section.creator-hidden .creator-top-heading {
   opacity: 0;
-  transform: translateY(-16px);
+  transform: translateY(-24px);
 }
 
 .new-instance-bg-backdrop {

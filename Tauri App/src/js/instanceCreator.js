@@ -139,16 +139,31 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
 
     currentImageKey = key;
 
+    // Cross-fade: incoming layer is raised above the current layer, set to the new image,
+    // and faded in to opacity: 1. After it fades in, the bottom layer is hidden.
+    // This guarantees the previous image is NEVER cleared while the transition is happening.
     if (activeLayer === 'a') {
       layerB.style.backgroundImage = `url("${url}")`;
+      layerB.style.zIndex = '2';
+      layerA.style.zIndex = '1';
       layerB.style.opacity = '1';
-      layerA.style.opacity = '0';
       activeLayer = 'b';
+      setTimeout(() => {
+        if (activeLayer === 'b' && thisToken === transitionToken) {
+          layerA.style.opacity = '0';
+        }
+      }, 550);
     } else {
       layerA.style.backgroundImage = `url("${url}")`;
+      layerA.style.zIndex = '2';
+      layerB.style.zIndex = '1';
       layerA.style.opacity = '1';
-      layerB.style.opacity = '0';
       activeLayer = 'a';
+      setTimeout(() => {
+        if (activeLayer === 'a' && thisToken === transitionToken) {
+          layerB.style.opacity = '0';
+        }
+      }, 550);
     }
   }
 
@@ -159,6 +174,12 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     preloadedImages[key] = img;
     if (key === minecraftBackgrounds[0] && layerA && !layerA.style.backgroundImage) {
       layerA.style.backgroundImage = `url("${url}")`;
+      layerA.style.opacity = '1';
+      layerA.style.zIndex = '2';
+      if (layerB) {
+        layerB.style.opacity = '0';
+        layerB.style.zIndex = '1';
+      }
       currentImageKey = key;
     }
   });
