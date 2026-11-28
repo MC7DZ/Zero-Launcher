@@ -103,7 +103,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     stopMinecraftSlideshow();
     mcSlideshowInterval = setInterval(() => {
       // Only rotate when the selected instance type is minecraft-instance (all its steps 1-4)
-      if (selectedCreatorType === 'minecraft-instance' && !newInstanceSection?.classList.contains('creator-hidden')) {
+      if (selectedCreatorType === 'minecraft-instance' && !newInstanceSection?.classList.contains('creator-hidden') && !newInstanceSection?.classList.contains('creator-closing')) {
         minecraftBgIndex = (minecraftBgIndex + 1) % minecraftBackgrounds.length;
         const nextKey = minecraftBackgrounds[minecraftBgIndex];
         transitionBackground(nextKey);
@@ -819,6 +819,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
 
     if (newInstanceSection) {
+      newInstanceSection.classList.remove('creator-closing');
       newInstanceSection.classList.remove('creator-hidden');
     }
     if (topBar) {
@@ -834,23 +835,29 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   let closeTimeout = null;
 
   function closeCreatorSection() {
+    if (!newInstanceSection || newInstanceSection.classList.contains('creator-hidden') || newInstanceSection.classList.contains('creator-closing')) {
+      return;
+    }
     stopMinecraftSlideshow();
     if (hoverBgTimer) {
       clearTimeout(hoverBgTimer);
       hoverBgTimer = null;
     }
-    if (newInstanceSection) {
-      newInstanceSection.classList.add('creator-hidden');
-    }
     if (topBar) {
       topBar.classList.remove('top-bar-creator-hidden');
     }
-    // Defer reset until after the exit animation (380ms) completes so the fade/slide-out is fully visible
+    newInstanceSection.classList.add('creator-closing');
+
+    // Defer hiding and step reset until the 360ms exit animation completes
     if (closeTimeout) clearTimeout(closeTimeout);
     closeTimeout = setTimeout(() => {
+      if (newInstanceSection) {
+        newInstanceSection.classList.remove('creator-closing');
+        newInstanceSection.classList.add('creator-hidden');
+      }
       setStep(1);
       closeTimeout = null;
-    }, 380);
+    }, 360);
   }
 
   btnNewInstance?.addEventListener('click', () => {

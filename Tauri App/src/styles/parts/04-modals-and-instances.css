@@ -2064,6 +2064,91 @@ body.screenshot-lightbox-open {
 .loader-badge.neoforge{ color: #fb923c; background: rgba(251,146,60,0.1); }
 .loader-badge.vanilla { color: #94a3b8; background: rgba(148,163,184,0.1); }
 
+/* ═══ Keyframe Animations for Entrance & Symmetrical Exit ═══ */
+@keyframes creator-section-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes creator-section-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes creator-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes creator-card-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(30px) scale(0.96);
+  }
+}
+
+@keyframes creator-heading-in {
+  from {
+    opacity: 0;
+    transform: translateY(-24px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-8px) scale(1);
+  }
+}
+
+@keyframes creator-heading-out {
+  from {
+    opacity: 1;
+    transform: translateY(-8px) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-24px) scale(0.96);
+  }
+}
+
+@keyframes creator-summary-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes creator-summary-out {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(28px);
+  }
+}
+
 /* ═══ Choose a Type / New Instance Creator UI (Launcher Design System Theme) ═══ */
 .new-instance-creator-section {
   position: fixed;
@@ -2079,20 +2164,19 @@ body.screenshot-lightbox-open {
   box-sizing: border-box;
   flex-direction: column;
   background-color: var(--bg, #121212);
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
-              visibility 0.38s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .new-instance-creator-section.creator-hidden {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  /* Delay visibility:hidden so it only triggers after the 0.38s opacity fade has finished */
-  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
-              visibility 0s linear 0.38s;
+  display: none !important;
+}
+
+.new-instance-creator-section:not(.creator-hidden):not(.creator-closing) {
+  animation: creator-section-in 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.new-instance-creator-section.creator-closing {
+  pointer-events: none !important;
+  animation: creator-section-out 0.36s cubic-bezier(0.2, 0, 0.2, 1) both !important;
 }
 
 .creator-top-heading {
@@ -2107,15 +2191,15 @@ body.screenshot-lightbox-open {
   text-shadow: 0 4px 16px rgba(0, 0, 0, 0.8);
   pointer-events: none;
   user-select: none;
-  opacity: 1;
   transform: translateY(-8px);
-  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.new-instance-creator-section.creator-hidden .creator-top-heading {
-  opacity: 0;
-  transform: translateY(-24px) scale(0.96);
+.new-instance-creator-section:not(.creator-hidden):not(.creator-closing) .creator-top-heading {
+  animation: creator-heading-in 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.new-instance-creator-section.creator-closing .creator-top-heading {
+  animation: creator-heading-out 0.36s cubic-bezier(0.2, 0, 0.2, 1) both !important;
 }
 
 .new-instance-bg-backdrop {
@@ -2129,24 +2213,16 @@ body.screenshot-lightbox-open {
   filter: brightness(0.72) saturate(1.04);
   transform: scale(1.02);
   pointer-events: none;
-  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.75s ease;
   will-change: opacity, transform;
 }
 
 .creator-bg-layer-a {
   z-index: 1;
-  opacity: 1;
 }
 
 .creator-bg-layer-b {
   z-index: 2;
-  opacity: 0;
-}
-
-.new-instance-creator-section.creator-hidden .new-instance-bg-backdrop {
-  transform: scale(1.06);
-  opacity: 0;
 }
 
 .creator-bg-vignette {
@@ -2154,17 +2230,11 @@ body.screenshot-lightbox-open {
   inset: 0;
   pointer-events: none;
   z-index: 3;
-  opacity: 1;
-  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1);
   background:
     /* Deep focused radial vignette focused right behind the UI */
     radial-gradient(ellipse 75% 65% at 50% 50%, rgba(10, 12, 16, 0.6) 0%, rgba(10, 12, 16, 0.25) 55%, rgba(6, 8, 12, 0.75) 100%),
     /* Downward gradient connected to the bottom of the screen */
     linear-gradient(180deg, rgba(8, 10, 14, 0.15) 0%, rgba(8, 10, 14, 0.45) 45%, rgba(6, 8, 10, 0.88) 100%);
-}
-
-.new-instance-creator-section.creator-hidden .creator-bg-vignette {
-  opacity: 0;
 }
 
 /* Modal panel - fully transparent with clean outline (wider layout) */
@@ -2181,15 +2251,14 @@ body.screenshot-lightbox-open {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transform: translateY(0) scale(1);
-  opacity: 1;
-  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.new-instance-creator-section.creator-hidden .new-instance-creator-card {
-  transform: translateY(24px) scale(0.96);
-  opacity: 0;
+.new-instance-creator-section:not(.creator-hidden):not(.creator-closing) .new-instance-creator-card {
+  animation: creator-card-in 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.new-instance-creator-section.creator-closing .new-instance-creator-card {
+  animation: creator-card-out 0.36s cubic-bezier(0.2, 0, 0.2, 1) both !important;
 }
 
 .creator-card-header {
@@ -2727,15 +2796,15 @@ body.screenshot-lightbox-open {
   text-align: center;
   gap: 10px;
   pointer-events: none;
-  opacity: 1;
-  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
 }
 
-.new-instance-creator-section.creator-hidden .creator-summary-panel {
-  opacity: 0;
-  transform: translateX(-50%) translateY(24px);
+.new-instance-creator-section:not(.creator-hidden):not(.creator-closing) .creator-summary-panel {
+  animation: creator-summary-in 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.new-instance-creator-section.creator-closing .creator-summary-panel {
+  animation: creator-summary-out 0.36s cubic-bezier(0.2, 0, 0.2, 1) both !important;
 }
 
 .creator-summary-header {
