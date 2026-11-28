@@ -1,9 +1,10 @@
 /**
  * Initializes the "Choose a type" / New Instance Creator section:
  * - Downloads / caches background pictures from GitHub into "<Zero Launcher directory>/assets/background/":
- *     - minecraft-wilderness-bound.jpg (Minecraft instance, Modpack, Import)
+ *     - minecraft-wilderness-bound.jpg (Minecraft instance, Import)
  *     - oneclient.jpeg (OneClient)
- * - Smooth cross-fade animation when switching between instance types
+ *     - modpacks.jpg (Modpack)
+ * - Smooth cross-fade animation when switching or hovering over instance types
  * - Hides the top-bar and custom titlebar elements while active
  * - Matches the native Zero Launcher UI design system (panels, borders, radii, fonts, accent colors)
  *
@@ -20,16 +21,19 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   const btnCancel = document.getElementById('btn-creator-cancel');
   const btnNext = document.getElementById('btn-creator-next');
   const creatorOptionCards = document.querySelectorAll('.creator-option-card');
+  const creatorOptionsList = document.querySelector('.creator-options-list');
   const creatorFooterInfo = document.getElementById('creator-footer-info');
 
   const remoteUrls = {
     'minecraft': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg',
-    'oneclient': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpeg'
+    'oneclient': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpeg',
+    'modpack': 'https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/modpacks.jpg'
   };
 
   const cachedUrls = {
     'minecraft': '',
-    'oneclient': ''
+    'oneclient': '',
+    'modpack': ''
   };
 
   async function resolveImageSrc(key) {
@@ -51,6 +55,12 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     const fallback = remoteUrls[key] || remoteUrls['minecraft'];
     cachedUrls[key] = fallback;
     return fallback;
+  }
+
+  function typeToImageKey(type) {
+    if (type === 'oneclient') return 'oneclient';
+    if (type === 'modpack') return 'modpack';
+    return 'minecraft';
   }
 
   let activeLayer = 'a'; // 'a' or 'b'
@@ -76,7 +86,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
   }
 
-  // Pre-load both images in the background
+  // Pre-load all three images in the background
   resolveImageSrc('minecraft').then(url => {
     if (layerA && !layerA.style.backgroundImage) {
       layerA.style.backgroundImage = `url("${url}")`;
@@ -84,6 +94,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
     }
   });
   resolveImageSrc('oneclient');
+  resolveImageSrc('modpack');
 
   let selectedCreatorType = 'minecraft-instance';
 
@@ -95,8 +106,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   };
 
   function openCreatorSection() {
-    const desiredKey = selectedCreatorType === 'oneclient' ? 'oneclient' : 'minecraft';
-    transitionBackground(desiredKey);
+    transitionBackground(typeToImageKey(selectedCreatorType));
 
     if (newInstanceSection) {
       newInstanceSection.classList.remove('creator-hidden');
@@ -120,6 +130,7 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
   });
 
   creatorOptionCards.forEach(card => {
+    // Click: select option and transition background
     card.addEventListener('click', () => {
       if (card.classList.contains('disabled')) return;
       creatorOptionCards.forEach(c => c.classList.remove('active'));
@@ -128,14 +139,20 @@ export function initInstanceCreator({ onProceedWithMinecraftInstance } = {}) {
       if (creatorFooterInfo && creatorDescriptions[selectedCreatorType]) {
         creatorFooterInfo.textContent = creatorDescriptions[selectedCreatorType];
       }
-
-      // Smoothly transition background image based on selected option
-      if (selectedCreatorType === 'oneclient') {
-        transitionBackground('oneclient');
-      } else {
-        transitionBackground('minecraft');
-      }
+      transitionBackground(typeToImageKey(selectedCreatorType));
     });
+
+    // Hover: preview background image smoothly
+    card.addEventListener('mouseenter', () => {
+      if (card.classList.contains('disabled')) return;
+      const hoverType = card.dataset.type;
+      transitionBackground(typeToImageKey(hoverType));
+    });
+  });
+
+  // When cursor leaves the options list, return to currently selected card's background
+  creatorOptionsList?.addEventListener('mouseleave', () => {
+    transitionBackground(typeToImageKey(selectedCreatorType));
   });
 
   btnClose?.addEventListener('click', closeCreatorSection);

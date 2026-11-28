@@ -45,6 +45,10 @@ pub async fn ensure_creator_background(
             "oneclient.jpeg",
             "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/oneclient.jpeg",
         ),
+        "modpack" | "modpacks" => (
+            "modpacks.jpg",
+            "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/modpacks.jpg",
+        ),
         _ => (
             "minecraft-wilderness-bound.jpg",
             "https://raw.githubusercontent.com/MC7DZ/ZeroLauncher-Updates/main/pictures/minecraft-wilderness-bound.jpg",
